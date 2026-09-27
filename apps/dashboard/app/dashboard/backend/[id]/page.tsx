@@ -14,6 +14,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ServiceLogs } from "@/components/service-logs";
 import { ServiceShell } from "@/components/service-shell";
 import { ServiceMetrics } from "@/components/service-metrics";
+import { getServiceIngressUrl } from "@/lib/domains";
 
 const INSTANCE_PLANS = [
   { id: "starter",  name: "Starter",  cpu: 0.5, memory: 512,  desc: "0.5 vCPU • 512MB" },
@@ -158,7 +159,7 @@ export default function BackendServicePage() {
   const isBuilding = latestDeploy?.status === "QUEUED" || latestDeploy?.status === "BUILDING";
   const isActive   = latestDeploy?.status === "READY" && !!latestDeploy.containerPort;
   const isAsleep   = latestDeploy?.status === "READY" && !latestDeploy.containerPort;
-  const ingressUrl = `http://${service.slug}.localhost:8080`;
+  const ingressUrl = getServiceIngressUrl(service.slug);
   const envCount   = service.envVariables.length;
 
   function copyIngressUrl() {

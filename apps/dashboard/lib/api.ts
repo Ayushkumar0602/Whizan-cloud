@@ -201,6 +201,7 @@ export type Project = {
   installCommand: string;
   outputDir: string;
   framework: string;
+  customDomain?: string;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { projects, type CreateProjectData } from "@/lib/api";
+import { getProjectLiveUrl } from "@/lib/domains";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -181,7 +182,7 @@ export default function NewProjectPage() {
                       pattern="[-a-z0-9]+"
                     />
                     <span className="field-hint">
-                      Live URL: <strong className="mono">{form.slug || "slug"}.20.2.136.11.nip.io</strong>
+                      Live URL: <strong className="mono">{getProjectLiveUrl(form.slug || "slug")}</strong>
                     </span>
                   </div>
                 </div>
@@ -319,7 +320,7 @@ export default function NewProjectPage() {
               <div className="review-row">
                 <span className="review-label">Production URL</span>
                 <span className="review-value mono text-accent">
-                  http://{form.slug}.20.2.136.11.nip.io
+                  {getProjectLiveUrl(form.slug || "slug")}
                 </span>
               </div>
               <div className="review-row">

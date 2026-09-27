@@ -23,6 +23,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
+import { getProjectLiveUrl } from "@/lib/domains";
 
 function buildDuration(d: Deployment) {
   if (!d.buildStartedAt) return null;
@@ -104,7 +105,7 @@ export default function ProjectPage() {
 
   const latestDeploy = project.deployments[0];
   const isActive = latestDeploy?.status === "QUEUED" || latestDeploy?.status === "BUILDING";
-  const liveUrl = latestDeploy?.url || `http://${project.slug}.20.2.136.11.nip.io`;
+  const liveUrl = latestDeploy?.url || getProjectLiveUrl(project.slug, project.customDomain);
 
   function copyUrl() {
     navigator.clipboard.writeText(liveUrl);
