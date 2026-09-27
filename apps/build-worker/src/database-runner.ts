@@ -76,9 +76,9 @@ export class DatabaseRunner {
         "/CN=whizan.db/O=Whizan Cloud",
       ]);
       if (process.platform === "linux") {
-        await fs.chown(certDir, 999, 999).catch(() => {});
-        await fs.chown(certFile, 999, 999).catch(() => {});
-        await fs.chown(keyFile, 999, 999).catch(() => {});
+        await fs.chown(certDir, 70, 70).catch(() => {});
+        await fs.chown(certFile, 70, 70).catch(() => {});
+        await fs.chown(keyFile, 70, 70).catch(() => {});
       }
       await fs.chmod(keyFile, 0o600).catch(() => {});
       await fs.chmod(certFile, 0o644).catch(() => {});
@@ -122,8 +122,8 @@ export class DatabaseRunner {
     const volumePath = path.join(dbDir, "data");
     await fs.mkdir(volumePath, { recursive: true });
     if (process.platform === "linux") {
-      await fs.chown(dbDir, 999, 999).catch(() => {});
-      await fs.chown(volumePath, 999, 999).catch(() => {});
+      await fs.chown(dbDir, 70, 70).catch(() => {});
+      await fs.chown(volumePath, 70, 70).catch(() => {});
     }
     await fs.chmod(volumePath, 0o777).catch(() => {});
     await onLog(`💾 Allocated dedicated persistent host storage: ${volumePath}`);
