@@ -164,9 +164,9 @@ const worker = new Worker<ServiceBuildJob>(
       await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
 
       if (service?.isPublic) {
-        await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "localhost"}`);
+        await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
       } else {
-        await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "localhost"}`);
+        await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
       }
 
       // 6. Zero-Downtime Blue/Green Cleanup:
@@ -225,7 +225,7 @@ const worker = new Worker<ServiceBuildJob>(
         console.error("Failed to cleanup previous containers/files:", cleanupErr);
       }
 
-      await log(`⏳ Streaming live startup logs for 15s (like Render)...`);
+      await log(`⏳ Streaming live startup logs for 15s...`);
       // Keep streaming live runtime container logs for 15s post-deploy
       await new Promise((r) => setTimeout(r, 15000));
       await log(`✓ Service startup completed. Live tail entering idle mode.`);

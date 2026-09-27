@@ -21,13 +21,17 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
+  const edgeDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || "20.2.136.11.nip.io";
+  const dashboardUrl = typeof window !== "undefined" ? window.location.origin : "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app";
+
   const endpoints = [
-    { label: "API Control Plane", value: "http://localhost:8000", desc: "Fastify REST & SSE server" },
-    { label: "Dashboard Console", value: "http://localhost:3000", desc: "Next.js Turbopack application" },
-    { label: "Edge Ingress Gateway", value: "http://localhost:8080", desc: "Node reverse proxy with wildcard routing" },
+    { label: "API Control Plane", value: apiUrl, desc: "Fastify REST & SSE Control Plane" },
+    { label: "Dashboard Console", value: dashboardUrl, desc: "Production Dashboard on Vercel" },
+    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: "Reverse proxy on Azure VM (20.2.136.11)" },
     { label: "Docker Mesh Bridge", value: "whizan-internal-network", desc: "Internal service mesh with DNS aliases" },
-    { label: "PostgreSQL Database", value: "postgresql://localhost:5432/whizan", desc: "Relational persistence layer" },
-    { label: "Redis & BullMQ", value: "redis://localhost:6379", desc: "Job queue & pub/sub broker" },
+    { label: "PostgreSQL Database", value: "aws-0-ap-northeast-1.pooler.supabase.com:5432", desc: "Supabase cloud persistence layer" },
+    { label: "Redis & BullMQ", value: "Upstash Redis (TLS)", desc: "Upstash Redis queue & pub/sub broker" },
   ];
 
   function copyValue(val: string, key: string) {
@@ -43,7 +47,7 @@ export default function SettingsPage() {
     <div className="page" style={{ maxWidth: 840 }}>
       <PageHeader
         title="Settings & Workspace"
-        subtitle="Manage your developer profile, workspace preferences, and local infrastructure endpoints."
+        subtitle="Manage your developer profile, workspace preferences, and cloud infrastructure endpoints."
       />
 
       <div className="settings-stack">

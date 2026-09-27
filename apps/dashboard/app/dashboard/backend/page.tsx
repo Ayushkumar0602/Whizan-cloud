@@ -75,7 +75,7 @@ export default function BackendHostingPage() {
     <div className="page">
       <PageHeader
         title="Backend Services"
-        subtitle="Deploy long-running Node.js, Python, or Go APIs in isolated Docker containers with Render-style 0.1 vCPU Free Tier & private service mesh discovery."
+        subtitle="Deploy long-running Node.js, Python, or Go APIs in isolated Docker containers with 0.1 vCPU Free Tier & private service mesh discovery."
         actions={
           <Link href="/dashboard/backend/new" className="btn btn-primary btn-lg" id="new-service-btn">
             <Plus size={17} /> New Service
@@ -98,7 +98,7 @@ export default function BackendHostingPage() {
         <div className="stat-card">
           <div className="stat-label"><Moon size={14} style={{ color: "#f59e0b" }} /> Auto-Sleep (0.1 vCPU)</div>
           <div className="stat-value" style={{ color: "#f59e0b" }}>{asleepCount}</div>
-          <div className="stat-sub">Scaled to zero (Render Free Tier)</div>
+          <div className="stat-sub">Scaled to zero (Free Tier)</div>
         </div>
         <div className="stat-card">
           <div className="stat-label"><Radio size={14} className="text-accent" /> Mesh Network</div>
@@ -166,7 +166,7 @@ export default function BackendHostingPage() {
           <p>
             {searchQuery || statusFilter !== "ALL"
               ? "Try changing your search term or status filter."
-              : "Deploy a Node.js API, Python Worker, or Go microservice with Render-style 0.1 vCPU spin-down and mesh connectivity."}
+              : "Deploy a Node.js API, Python Worker, or Go microservice with 0.1 vCPU spin-down and mesh connectivity."}
           </p>
           <Link href="/dashboard/backend/new" className="btn btn-primary btn-lg" style={{ marginTop: "0.5rem" }}>
             <Plus size={16} /> Deploy First Service

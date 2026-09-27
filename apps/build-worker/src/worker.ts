@@ -20,7 +20,7 @@ import { startMetricsCollector } from "./metrics-collector.js";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const BUILD_BASE_DIR = process.env.BUILD_BASE_DIR ?? "/tmp/hostify-builds";
-const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "localhost";
+const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 
@@ -360,7 +360,15 @@ redisSub.on("message", async (channel, message) => {
 
       if (payload.action === "DELETE_FILE") {
         const targetPath = payload.path;
-        if (targetPath.startsWith("/opt/whizan-builds/") || targetPath.startsWith("/tmp/hostify-builds/") || targetPath.startsWith("/var/log/whizan/")) {
+        if (
+          targetPath.startsWith("/opt/whizan-builds/") ||
+          targetPath.startsWith("/tmp/hostify-builds/") ||
+          targetPath.startsWith("/tmp/hostify-services/") ||
+          targetPath.startsWith("/tmp/whizan-builds/") ||
+          targetPath.startsWith("/var/log/whizan/") ||
+          targetPath.startsWith("/root/.pm2/logs/") ||
+          (BUILD_BASE_DIR && targetPath.startsWith(BUILD_BASE_DIR))
+        ) {
           console.log(`[Admin] Deleting file/directory: ${targetPath}`);
           await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
         }
@@ -621,51 +629,80 @@ const statsInterval = setInterval(async () => {
       };
     } catch {}
 
-    // Disk files (Builds and Logs)
-    let diskFiles: { path: string; type: string; sizeMB: number }[] = [];
+    // Disk files (Builds, Workspaces, and Logs)
+    let diskFiles: { path: string; type: string; sizeMB: number; displayName?: string }[] = [];
     try {
       const { exec } = await import("child_process");
       const util = await import("util");
       const execAsync = util.promisify(exec);
-      const { stdout } = await execAsync("du -sm /tmp/hostify-builds/* /var/log/whizan/* 2>/dev/null || true");
+      
+      const scanDirs = [
+        "/opt/whizan-builds/*",
+        "/tmp/hostify-builds/*",
+        "/tmp/hostify-services/*",
+        "/tmp/whizan-builds/*",
+        BUILD_BASE_DIR ? `${BUILD_BASE_DIR}/*` : "",
+        "/var/log/whizan/*",
+        "/root/.pm2/logs/*",
+      ].filter(Boolean).join(" ");
+
+      const { stdout } = await execAsync(`du -sm ${scanDirs} 2>/dev/null || true`);
       const diskFileEntries = stdout.trim().split("\n").filter(Boolean);
       diskFiles = await Promise.all(diskFileEntries.map(async (line) => {
-        const [size, filePath] = line.split(/\s+/);
+        const [sizeStr, filePath] = line.split(/\s+/);
+        const sizeMB = parseInt(sizeStr) || 0;
         let type = "log";
         let displayName = filePath;
-        
-        if (filePath.startsWith("/tmp/hostify-builds")) {
-          type = "backend-service";
-          const id = filePath.split("/").pop();
+
+        const isBuild =
+          filePath.startsWith("/opt/whizan-builds") ||
+          filePath.startsWith("/tmp/hostify-builds") ||
+          filePath.startsWith("/tmp/hostify-services") ||
+          filePath.startsWith("/tmp/whizan-builds") ||
+          (BUILD_BASE_DIR && filePath.startsWith(BUILD_BASE_DIR));
+
+        if (isBuild) {
+          const id = filePath.split("/").filter(Boolean).pop();
           if (id) {
             try {
-              // Try to find if it's a backend service
+              // 1. Check if it's a backend service deployment
               const sDep = await prisma.serviceDeployment.findUnique({
                 where: { id },
                 include: { service: true }
               });
               if (sDep?.service) {
-                displayName = `${filePath} (Backend: ${sDep.service.name})`;
+                type = "backend-service";
+                displayName = `${filePath} (Backend: ${sDep.service.name} • ${sDep.id.slice(0, 8)})`;
               } else {
-                // Otherwise try to find if it's a frontend build
+                // 2. Check if it's a frontend deployment
                 const fDep = await prisma.deployment.findUnique({
                   where: { id },
                   include: { project: true }
                 });
                 if (fDep?.project) {
                   type = "frontend-build";
-                  displayName = `${filePath} (Frontend: ${fDep.project.name})`;
+                  displayName = `${filePath} (Frontend: ${fDep.project.name} • ${fDep.id.slice(0, 8)})`;
+                } else {
+                  type = "build-cache";
+                  displayName = `${filePath} (Build Cache / Workspace)`;
                 }
               }
-            } catch (e) {}
+            } catch (e) {
+              type = "build-cache";
+              displayName = `${filePath} (Build Workspace)`;
+            }
           }
+        } else if (filePath.includes(".pm2/logs") || filePath.startsWith("/var/log")) {
+          type = "system-log";
+          const fileName = filePath.split("/").filter(Boolean).pop();
+          displayName = `${filePath} (${fileName})`;
         }
         
         return {
           path: filePath,
           displayName,
           type,
-          sizeMB: parseInt(size) || 0
+          sizeMB,
         };
       }));
       diskFiles.sort((a, b) => b.sizeMB - a.sizeMB);
@@ -678,10 +715,10 @@ const statsInterval = setInterval(async () => {
       const execAsync = util.promisify(exec);
       
       const [workerOut, workerErr, routerOut, routerErr] = await Promise.all([
-        execAsync("cat /var/log/whizan/worker-out*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
-        execAsync("cat /var/log/whizan/worker-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
-        execAsync("cat /var/log/whizan/router-out*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
-        execAsync("cat /var/log/whizan/router-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
+        execAsync("cat /root/.pm2/logs/whizan-worker*out*.log /var/log/whizan/worker-out*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
+        execAsync("cat /root/.pm2/logs/whizan-worker*error*.log /var/log/whizan/worker-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
+        execAsync("cat /root/.pm2/logs/whizan-router*out*.log /var/log/whizan/router-out*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
+        execAsync("cat /root/.pm2/logs/whizan-router*error*.log /var/log/whizan/router-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
       ]);
 
       await redisPub.set("vm:logs:worker:out", workerOut, "EX", 60);
