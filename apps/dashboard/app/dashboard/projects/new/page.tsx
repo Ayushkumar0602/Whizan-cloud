@@ -7,20 +7,21 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
-  GitBranch,
   Terminal,
   FolderOpen,
   Globe,
   Loader2,
   Check,
-  Layers,
   Sparkles,
   Zap,
-  Github
+  Github,
+  Code2,
+  CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { WizardSteps } from "@/components/deploy-pipeline";
 import { PageHeader } from "@/components/page-header";
+import { GitHubRepoPicker, type SelectedRepoInfo } from "@/components/github-repo-picker";
 
 const FRAMEWORKS = [
   { value: "NEXTJS", label: "Next.js", icon: "▲", desc: "SSR / SSG React framework" },
@@ -39,10 +40,10 @@ const FRAMEWORK_DEFAULTS: Record<string, Partial<CreateProjectData>> = {
 };
 
 const STEPS = [
-  { id: "service", label: "Service", hint: "Confirm Hosting" },
-  { id: "repo", label: "Repository", hint: "Git source & name" },
-  { id: "build", label: "Build", hint: "Commands & output" },
-  { id: "review", label: "Review", hint: "Launch pipeline" },
+  { id: "service", label: "Overview", hint: "Hosting Details" },
+  { id: "repo", label: "Source & Identity", hint: "Git repository" },
+  { id: "build", label: "Framework & Build", hint: "Build settings" },
+  { id: "review", label: "Review & Launch", hint: "Deploy pipeline" },
 ];
 
 export default function NewProjectPage() {
@@ -74,6 +75,35 @@ export default function NewProjectPage() {
     setForm(prev => ({ ...prev, framework: fw, ...defaults }));
   }
 
+  function handleRepoSelect(info: SelectedRepoInfo) {
+    const cloneUrl = info.cloneUrl || "";
+    const name = info.name || "";
+    const defaultBranch = info.defaultBranch || "main";
+
+    setForm(prev => {
+      const updatedName = prev.name ? prev.name : name;
+      const updatedSlug = prev.slug ? prev.slug : name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      
+      let fw = prev.framework || "NEXTJS";
+      if (name.toLowerCase().includes("vite")) fw = "VITE";
+      else if (name.toLowerCase().includes("astro")) fw = "ASTRO";
+
+      const fwDefaults = (fw && FRAMEWORK_DEFAULTS[fw]) || {};
+
+      return {
+        ...prev,
+        githubRepoUrl: cloneUrl,
+        branch: defaultBranch,
+        name: updatedName,
+        slug: updatedSlug,
+        framework: fw,
+        ...fwDefaults,
+      };
+    });
+
+    toast.success(`Selected repository: ${info.fullName || info.name}`);
+  }
+
   function canContinue() {
     if (step === 1) return Boolean(form.name && form.slug && form.githubRepoUrl);
     return true;
@@ -83,7 +113,7 @@ export default function NewProjectPage() {
     e.preventDefault();
     if (step < 3) {
       if (!canContinue()) {
-        toast.error("Please fill project name, slug, and GitHub URL");
+        toast.error("Please fill in project name, slug, and select a GitHub repository URL");
         return;
       }
       setStep(s => s + 1);
@@ -92,7 +122,7 @@ export default function NewProjectPage() {
     setLoading(true);
     try {
       const project = await projects.create(form);
-      toast.success("Project created — streaming deploy pipeline");
+      toast.success("Project created — initiating deployment!");
       router.push(`/dashboard/projects/${project.id}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to create project");
@@ -102,126 +132,128 @@ export default function NewProjectPage() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: 860 }}>
+    <div className="page" style={{ maxWidth: 920 }}>
       <Link href="/dashboard/hosting" className="breadcrumb">
         <ArrowLeft size={15} /> Back to Frontend Hosting
       </Link>
 
       <PageHeader
-        title="Deploy New Frontend App"
-        subtitle="Follow four simple steps to connect your repository and publish your web app across edge servers."
+        title="Deploy New Web Application"
+        subtitle="Connect public or private GitHub repositories to automatically build, route, and publish across edge servers with SSL."
       />
 
-      <div style={{ marginBottom: "2rem" }}>
+      <div style={{ marginBottom: "2.5rem", marginTop: "1rem" }}>
         <WizardSteps steps={STEPS} current={step} />
       </div>
 
       <form onSubmit={handleSubmit} className="form-stack">
         {step === 0 && (
-          <div className="card">
+          <div className="card hero-card-glow">
             <div className="wizard-step-header">
               <div className="wizard-icon-box">
                 <Globe size={22} className="text-accent" />
               </div>
               <div>
-                <h2 className="card-title">Frontend Edge Hosting Service</h2>
+                <h2 className="card-title">Edge Web Application Hosting</h2>
                 <p className="card-sub">
-                  Clones your repository, executes dependencies install & build, and attaches edge SSL routing.
+                  Full automatic deployment pipeline with isolated builder environments and global edge routing.
                 </p>
               </div>
             </div>
 
             <div className="wizard-intro-box">
-              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.5rem" }}>
-                What happens during deployment
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <Sparkles size={16} className="text-accent" /> What happens when you deploy
               </h3>
-              <ol className="wizard-steps-list">
-                <li>Whizan clones your branch from GitHub into an isolated builder container.</li>
-                <li>Dependencies are automatically installed and the production build script executes.</li>
-                <li>Static output assets or SSR server is published to edge proxy with instant wildcard SSL.</li>
-              </ol>
+              <div className="features-grid">
+                <div className="feature-step-card">
+                  <div className="feature-step-num">1</div>
+                  <div className="feature-step-content">
+                    <strong>Secure Repository Sync</strong>
+                    <p>Whizan securely clones your code (public or authenticated private repo) into an isolated ephemeral sandbox.</p>
+                  </div>
+                </div>
+
+                <div className="feature-step-card">
+                  <div className="feature-step-num">2</div>
+                  <div className="feature-step-content">
+                    <strong>Containerized Build Engine</strong>
+                    <p>Dependencies are installed and production bundles (Next.js, Vite, React, Astro) are built with speed optimization.</p>
+                  </div>
+                </div>
+
+                <div className="feature-step-card">
+                  <div className="feature-step-num">3</div>
+                  <div className="feature-step-content">
+                    <strong>Global Ingress Routing</strong>
+                    <p>Static assets or SSR processes are linked instantly with wildcard SSL certificates and edge CDN caching.</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {step === 1 && (
           <>
+            {/* GitHub Repository Picker */}
+            <div className="card">
+              <div className="wizard-step-header">
+                <div className="wizard-icon-box">
+                  <Github size={22} className="text-accent" />
+                </div>
+                <div>
+                  <h2 className="card-title">1. Connect GitHub Repository</h2>
+                  <p className="card-sub">Choose from your connected public & private repositories or enter a Git URL manually</p>
+                </div>
+              </div>
+
+              <GitHubRepoPicker
+                onSelectRepo={handleRepoSelect}
+                selectedUrl={form.githubRepoUrl}
+                selectedBranch={form.branch}
+              />
+            </div>
+
+            {/* Project Identity */}
             <div className="card">
               <div className="wizard-step-header">
                 <div className="wizard-icon-box">
                   <FolderOpen size={20} className="text-accent" />
                 </div>
                 <div>
-                  <h2 className="card-title">Project Identity</h2>
-                  <p className="card-sub">Choose a unique project name and edge subdomain slug</p>
+                  <h2 className="card-title">2. Project Identity & Subdomain</h2>
+                  <p className="card-sub">Choose a human-readable display name and unique edge subdomain slug</p>
                 </div>
               </div>
 
               <div className="form-fields-group">
                 <div className="form-grid-2">
                   <div className="form-field">
-                    <label className="field-label">Project Name *</label>
+                    <label className="field-label">Project Display Name *</label>
                     <input
                       id="project-name"
                       className="input"
-                      placeholder="ecommerce-storefront"
+                      placeholder="e.g. Acme Dashboard"
                       value={form.name}
                       onChange={e => handleNameChange(e.target.value)}
                       required
                     />
                   </div>
                   <div className="form-field">
-                    <label className="field-label">Subdomain Slug *</label>
+                    <label className="field-label">Edge Subdomain Slug *</label>
                     <input
                       id="project-slug"
                       className="input mono"
-                      placeholder="ecommerce-storefront"
+                      placeholder="acme-dashboard"
                       value={form.slug}
                       onChange={e => setField("slug", e.target.value)}
                       required
                       pattern="[-a-z0-9]+"
                     />
                     <span className="field-hint">
-                      Live URL: <strong className="mono">{getProjectLiveUrl(form.slug || "slug")}</strong>
+                      Production Live URL: <strong className="mono text-accent">{getProjectLiveUrl(form.slug || "slug")}</strong>
                     </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="wizard-step-header">
-                <div className="wizard-icon-box">
-                  <Github size={20} className="text-accent" />
-                </div>
-                <div>
-                  <h2 className="card-title">GitHub Repository</h2>
-                  <p className="card-sub">Paste the repository Whizan should clone and deploy</p>
-                </div>
-              </div>
-
-              <div className="form-fields-group">
-                <div className="form-grid-2">
-                  <div className="form-field">
-                    <label className="field-label">GitHub Repository URL *</label>
-                    <input
-                      id="repo-url"
-                      className="input"
-                      placeholder="https://github.com/username/storefront"
-                      value={form.githubRepoUrl}
-                      onChange={e => setField("githubRepoUrl", e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-field">
-                    <label className="field-label">Deploy Branch *</label>
-                    <input
-                      id="repo-branch"
-                      className="input mono"
-                      value={form.branch}
-                      onChange={e => setField("branch", e.target.value)}
-                      required
-                    />
                   </div>
                 </div>
               </div>
@@ -237,12 +269,12 @@ export default function NewProjectPage() {
               </div>
               <div>
                 <h2 className="card-title">Framework & Build Configuration</h2>
-                <p className="card-sub">Select your framework preset or customize install and build commands</p>
+                <p className="card-sub">Select your framework preset or customize install and output directory options</p>
               </div>
             </div>
 
             <div className="form-fields-group">
-              <label className="field-label">Select Framework Preset</label>
+              <label className="field-label">Framework Preset</label>
               <div className="framework-selector-grid">
                 {FRAMEWORKS.map(fw => {
                   const isSelected = form.framework === fw.value;
@@ -290,7 +322,7 @@ export default function NewProjectPage() {
                   value={form.outputDir}
                   onChange={e => setField("outputDir", e.target.value)}
                 />
-                <span className="field-hint">e.g. .next for Next.js, dist for Vite, build for React</span>
+                <span className="field-hint">e.g. .next for Next.js, dist for Vite, build for React SPA</span>
               </div>
             </div>
           </div>
@@ -303,8 +335,8 @@ export default function NewProjectPage() {
                 <Sparkles size={20} className="text-accent" />
               </div>
               <div>
-                <h2 className="card-title">Review & Launch Deployment</h2>
-                <p className="card-sub">Confirm details before queuing the first build</p>
+                <h2 className="card-title">Review & Deploy</h2>
+                <p className="card-sub">Double-check your deployment configuration before launching the build queue</p>
               </div>
             </div>
 
@@ -319,7 +351,7 @@ export default function NewProjectPage() {
               </div>
               <div className="review-row">
                 <span className="review-label">Production URL</span>
-                <span className="review-value mono text-accent">
+                <span className="review-value mono text-accent" style={{ fontWeight: 700 }}>
                   {getProjectLiveUrl(form.slug || "slug")}
                 </span>
               </div>
@@ -328,22 +360,35 @@ export default function NewProjectPage() {
                 <span className="review-value mono">{form.githubRepoUrl}</span>
               </div>
               <div className="review-row">
-                <span className="review-label">Branch</span>
+                <span className="review-label">Target Branch</span>
                 <span className="review-value mono">{form.branch}</span>
               </div>
               <div className="review-row">
-                <span className="review-label">Framework</span>
+                <span className="review-label">Framework Preset</span>
                 <span className="review-value">{form.framework}</span>
+              </div>
+              <div className="review-row">
+                <span className="review-label">Install Command</span>
+                <span className="review-value mono">{form.installCommand}</span>
               </div>
               <div className="review-row">
                 <span className="review-label">Build Command</span>
                 <span className="review-value mono">{form.buildCommand}</span>
               </div>
+              <div className="review-row">
+                <span className="review-label">Output Directory</span>
+                <span className="review-value mono">{form.outputDir}</span>
+              </div>
+            </div>
+
+            <div className="review-notice">
+              <CheckCircle2 size={16} className="text-accent" />
+              <span>Clicking <strong>Deploy Application</strong> will queue an automated build and stream real-time logs.</span>
             </div>
           </div>
         )}
 
-        {/* Wizard Controls */}
+        {/* Wizard Navigation */}
         <div className="wizard-nav-row">
           {step > 0 ? (
             <button
@@ -362,7 +407,7 @@ export default function NewProjectPage() {
           <button
             type="submit"
             className="btn btn-primary btn-lg"
-            disabled={loading}
+            disabled={loading || (step === 1 && !canContinue())}
           >
             {loading ? (
               <>
@@ -386,6 +431,11 @@ export default function NewProjectPage() {
           display: flex;
           flex-direction: column;
           gap: 1.5rem;
+        }
+
+        .hero-card-glow {
+          border: 1px solid rgba(99, 102, 241, 0.3);
+          background: radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 80%), var(--card-bg);
         }
 
         .wizard-step-header {
@@ -414,14 +464,44 @@ export default function NewProjectPage() {
           border-radius: 10px;
           padding: 1.25rem 1.5rem;
         }
-        .wizard-steps-list {
-          margin-left: 1.25rem;
+        .features-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 1rem;
+          margin-top: 0.75rem;
+        }
+        .feature-step-card {
           display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.75rem;
+          background: var(--card-bg);
+          padding: 0.85rem;
+          border-radius: 8px;
+          border: 1px solid var(--card-border);
+        }
+        .feature-step-num {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: var(--accent);
+          color: white;
+          font-weight: 700;
+          font-size: 0.75rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .feature-step-content strong {
+          display: block;
           font-size: 0.84rem;
+          color: var(--foreground);
+          margin-bottom: 0.2rem;
+        }
+        .feature-step-content p {
+          font-size: 0.76rem;
           color: var(--muted);
-          line-height: 1.5;
+          line-height: 1.4;
+          margin: 0;
         }
 
         .form-fields-group {
@@ -524,6 +604,18 @@ export default function NewProjectPage() {
         .review-value {
           color: var(--foreground);
           font-weight: 600;
+        }
+        .review-notice {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-top: 1rem;
+          padding: 0.75rem 1rem;
+          border-radius: 8px;
+          background: rgba(99, 102, 241, 0.08);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          font-size: 0.8rem;
+          color: var(--foreground);
         }
 
         .wizard-nav-row {

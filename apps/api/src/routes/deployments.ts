@@ -3,6 +3,7 @@ import { Queue } from "bullmq";
 import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
+import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 
 // Shared build queue — the build-worker consumes from this
 export const buildQueue = new Queue("build", {
@@ -94,10 +95,12 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         },
       });
 
+      const repoUrl = await getAuthenticatedGitUrl(project.githubRepoUrl, userId);
+
       await buildQueue.add("build", {
         deploymentId: deployment.id,
         projectId: project.id,
-        repoUrl: project.githubRepoUrl,
+        repoUrl,
         branch: project.branch,
         buildCommand: project.buildCommand,
         installCommand: project.installCommand,

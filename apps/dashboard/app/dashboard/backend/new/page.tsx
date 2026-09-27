@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { GitHubRepoPicker, type SelectedRepoInfo } from "@/components/github-repo-picker";
 import {
   Github,
   Server,
@@ -51,8 +52,33 @@ export default function NewServicePage() {
     memoryLimit: 512,
   });
 
+  const handleRepoSelect = (info: SelectedRepoInfo) => {
+    const cloneUrl = info.cloneUrl || "";
+    const name = info.name || "";
+    const defaultBranch = info.defaultBranch || "main";
+
+    setFormData(prev => {
+      const updatedName = prev.name ? prev.name : name;
+      const updatedSlug = prev.slug ? prev.slug : name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+      return {
+        ...prev,
+        githubRepoUrl: cloneUrl,
+        branch: defaultBranch,
+        name: updatedName,
+        slug: updatedSlug,
+      };
+    });
+
+    toast.success(`Selected repository: ${info.fullName || info.name}`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.githubRepoUrl) {
+      toast.error("Please select or enter a GitHub repository URL");
+      return;
+    }
     setLoading(true);
     try {
       const service = await services.create(formData);
@@ -94,7 +120,7 @@ export default function NewServicePage() {
 
       <PageHeader
         title="Deploy a Backend Service"
-        subtitle="Connect any Git repository to automatically build, isolate, and host your Node.js, Python, or Go API on Docker with private mesh discovery."
+        subtitle="Connect any public or private Git repository to automatically build, isolate, and host your Node.js, Python, or Go API on Docker."
       />
 
       <form onSubmit={handleSubmit} className="form-stack">
@@ -104,48 +130,26 @@ export default function NewServicePage() {
             <div className="step-num-box">1</div>
             <div>
               <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Connect Repository</h2>
-              <p className="card-sub">Point Whizan to your Git repository and deploy branch</p>
+              <p className="card-sub">Select a repository from your GitHub account or manually specify a Git URL</p>
             </div>
           </div>
 
-          <div className="form-fields-group">
+          <GitHubRepoPicker
+            onSelectRepo={handleRepoSelect}
+            selectedUrl={formData.githubRepoUrl}
+            selectedBranch={formData.branch}
+          />
+
+          <div className="form-fields-group" style={{ marginTop: "1rem" }}>
             <div className="form-field">
-              <label className="field-label">GitHub Repository URL *</label>
-              <div className="input-icon-wrap">
-                <Github size={17} className="input-prefix-icon" />
-                <input
-                  type="url"
-                  required
-                  placeholder="https://github.com/username/api-service"
-                  className="input with-prefix-icon"
-                  value={formData.githubRepoUrl}
-                  onChange={e => setFormData({ ...formData, githubRepoUrl: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="form-grid-2">
-              <div className="form-field">
-                <label className="field-label">Production Branch *</label>
-                <input
-                  type="text"
-                  required
-                  className="input mono"
-                  value={formData.branch}
-                  onChange={e => setFormData({ ...formData, branch: e.target.value })}
-                />
-              </div>
-
-              <div className="form-field">
-                <label className="field-label">Root Directory (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="./ or api/"
-                  className="input mono"
-                  value={formData.rootDir}
-                  onChange={e => setFormData({ ...formData, rootDir: e.target.value })}
-                />
-              </div>
+              <label className="field-label">Root Directory (Optional)</label>
+              <input
+                type="text"
+                placeholder="./ or api/"
+                className="input mono"
+                value={formData.rootDir}
+                onChange={e => setFormData({ ...formData, rootDir: e.target.value })}
+              />
             </div>
           </div>
         </div>
