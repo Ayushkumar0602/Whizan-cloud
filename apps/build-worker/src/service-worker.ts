@@ -283,11 +283,16 @@ const worker = new Worker<ServiceBuildJob>(
       throw err;
     }
   },
-  { connection: redisPub }
+  {
+    connection: new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false }),
+    concurrency: 1,
+  }
 );
 
 worker.on("ready", () => console.log("[Service Worker] Started — waiting for service builds..."));
-worker.on("error", (err) => console.error("[Service Worker] Queue error:", err));
+worker.on("active", (job) => console.log(`[Service Worker] Active: processing build for ${job.data.slug} (${job.id})`));
+worker.on("completed", (job) => console.log(`[Service Worker] Job ${job.id} completed for ${job.data.slug}`));
+worker.on("failed", (job, err) => console.error(`[Service Worker] Job ${job?.id} failed:`, err?.message || err));
 
 // Export for testability or manual control
 export { worker };
