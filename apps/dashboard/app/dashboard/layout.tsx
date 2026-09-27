@@ -7,7 +7,7 @@ import { BrandMark } from "@/components/brand";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, Database
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -75,9 +75,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Compute & Apps",
       items: [
-        { href: "/dashboard/backend",  icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend"),  badge: "Docker" },
-        { href: "/dashboard/hosting",  icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
-        { href: "/dashboard/services", icon: Layers,      label: "Cloud Catalog",     match: (p: string) => p === "/dashboard/services" },
+        { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend"),  badge: "Docker" },
+        { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases"), badge: "Managed" },
+        { href: "/dashboard/hosting",   icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
+        { href: "/dashboard/services",  icon: Layers,      label: "Cloud Catalog",     match: (p: string) => p === "/dashboard/services" },
       ]
     },
     {

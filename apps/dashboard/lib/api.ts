@@ -3,7 +3,27 @@
  * Handles auth token refresh automatically on 401.
  */
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
+export function getApiBase(): string {
+  // When running locally in the browser, always prioritize local API on port 8000
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))) {
+      return envUrl;
+    }
+    return "http://localhost:8000";
+  }
+
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+
+  return "https://whizan-cloud-service.onrender.com";
+}
+
+export const API_BASE = getApiBase();
 
 let accessToken: string | null = null;
 
@@ -16,7 +36,7 @@ export function getAccessToken() {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+  const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
     method: "POST",
     credentials: "include",
   });
@@ -39,7 +59,8 @@ async function request<T>(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  let res = await fetch(`${API_BASE}${path}`, {
+  const base = getApiBase();
+  let res = await fetch(`${base}${path}`, {
     ...options,
     headers,
     credentials: "include",
@@ -50,7 +71,7 @@ async function request<T>(
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`;
-      res = await fetch(`${API_BASE}${path}`, {
+      res = await fetch(`${base}${path}`, {
         ...options,
         headers,
         credentials: "include",
@@ -444,3 +465,343 @@ export const services = {
   getMeshCatalog: () => request<MeshServiceItem[]>("/api/services/mesh/catalog"),
   pingMesh: (data: MeshPingRequest) => request<MeshPingResponse>("/api/services/mesh/ping", { method: "POST", body: JSON.stringify(data) }),
 };
+
+// ─── Managed Databases ───────────────────────────────────────────────────────
+
+export type ManagedDatabase = {
+  id: string;
+  userId: string;
+  name: string;
+  slug: string;
+  type: "POSTGRESQL" | "REDIS" | "MYSQL";
+  version: string;
+  status: "PROVISIONING" | "RUNNING" | "STOPPED" | "RESTARTING" | "FAILED";
+  databaseName: string;
+  username: string;
+  decryptedPassword?: string;
+  internalPort: number;
+  externalPort?: number;
+  volumePath?: string;
+  instanceType: string;
+  cpuLimit: number;
+  memoryLimit: number;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  internalUrl: string;
+  externalUrl: string;
+  externalHost: string;
+  poolerPort?: number;
+  enablePooler?: boolean;
+  sslEnabled?: boolean;
+  ipWhitelist?: string[];
+  readonlyPassword?: string;
+  decryptedReadonlyPassword?: string;
+  sslUrl?: string;
+  pooledUrl?: string;
+  internalPooledUrl?: string;
+  readonlyUrl?: string;
+};
+
+export type CreateDatabaseData = {
+  name: string;
+  slug?: string;
+  type?: "POSTGRESQL" | "REDIS" | "MYSQL";
+  version?: string;
+  databaseName?: string;
+  username?: string;
+  instanceType?: "starter" | "standard" | "pro";
+};
+
+export type DatabaseMetrics = {
+  cpuPercent: number;
+  memoryMB: number;
+  memoryLimitMB: number;
+  isRunning: boolean;
+  status: string;
+};
+
+export type DatabaseQueryResult = {
+  success: boolean;
+  rows: Record<string, any>[];
+  rowCount: number;
+  fields: { name: string; dataTypeID?: number }[];
+  command: string;
+  executionTimeMs: number;
+  error?: string;
+  position?: string;
+  detail?: string;
+  hint?: string;
+};
+
+export type DatabaseTableItem = {
+  table_name: string;
+  rows: number;
+  size: string;
+  sizeBytes: number;
+  columnCount: number;
+};
+
+export type DatabaseTablesResponse = {
+  tables: DatabaseTableItem[];
+  totalTables: number;
+  databaseSize: string;
+  databaseSizeBytes: number;
+};
+
+export type DatabaseColumnSchema = {
+  column_name: string;
+  data_type: string;
+  udt_name: string;
+  is_nullable: boolean;
+  column_default: string | null;
+  character_maximum_length: number | null;
+  is_primary_key: boolean;
+};
+
+export type DatabaseTableDataResponse = {
+  rows: Record<string, any>[];
+  totalCount: number;
+  page: number;
+  limit: number;
+  columns: string[];
+};
+
+export type RedisKeyItem = {
+  key: string;
+  type: string;
+  ttl: number;
+};
+
+export type RedisKeysResponse = {
+  keys: RedisKeyItem[];
+  totalKeys: number;
+};
+
+export type RedisKeyDetail = {
+  key: string;
+  type: string;
+  ttl: number;
+  value: any;
+};
+
+export type DatabaseSlowQuery = {
+  query: string;
+  calls: number;
+  total_time_ms: string;
+  mean_time_ms: string;
+  min_time_ms: string;
+  max_time_ms: string;
+  total_rows: number;
+};
+
+export type DatabaseRunningQuery = {
+  pid: number;
+  usename: string;
+  client_addr: string;
+  state: string;
+  duration_seconds: number;
+  query: string;
+  wait_event_type: string;
+  wait_event: string;
+};
+
+export type DatabaseConnectionBreakdown = {
+  state: string;
+  count: number;
+};
+
+export type DatabaseInsights = {
+  slowQueries: DatabaseSlowQuery[];
+  cacheHitRatio: number;
+  connectionBreakdown: DatabaseConnectionBreakdown[];
+  runningQueries: DatabaseRunningQuery[];
+  databaseSize: string;
+  databaseSizeBytes: number;
+};
+
+export type UrlConnectionTestResult = {
+  ok: boolean;
+  type: "POSTGRESQL" | "REDIS";
+  version?: string;
+  database?: string;
+  user?: string;
+  serverIp?: string;
+  serverPort?: number;
+  ping?: string;
+  keyCount?: number;
+  latencyMs: number;
+  error?: string;
+};
+
+export type UrlDatabaseTableColumn = {
+  name: string;
+  type: string;
+  isNullable: boolean;
+  defaultValue: string | null;
+  isPrimaryKey: boolean;
+};
+
+export type UrlDatabaseTable = {
+  tableName: string;
+  schema: string;
+  rowCount: number;
+  columnCount: number;
+  columns: UrlDatabaseTableColumn[];
+};
+
+export const databases = {
+  list: () => request<ManagedDatabase[]>("/api/databases"),
+  get: (id: string) => request<ManagedDatabase>(`/api/databases/${id}`),
+  create: (data: CreateDatabaseData) =>
+    request<ManagedDatabase>("/api/databases", { method: "POST", body: JSON.stringify(data) }),
+  restart: (id: string) =>
+    request<{ message: string; status: string }>(`/api/databases/${id}/restart`, { method: "POST" }),
+  stop: (id: string) =>
+    request<{ message: string }>(`/api/databases/${id}/stop`, { method: "POST" }),
+  start: (id: string) =>
+    request<{ message: string }>(`/api/databases/${id}/start`, { method: "POST" }),
+  delete: (id: string) =>
+    request<{ message: string }>(`/api/databases/${id}`, { method: "DELETE" }),
+  getMetrics: (id: string) => request<DatabaseMetrics>(`/api/databases/${id}/metrics`),
+  streamLogs: (id: string): EventSource => {
+    const token = getAccessToken();
+    return new EventSource(`${getApiBase()}/api/databases/${id}/logs?token=${token}`);
+  },
+
+  // Query Runner
+  query: (id: string, query: string) =>
+    request<DatabaseQueryResult>(`/api/databases/${id}/query`, {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+
+  // Table Visualizer & Schema
+  getTables: (id: string) =>
+    request<DatabaseTablesResponse>(`/api/databases/${id}/tables`),
+
+  getTableSchema: (id: string, table: string) =>
+    request<{ columns: DatabaseColumnSchema[] }>(`/api/databases/${id}/tables/${encodeURIComponent(table)}/schema`),
+
+  getTableData: (
+    id: string,
+    table: string,
+    params?: { page?: number; limit?: number; sortColumn?: string; sortOrder?: string; search?: string }
+  ) => {
+    const queryParts: string[] = [];
+    if (params?.page) queryParts.push(`page=${params.page}`);
+    if (params?.limit) queryParts.push(`limit=${params.limit}`);
+    if (params?.sortColumn) queryParts.push(`sortColumn=${encodeURIComponent(params.sortColumn)}`);
+    if (params?.sortOrder) queryParts.push(`sortOrder=${params.sortOrder}`);
+    if (params?.search) queryParts.push(`search=${encodeURIComponent(params.search)}`);
+    const qs = queryParts.length ? `?${queryParts.join("&")}` : "";
+    return request<DatabaseTableDataResponse>(`/api/databases/${id}/tables/${encodeURIComponent(table)}/data${qs}`);
+  },
+
+  insertRow: (id: string, table: string, data: Record<string, any>) =>
+    request<{ success: boolean; row: any }>(`/api/databases/${id}/tables/${encodeURIComponent(table)}/row`, {
+      method: "POST",
+      body: JSON.stringify({ data }),
+    }),
+
+  updateRow: (
+    id: string,
+    table: string,
+    primaryKey: { column: string; value: any },
+    data: Record<string, any>
+  ) =>
+    request<{ success: boolean; row: any }>(`/api/databases/${id}/tables/${encodeURIComponent(table)}/row`, {
+      method: "PUT",
+      body: JSON.stringify({ primaryKey, data }),
+    }),
+
+  deleteRow: (id: string, table: string, primaryKey: { column: string; value: any }) =>
+    request<{ success: boolean }>(`/api/databases/${id}/tables/${encodeURIComponent(table)}/row`, {
+      method: "DELETE",
+      body: JSON.stringify({ primaryKey }),
+    }),
+
+  createTable: (
+    id: string,
+    tableName: string,
+    columns: Array<{ name: string; type: string; isPrimaryKey?: boolean; isNullable?: boolean; defaultValue?: string }>
+  ) =>
+    request<{ success: boolean; message: string }>(`/api/databases/${id}/tables`, {
+      method: "POST",
+      body: JSON.stringify({ tableName, columns }),
+    }),
+
+  dropTable: (id: string, table: string) =>
+    request<{ success: boolean; message: string }>(`/api/databases/${id}/tables/${encodeURIComponent(table)}`, {
+      method: "DELETE",
+    }),
+
+  // Redis Key Explorer
+  getRedisKeys: (id: string, pattern?: string) =>
+    request<RedisKeysResponse>(`/api/databases/${id}/redis/keys${pattern ? `?pattern=${encodeURIComponent(pattern)}` : ""}`),
+
+  getRedisKey: (id: string, key: string) =>
+    request<RedisKeyDetail>(`/api/databases/${id}/redis/key?key=${encodeURIComponent(key)}`),
+
+  setRedisKey: (id: string, key: string, value: string, ttl?: number) =>
+    request<{ success: boolean }>(`/api/databases/${id}/redis/key`, {
+      method: "POST",
+      body: JSON.stringify({ key, value, ttl }),
+    }),
+
+  deleteRedisKey: (id: string, key: string) =>
+    request<{ success: boolean }>(`/api/databases/${id}/redis/key?key=${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    }),
+
+  // Direct Database URL Tester Methods
+  testUrlConnection: (databaseUrl: string) =>
+    request<UrlConnectionTestResult>("/api/databases/url-test", {
+      method: "POST",
+      body: JSON.stringify({ databaseUrl }),
+    }),
+
+  getUrlTables: (databaseUrl: string) =>
+    request<{ tables: UrlDatabaseTable[] }>("/api/databases/url-tables", {
+      method: "POST",
+      body: JSON.stringify({ databaseUrl }),
+    }),
+
+  runUrlQuery: (databaseUrl: string, query: string) =>
+    request<DatabaseQueryResult>("/api/databases/url-query", {
+      method: "POST",
+      body: JSON.stringify({ databaseUrl, query }),
+    }),
+
+  // Production Insights & Performance
+  getInsights: (id: string) => request<DatabaseInsights>(`/api/databases/${id}/insights`),
+
+  killQuery: (id: string, pid: number) =>
+    request<{ success: boolean; terminated: boolean }>(`/api/databases/${id}/kill-query`, {
+      method: "POST",
+      body: JSON.stringify({ pid }),
+    }),
+
+  resetStats: (id: string) =>
+    request<{ success: boolean; message: string }>(`/api/databases/${id}/reset-stats`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  createReadonlyUser: (id: string) =>
+    request<{ success: boolean; username: string; password: string; readonlyUrl: string }>(
+      `/api/databases/${id}/readonly-user`,
+      { method: "POST", body: JSON.stringify({}) }
+    ),
+
+  updateSecurity: (
+    id: string,
+    data: { ipWhitelist?: string[]; sslEnabled?: boolean; enablePooler?: boolean }
+  ) =>
+    request<{ success: boolean; database: ManagedDatabase }>(`/api/databases/${id}/security`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+};
+
+

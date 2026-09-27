@@ -13,4 +13,7 @@ export type {
   ServiceDeployment,
   ServiceEnvVariable,
   BackendLanguage,
+  DatabaseService,
+  DatabaseType,
+  DatabaseStatus,
 } from "@prisma/client";

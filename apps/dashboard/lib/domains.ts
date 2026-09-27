@@ -4,11 +4,20 @@
  * or localhost:8080 when running in local development.
  */
 
-export const BASE_ROUTER_DOMAIN =
-  process.env.NEXT_PUBLIC_BASE_DOMAIN || "20.2.136.11.nip.io";
+export function getBaseRouterDomain(): string {
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) {
+    return process.env.NEXT_PUBLIC_BASE_DOMAIN || "localhost:8080";
+  }
+  return process.env.NEXT_PUBLIC_BASE_DOMAIN || "20.2.136.11.nip.io";
+}
+
+export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
 
 export function getServiceIngressUrl(slug: string): string {
-  const domain = BASE_ROUTER_DOMAIN;
+  const domain = getBaseRouterDomain();
   if (domain.startsWith("localhost")) {
     return `http://${slug}.${domain.includes(":") ? domain : `${domain}:8080`}`;
   }

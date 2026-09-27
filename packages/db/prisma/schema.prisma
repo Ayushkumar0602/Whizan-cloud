@@ -27,6 +27,7 @@ model User {
 
   projects         Project[]
   backendServices  BackendService[]
+  databaseServices DatabaseService[]
   refreshTokens RefreshToken[]
 
   @@map("users")
@@ -255,4 +256,56 @@ model ServiceEnvVariable {
 
   @@unique([serviceId, key])
   @@map("service_env_variables")
+}
+
+// ─────────────────────────────────────────
+//  MANAGED DATABASE SERVICES
+// ─────────────────────────────────────────
+model DatabaseService {
+  id           String         @id @default(uuid())
+  userId       String         @map("user_id")
+  name         String
+  slug         String         @unique // unique DNS hostname in internal Docker network (e.g. "my-postgres")
+  type         DatabaseType   @default(POSTGRESQL)
+  version      String         @default("16")
+  status       DatabaseStatus @default(PROVISIONING)
+  databaseName String         @default("whizan_db") @map("database_name")
+  username     String         @default("whizan_user")
+  password     String         // AES-256-GCM encrypted
+  internalPort Int            @default(5432) @map("internal_port")
+  externalPort Int?           @map("external_port") // Host port for external access (e.g. 15432)
+  volumePath   String         @map("volume_path")   // Host disk path for persistent data
+  instanceType String         @default("starter") @map("instance_type") // starter, standard, pro
+  cpuLimit     Float          @default(0.5) @map("cpu_limit")           // vCPUs (e.g. 0.5, 1.0, 2.0)
+  memoryLimit  Int            @default(512) @map("memory_limit")        // RAM in MB (e.g. 512, 1024, 2048)
+  poolerPort   Int?           @map("pooler_port")                       // External host port for PgBouncer pooler (e.g. 16543)
+  enablePooler Boolean        @default(true) @map("enable_pooler")
+  ipWhitelist  String[]       @default([]) @map("ip_whitelist")          // Allowed CIDR / IP addresses
+  sslEnabled   Boolean        @default(true) @map("ssl_enabled")
+  readonlyPassword String?    @map("readonly_password")                 // AES-256-GCM encrypted for read-only user
+  errorMessage String?        @map("error_message")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("database_services")
+}
+
+enum DatabaseType {
+  POSTGRESQL
+  REDIS
+  MYSQL
+
+  @@map("database_type")
+}
+
+enum DatabaseStatus {
+  PROVISIONING
+  RUNNING
+  STOPPED
+  RESTARTING
+  FAILED
+
+  @@map("database_status")
 }

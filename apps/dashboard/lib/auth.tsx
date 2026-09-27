@@ -8,7 +8,7 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { auth, setAccessToken, API_BASE, type User } from "./api";
+import { auth, setAccessToken, getApiBase, type User } from "./api";
 
 type AuthState = {
   user: User | null;
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+        const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
           method: "POST",
           credentials: "include",
         });
