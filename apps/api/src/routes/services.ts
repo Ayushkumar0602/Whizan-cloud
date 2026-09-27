@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { Queue } from "bullmq";
+import { Redis } from "ioredis";
+import { randomUUID } from "crypto";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
@@ -440,46 +442,71 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const Docker = (await import("dockerode")).default;
-    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
-
-    const shortId = activeDeployment.id.slice(0, 8);
-    const target = allContainers.find(
-      (c) =>
-        (c.Names?.some((n) => n === `/service-${service.slug}-${shortId}` || n === `/service-${service.slug}`) ||
-          (c.Labels?.["serviceId"] === service.id && c.Labels?.["deploymentId"] === activeDeployment.id))
-    );
-
-    if (!target || target.State !== "running") {
-      return reply.send({
-        container: target?.Names?.[0]?.replace(/^\//, "") || null,
-        status: "sleeping",
-        current: history.length > 0 ? history[history.length - 1] : null,
-        history,
-      });
+    // 1. Check Redis for active container status pushed by VM worker
+    const rawStatus = await redisClient.get(`service:status:${id}`).catch(() => null);
+    if (rawStatus) {
+      try {
+        const statusData = JSON.parse(rawStatus);
+        if (statusData.status === "running") {
+          return reply.send({
+            container: statusData.container || `service-${service.slug}`,
+            status: "running",
+            current: history.length > 0 ? history[history.length - 1] : null,
+            history,
+          });
+        }
+      } catch {}
     }
 
+    // 2. If recent metric exists in history (< 60s old), the VM worker is actively reporting it
+    if (history.length > 0) {
+      const latest = history[history.length - 1];
+      const ageMs = Date.now() - new Date(latest.timestamp).getTime();
+      if (ageMs < 60_000) {
+        return reply.send({
+          container: `service-${service.slug}`,
+          status: "running",
+          current: latest,
+          history,
+        });
+      }
+    }
+
+    // 3. Fallback to local Docker (if running locally)
     try {
-      const container = docker.getContainer(target.Id);
-      const stats = await container.stats({ stream: false });
-      const { metric } = parseDockerStats(stats);
-      const containerName = target.Names?.[0]?.replace(/^\//, "") || `service-${service.slug}-${shortId}`;
+      const Docker = (await import("dockerode")).default;
+      const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+      const allContainers = await docker.listContainers({ all: true }).catch(() => []);
 
-      return reply.send({
-        container: containerName,
-        status: "running",
-        current: metric,
-        history: history.length > 0 ? history : [metric],
-      });
-    } catch {
-      return reply.send({
-        container: target.Names?.[0]?.replace(/^\//, "") || null,
-        status: "sleeping",
-        current: history.length > 0 ? history[history.length - 1] : null,
-        history,
-      });
-    }
+      const shortId = activeDeployment.id.slice(0, 8);
+      const target = allContainers.find(
+        (c) =>
+          (c.Names?.some((n) => n === `/service-${service.slug}-${shortId}` || n === `/service-${service.slug}`) ||
+            (c.Labels?.["serviceId"] === service.id && c.Labels?.["deploymentId"] === activeDeployment.id))
+      );
+
+      if (target && target.State === "running") {
+        const container = docker.getContainer(target.Id);
+        const stats = await container.stats({ stream: false });
+        const { metric } = parseDockerStats(stats);
+        const containerName = target.Names?.[0]?.replace(/^\//, "") || `service-${service.slug}-${shortId}`;
+
+        return reply.send({
+          container: containerName,
+          status: "running",
+          current: metric,
+          history: history.length > 0 ? history : [metric],
+        });
+      }
+    } catch {}
+
+    // 4. If neither reports running, mark as sleeping
+    return reply.send({
+      container: null,
+      status: "sleeping",
+      current: history.length > 0 ? history[history.length - 1] : null,
+      history,
+    });
   });
 
   // GET /api/services/:id/metrics/stream — Real-Time Resource Metrics SSE (1.5s interval)
@@ -529,87 +556,57 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       .filter(Boolean)
       .reverse();
 
-    const Docker = (await import("dockerode")).default;
-    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+    const sub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+    sub.on("error", () => {});
 
-    let prevSnapshot: any = null;
     let isClosed = false;
 
     // Send initial snapshot event
     sendEvent({
       type: "init",
       history,
+      current: history.length > 0 ? history[history.length - 1] : null,
       slug: service.slug,
     });
 
-    const pollStats = async () => {
-      if (isClosed) return;
+    // Subscribe to live metrics ticks from VM worker
+    await sub.subscribe(`metrics:tick:${id}`).catch(() => {});
 
-      const activeDeployment = await prisma.serviceDeployment.findFirst({
-        where: { serviceId: id, status: "READY" },
-        orderBy: { createdAt: "desc" },
-      });
-
-      if (!activeDeployment) {
-        sendEvent({ type: "status", status: "stopped", message: "No active deployment" });
-        return;
+    let lastTickAt = Date.now();
+    sub.on("message", (channel, message) => {
+      if (channel === `metrics:tick:${id}` && !isClosed) {
+        try {
+          const payload = JSON.parse(message);
+          lastTickAt = Date.now();
+          sendEvent({
+            type: "tick",
+            status: payload.status || "running",
+            container: payload.container,
+            metric: payload.metric,
+          });
+        } catch {}
       }
+    });
 
-      const shortId = activeDeployment.id.slice(0, 8);
-      const allContainers = await docker.listContainers({ all: true }).catch(() => []);
-      const target = allContainers.find(
-        (c) =>
-          c.State === "running" &&
-          (c.Names?.some((n) => n === `/service-${service.slug}-${shortId}` || n === `/service-${service.slug}`) ||
-            (c.Labels?.["serviceId"] === service.id && c.Labels?.["deploymentId"] === activeDeployment.id))
-      );
-
-      if (!target) {
+    // Periodic check to detect sleep/inactive state
+    const interval = setInterval(async () => {
+      if (isClosed) return;
+      const rawStatus = await redisClient.get(`service:status:${id}`).catch(() => null);
+      if (!rawStatus && Date.now() - lastTickAt > 15_000) {
         sendEvent({
           type: "status",
           status: "sleeping",
           message: "Service container is sleeping. Send a web request to wake it up."
         });
-        return;
       }
-
-      try {
-        const container = docker.getContainer(target.Id);
-        const stats = await container.stats({ stream: false });
-        const { metric, snapshot } = parseDockerStats(stats, prevSnapshot);
-        prevSnapshot = snapshot;
-
-        const containerName = target.Names?.[0]?.replace(/^\//, "") || `service-${service.slug}-${shortId}`;
-
-        // Save tick to Redis list
-        await redisClient.lpush(`metrics:service:${id}`, JSON.stringify(metric)).catch(() => {});
-        await redisClient.ltrim(`metrics:service:${id}`, 0, 59).catch(() => {});
-        await redisClient.expire(`metrics:service:${id}`, 3600).catch(() => {});
-
-        sendEvent({
-          type: "tick",
-          status: "running",
-          container: containerName,
-          metric,
-        });
-      } catch (err: any) {
-        sendEvent({
-          type: "status",
-          status: "error",
-          message: err.message || "Failed to inspect container stats"
-        });
-      }
-    };
-
-    // Immediate first poll
-    await pollStats();
-
-    // 1.5s interval
-    const interval = setInterval(pollStats, 1500);
+    }, 5000);
 
     request.raw.on("close", () => {
       isClosed = true;
       clearInterval(interval);
+      sub.unsubscribe().catch(() => {});
+      sub.quit().catch(() => {});
     });
   });
 
@@ -664,169 +661,276 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       return;
     }
 
-    const Docker = (await import("dockerode")).default;
-    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+    const cols = Math.max(20, Math.min(300, Number((request.query as any)?.cols) || 100));
+    const rows = Math.max(5, Math.min(100, Number((request.query as any)?.rows) || 24));
 
-    const shortId = activeDeployment.id.slice(0, 8);
-    const target = allContainers.find((c) =>
-      c.State === "running" &&
-      (
-        c.Names?.some((n) => n === `/service-${service.slug}-${shortId}` || n === `/service-${service.slug}`) ||
-        (c.Labels?.["serviceId"] === service.id && c.Labels?.["deploymentId"] === activeDeployment.id)
-      )
+    // Check if local Docker has the container (e.g. during local development)
+    let localTarget: any = null;
+    let localDocker: any = null;
+    try {
+      const Docker = (await import("dockerode")).default;
+      localDocker = new Docker({ socketPath: "/var/run/docker.sock" });
+      const allContainers = await localDocker.listContainers({ all: true }).catch(() => []);
+      const shortId = activeDeployment.id.slice(0, 8);
+      localTarget = allContainers.find((c: any) =>
+        c.State === "running" &&
+        (
+          c.Names?.some((n: string) => n === `/service-${service.slug}-${shortId}` || n === `/service-${service.slug}`) ||
+          (c.Labels?.["serviceId"] === service.id && c.Labels?.["deploymentId"] === activeDeployment.id)
+        )
+      );
+    } catch {}
+
+    if (localTarget && localDocker) {
+      // 4a. Local Docker Exec Session
+      try {
+        const container = localDocker.getContainer(localTarget.Id);
+        const shortId = activeDeployment.id.slice(0, 8);
+        const containerName = localTarget.Names?.[0]?.replace(/^\//, "") || `service-${service.slug}-${shortId}`;
+        const cleanRoot = (service.rootDir || ".").replace(/^\/+|\/+$/g, "");
+        const workingDir = cleanRoot && cleanRoot !== "." ? `/app/${cleanRoot}` : "/app";
+
+        const exec = await container.exec({
+          AttachStdin: true,
+          AttachStdout: true,
+          AttachStderr: true,
+          Tty: true,
+          ConsoleSize: [rows, cols],
+          Cmd: ["sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash; elif [ -x /bin/sh ]; then exec /bin/sh; else exec sh; fi"],
+          WorkingDir: workingDir,
+          Env: ["TERM=xterm-256color", "COLORTERM=truecolor"],
+        });
+
+        const stream = await exec.start({
+          hijack: true,
+          stdin: true,
+          Tty: true,
+        });
+
+        socket.send(JSON.stringify({
+          type: "connected",
+          container: containerName,
+          workingDir,
+          slug: service.slug,
+        }));
+
+        stream.on("data", (chunk: Buffer) => {
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({ type: "output", data: chunk.toString("utf8") }));
+          }
+        });
+
+        let lineBuffer = "";
+
+        socket.on("message", async (raw: any) => {
+          try {
+            const msg = JSON.parse(raw.toString());
+            if (msg.type === "input" && typeof msg.data === "string") {
+              const data: string = msg.data;
+              if (data.includes("\r") || data.includes("\n")) {
+                const fullCommand = (lineBuffer + data.replace(/[\r\n]/g, "")).trim();
+                lineBuffer = "";
+                if (fullCommand) {
+                  const securityCheck = evaluateCommandSecurity(fullCommand);
+                  if (!securityCheck.allowed && securityCheck.rule) {
+                    stream.write("\x03");
+                    const alertBanner =
+                      `\r\n\x1b[1;31m🚨 [SECURITY POLICY] Action Blocked: ${securityCheck.rule.name}\x1b[0m\r\n` +
+                      `\x1b[33mReason: ${securityCheck.rule.reason}\x1b[0m\r\n` +
+                      `\x1b[90mCommand attempted: ${fullCommand}\x1b[0m\r\n\r\n`;
+                    if (socket.readyState === 1) {
+                      socket.send(JSON.stringify({ type: "output", data: alertBanner }));
+                    }
+                    return;
+                  }
+                }
+                stream.write(data);
+                return;
+              }
+              if (data === "\x7f" || data === "\x08") {
+                lineBuffer = lineBuffer.slice(0, -1);
+                stream.write(data);
+                return;
+              }
+              if (data === "\x03" || data === "\x15") {
+                lineBuffer = "";
+                stream.write(data);
+                return;
+              }
+              if (!data.startsWith("\x1b")) lineBuffer += data;
+              stream.write(data);
+            } else if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
+              await exec.resize({ w: msg.cols, h: msg.rows }).catch(() => {});
+            }
+          } catch {
+            stream.write(raw.toString());
+          }
+        });
+
+        const cleanup = () => {
+          try { stream.destroy(); } catch {}
+        };
+        stream.on("end", () => {
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({ type: "exit", message: "Process exited." }));
+            socket.close(1000, "Process exited");
+          }
+        });
+        socket.on("close", cleanup);
+        socket.on("error", cleanup);
+        return;
+      } catch (execErr: any) {
+        // Fall back to remote bridge
+      }
+    }
+
+    // 4b. Remote Exec Bridge to Azure VM Worker via Redis Pub/Sub
+    const sessionId = `exec_${randomUUID()}`;
+    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+    const sessionSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+    sessionSub.on("error", () => {});
+
+    let isSessionActive = true;
+    let lineBuffer = "";
+
+    const cleanupBridge = async () => {
+      if (!isSessionActive) return;
+      isSessionActive = false;
+      await redisClient.publish(`exec:close:${sessionId}`, "1").catch(() => {});
+      try {
+        await sessionSub.unsubscribe();
+        await sessionSub.quit();
+      } catch {}
+    };
+
+    await sessionSub.subscribe(
+      `exec:ready:${sessionId}`,
+      `exec:out:${sessionId}`,
+      `exec:error:${sessionId}`,
+      `exec:exit:${sessionId}`
     );
 
-    if (!target) {
-      socket.send(JSON.stringify({
-        type: "error",
-        message: `Container for service "${service.slug}" is not currently running. If it is sleeping, wake it up first.`
-      }));
-      socket.close(4004, "Container not running");
-      return;
-    }
+    const timeoutTimer = setTimeout(() => {
+      if (isSessionActive) {
+        socket.send(JSON.stringify({
+          type: "error",
+          message: `Connection timeout: Build worker did not respond. If the container is sleeping, wake it up first.`
+        }));
+        socket.close(4004, "Worker timeout");
+        cleanupBridge();
+      }
+    }, 12_000);
 
-    // 4. Create isolated interactive exec session in container
-    try {
-      const container = docker.getContainer(target.Id);
-      const containerName = target.Names?.[0]?.replace(/^\//, "") || `service-${service.slug}-${shortId}`;
-      const cleanRoot = (service.rootDir || ".").replace(/^\/+|\/+$/g, "");
-      const workingDir = cleanRoot && cleanRoot !== "." ? `/app/${cleanRoot}` : "/app";
+    sessionSub.on("message", (subChan, subMsg) => {
+      if (!isSessionActive) return;
 
-      const cols = Math.max(20, Math.min(300, Number((request.query as any)?.cols) || 100));
-      const rows = Math.max(5, Math.min(100, Number((request.query as any)?.rows) || 24));
-
-      // Universal shell command: try /bin/bash, fallback to /bin/sh or sh
-      const exec = await container.exec({
-        AttachStdin: true,
-        AttachStdout: true,
-        AttachStderr: true,
-        Tty: true,
-        ConsoleSize: [rows, cols],
-        Cmd: ["sh", "-c", "if [ -x /bin/bash ]; then exec /bin/bash; elif [ -x /bin/sh ]; then exec /bin/sh; else exec sh; fi"],
-        WorkingDir: workingDir,
-        Env: [
-          "TERM=xterm-256color",
-          "COLORTERM=truecolor",
-        ],
-      });
-
-      const stream = await exec.start({
-        hijack: true,
-        stdin: true,
-        Tty: true,
-      });
-
-      // Send initial connection banner to terminal
-      socket.send(JSON.stringify({
-        type: "connected",
-        container: containerName,
-        workingDir,
-        slug: service.slug,
-      }));
-
-      // Pipe Docker output -> WebSocket client
-      stream.on("data", (chunk: Buffer) => {
-        if (socket.readyState === 1) { // 1 = OPEN
-          socket.send(JSON.stringify({ type: "output", data: chunk.toString("utf8") }));
-        }
-      });
-
-      let lineBuffer = "";
-
-      // Handle WebSocket messages -> Docker input & window resize
-      socket.on("message", async (raw: any) => {
+      if (subChan === `exec:ready:${sessionId}`) {
+        clearTimeout(timeoutTimer);
         try {
-          const msg = JSON.parse(raw.toString());
-          if (msg.type === "input" && typeof msg.data === "string") {
-            const data: string = msg.data;
-
-            // When Enter key is pressed (\r or \n), validate the submitted command line
-            if (data.includes("\r") || data.includes("\n")) {
-              const fullCommand = (lineBuffer + data.replace(/[\r\n]/g, "")).trim();
-              lineBuffer = ""; // Reset buffer for next command
-
-              if (fullCommand) {
-                const securityCheck = evaluateCommandSecurity(fullCommand);
-                if (!securityCheck.allowed && securityCheck.rule) {
-                  // 1. Cancel the line in Docker shell (send Ctrl+C so command never executes)
-                  stream.write("\x03");
-
-                  // 2. High-visibility security policy warning directly in user terminal
-                  const alertBanner =
-                    `\r\n\x1b[1;31m🚨 [SECURITY POLICY] Action Blocked: ${securityCheck.rule.name}\x1b[0m\r\n` +
-                    `\x1b[33mReason: ${securityCheck.rule.reason}\x1b[0m\r\n` +
-                    `\x1b[90mCommand attempted: ${fullCommand}\x1b[0m\r\n\r\n`;
-
-                  if (socket.readyState === 1) {
-                    socket.send(JSON.stringify({ type: "output", data: alertBanner }));
-                  }
-
-                  // 3. Log security alert on server for auditing
-                  fastify.log.warn(
-                    `[Security Guardrail] Blocked restricted command on service "${service.slug}" (User: ${userId}): "${fullCommand}" [Rule: ${securityCheck.rule.id}]`
-                  );
-                  return;
-                }
-              }
-
-              // Command is authorized -> send Enter to Docker
-              stream.write(data);
-              return;
-            }
-
-            // Handle backspace (\x7f or \x08)
-            if (data === "\x7f" || data === "\x08") {
-              lineBuffer = lineBuffer.slice(0, -1);
-              stream.write(data);
-              return;
-            }
-
-            // Handle line cancels / interrupts (Ctrl+C, Ctrl+U)
-            if (data === "\x03" || data === "\x15") {
-              lineBuffer = "";
-              stream.write(data);
-              return;
-            }
-
-            // Accumulate printable characters (ignoring ANSI escape sequences like arrow keys)
-            if (!data.startsWith("\x1b")) {
-              lineBuffer += data;
-            }
-
-            stream.write(data);
-          } else if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
-            await exec.resize({ w: msg.cols, h: msg.rows }).catch(() => {});
-          }
-        } catch {
-          stream.write(raw.toString());
-        }
-      });
-
-      const cleanup = () => {
-        try {
-          stream.destroy();
+          const data = JSON.parse(subMsg);
+          socket.send(JSON.stringify({
+            type: "connected",
+            container: data.container,
+            workingDir: data.workingDir,
+            slug: service.slug,
+          }));
         } catch {}
-      };
-
-      stream.on("end", () => {
+      } else if (subChan === `exec:out:${sessionId}`) {
+        try {
+          const text = Buffer.from(subMsg, "base64").toString("utf8");
+          if (socket.readyState === 1) {
+            socket.send(JSON.stringify({ type: "output", data: text }));
+          }
+        } catch {}
+      } else if (subChan === `exec:exit:${sessionId}`) {
+        clearTimeout(timeoutTimer);
         if (socket.readyState === 1) {
-          socket.send(JSON.stringify({ type: "exit", message: "Process exited." }));
+          socket.send(JSON.stringify({ type: "exit" }));
           socket.close(1000, "Process exited");
         }
-      });
+        cleanupBridge();
+      } else if (subChan === `exec:error:${sessionId}`) {
+        clearTimeout(timeoutTimer);
+        try {
+          const errData = JSON.parse(subMsg);
+          socket.send(JSON.stringify({
+            type: "error",
+            message: errData.error || "Failed to start exec session on VM",
+          }));
+        } catch {
+          socket.send(JSON.stringify({ type: "error", message: subMsg }));
+        }
+        socket.close(4004, "Exec error");
+        cleanupBridge();
+      }
+    });
 
-      socket.on("close", cleanup);
-      socket.on("error", cleanup);
+    socket.on("message", async (raw: any) => {
+      if (!isSessionActive) return;
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.type === "input" && typeof msg.data === "string") {
+          const data: string = msg.data;
 
-    } catch (execErr: any) {
-      console.error(`[Web Shell] Failed to exec into container for ${service.slug}:`, execErr);
-      socket.send(JSON.stringify({
-        type: "error",
-        message: `Failed to open shell in container: ${execErr.message}`
-      }));
-      socket.close(4500, "Exec failed");
-    }
+          if (data.includes("\r") || data.includes("\n")) {
+            const fullCommand = (lineBuffer + data.replace(/[\r\n]/g, "")).trim();
+            lineBuffer = "";
+
+            if (fullCommand) {
+              const securityCheck = evaluateCommandSecurity(fullCommand);
+              if (!securityCheck.allowed && securityCheck.rule) {
+                await redisClient.publish(`exec:in:${sessionId}`, Buffer.from("\x03").toString("base64")).catch(() => {});
+
+                const alertBanner =
+                  `\r\n\x1b[1;31m🚨 [SECURITY POLICY] Action Blocked: ${securityCheck.rule.name}\x1b[0m\r\n` +
+                  `\x1b[33mReason: ${securityCheck.rule.reason}\x1b[0m\r\n` +
+                  `\x1b[90mCommand attempted: ${fullCommand}\x1b[0m\r\n\r\n`;
+
+                if (socket.readyState === 1) {
+                  socket.send(JSON.stringify({ type: "output", data: alertBanner }));
+                }
+                fastify.log.warn(`[Security Guardrail] Blocked restricted command on service "${service.slug}": "${fullCommand}"`);
+                return;
+              }
+            }
+          } else if (data === "\x7f" || data === "\x08") {
+            lineBuffer = lineBuffer.slice(0, -1);
+          } else if (data === "\x03" || data === "\x15") {
+            lineBuffer = "";
+          } else if (!data.startsWith("\x1b")) {
+            lineBuffer += data;
+            if (lineBuffer.length > 2048) lineBuffer = lineBuffer.slice(-2048);
+          }
+
+          await redisClient.publish(`exec:in:${sessionId}`, Buffer.from(data).toString("base64")).catch(() => {});
+        } else if (msg.type === "resize" && typeof msg.cols === "number" && typeof msg.rows === "number") {
+          const rCols = Math.max(20, Math.min(300, msg.cols));
+          const rRows = Math.max(5, Math.min(100, msg.rows));
+          await redisClient.publish(`exec:resize:${sessionId}`, JSON.stringify({ cols: rCols, rows: rRows })).catch(() => {});
+        }
+      } catch {}
+    });
+
+    socket.on("close", () => {
+      clearTimeout(timeoutTimer);
+      cleanupBridge();
+    });
+
+    socket.on("error", () => {
+      clearTimeout(timeoutTimer);
+      cleanupBridge();
+    });
+
+    // Send open session request to Azure VM Worker
+    await redisClient.publish("exec:open", JSON.stringify({
+      sessionId,
+      serviceId: service.id,
+      deploymentId: activeDeployment.id,
+      slug: service.slug,
+      rootDir: service.rootDir,
+      cols,
+      rows,
+    }));
   });
 
   // ─── Private Service Mesh & Service Discovery ─────────────────────────────
