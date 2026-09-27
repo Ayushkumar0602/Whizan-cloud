@@ -40,6 +40,22 @@ export class AppRunner {
       ? ["node", ".next/standalone/server.js"]
       : ["npm", "run", "start"];
 
+    // Ensure internal service mesh network exists
+    try {
+      const net = docker.getNetwork("whizan-internal-network");
+      await net.inspect();
+    } catch (netErr: any) {
+      if (netErr?.statusCode === 404 || netErr?.message?.includes("not found")) {
+        try {
+          await docker.createNetwork({
+            Name: "whizan-internal-network",
+            Driver: "bridge",
+            CheckDuplicate: true,
+          });
+        } catch {}
+      }
+    }
+
     const container = await docker.createContainer({
       Image: SSR_IMAGE,
       Cmd: cmd,

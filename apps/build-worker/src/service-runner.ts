@@ -133,6 +133,23 @@ export class ServiceRunner {
     // We attach it to a global network so frontends can reach it
     const networkName = "whizan-internal-network";
 
+    // Auto-create the Docker network if it doesn't exist
+    try {
+      const net = docker.getNetwork(networkName);
+      await net.inspect();
+    } catch (netErr: any) {
+      if (netErr?.statusCode === 404 || netErr?.message?.includes("not found")) {
+        try {
+          await docker.createNetwork({
+            Name: networkName,
+            Driver: "bridge",
+            CheckDuplicate: true,
+          });
+          await onLog(`🌐 Created internal mesh network (${networkName})`);
+        } catch {}
+      }
+    }
+
     // Clean up any stale container with the same name if it somehow exists from a previous run
     try {
       const existing = docker.getContainer(containerName);
