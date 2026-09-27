@@ -90,7 +90,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     let cpuLimit = body.data.cpuLimit;
     let memoryLimit = body.data.memoryLimit;
 
-    // Render-style enforcement:
+    // Free Tier enforcement:
     // If autoSleep (spin-down) is enabled, it strictly locks to 0.1 vCPU and 512MB RAM
     if (body.data.autoSleep) {
       instanceType = "free";

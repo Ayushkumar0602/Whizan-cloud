@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export default function DeploymentPage() {
   const { id, dId } = useParams<{ id: string; dId: string }>();

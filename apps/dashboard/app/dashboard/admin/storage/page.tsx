@@ -78,9 +78,30 @@ export default function StoragePage() {
                       <span
                         className="badge"
                         style={{
-                          background: file.type === "frontend-build" ? "rgba(56, 189, 248, 0.1)" : "rgba(16, 185, 129, 0.1)",
-                          color: file.type === "frontend-build" ? "#38bdf8" : "#10b981",
-                          borderColor: file.type === "frontend-build" ? "rgba(56, 189, 248, 0.25)" : "rgba(16, 185, 129, 0.25)",
+                          background:
+                            file.type === "frontend-build"
+                              ? "rgba(56, 189, 248, 0.1)"
+                              : file.type === "backend-service"
+                              ? "rgba(16, 185, 129, 0.1)"
+                              : file.type === "system-log"
+                              ? "rgba(245, 158, 11, 0.1)"
+                              : "rgba(168, 85, 247, 0.1)",
+                          color:
+                            file.type === "frontend-build"
+                              ? "#38bdf8"
+                              : file.type === "backend-service"
+                              ? "#10b981"
+                              : file.type === "system-log"
+                              ? "#f59e0b"
+                              : "#c084fc",
+                          borderColor:
+                            file.type === "frontend-build"
+                              ? "rgba(56, 189, 248, 0.25)"
+                              : file.type === "backend-service"
+                              ? "rgba(16, 185, 129, 0.25)"
+                              : file.type === "system-log"
+                              ? "rgba(245, 158, 11, 0.25)"
+                              : "rgba(168, 85, 247, 0.25)",
                         }}
                       >
                         {file.type}

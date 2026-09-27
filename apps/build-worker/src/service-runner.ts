@@ -101,7 +101,7 @@ export class ServiceRunner {
     const containerName = `service-${job.slug}-${shortId}`;
 
     // Compute runtime resource allocation:
-    // When spin-down (autoSleep) is enabled -> Render-style Free Tier: 0.1 vCPU and 512MB RAM
+    // When spin-down (autoSleep) is enabled -> Free Tier: 0.1 vCPU and 512MB RAM
     // When spin-down is disabled -> Dedicated Tier with user-selected cpuLimit and memoryLimit
     const isSpinDown = Boolean(job.autoSleep);
     const runtimeCpuQuota = isSpinDown ? 0.1 : (job.cpuLimit || 0.5);
@@ -110,7 +110,7 @@ export class ServiceRunner {
     const runtimeNanoCpus = Math.round(runtimeCpuQuota * 1_000_000_000); // 0.1 vCPU = 100,000,000 NanoCPUs
     const runtimeMemoryBytes = runtimeMemoryQuotaMB * 1024 * 1024;
 
-    // Fast Burstable Deployment Resources (Render-style build bursting):
+    // Fast Burstable Deployment Resources (Build bursting):
     // Allocate 1.0 vCPU and 768MB RAM during dependency installation and startup
     // so builds and package unpacking complete in seconds without overwhelming a 2 vCPU / 4 GB VM.
     const burstNanoCpus = Math.round(DEPLOY_BURST_CPU * 1_000_000_000);
@@ -120,7 +120,7 @@ export class ServiceRunner {
 
     await onLog(
       isSpinDown
-        ? `⚡ Target Runtime Plan: Free Tier (Spin Down enabled) — 0.1 vCPU & 512MB RAM limit (Render-style)`
+        ? `⚡ Target Runtime Plan: Free Tier (Spin Down enabled) — 0.1 vCPU & 512MB RAM limit`
         : `⚡ Target Runtime Plan: Dedicated Tier (Always-On) — ${runtimeCpuQuota} vCPU & ${runtimeMemoryQuotaMB}MB RAM limit`
     );
 

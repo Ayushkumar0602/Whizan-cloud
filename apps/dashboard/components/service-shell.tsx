@@ -5,7 +5,7 @@ import { getAccessToken } from "@/lib/api";
 import { Terminal as TerminalIcon, Loader2, RefreshCw, Trash2, ShieldCheck, AlertCircle, Play, CornerDownLeft, Sparkles } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: string }) {
   const containerRef = useRef<HTMLDivElement>(null);

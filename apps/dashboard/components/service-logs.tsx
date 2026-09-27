@@ -4,7 +4,7 @@ import { services, getAccessToken } from "@/lib/api";
 import { Terminal, Loader2, Globe, RefreshCw, Pause, Play } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export function ServiceLogs({ dId, serviceId }: { dId: string, serviceId: string }) {
   const [logs, setLogs] = useState<string[]>([]);

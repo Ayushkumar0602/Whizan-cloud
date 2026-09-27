@@ -300,7 +300,7 @@ export default function NewServicePage() {
             <div className="step-num-box">4</div>
             <div>
               <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Resource Allocation & Compute Plan</h2>
-              <p className="card-sub">Choose Render-style scale-to-zero free tier or dedicated capacity</p>
+              <p className="card-sub">Choose scale-to-zero free tier or dedicated capacity</p>
             </div>
           </div>
 

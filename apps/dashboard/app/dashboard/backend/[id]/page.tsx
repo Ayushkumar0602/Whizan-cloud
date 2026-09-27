@@ -297,7 +297,7 @@ export default function BackendServicePage() {
                     </div>
                     <p className="mode-switch-desc">
                       {service.autoSleep
-                        ? <><strong>Render-style:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
+                        ? <><strong>Auto-Sleep:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
                         : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
                     </p>
                   </div>

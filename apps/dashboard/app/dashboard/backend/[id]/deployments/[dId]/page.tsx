@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { getServiceIngressUrl } from "@/lib/domains";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export default function BackendDeploymentLogsPage() {
   const { id, dId } = useParams<{ id: string; dId: string }>();

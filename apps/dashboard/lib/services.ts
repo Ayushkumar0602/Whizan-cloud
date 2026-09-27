@@ -15,7 +15,7 @@ export const CLOUD_SERVICES: CloudService[] = [
     name: "Backend Container Services",
     tagline: "Isolated Docker Runtimes with Auto-Sleep",
     description:
-      "Deploy Node.js, Python, and Go microservices with Render-style 0.1 vCPU scale-to-zero free tier and internal service mesh discovery.",
+      "Deploy Node.js, Python, and Go microservices with Cloud Native 0.1 vCPU scale-to-zero free tier and internal service mesh discovery.",
     href: "/dashboard/backend",
     available: true,
   },
@@ -66,7 +66,7 @@ export const DEPLOY_GUIDE = [
   {
     n: "02",
     title: "Configure Compute & Mesh",
-    body: "Choose between Render-style scale-to-zero (0.1 vCPU Free Tier) or dedicated multi-core capacity.",
+    body: "Choose between dynamic scale-to-zero (0.1 vCPU Free Tier) or dedicated multi-core capacity.",
   },
   {
     n: "03",
