@@ -213,6 +213,7 @@ const worker = new Worker<BuildJob>(
           deploymentType: analysis.type.toUpperCase() as "STATIC" | "SSR" | "HYBRID",
           url,
           containerPort,
+          errorMessage: null,
         },
       });
 
