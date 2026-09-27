@@ -11,6 +11,9 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 
+// ─── Import the Backend Services Worker so it runs concurrently ──────────────
+import "./service-worker.js";
+
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
@@ -251,7 +254,14 @@ worker.on("failed", (job, err) => {
 redisSub.subscribe("wakeup", "admin:commands").catch(() => {});
 redisSub.on("message", async (channel, message) => {
   if (channel === "wakeup") {
-    const dId = message;
+    let dId = message;
+    try {
+      const parsed = JSON.parse(message);
+      if (parsed.type === "service" || parsed.type === "SERVICE") return; // Handled by service-worker.ts
+      dId = parsed.deploymentId || message;
+    } catch {
+      // Raw string ID
+    }
     const d = await prisma.deployment.findUnique({
       where: { id: dId },
       include: { project: true }
@@ -326,7 +336,7 @@ redisSub.on("message", async (channel, message) => {
 
       if (payload.action === "DELETE_FILE") {
         const targetPath = payload.path;
-        if (targetPath.startsWith("/opt/whizan-builds/") || targetPath.startsWith("/var/log/whizan/")) {
+        if (targetPath.startsWith("/opt/whizan-builds/") || targetPath.startsWith("/tmp/hostify-builds/") || targetPath.startsWith("/var/log/whizan/")) {
           console.log(`[Admin] Deleting file/directory: ${targetPath}`);
           await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
         }
@@ -404,6 +414,58 @@ const scalerInterval = setInterval(async () => {
         }).catch(() => {});
       }
     }
+    // Backend Auto-Sleep Scaler
+    const activeBackendDeploys = await prisma.serviceDeployment.findMany({
+      where: { status: "READY", service: { autoSleep: true } },
+      include: { service: true }
+    });
+
+    for (const d of activeBackendDeploys) {
+      if (!d.containerPort) continue; // already asleep
+
+      const lastAccessRaw = await redisPub.get(`access:${d.id}`);
+      const lastAccess = lastAccessRaw ? parseInt(lastAccessRaw) : (d.buildFinishedAt?.getTime() ?? d.createdAt.getTime());
+      const idleMs = Date.now() - lastAccess;
+
+      // Spin down if idle for > 15 minutes
+      if (idleMs > 15 * 60 * 1000) {
+        console.log(`[Scaler] Backend Service ${d.service.slug} idle for ${Math.round(idleMs/60000)}m. Stopping container...`);
+        await publishLog(redisPub, d.id, `💤 [Auto-Sleep] Service ${d.service.slug} was idle for ${Math.round(idleMs / 60000)}m. Container stopped to save resources.`);
+        
+        const Docker = (await import("dockerode")).default;
+        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+        
+        const allConts = await docker.listContainers({ all: true }).catch(() => []);
+        const match = allConts.find((c) =>
+          c.Names?.some(
+            (n) =>
+              n === `/service-${d.service.slug}-${d.id.slice(0, 8)}` ||
+              n === `/service-${d.service.slug}` ||
+              (n.startsWith(`/service-${d.service.slug}-`) && c.Labels?.["deploymentId"] === d.id)
+          )
+        );
+        if (match && match.State === "running") {
+          const container = docker.getContainer(match.Id);
+          // Only STOP the container to preserve state for instant wakeups
+          await container.stop({ t: 2 }).catch(() => {});
+        }
+
+        // Remove containerPort from Edge Router to trigger wakeup on next request
+        const routerKey = `deployment:${d.service.slug}`;
+        const raw = await redisPub.get(routerKey);
+        if (raw) {
+          const info = JSON.parse(raw);
+          delete info.containerPort;
+          await redisPub.set(routerKey, JSON.stringify(info));
+        }
+
+        // Remove containerPort from DB so the Dashboard UI knows it is spun down
+        await prisma.serviceDeployment.update({
+          where: { id: d.id },
+          data: { containerPort: null }
+        }).catch(() => {});
+      }
+    }
   } catch (err) {
     console.error("[Scaler] Error:", err);
   }
@@ -432,17 +494,82 @@ const statsInterval = setInterval(async () => {
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
       const containers = await docker.listContainers({ all: true });
-      dockerContainers = containers.map((c) => ({
-        id: c.Id.slice(0, 12),
-        name: c.Names?.[0]?.replace(/^\//, "") ?? "unknown",
-        image: c.Image,
-        state: c.State,
-        status: c.Status,
-        created: c.Created,
-        ports: c.Ports?.map((p: any) => `${p.PublicPort || "?"}:${p.PrivatePort}`).filter(Boolean),
-        deploymentId: c.Mounts?.find((m: any) => m.Source?.includes("whizan-builds"))?.Source?.split("/")?.pop() || null,
+      
+      dockerContainers = await Promise.all(containers.map(async (c) => {
+        let cpuPercent = 0;
+        let memUsageMB = 0;
+        let memLimitMB = 0;
+        let memPercent = 0;
+        
+        if (c.State === "running") {
+          try {
+            const container = docker.getContainer(c.Id);
+            const stats = await container.stats({ stream: false });
+            
+            // Calculate CPU percent
+            const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - (stats.precpu_stats?.cpu_usage?.total_usage || 0);
+            const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats?.system_cpu_usage || 0);
+            const onlineCpus = stats.cpu_stats.online_cpus || stats.cpu_stats.cpu_usage.percpu_usage?.length || 1;
+            if (systemDelta > 0 && cpuDelta > 0) {
+              cpuPercent = (cpuDelta / systemDelta) * onlineCpus * 100.0;
+            }
+            
+            // Calculate Memory
+            memUsageMB = (stats.memory_stats.usage || 0) / 1024 / 1024;
+            memLimitMB = (stats.memory_stats.limit || 0) / 1024 / 1024;
+            if (memLimitMB > 0) {
+              memPercent = (memUsageMB / memLimitMB) * 100.0;
+            }
+
+            let rxBytes = 0;
+            let txBytes = 0;
+            if (stats.networks) {
+              for (const net of Object.values(stats.networks) as any[]) {
+                rxBytes += net.rx_bytes || 0;
+                txBytes += net.tx_bytes || 0;
+              }
+            }
+
+            const serviceId = c.Labels?.["serviceId"];
+            if (serviceId) {
+              const metricPoint = {
+                timestamp: new Date().toISOString(),
+                cpuPercent: Number(cpuPercent.toFixed(2)),
+                memUsageMB: Number(memUsageMB.toFixed(2)),
+                memLimitMB: Number(memLimitMB.toFixed(2)),
+                memPercent: Number(memPercent.toFixed(2)),
+                rxBytes,
+                txBytes,
+                rxRateKbps: 0,
+                txRateKbps: 0,
+                pids: stats.pids_stats?.current || 0,
+                pidsLimit: stats.pids_stats?.limit || 128,
+              };
+              await redisPub.lpush(`metrics:service:${serviceId}`, JSON.stringify(metricPoint)).catch(() => {});
+              await redisPub.ltrim(`metrics:service:${serviceId}`, 0, 59).catch(() => {});
+              await redisPub.expire(`metrics:service:${serviceId}`, 3600).catch(() => {});
+            }
+          } catch (err) {}
+        }
+
+        return {
+          id: c.Id.slice(0, 12),
+          name: c.Names?.[0]?.replace(/^\//, "") ?? "unknown",
+          image: c.Image,
+          state: c.State,
+          status: c.Status,
+          created: c.Created,
+          ports: c.Ports?.map((p: any) => `${p.PublicPort || "?"}:${p.PrivatePort}`).filter(Boolean),
+          deploymentId: c.Mounts?.find((m: any) => m.Source?.includes("hostify-services") || m.Source?.includes("whizan-builds"))?.Source?.split("/")?.pop() || null,
+          cpuPercent: Number(cpuPercent.toFixed(2)),
+          memUsageMB: Number(memUsageMB.toFixed(2)),
+          memLimitMB: Number(memLimitMB.toFixed(2)),
+          memPercent: Number(memPercent.toFixed(2)),
+        };
       }));
-    } catch {}
+    } catch (e) {
+      console.error("[Stats] Failed to fetch docker stats", e);
+    }
 
     // BullMQ queue stats
     let queueStats = { waiting: 0, active: 0, completed: 0, failed: 0 };
@@ -476,16 +603,48 @@ const statsInterval = setInterval(async () => {
       const { exec } = await import("child_process");
       const util = await import("util");
       const execAsync = util.promisify(exec);
-      
-      const { stdout } = await execAsync("du -sm /opt/whizan-builds/* /var/log/whizan/* 2>/dev/null || true");
-      diskFiles = stdout.trim().split("\n").filter(Boolean).map((line) => {
+      const { stdout } = await execAsync("du -sm /tmp/hostify-builds/* /var/log/whizan/* 2>/dev/null || true");
+      const diskFileEntries = stdout.trim().split("\n").filter(Boolean);
+      diskFiles = await Promise.all(diskFileEntries.map(async (line) => {
         const [size, filePath] = line.split(/\s+/);
+        let type = "log";
+        let displayName = filePath;
+        
+        if (filePath.startsWith("/tmp/hostify-builds")) {
+          type = "backend-service";
+          const id = filePath.split("/").pop();
+          if (id) {
+            try {
+              // Try to find if it's a backend service
+              const sDep = await prisma.serviceDeployment.findUnique({
+                where: { id },
+                include: { service: true }
+              });
+              if (sDep?.service) {
+                displayName = `${filePath} (Backend: ${sDep.service.name})`;
+              } else {
+                // Otherwise try to find if it's a frontend build
+                const fDep = await prisma.deployment.findUnique({
+                  where: { id },
+                  include: { project: true }
+                });
+                if (fDep?.project) {
+                  type = "frontend-build";
+                  displayName = `${filePath} (Frontend: ${fDep.project.name})`;
+                }
+              }
+            } catch (e) {}
+          }
+        }
+        
         return {
           path: filePath,
-          type: filePath.startsWith("/opt/whizan-builds") ? "build" : "log",
+          displayName,
+          type,
           sizeMB: parseInt(size) || 0
         };
-      }).sort((a, b) => b.sizeMB - a.sizeMB);
+      }));
+      diskFiles.sort((a, b) => b.sizeMB - a.sizeMB);
     } catch {}
 
     // Read tail of logs and store in redis

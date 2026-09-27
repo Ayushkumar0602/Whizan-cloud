@@ -15,6 +15,10 @@ export type VMStats = {
       state: string; status: string; created: number;
       ports: string[];
       deploymentId?: string | null;
+      cpuPercent?: number;
+      memUsageMB?: number;
+      memLimitMB?: number;
+      memPercent?: number;
     }[];
     totalContainers: number;
     runningContainers: number;

@@ -25,7 +25,8 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  projects     Project[]
+  projects         Project[]
+  backendServices  BackendService[]
   refreshTokens RefreshToken[]
 
   @@map("users")
@@ -177,3 +178,81 @@ model ProjectAnalytics {
   @@map("project_analytics")
 }
 
+
+// ─────────────────────────────────────────
+//  BACKEND SERVICES (Independent from Projects)
+// ─────────────────────────────────────────
+model BackendService {
+  id             String          @id @default(uuid())
+  userId         String          @map("user_id")
+  name           String
+  slug           String          @unique   // e.g. api-service.localhost
+  githubRepoUrl  String          @map("github_repo_url")
+  branch         String          @default("main")
+  language       BackendLanguage @default(NODEJS)
+  rootDir        String          @default(".") @map("root_dir")
+  installCommand String          @default("npm install") @map("install_command")
+  startCommand   String          @default("npm start") @map("start_command")
+  internalPort   Int             @default(8000) @map("internal_port")
+  isPublic       Boolean         @default(false) @map("is_public") // If false, only reachable via internal Docker network
+  autoSleep      Boolean         @default(false) @map("auto_sleep")
+  instanceType   String          @default("starter") @map("instance_type") // "free" (if autoSleep), "starter", "standard", "pro", "pro_plus"
+  cpuLimit       Float           @default(0.5) @map("cpu_limit")           // vCPUs (e.g. 0.1 for free/spin down, 0.5, 1.0, 2.0, 4.0)
+  memoryLimit    Int             @default(512) @map("memory_limit")        // RAM in MB (e.g. 512, 1024, 2048, 4096)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deployments    ServiceDeployment[]
+  envVariables   ServiceEnvVariable[]
+
+  @@map("backend_services")
+}
+
+enum BackendLanguage {
+  NODEJS
+  PYTHON
+  GO
+  DOCKERFILE
+
+  @@map("backend_language")
+}
+
+// ─────────────────────────────────────────
+//  SERVICE DEPLOYMENTS
+// ─────────────────────────────────────────
+model ServiceDeployment {
+  id               String           @id @default(uuid())
+  serviceId        String           @map("service_id")
+  commitHash       String           @map("commit_hash")
+  commitMessage    String?          @map("commit_message")
+  branch           String
+  status           DeploymentStatus @default(QUEUED)
+  containerPort    Int?             @map("container_port")  // Mapped host port
+  buildStartedAt   DateTime?        @map("build_started_at")
+  buildFinishedAt  DateTime?        @map("build_finished_at")
+  errorMessage     String?          @map("error_message")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  service BackendService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, createdAt(sort: Desc)])
+  @@map("service_deployments")
+}
+
+// ─────────────────────────────────────────
+//  SERVICE ENV VARIABLES
+// ─────────────────────────────────────────
+model ServiceEnvVariable {
+  id        String   @id @default(uuid())
+  serviceId String   @map("service_id")
+  key       String
+  value     String   // AES-256-GCM encrypted ciphertext
+  isSecret  Boolean  @default(true) @map("is_secret")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  service BackendService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, key])
+  @@map("service_env_variables")
+}

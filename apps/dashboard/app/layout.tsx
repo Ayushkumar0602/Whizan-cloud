@@ -15,14 +15,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Whizan Cloud Services — Frontend Hosting",
+  title: {
+    default: "Whizan Cloud — Developer Platform",
+    template: "%s | Whizan Cloud",
+  },
   description:
-    "Deploy frontends with a clear pipeline. More Whizan cloud services coming soon.",
+    "Deploy Next.js frontends, Dockerized backends, and manage your private service mesh on the Whizan Cloud developer platform.",
+  keywords: ["cloud hosting", "Next.js deployment", "Docker hosting", "developer platform"],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{

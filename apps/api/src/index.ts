@@ -4,6 +4,7 @@ import fastifyCookie from "@fastify/cookie";
 import fastifyJwt from "@fastify/jwt";
 import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
+import fastifyWebsocket from "@fastify/websocket";
 
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes, caddyVerifyRoutes } from "./routes/projects.js";
@@ -11,6 +12,7 @@ import { deploymentRoutes } from "./routes/deployments.js";
 import { envRoutes } from "./routes/env.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { adminRoutes } from "./routes/admin.js";
+import { serviceRoutes } from "./routes/services.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -91,6 +93,8 @@ await app.register(fastifyRateLimit, {
   redis: redisClient,
 });
 
+await app.register(fastifyWebsocket);
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 await app.register(authRoutes, { prefix: "/api/auth" });
@@ -99,6 +103,7 @@ await app.register(deploymentRoutes, { prefix: "/api/projects" });
 await app.register(envRoutes, { prefix: "/api/projects" });
 await app.register(webhookRoutes, { prefix: "/api/webhooks" });
 await app.register(adminRoutes, { prefix: "/api/admin" });
+await app.register(serviceRoutes, { prefix: "/api/services" });
 await app.register(caddyVerifyRoutes, { prefix: "/api" });
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
