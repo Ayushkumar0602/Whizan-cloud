@@ -17,8 +17,9 @@ const BASE_DOMAIN = process.env.BASE_DOMAIN || "localhost"; // e.g. ourhoster.co
 
 const redis = new Redis(REDIS_URL, {
   enableReadyCheck: false,
-  lazyConnect: true,
+  maxRetriesPerRequest: null,
 });
+redis.on("error", (err) => console.error("[Router Redis] Error:", err.message));
 
 interface DeploymentInfo {
   type: "static" | "ssr" | "hybrid" | "service";

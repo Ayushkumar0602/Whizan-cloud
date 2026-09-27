@@ -19,6 +19,7 @@ import {
   Moon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getServiceIngressUrl } from "@/lib/domains";
 
 interface ServiceMetricsProps {
   serviceId: string;
@@ -178,7 +179,7 @@ export function ServiceMetrics({
   const handleWakeUp = async () => {
     setWakingUp(true);
     try {
-      const url = `http://${slug}.localhost:8000/`;
+      const url = `${getServiceIngressUrl(slug)}/`;
       await fetch(url, { signal: AbortSignal.timeout(5000) }).catch(() => {});
       toast.success("Wakeup signal sent. Container starting...");
       setTimeout(fetchSnapshot, 2000);

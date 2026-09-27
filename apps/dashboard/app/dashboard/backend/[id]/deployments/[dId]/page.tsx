@@ -17,6 +17,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
+import { getServiceIngressUrl } from "@/lib/domains";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -158,7 +159,7 @@ export default function BackendDeploymentLogsPage() {
           <div className="deploy-actions-group">
             {deployment.status === "READY" && isPublic && (
               <a
-                href={`http://${serviceSlug}.localhost:8080`}
+                href={getServiceIngressUrl(serviceSlug)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-primary"

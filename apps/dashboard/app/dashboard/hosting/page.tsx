@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
+import { getProjectLiveUrl } from "@/lib/domains";
 
 export default function HostingPage() {
   const [list, setList] = useState<ProjectWithLatestDeploy[]>([]);
@@ -131,7 +132,7 @@ export default function HostingPage() {
           {filtered.map(p => {
             const latest = p.deployments[0];
             const isReady = latest?.status === "READY";
-            const liveUrl = latest?.url || `http://${p.slug}.20.2.136.11.nip.io`;
+            const liveUrl = latest?.url || getProjectLiveUrl(p.slug, p.customDomain);
 
             return (
               <Link

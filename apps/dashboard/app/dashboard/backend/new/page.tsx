@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { services } from "@/lib/api";
+import { getServiceIngressUrl } from "@/lib/domains";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -284,7 +285,7 @@ export default function NewServicePage() {
                       Expose to Public Internet
                     </div>
                     <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: "2px" }}>
-                      Creates a public domain ingress route at <strong>{formData.slug || "slug"}.localhost:8080</strong>
+                      Creates a public domain ingress route at <strong>{getServiceIngressUrl(formData.slug || "slug")}</strong>
                     </div>
                   </div>
                 </label>

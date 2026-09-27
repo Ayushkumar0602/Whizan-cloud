@@ -112,7 +112,7 @@ app.get("/health", async () => ({ status: "ok", ts: Date.now() }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-const PORT = Number(process.env.API_PORT) || 8000;
+const PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
 
 try {
   await app.listen({ port: PORT, host: "0.0.0.0" });
