@@ -9,4 +9,8 @@ export type {
   DeploymentStatus,
   DeploymentType,
   Framework,
+  BackendService,
+  ServiceDeployment,
+  ServiceEnvVariable,
+  BackendLanguage,
 } from "@prisma/client";
