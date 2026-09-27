@@ -261,3 +261,154 @@ export const admin = {
   getDatabaseStats: () => request<any>(`/api/admin/database/stats`),
   restartService: (service: string) => request(`/api/admin/restart/${service}`, { method: "POST" }),
 };
+
+// ─── Backend Services ────────────────────────────────────────────────────────
+
+export type BackendService = {
+  id: string;
+  userId: string;
+  name: string;
+  slug: string;
+  githubRepoUrl: string;
+  branch: string;
+  language: "NODEJS" | "PYTHON" | "GO" | "DOCKERFILE";
+  rootDir: string;
+  installCommand: string;
+  startCommand: string;
+  internalPort: number;
+  isPublic: boolean;
+  autoSleep: boolean;
+  instanceType?: "free" | "starter" | "standard" | "pro" | "pro_plus";
+  cpuLimit?: number;
+  memoryLimit?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ServiceDeployment = {
+  id: string;
+  serviceId: string;
+  commitHash: string;
+  commitMessage?: string;
+  branch: string;
+  status: "QUEUED" | "BUILDING" | "READY" | "FAILED" | "CANCELLED" | "PAUSED";
+  containerPort?: number;
+  buildStartedAt?: string;
+  buildFinishedAt?: string;
+  errorMessage?: string;
+  createdAt: string;
+};
+
+export type ServiceEnvVariable = {
+  id: string;
+  key: string;
+  isSecret: boolean;
+  createdAt: string;
+};
+
+export type ServiceWithLatestDeploy = BackendService & {
+  deployments: ServiceDeployment[];
+};
+
+export type ServiceWithDetails = BackendService & {
+  deployments: ServiceDeployment[];
+  envVariables: ServiceEnvVariable[];
+};
+
+export type CreateServiceData = {
+  name: string;
+  slug: string;
+  githubRepoUrl: string;
+  branch?: string;
+  language?: string;
+  rootDir?: string;
+  installCommand?: string;
+  startCommand?: string;
+  internalPort?: number;
+  isPublic?: boolean;
+  autoSleep?: boolean;
+  instanceType?: "free" | "starter" | "standard" | "pro" | "pro_plus";
+  cpuLimit?: number;
+  memoryLimit?: number;
+};
+
+export type ContainerMetricPoint = {
+  timestamp: string;
+  cpuPercent: number;
+  memUsageMB: number;
+  memLimitMB: number;
+  memPercent: number;
+  rxBytes: number;
+  txBytes: number;
+  rxRateKbps: number;
+  txRateKbps: number;
+  pids: number;
+  pidsLimit: number;
+};
+
+export type ServiceMetricsResponse = {
+  container: string | null;
+  status: "running" | "sleeping" | "stopped";
+  current: ContainerMetricPoint | null;
+  history: ContainerMetricPoint[];
+};
+
+export type MeshServiceItem = {
+  id: string;
+  name: string;
+  slug: string;
+  internalPort: number;
+  internalUrl: string;
+  networkAlias: string;
+  meshNetwork: string;
+  status: "running" | "sleeping" | "stopped";
+  ipAddress: string | null;
+  isPublic: boolean;
+  autoSleep: boolean;
+  instanceType?: string;
+  cpuLimit?: number;
+  memoryLimit?: number;
+};
+
+export type MeshPingRequest = {
+  targetSlug: string;
+  targetPort: number;
+  path?: string;
+};
+
+export type MeshPingResponse = {
+  success: boolean;
+  targetUrl: string;
+  targetSlug: string;
+  targetPort: number;
+  statusCode: number;
+  latencyMs: number;
+  resolvedIp: string;
+  dnsOk: boolean;
+  timeDnsMs: number;
+  timeConnectMs: number;
+  headers: Record<string, string>;
+  bodyPreview: string;
+  errorMessage?: string;
+  network: string;
+};
+
+export const services = {
+  list: () => request<ServiceWithLatestDeploy[]>("/api/services"),
+  get: (id: string) => request<ServiceWithDetails>(`/api/services/${id}`),
+  create: (data: CreateServiceData) => request<BackendService>("/api/services", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: string, data: Partial<CreateServiceData>) => request<BackendService>(`/api/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) => request(`/api/services/${id}`, { method: "DELETE" }),
+  deploy: (id: string) => request<ServiceDeployment>(`/api/services/${id}/deploy`, { method: "POST" }),
+  getDeployment: (id: string, dId: string) => request<ServiceDeployment>(`/api/services/deployments/${dId}`),
+  getEnv: (id: string) => request<ServiceEnvVariable[]>(`/api/services/${id}/env`),
+  setEnv: (id: string, key: string, value: string, isSecret = true) => request<{id:string}>(`/api/services/${id}/env`, { method: "POST", body: JSON.stringify({ key, value, isSecret }) }),
+  deleteEnv: (id: string, key: string) => request(`/api/services/${id}/env/${key}`, { method: "DELETE" }),
+  getMetrics: (id: string) => request<ServiceMetricsResponse>(`/api/services/${id}/metrics`),
+  streamMetrics: (id: string): EventSource => {
+    const token = getAccessToken();
+    return new EventSource(`${API_BASE}/api/services/${id}/metrics/stream?token=${token}`);
+  },
+  getMeshCatalog: () => request<MeshServiceItem[]>("/api/services/mesh/catalog"),
+  pingMesh: (data: MeshPingRequest) => request<MeshPingResponse>("/api/services/mesh/ping", { method: "POST", body: JSON.stringify(data) }),
+};

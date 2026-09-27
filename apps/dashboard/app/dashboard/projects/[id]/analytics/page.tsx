@@ -1,10 +1,10 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { projects } from "@/lib/api";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Globe, Users, Activity } from "lucide-react";
+import { ArrowLeft, Globe, Users, Activity, BarChart3, TrendingUp, Radio } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 
 function formatBytes(bytes: number) {
   if (bytes === 0) return "0 B";
@@ -25,65 +25,179 @@ export default function AnalyticsPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className="page-loading"><div className="spinner" /></div>;
+  if (loading) {
+    return (
+      <div className="page-loading">
+        <div className="spinner" />
+        <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Loading analytics...</span>
+      </div>
+    );
+  }
 
   const totalPageViews = data.reduce((acc, curr) => acc + curr.pageViews, 0);
   const totalBandwidth = data.reduce((acc, curr) => acc + curr.bandwidth, 0);
   const totalVisitors = data.reduce((acc, curr) => acc + curr.visitors, 0);
 
+  const maxViews = Math.max(...data.map(d => d.pageViews), 1);
+
   return (
     <div className="page">
       <Link href={`/dashboard/projects/${id}`} className="breadcrumb">
-        <ArrowLeft size={14} /> Back to Project
+        <ArrowLeft size={15} /> Back to Project
       </Link>
 
-      <div style={{ marginBottom: "2rem" }}>
-        <h1 className="page-title">Edge Analytics</h1>
-        <p style={{ color: "var(--muted)" }}>View real-time traffic and bandwidth consumption across the edge network.</p>
+      <PageHeader
+        title="Edge Network Analytics"
+        subtitle="Real-time traffic telemetry and bandwidth consumption metrics across edge points of presence."
+      />
+
+      <div className="stats-grid" style={{ marginBottom: "2rem" }}>
+        <div className="stat-card">
+          <div className="stat-label">
+            <Globe size={14} className="text-accent" /> Total Page Views
+          </div>
+          <div className="stat-value">{totalPageViews.toLocaleString()}</div>
+          <div className="stat-sub">
+            <TrendingUp size={12} color="#10b981" /> Last 30 days
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">
+            <Users size={14} style={{ color: "#38bdf8" }} /> Unique Visitors
+          </div>
+          <div className="stat-value">{totalVisitors.toLocaleString()}</div>
+          <div className="stat-sub">Unique IP telemetry</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">
+            <Activity size={14} style={{ color: "#10b981" }} /> Bandwidth Transferred
+          </div>
+          <div className="stat-value">{formatBytes(totalBandwidth)}</div>
+          <div className="stat-sub" style={{ color: "var(--success)" }}>
+            Edge caching active
+          </div>
+        </div>
       </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-label" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><Globe size={14} /> Page Views</div>
-          <div className="stat-value" style={{ fontSize: "2rem" }}>{totalPageViews.toLocaleString()}</div>
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+          <div>
+            <h3 className="card-title">Daily Traffic Log</h3>
+            <p style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+              HTTP request counts and data egress per 24-hour cycle
+            </p>
+          </div>
+          <span className="mono" style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+            30 Day Window
+          </span>
         </div>
-        <div className="stat-card">
-          <div className="stat-label" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><Users size={14} /> Unique Visitors</div>
-          <div className="stat-value" style={{ fontSize: "2rem" }}>{totalVisitors.toLocaleString()}</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><Activity size={14} /> Bandwidth Used</div>
-          <div className="stat-value" style={{ fontSize: "2rem" }}>{formatBytes(totalBandwidth)}</div>
-        </div>
-      </div>
 
-      <div className="card" style={{ padding: "1.5rem" }}>
-        <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.1rem" }}>Daily Traffic (Last 30 Days)</h3>
         {data.length === 0 ? (
-          <div style={{ color: "var(--muted)", padding: "2rem 0", textAlign: "center" }}>
-            No traffic data available yet. Deploy your project and visit the site to start collecting analytics.
+          <div className="empty-state" style={{ padding: "3rem 1.5rem" }}>
+            <BarChart3 size={32} />
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 650, color: "var(--foreground)" }}>No traffic telemetry yet</h3>
+            <p>Deploy your frontend app and send requests to populate analytics charts.</p>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            {data.map((day, idx) => (
-              <div key={idx} style={{ display: "flex", justifyContent: "space-between", padding: "0.75rem 0", borderBottom: "1px solid var(--card-border)" }}>
-                <div style={{ fontWeight: 500 }}>{new Date(day.date).toLocaleDateString()}</div>
-                <div style={{ display: "flex", gap: "2rem", color: "var(--muted)" }}>
-                  <span style={{ width: "80px", textAlign: "right" }}>{day.pageViews} views</span>
-                  <span style={{ width: "80px", textAlign: "right" }}>{day.visitors} visits</span>
-                  <span style={{ width: "80px", textAlign: "right" }}>{formatBytes(day.bandwidth)}</span>
+          <div className="traffic-table-wrap">
+            {data.map((day, idx) => {
+              const percent = Math.round((day.pageViews / maxViews) * 100);
+              return (
+                <div key={idx} className="traffic-row">
+                  <div className="traffic-date mono">
+                    {new Date(day.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  </div>
+
+                  {/* Relative bar */}
+                  <div className="traffic-bar-box">
+                    <div
+                      className="traffic-bar-fill"
+                      style={{ width: `${Math.max(percent, 4)}%` }}
+                    />
+                  </div>
+
+                  <div className="traffic-metrics-group">
+                    <span className="metric-chip">
+                      <strong>{day.pageViews.toLocaleString()}</strong> views
+                    </span>
+                    <span className="metric-chip">
+                      <strong>{day.visitors.toLocaleString()}</strong> visits
+                    </span>
+                    <span className="metric-chip mono" style={{ color: "var(--accent)" }}>
+                      {formatBytes(day.bandwidth)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       <style>{`
-        .stats-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .stat-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 1.5rem; }
-        .stat-label { font-size: 0.875rem; color: var(--muted); margin-bottom: 0.5rem; }
-        .stat-value { font-size: 1.5rem; font-weight: 600; }
+        .traffic-table-wrap {
+          display: flex;
+          flex-direction: column;
+          border: 1px solid var(--card-border);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .traffic-row {
+          display: flex;
+          align-items: center;
+          gap: 1.25rem;
+          padding: 0.85rem 1.25rem;
+          border-bottom: 1px solid var(--card-border);
+          background: var(--bg-inset);
+          font-size: 0.82rem;
+        }
+        .traffic-row:last-child {
+          border-bottom: none;
+        }
+        .traffic-date {
+          width: 70px;
+          font-weight: 600;
+          color: var(--foreground);
+          flex-shrink: 0;
+        }
+        .traffic-bar-box {
+          flex: 1;
+          height: 8px;
+          background: rgba(255, 255, 255, 0.05);
+          border-radius: 9999px;
+          overflow: hidden;
+          min-width: 80px;
+        }
+        .traffic-bar-fill {
+          height: 100%;
+          background: var(--accent-gradient);
+          border-radius: 9999px;
+          transition: width 0.3s ease;
+        }
+        .traffic-metrics-group {
+          display: flex;
+          align-items: center;
+          gap: 1.25rem;
+          flex-shrink: 0;
+        }
+        .metric-chip {
+          color: var(--muted);
+          min-width: 70px;
+          text-align: right;
+        }
+
+        @media (max-width: 640px) {
+          .traffic-row {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.5rem;
+          }
+          .traffic-metrics-group {
+            justify-content: space-between;
+          }
+        }
       `}</style>
     </div>
   );

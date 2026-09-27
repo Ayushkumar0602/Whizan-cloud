@@ -21,7 +21,7 @@ const redis = new Redis(REDIS_URL, {
 });
 
 interface DeploymentInfo {
-  type: "static" | "ssr" | "hybrid";
+  type: "static" | "ssr" | "hybrid" | "service";
   staticDir?: string;
   containerPort?: number;
   deploymentId: string;
@@ -55,11 +55,18 @@ proxy.on("error", (err, req, res) => {
   }
 
   // Look up deployment ID from Redis and trigger a wakeup
-  redis.get(`deployment:${slug}`).then(raw => {
+  redis.get(`deployment:${slug}`).then(async raw => {
     if (raw) {
       const dep = JSON.parse(raw);
       console.log(`[Router] Container missing for ${slug} (proxy error). Triggering wakeup...`);
-      redis.publish("wakeup", dep.deploymentId).catch(() => {});
+      const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 20, "NX").catch(() => null);
+      if (acquiredLock) {
+        redis.publish("wakeup", JSON.stringify({
+          slug,
+          deploymentId: dep.deploymentId,
+          type: dep.type || (dep as any).deploymentType || "service"
+        })).catch(() => {});
+      }
     }
   }).catch(() => {});
 
@@ -181,8 +188,8 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // ── SSR: All traffic → container ───────────────────────────────────────────
-  if (type === "ssr") {
+  // ── SSR & SERVICE: All traffic → container ───────────────────────────────
+  if (type === "ssr" || type === "service") {
     if (containerPort) {
       proxy.web(req, res, { target: `http://127.0.0.1:${containerPort}` });
       // The proxy handles the response, so we track analytics in proxy.on('proxyRes')
@@ -230,9 +237,16 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
 });
 
 async function handleWakeupAndProxy(deployment: DeploymentInfo, req: http.IncomingMessage, res: http.ServerResponse, slug: string) {
-  console.log(`[Router] Cold start: waking up deployment ${deployment.deploymentId}...`);
-  // Publish wakeup
-  redis.publish("wakeup", deployment.deploymentId).catch(() => {});
+  // Deduplicate wakeups: don't publish another wakeup if one was requested in the last 20 seconds
+  const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 20, "NX").catch(() => null);
+  if (acquiredLock) {
+    console.log(`[Router] Cold start: waking up deployment ${deployment.deploymentId} for ${slug}...`);
+    redis.publish("wakeup", JSON.stringify({ 
+      slug, 
+      deploymentId: deployment.deploymentId, 
+      type: deployment.type || (deployment as any).deploymentType || "service"
+    })).catch(() => {});
+  }
 
   // Instantly return the loading screen so the user sees feedback immediately, instead of a hanging browser tab
   const isHtml = req.headers.accept?.includes("text/html");
@@ -250,28 +264,184 @@ function loadingScreenHtml(title: string, message: string) {
     <html>
       <head>
         <title>${title}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 6rem 2rem; color: #f8fafc; background: #0f172a; margin: 0; }
-          .spinner { width: 32px; height: 32px; border: 3px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 2rem; }
-          h1 { font-size: 1.5rem; font-weight: 500; margin-bottom: 0.5rem; }
-          p { color: #94a3b8; max-width: 400px; margin: 0 auto; line-height: 1.5; }
-          @keyframes spin { to { transform: rotate(360deg); } }
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap');
+          
+          * { box-sizing: border-box; }
+          body { 
+            font-family: 'Inter', sans-serif; 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh; 
+            background: #000; 
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+          }
+          
+          .bg-grid {
+            position: absolute;
+            width: 200vw;
+            height: 200vh;
+            background-size: 50px 50px;
+            background-image: 
+              linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            transform: perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px);
+            animation: pan 20s linear infinite;
+            z-index: 0;
+          }
+
+          @keyframes pan {
+            0% { transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px); }
+            100% { transform: perspective(500px) rotateX(60deg) translateY(50px) translateZ(-200px); }
+          }
+
+          .container {
+            position: relative;
+            z-index: 10;
+            text-align: center;
+            padding: 3rem;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            box-shadow: 0 0 40px rgba(56, 189, 248, 0.1), inset 0 0 20px rgba(255, 255, 255, 0.02);
+            max-width: 500px;
+            width: 90%;
+          }
+
+          .glowing-orb {
+            position: absolute;
+            top: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 150px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.4) 0%, transparent 70%);
+            border-radius: 50%;
+            z-index: -1;
+            animation: pulse 3s ease-in-out infinite alternate;
+          }
+
+          @keyframes pulse {
+            0% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+            100% { opacity: 1; transform: translateX(-50%) scale(1.2); }
+          }
+
+          .loader {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 2rem;
+          }
+
+          .loader svg {
+            animation: spin 2s linear infinite;
+            width: 100%;
+            height: 100%;
+            stroke: #38bdf8;
+            stroke-width: 2;
+            fill: none;
+            stroke-linecap: round;
+          }
+
+          @keyframes spin {
+            100% { transform: rotate(360deg); }
+          }
+
+          h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin: 0 0 1rem;
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+          }
+
+          p {
+            color: #94a3b8;
+            font-size: 1rem;
+            line-height: 1.6;
+            margin: 0 0 2rem;
+          }
+
+          .terminal {
+            background: #050505;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 1rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: #10b981;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+          }
+
+          .terminal::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+            animation: scan 2s linear infinite;
+          }
+
+          @keyframes scan {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+          }
+
+          .blink { animation: blink 1s step-end infinite; }
+          @keyframes blink { 50% { opacity: 0; } }
         </style>
       </head>
       <body>
-        <div class="spinner"></div>
-        <h1>${title}</h1>
-        <p>${message}</p>
+        <div class="bg-grid"></div>
+        <div class="container">
+          <div class="glowing-orb"></div>
+          <div class="loader">
+            <svg viewBox="0 0 50 50">
+              <circle cx="25" cy="25" r="20" stroke-dasharray="31.4 100" />
+              <circle cx="25" cy="25" r="12" stroke-dasharray="18.8 100" style="stroke: #818cf8; animation-direction: reverse;" />
+            </svg>
+          </div>
+          <h1>${title}</h1>
+          <p>${message}</p>
+          <div class="terminal">
+            <span style="color:#64748b">></span> [System] Connecting to container...<br/>
+            <span style="color:#64748b">></span> [Docker] Restoring memory state...<br/>
+            <span style="color:#64748b">></span> [Edge] Awaiting HTTP readiness<span class="blink">_</span>
+          </div>
+        </div>
         <script>
-          // Poll every 1.5 seconds in the background
-          setInterval(() => {
-            fetch(window.location.href, { method: 'HEAD' })
-              .then(res => {
-                if (res.status !== 502 && res.status !== 202) {
-                  window.location.reload();
-                }
-              }).catch(() => {});
-          }, 1500);
+          // Exponential backoff polling
+          let attempts = 0;
+          const maxDelay = 2000;
+          
+          function checkHealth() {
+            attempts++;
+            const delay = Math.min(500 * Math.pow(1.2, attempts), maxDelay);
+            
+            setTimeout(() => {
+              fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
+                .then(res => {
+                  if (res.status !== 502 && res.status !== 202 && res.status !== 503) {
+                    document.querySelector('.terminal').innerHTML += '<br/><span style="color:#64748b">></span> [Network] 200 OK. Reloading...';
+                    setTimeout(() => window.location.reload(true), 300);
+                  } else {
+                    checkHealth();
+                  }
+                }).catch(() => checkHealth());
+            }, delay);
+          }
+          
+          // Start polling
+          checkHealth();
         </script>
       </body>
     </html>
@@ -315,7 +485,11 @@ server.on("upgrade", async (req, socket, head) => {
     // Cold start for WebSockets. We can't render an auto-refresh HTML screen on a raw TCP socket.
     // We publish a wakeup event, then instantly reject the socket so the client app's reconnection logic kicks in.
     console.log(`[Router] Cold start (WS): waking up deployment ${deployment.deploymentId}...`);
-    redis.publish("wakeup", deployment.deploymentId).catch(() => {});
+    redis.publish("wakeup", JSON.stringify({ 
+      slug, 
+      deploymentId: deployment.deploymentId, 
+      type: deployment.type || (deployment as any).deploymentType 
+    })).catch(() => {});
     socket.write('HTTP/1.1 503 Service Unavailable\r\nRetry-After: 3\r\n\r\n');
     socket.destroy();
   }

@@ -6,16 +6,53 @@ export type CloudService = {
   href?: string;
   available: boolean;
   eta?: string;
+  icon?: string;
 };
 
 export const CLOUD_SERVICES: CloudService[] = [
   {
-    id: "frontend-hosting",
-    name: "Frontend Hosting",
-    tagline: "Ship sites in minutes",
+    id: "backend-hosting",
+    name: "Backend Container Services",
+    tagline: "Isolated Docker Runtimes with Auto-Sleep",
     description:
-      "Connect a GitHub repo, preview every step of the build, and go live on a dedicated URL.",
-    href: "/dashboard/projects/new",
+      "Deploy Node.js, Python, and Go microservices with Render-style 0.1 vCPU scale-to-zero free tier and internal service mesh discovery.",
+    href: "/dashboard/backend",
+    available: true,
+  },
+  {
+    id: "frontend-hosting",
+    name: "Frontend Edge Hosting",
+    tagline: "Ship Next.js & React sites in minutes",
+    description:
+      "Connect a GitHub repo, build on high-speed workers, and serve traffic across edge proxies with automated SSL certificates.",
+    href: "/dashboard/hosting",
+    available: true,
+  },
+  {
+    id: "private-mesh",
+    name: "Private Service Mesh & DNS",
+    tagline: "Sub-millisecond container discovery",
+    description:
+      "Zero-configuration internal Docker bridge network allowing frontends to query backend services via http://service-alias:port without public internet traversal.",
+    href: "/dashboard/backend",
+    available: true,
+  },
+  {
+    id: "managed-postgres",
+    name: "PostgreSQL Database",
+    tagline: "Dedicated relational storage",
+    description:
+      "Fully managed Postgres instances with automatic connection pooling, read replicas, and SSL connectivity.",
+    href: "/dashboard/admin/database",
+    available: true,
+  },
+  {
+    id: "managed-redis",
+    name: "In-Memory Redis Cache",
+    tagline: "Sub-millisecond caching & Pub/Sub",
+    description:
+      "Low-latency Redis key-value cache and BullMQ job queue storage running directly on the cloud host.",
+    href: "/dashboard/admin/database",
     available: true,
   }
 ];
@@ -23,22 +60,22 @@ export const CLOUD_SERVICES: CloudService[] = [
 export const DEPLOY_GUIDE = [
   {
     n: "01",
-    title: "Pick a service",
-    body: "Start with Frontend Hosting to deploy your app.",
+    title: "Connect Repository",
+    body: "Link your GitHub repository URL and production branch. No zip uploads or manual configurations needed.",
   },
   {
     n: "02",
-    title: "Connect your repo",
-    body: "Paste a GitHub URL and branch. We clone it on a worker — you never upload a zip.",
+    title: "Configure Compute & Mesh",
+    body: "Choose between Render-style scale-to-zero (0.1 vCPU Free Tier) or dedicated multi-core capacity.",
   },
   {
     n: "03",
-    title: "Confirm build settings",
-    body: "Framework presets fill install, build, and output. Change them if your app is custom.",
+    title: "Automated Build Pipeline",
+    body: "Isolated worker clones the repo, installs dependencies, executes the build, and starts health checks.",
   },
   {
     n: "04",
-    title: "Watch the pipeline",
-    body: "Queued → clone → install → build → publish. You always see which step is running.",
+    title: "Internal Mesh Discovery",
+    body: "Frontends and backends instantly connect over the private Docker network bridge using standard DNS names.",
   },
 ];

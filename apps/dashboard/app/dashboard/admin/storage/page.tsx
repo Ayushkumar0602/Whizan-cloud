@@ -1,84 +1,156 @@
 "use client";
 
 import { admin } from "@/lib/api";
-import { HardDrive } from "lucide-react";
+import { HardDrive, Trash2, RefreshCw, Folder } from "lucide-react";
 import { useAdminStats } from "../../../../hooks/useAdminStats";
+import { toast } from "sonner";
 
 export default function StoragePage() {
   const { stats, loading, fetchStats } = useAdminStats();
 
   const handleFileDelete = async (path: string) => {
-    if (!confirm(`Are you sure you want to delete ${path}? This cannot be undone.`)) return;
+    if (!confirm(`Permanently delete ${path}? This cannot be undone.`)) return;
     try {
       await admin.deleteFile(path);
-      alert("Delete command sent to worker");
+      toast.success("File deleted from host");
       fetchStats();
-    } catch { alert("Failed to delete file"); }
+    } catch {
+      toast.error("Failed to delete file");
+    }
   };
 
   if (loading && !stats) {
-    return <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>Loading Azure metrics...</div>;
+    return (
+      <div className="page-loading">
+        <div className="spinner" />
+        <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Inspecting disk storage...</span>
+      </div>
+    );
   }
 
   const vm = stats?.vmStats;
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 className="page-title" style={{ margin: 0 }}>Storage Management</h1>
-          <p style={{ color: "var(--muted)", margin: "0.25rem 0 0 0" }}>
-            Build cache and log files on the VM
-          </p>
-        </div>
-      </div>
-
-      {vm && vm.files && (
-        <div>
-          <h2 className="section-title" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <HardDrive size={18} /> Disk Files
-            <span style={{ fontSize: "0.8125rem", fontWeight: 400, color: "var(--muted)" }}>
-              ({vm.files.length} items found)
-            </span>
-          </h2>
-          <div className="card" style={{ overflow: "hidden" }}>
-            {vm.files.length === 0 ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>No build or log files found.</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--card-border)", background: "var(--card-bg)" }}>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "left", color: "var(--muted)", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Path</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "left", color: "var(--muted)", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Type</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "left", color: "var(--muted)", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Size (MB)</th>
-                      <th style={{ padding: "0.75rem 1rem", textAlign: "left", color: "var(--muted)", fontWeight: 500, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vm.files.map((file, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid var(--card-border)" }}>
-                        <td style={{ padding: "0.75rem 1rem", fontFamily: "monospace", fontSize: "0.75rem" }}>{file.path}</td>
-                        <td style={{ padding: "0.75rem 1rem" }}>
-                          <span style={{ background: file.type === "build" ? "rgba(59,130,246,0.1)" : "rgba(245,158,11,0.1)", color: file.type === "build" ? "#3b82f6" : "#f59e0b", padding: "0.125rem 0.5rem", borderRadius: "100px", fontSize: "0.6875rem", fontWeight: 600, textTransform: "uppercase" }}>
-                            {file.type}
-                          </span>
-                        </td>
-                        <td style={{ padding: "0.75rem 1rem", fontWeight: 500 }}>{file.sizeMB} MB</td>
-                        <td style={{ padding: "0.75rem 1rem" }}>
-                          <button className="btn btn-danger" style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem" }} onClick={() => handleFileDelete(file.path)}>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="storage-header">
+          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+            <HardDrive size={18} className="text-accent" />
+            <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Build Cache & Workspace Storage</h2>
+            {vm?.files && (
+              <span className="storage-count-pill mono">
+                {vm.files.length} items
+              </span>
             )}
           </div>
+          <button className="btn btn-secondary btn-sm" onClick={fetchStats}>
+            <RefreshCw size={13} /> Refresh
+          </button>
         </div>
-      )}
+
+        {!vm || !vm.files || vm.files.length === 0 ? (
+          <div style={{ padding: "3rem", textAlign: "center", color: "var(--muted)" }}>
+            No build cache or dangling log files found on the host.
+          </div>
+        ) : (
+          <div className="table-responsive-wrap">
+            <table className="modern-table">
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Classification</th>
+                  <th>Size</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vm.files.map((file, i) => (
+                  <tr key={i}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <Folder size={15} className="text-muted" />
+                        <span className="mono" style={{ color: "var(--foreground)" }}>
+                          {(file as any).displayName || file.path}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        className="badge"
+                        style={{
+                          background: file.type === "frontend-build" ? "rgba(56, 189, 248, 0.1)" : "rgba(16, 185, 129, 0.1)",
+                          color: file.type === "frontend-build" ? "#38bdf8" : "#10b981",
+                          borderColor: file.type === "frontend-build" ? "rgba(56, 189, 248, 0.25)" : "rgba(16, 185, 129, 0.25)",
+                        }}
+                      >
+                        {file.type}
+                      </span>
+                    </td>
+                    <td className="mono" style={{ fontWeight: 600 }}>{file.sizeMB} MB</td>
+                    <td>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleFileDelete(file.path)}
+                      >
+                        <Trash2 size={12} /> Purge
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        .storage-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1.15rem 1.35rem;
+          border-bottom: 1px solid var(--card-border);
+          background: rgba(255, 255, 255, 0.02);
+        }
+        .storage-count-pill {
+          font-size: 0.74rem;
+          color: var(--muted);
+          background: var(--bg-inset);
+          padding: 0.15rem 0.5rem;
+          border-radius: 6px;
+          border: 1px solid var(--card-border);
+        }
+        .table-responsive-wrap {
+          overflow-x: auto;
+          width: 100%;
+        }
+        .modern-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.8125rem;
+          text-align: left;
+        }
+        .modern-table th {
+          padding: 0.75rem 1.25rem;
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: var(--muted);
+          font-weight: 650;
+          border-bottom: 1px solid var(--card-border);
+          background: var(--bg-inset);
+        }
+        .modern-table td {
+          padding: 0.85rem 1.25rem;
+          border-bottom: 1px solid var(--card-border);
+        }
+        .modern-table tr:last-child td {
+          border-bottom: none;
+        }
+        .modern-table tr:hover td {
+          background: var(--card-hover);
+        }
+      `}</style>
     </>
   );
 }

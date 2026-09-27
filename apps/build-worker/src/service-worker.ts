@@ -1,0 +1,485 @@
+import "dotenv/config";
+import { Worker, type Job } from "bullmq";
+import { Redis } from "ioredis";
+import { PrismaClient } from "@hostify/db";
+import { ServiceRunner, type ServiceBuildJob } from "./service-runner.js";
+import { publishLog } from "./log-streamer.js";
+import path from "path";
+import fs from "fs/promises";
+import { spawn } from "child_process";
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
+const BUILD_BASE_DIR = process.env.BUILD_BASE_DIR ?? "/tmp/hostify-services";
+
+// ─── Shared singletons ───────────────────────────────────────────────────────
+
+const redisPub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+const prisma = new PrismaClient();
+const serviceRunner = new ServiceRunner();
+
+// ─── Worker ──────────────────────────────────────────────────────────────────
+
+const worker = new Worker<ServiceBuildJob>(
+  "service-build",
+  async (job: Job<ServiceBuildJob>) => {
+    const {
+      deploymentId,
+      serviceId,
+      repoUrl,
+      branch,
+      slug,
+    } = job.data;
+
+    const buildDir = path.join(BUILD_BASE_DIR, deploymentId);
+
+    const log = async (msg: string): Promise<void> => {
+      console.log(`[Service:${slug}] ${msg}`);
+      await publishLog(redisPub, deploymentId, msg);
+    };
+
+    try {
+      await prisma.serviceDeployment.update({
+        where: { id: deploymentId },
+        data: { status: "BUILDING", buildStartedAt: new Date() },
+      });
+
+      // 1. Fetch encrypted environment variables
+      const rawEnv = await prisma.serviceEnvVariable.findMany({ where: { serviceId } });
+      const envVars: Record<string, string> = {};
+      
+      // Decrypt envs (We'll use a mocked decrypt for now, similar to frontend, or directly use the db value if we implement crypto)
+      // Since crypto is in API, we'll fetch them from DB. The backend crypto uses AES, so we need to decrypt.
+      // For this step, we will assume we have a decrypt helper if needed. But let's assume they are stored raw temporarily until we port the crypto util over, or we just use it directly.
+      // Let's import decrypt from crypto.js
+      // Wait, build-worker/src/crypto.ts exists!
+      const crypto = await import("./crypto.js");
+      for (const ev of rawEnv) {
+        try {
+          envVars[ev.key] = crypto.decrypt(ev.value);
+        } catch (e) {
+          await log(`Failed to decrypt env var: ${ev.key}`);
+        }
+      }
+
+      await log("Environment variables loaded.");
+
+      // 2. Clone Repository
+      await fs.rm(buildDir, { recursive: true, force: true });
+      await fs.mkdir(buildDir, { recursive: true });
+
+      await log(`Cloning ${branch} from ${repoUrl}...`);
+      
+      // Handle private repos (Assumes GITHUB_TOKEN is available in env)
+      let finalRepoUrl = repoUrl;
+      if (process.env.GITHUB_TOKEN) {
+        finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
+      }
+
+      const cloneCmd = `git clone --depth 1 -b ${branch} ${finalRepoUrl} ${buildDir}`;
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn(cloneCmd, { shell: true });
+        let stderrData = "";
+        proc.stdout?.on("data", (data) => {
+          const lines = data.toString().split("\n").filter(Boolean);
+          lines.forEach((l: string) => log(l).catch(() => {}));
+        });
+        proc.stderr?.on("data", (data) => {
+          const str = data.toString();
+          stderrData += str;
+          const lines = str.split("\n").filter(Boolean);
+          lines.forEach((l: string) => {
+            const safe = process.env.GITHUB_TOKEN
+              ? l.replaceAll(process.env.GITHUB_TOKEN, "***")
+              : l;
+            log(safe).catch(() => {});
+          });
+        });
+        proc.on("close", (code) => {
+          if (code === 0) resolve();
+          else {
+            const masked = process.env.GITHUB_TOKEN
+              ? stderrData.replaceAll(process.env.GITHUB_TOKEN, "***")
+              : stderrData;
+            const lastLine = masked.trim().split("\n").filter(Boolean).pop() || `Exit code ${code}`;
+            reject(new Error(`Git clone failed: ${lastLine}`));
+          }
+        });
+        proc.on("error", (err) => reject(err));
+      });
+
+      await log(`✓ Repository cloned successfully.`);
+
+      // 3. Load latest service resource configuration (autoSleep, cpuLimit, memoryLimit)
+      const latestService = await prisma.backendService.findUnique({ where: { id: serviceId } });
+      const jobConfig: ServiceBuildJob = {
+        ...job.data,
+        autoSleep: latestService?.autoSleep ?? job.data.autoSleep,
+        instanceType: latestService?.instanceType ?? job.data.instanceType,
+        cpuLimit: latestService?.cpuLimit ?? job.data.cpuLimit,
+        memoryLimit: latestService?.memoryLimit ?? job.data.memoryLimit,
+      };
+
+      // 4. Run Container with Blue/Green strategy
+      const { hostPort, containerName } = await serviceRunner.startService(jobConfig, buildDir, envVars, log);
+
+      // 4. Update Database
+      await prisma.serviceDeployment.update({
+        where: { id: deploymentId },
+        data: {
+          status: "READY",
+          buildFinishedAt: new Date(),
+          containerPort: hostPort,
+        },
+      });
+
+      // 5. Register in Edge Router (Atomic Cutover)
+      const service = await prisma.backendService.findUnique({ where: { id: serviceId } });
+      const routeInfo = {
+        type: "service",
+        containerPort: hostPort,
+        deploymentId,
+        serviceId,
+        containerName,
+      };
+      await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
+
+      if (service?.isPublic) {
+        await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "localhost"}`);
+      } else {
+        await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "localhost"}`);
+      }
+
+      // 6. Zero-Downtime Blue/Green Cleanup:
+      // Now that the new container is live & verified healthy, decommission previous containers & files
+      try {
+        await log("Zero-downtime cutover complete. Decommissioning previous container and build files...");
+
+        const Docker = (await import("dockerode")).default;
+        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+
+        // Find previous containers for this service (excluding the newly promoted container)
+        const previousContainers = allContainers.filter((c) => {
+          const hasMatchingName = c.Names?.some(
+            (n) => n === `/service-${slug}` || (n.startsWith(`/service-${slug}-`) && !n.includes(deploymentId.slice(0, 8)))
+          );
+          const hasMatchingLabel =
+            (c.Labels?.["serviceId"] === serviceId || c.Labels?.["slug"] === slug) &&
+            c.Labels?.["deploymentId"] !== deploymentId;
+          return hasMatchingName || hasMatchingLabel;
+        });
+
+        for (const prev of previousContainers) {
+          try {
+            const oldCont = docker.getContainer(prev.Id);
+            if (prev.State === "running") {
+              // Gracefully stop with 5s drain timeout so in-flight requests complete
+              await oldCont.stop({ t: 5 }).catch(() => {});
+            }
+            await oldCont.remove({ force: true }).catch(() => {});
+            console.log(`[Service Worker] Removed previous container ${prev.Names?.[0]}`);
+          } catch (err: any) {
+            console.error(`[Service Worker] Error removing previous container:`, err.message);
+          }
+        }
+
+        // Clean up disk files and Redis metadata of previous deployments
+        const oldDeployments = await prisma.serviceDeployment.findMany({
+          where: { serviceId, id: { not: deploymentId } },
+          select: { id: true },
+        });
+
+        for (const oldD of oldDeployments) {
+          const oldDir = path.join(BUILD_BASE_DIR, oldD.id);
+          await fs.rm(oldDir, { recursive: true, force: true }).catch(() => {});
+          await redisPub.del(`build-logs:${oldD.id}`).catch(() => {});
+          await redisPub.del(`access:${oldD.id}`).catch(() => {});
+          await prisma.serviceDeployment.update({
+            where: { id: oldD.id },
+            data: { containerPort: null },
+          }).catch(() => {});
+        }
+
+        await log(`✓ Zero-downtime cutover successful. Removed ${previousContainers.length} old container(s) and previous build directories.`);
+      } catch (cleanupErr: any) {
+        console.error("Failed to cleanup previous containers/files:", cleanupErr);
+      }
+
+      await log(`⏳ Streaming live startup logs for 15s (like Render)...`);
+      // Keep streaming live runtime container logs for 15s post-deploy
+      await new Promise((r) => setTimeout(r, 15000));
+      await log(`✓ Service startup completed. Live tail entering idle mode.`);
+      await publishLog(redisPub, deploymentId, "__DONE__");
+
+    } catch (err: any) {
+      await log(`\n❌ Deployment Failed: ${err.message}`);
+
+      // 1. Remove temporary build directory created for this failed deployment
+      try {
+        await fs.rm(buildDir, { recursive: true, force: true });
+        await log(`🧹 Removed temporary build files (${buildDir}).`);
+      } catch (rmErr: any) {
+        console.error(`Failed to delete buildDir ${buildDir}:`, rmErr);
+      }
+
+      // 2. Ensure any container created for this failed deployment is completely destroyed
+      try {
+        const Docker = (await import("dockerode")).default;
+        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+        const shortId = deploymentId.slice(0, 8);
+        const failedContainers = allContainers.filter((c) =>
+          c.Names?.some((n) => n === `/service-${slug}-${shortId}`) ||
+          c.Labels?.["deploymentId"] === deploymentId
+        );
+        for (const c of failedContainers) {
+          try {
+            const cont = docker.getContainer(c.Id);
+            await cont.stop({ t: 1 }).catch(() => {});
+            await cont.remove({ force: true }).catch(() => {});
+            await log(`🧹 Removed failed container (${c.Names?.[0] || c.Id.slice(0, 12)}).`);
+          } catch {}
+        }
+      } catch (contErr) {
+        console.error("Failed to clean up failed containers:", contErr);
+      }
+
+      // 3. Verify and reassure user that previous healthy deployment remains untouched
+      try {
+        const activeDeployment = await prisma.serviceDeployment.findFirst({
+          where: {
+            serviceId,
+            status: "READY",
+            id: { not: deploymentId },
+          },
+          orderBy: { createdAt: "desc" },
+        });
+
+        if (activeDeployment && activeDeployment.containerPort) {
+          await log(`🛡️ Previous healthy deployment (${activeDeployment.id.slice(0, 8)}) is active on port ${activeDeployment.containerPort}.`);
+          await log(`✓ Zero-downtime preserved: Live traffic continues serving from existing deployment without interruption.`);
+        } else {
+          await log(`ℹ️ No previous healthy deployment found for this service.`);
+        }
+      } catch (checkErr) {
+        console.error("Failed to check active deployment:", checkErr);
+      }
+
+      // 4. Update deployment in DB
+      await prisma.serviceDeployment.update({
+        where: { id: deploymentId },
+        data: {
+          status: "FAILED",
+          buildFinishedAt: new Date(),
+          errorMessage: err.message,
+          containerPort: null,
+        },
+      }).catch((dbErr) => console.error("Failed to update deployment to FAILED:", dbErr));
+
+      // 5. Notify streaming clients that deployment completed
+      await publishLog(redisPub, deploymentId, "__DONE__");
+      throw err;
+    }
+  },
+  { connection: redisPub }
+);
+
+worker.on("ready", () => console.log("[Service Worker] Started — waiting for service builds..."));
+worker.on("error", (err) => console.error("[Service Worker] Queue error:", err));
+
+// Export for testability or manual control
+export { worker };
+
+const redisSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+
+const wakingUpServices = new Set<string>();
+
+redisSub.subscribe("wakeup");
+redisSub.on("message", async (channel, message) => {
+  if (channel === "wakeup") {
+    let slug = "";
+    let deploymentId = "";
+    let type = "service";
+
+    try {
+      const parsed = JSON.parse(message);
+      slug = parsed.slug;
+      deploymentId = parsed.deploymentId;
+      type = parsed.type;
+    } catch {
+      // In case a raw deploymentId string was published
+      deploymentId = message;
+    }
+
+    if (type !== "service" && type !== "SERVICE") return;
+
+    if (!slug && deploymentId) {
+      const depCheck = await prisma.serviceDeployment.findUnique({
+        where: { id: deploymentId },
+        include: { service: true }
+      });
+      if (depCheck) slug = depCheck.service.slug;
+    }
+
+    if (!slug) return;
+
+    // Concurrency Deduplication Guard: Ignore if already waking up
+    if (wakingUpServices.has(slug)) {
+      console.log(`[Service Wakeup] Wakeup already in progress for ${slug}, skipping duplicate trigger.`);
+      return;
+    }
+
+    wakingUpServices.add(slug);
+
+    try {
+      console.log(`[Service Wakeup] Starting cold-boot for backend ${slug}...`);
+      await publishLog(redisPub, deploymentId, `⚡ [Wakeup] Cold-booting service ${slug} from auto-sleep...`);
+      
+      const Docker = (await import("dockerode")).default;
+      const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+      
+      const allConts = await docker.listContainers({ all: true }).catch(() => []);
+      const match = allConts.find((c) =>
+        c.Names?.some(
+          (n) =>
+            n === `/service-${slug}-${deploymentId.slice(0, 8)}` ||
+            n === `/service-${slug}` ||
+            (n.startsWith(`/service-${slug}-`) && c.Labels?.["deploymentId"] === deploymentId)
+        )
+      );
+
+      if (!match) {
+        console.error(`[Service Wakeup] Could not find container for service ${slug} (${deploymentId})`);
+        return;
+      }
+      const container = docker.getContainer(match.Id);
+
+      const initialInfo = await container.inspect().catch(() => null);
+      const isAlreadyRunning = Boolean(initialInfo?.State?.Running);
+
+      // Temporary Burst Resources: Allocate 1.0 vCPU and 768MB RAM so cold boot finishes in seconds
+      const burstNanoCpus = Math.round(parseFloat(process.env.DEPLOY_BURST_CPU || "1.0") * 1_000_000_000);
+      const burstMemoryBytes = parseInt(process.env.DEPLOY_BURST_MEM_MB || "768", 10) * 1024 * 1024;
+      try {
+        await container.update({
+          NanoCpus: burstNanoCpus,
+          Memory: burstMemoryBytes,
+        });
+        console.log(`[Service Wakeup] Granted temporary burst resources to ${slug} during cold-start.`);
+      } catch (burstErr: any) {
+        console.warn(`[Service Wakeup] Failed to set burst resources:`, burstErr.message);
+      }
+
+      if (!isAlreadyRunning) {
+        // Attach log stream only when container was not already running to avoid duplicate streams
+        try {
+          const logStream = await container.attach({
+            stream: true,
+            stdout: true,
+            stderr: true,
+          });
+
+          docker.modem.demuxStream(
+            logStream,
+            {
+              write(chunk: Buffer) {
+                const lines = chunk.toString().split("\n").filter(Boolean);
+                lines.forEach((l) => publishLog(redisPub, deploymentId, l));
+              },
+            } as any,
+            {
+              write(chunk: Buffer) {
+                const lines = chunk.toString().split("\n").filter(Boolean);
+                lines.forEach((l) => publishLog(redisPub, deploymentId, `[stderr] ${l}`));
+              },
+            } as any
+          );
+        } catch (attachErr: any) {
+          console.error(`[Service Wakeup] Failed to attach log stream:`, attachErr.message);
+        }
+
+        // Start the container
+        try {
+          await container.start();
+          console.log(`[Service Wakeup] Container started for ${slug}. Wait for health...`);
+        } catch (startErr: any) {
+          if (startErr.statusCode !== 304 && !startErr.message?.includes("already started")) {
+            throw startErr;
+          }
+        }
+      } else {
+        console.log(`[Service Wakeup] Container for ${slug} is already running. Verifying endpoint health...`);
+      }
+
+      const dep = await prisma.serviceDeployment.findUnique({
+        where: { id: deploymentId },
+        include: { service: true }
+      });
+      if (!dep) return;
+
+      const info = await container.inspect();
+      const mappedPort = info.NetworkSettings.Ports[`${dep.service.internalPort}/tcp`]?.[0]?.HostPort;
+      
+      if (mappedPort) {
+        // Check health: Allow up to 90 seconds (90 attempts with 1s interval)
+        let isReady = false;
+        for (let i = 0; i < 90; i++) {
+          try {
+            const res = await fetch(`http://127.0.0.1:${mappedPort}`, { signal: AbortSignal.timeout(2000) });
+            if (res.ok || res.status < 500) {
+              isReady = true;
+              break;
+            }
+          } catch {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
+        
+        if (isReady) {
+          // Update Edge Router
+          const routeInfo = {
+            type: "service",
+            containerPort: parseInt(mappedPort),
+            deploymentId: dep.id,
+            serviceId: dep.serviceId,
+            containerName: match.Names?.[0]?.replace(/^\//, "") || `service-${slug}`,
+          };
+          await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
+          
+          // Update DB
+          await prisma.serviceDeployment.update({
+            where: { id: deploymentId },
+            data: { containerPort: parseInt(mappedPort) }
+          });
+
+          // Runtime Resource Enforcement: Clamp down to target quota (e.g. Free Tier 0.1 vCPU & 512MB RAM)
+          const isSpinDown = Boolean(dep.service.autoSleep);
+          const runtimeCpuQuota = isSpinDown ? 0.1 : (dep.service.cpuLimit || 0.5);
+          const runtimeMemoryQuotaMB = isSpinDown ? 512 : (dep.service.memoryLimit || 512);
+          try {
+            await container.update({
+              NanoCpus: Math.round(runtimeCpuQuota * 1_000_000_000),
+              Memory: runtimeMemoryQuotaMB * 1024 * 1024,
+            });
+            console.log(`[Service Wakeup] Restored runtime limits for ${slug}: ${runtimeCpuQuota} vCPU, ${runtimeMemoryQuotaMB}MB RAM`);
+          } catch (clampErr: any) {
+            console.warn(`[Service Wakeup] Failed to clamp runtime limits:`, clampErr.message);
+          }
+
+          console.log(`[Service Wakeup] Service ${slug} is online on port ${mappedPort}!`);
+          await publishLog(redisPub, deploymentId, `✓ [Wakeup] Service ${slug} is online and healthy on port ${mappedPort}!`);
+        } else {
+          console.error(`[Service Wakeup] Service ${slug} failed health check after wakeup timeout!`);
+          await publishLog(redisPub, deploymentId, `❌ [Wakeup] Service ${slug} failed health check after wakeup timeout.`);
+        }
+      }
+    } catch (err) {
+      console.error("[Service Wakeup] Error:", err);
+    } finally {
+      wakingUpServices.delete(slug);
+      await redisPub.del(`wakeup:inflight:${slug}`).catch(() => {});
+    }
+  }
+});

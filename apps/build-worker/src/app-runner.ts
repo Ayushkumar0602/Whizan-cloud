@@ -53,6 +53,7 @@ export class AppRunner {
         },
         Memory: 256 * 1024 * 1024, // 256 MB for the running app
         RestartPolicy: { Name: "unless-stopped" },
+        NetworkMode: "whizan-internal-network", // Join the internal service mesh
       },
     });
 
