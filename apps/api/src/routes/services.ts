@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
+import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 
 const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -230,10 +231,12 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       },
     });
 
+    const repoUrl = await getAuthenticatedGitUrl(service.githubRepoUrl, userId);
+
     await serviceQueue.add("service-build", {
       deploymentId: deployment.id,
       serviceId: service.id,
-      repoUrl: service.githubRepoUrl,
+      repoUrl,
       branch: service.branch,
       language: service.language,
       rootDir: service.rootDir,

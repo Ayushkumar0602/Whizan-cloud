@@ -90,6 +90,37 @@ export const auth = {
   me: () => request<User>("/api/auth/me"),
 };
 
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  private: boolean;
+  owner: string;
+  defaultBranch: string;
+  htmlUrl: string;
+  cloneUrl: string;
+  description: string;
+  language: string;
+  updatedAt: string;
+}
+
+export const github = {
+  getAuthUrl: () => request<{ url: string }>("/api/auth-url"),
+  getStatus: () =>
+    request<{
+      connected: boolean;
+      username?: string;
+      avatarUrl?: string;
+      name?: string;
+      publicRepos?: number;
+      totalPrivateRepos?: number;
+    }>("/api/github/status"),
+  getRepos: () => request<GitHubRepo[]>("/api/github/repos"),
+  getBranches: (owner: string, repo: string) =>
+    request<string[]>(`/api/github/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`),
+  disconnect: () => request("/api/github/disconnect", { method: "POST" }),
+};
+
 // ─── Projects ──────────────────────────────────────────────────────────────
 
 export const projects = {
