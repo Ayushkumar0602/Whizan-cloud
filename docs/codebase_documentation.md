@@ -101,6 +101,16 @@ The control plane is built with **Fastify**, chosen for its extreme throughput a
   - `POST /:id/deployments/:dId/resume`: Re-queues deployment to restart container from cached build.
   - `DELETE /:id/deployments/:dId`: Cleans up container, build files, and Redis logs.
   - `GET /deployments/:dId/logs`: Real-time Server-Sent Events (SSE) stream. Replays historical logs from Redis list (`build-logs:dId`) and subscribes to Redis channel (`logs:dId`).
+- [`apps/api/src/routes/github.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/routes/github.ts):
+  - **GitHub OAuth Integration**:
+    - `GET /auth-url`: Returns OAuth authorization URL requesting `repo` and `read:user` scopes.
+    - `GET /auth/github/callback`: Exchanges OAuth authorization code for an access token, encrypts token using AES-256-GCM, and updates user profile in DB.
+    - `GET /status`: Returns GitHub connection status and account username/avatar.
+    - `GET /repos`: Fetches all accessible GitHub repositories (including private repos) with search filtering, language tags, and default branch metadata.
+    - `GET /branches`: Fetches git branches for a specific repository.
+    - `POST /disconnect`: Revokes and deletes stored GitHub OAuth access token.
+- [`apps/api/src/lib/github-utils.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/lib/github-utils.ts):
+  - `getAuthenticatedGitUrl()`: Formats clone URLs by injecting decrypted access tokens (`https://x-access-token:${githubToken}@github.com/owner/repo.git`), allowing automated, seamless cloning of private GitHub repositories without SSH keys or prompt timeouts.
 - [`apps/api/src/routes/env.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/routes/env.ts):
   - `GET /:id/env`: Lists environment variables (masks secret values with `***`).
   - `POST /:id/env`: Encrypts value with AES-256-GCM and upserts record.
@@ -108,16 +118,18 @@ The control plane is built with **Fastify**, chosen for its extreme throughput a
 - [`apps/api/src/routes/webhooks.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/routes/webhooks.ts):
   - `POST /github`: Verifies GitHub push payload against HMAC SHA-256 signature (`X-Hub-Signature-256`) using project's `webhookSecret`, extracts branch and commit, queues build.
 - [`apps/api/src/routes/services.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/routes/services.ts):
-  - Manages independent backend services.
-  - `POST /deploy`: Pushes job to BullMQ `service-build` queue.
+  - Manages independent backend services (Node.js, Python, Go, Dockerfile).
+  - `POST /deploy`: Pushes job to BullMQ `service-build` queue with authenticated git clone URL.
   - Handles backend-specific AES encrypted environment variables and live SSE logs.
 - [`apps/api/src/routes/admin.ts`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/api/src/routes/admin.ts):
   - System-wide administration.
   - `GET /stats`: Reads live VM telemetry (`vm:stats`) published by worker.
+  - `GET /storage`: Scans workspace disk storage, listing build caches, artifact folders, and backend service files.
+  - `DELETE /storage/purge`: Flushes cached `node_modules` and `.next/cache` directories.
   - `POST /deployments/:id/stop` & `DELETE /deployments/:id`: Dispatches container lifecycle commands.
   - `DELETE /containers/:id`: Force-kills orphaned Docker containers.
   - `GET /containers/:id/logs`: RPC-over-Redis to fetch stdout/stderr of running Docker containers.
-  - `POST /files/delete`: Securely deletes cached build directories or log files.
+  - `WS /terminal`: Real-time interactive web shell bridge into active containers.
   - `GET /database/stats`: Queries Postgres size/connections and Redis memory usage.
 
 ---
@@ -224,21 +236,32 @@ Built with **Next.js 14 (App Router)** and TailwindCSS.
   - Visual pipeline state machine: `Queued` → `Clone` → `Install` → `Build` → `Publish` → `Live`.
   - Infers current step by parsing build logs in real time.
 
+### Components & Shared Modules
+- [`apps/dashboard/components/github-repo-picker.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/components/github-repo-picker.tsx):
+  - GitHub integration component offering one-click OAuth login, repository search/filtering, public vs. private indicators, branch selection dropdown, manual repository URL fallback, and account disconnect controls.
+- [`apps/dashboard/components/deploy-pipeline.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/components/deploy-pipeline.tsx):
+  - Interactive, step-by-step horizontal deployment progress visualizer (`QUEUED` $\rightarrow$ `CLONE` $\rightarrow$ `INSTALL` $\rightarrow$ `BUILD` $\rightarrow$ `PUBLISH` $\rightarrow$ `READY`).
+  - Animated glowing state indicators with real-time SSE build log terminal streaming.
+
 ### Pages & Routes
 - [`apps/dashboard/app/dashboard/layout.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/app/dashboard/layout.tsx):
   - Sidebar layout, theme switcher (dark/light), session verification.
+- **Service Deployment Selection**:
+  - [`app/dashboard/deploy/page.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/app/dashboard/deploy/page.tsx): Multi-service deployment entry point allowing users to choose between Frontend Web App / Static Site or Dedicated Backend API Service.
 - **Projects / Frontend Hosting**:
   - `page.tsx`: Overview of user projects, current status, recent deployments.
-  - `projects/new/page.tsx`: GitHub repo import, auto-detect framework presets.
+  - `projects/new/page.tsx`: Project creation wizard integrated with `GitHubRepoPicker`, framework auto-detection, and customizable build settings.
   - `projects/[id]/page.tsx`: Project settings, environment variables manager, custom domain setup, traffic analytics charts.
   - `projects/[id]/deployments/page.tsx`: Deployment history, pause/resume/rollback controls, real-time log terminal.
+  - `projects/[id]/deployments/[dId]/page.tsx`: Interactive deployment build tracker with glowing node states and real-time execution logs.
 - **Backend Services**:
   - [`app/dashboard/backend/page.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/app/dashboard/backend/page.tsx): Services catalog, active vs asleep status badges, language tags.
+  - `backend/new/page.tsx`: Backend service creation wizard supporting GitHub private/public repository import and framework runtime presets.
   - `backend/[id]/page.tsx`: Service details, command configuration, encrypted variables, manual deploy trigger, live container logs.
 - **Admin Control Center**:
   - [`app/dashboard/admin/page.tsx`](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/apps/dashboard/app/dashboard/admin/page.tsx): Live VM health dashboard (CPU, Memory, Disk, BullMQ queue, Docker containers).
-  - `admin/containers/page.tsx`: Inspect running Docker containers, view container logs via Redis RPC, force-kill containers.
-  - `admin/storage/page.tsx`: Browse build artifact disk usage, delete cache folders.
+  - `admin/containers/page.tsx`: Inspect running Docker containers, view container logs via Redis RPC, force-kill containers, launch live web shell terminal.
+  - `admin/storage/page.tsx`: Deep directory explorer and build cache manager for viewing workspace files, cached dependencies, and purging build artifacts.
   - `admin/database/page.tsx`: PostgreSQL size & connection metrics, Redis memory utilization.
 
 ---
