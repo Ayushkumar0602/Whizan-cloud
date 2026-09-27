@@ -232,7 +232,7 @@ const worker = new Worker<BuildJob>(
     }
   },
   {
-    connection: redisPub,
+    connection: new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false }),
     concurrency: 1, // Strictly 1 build at a time
     limiter: { max: 10, duration: 60_000 },
   }
