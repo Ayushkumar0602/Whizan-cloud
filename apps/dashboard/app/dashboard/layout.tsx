@@ -118,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Quick Deploy */}
         <div style={{ marginTop: "1rem" }}>
-          <Link href="/dashboard/backend/new" className="quick-deploy-btn">
+          <Link href="/dashboard/deploy" className="quick-deploy-btn">
             <Plus size={15} />
             <span>Deploy New Service</span>
           </Link>

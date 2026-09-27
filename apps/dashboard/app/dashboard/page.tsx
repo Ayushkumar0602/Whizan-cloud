@@ -286,7 +286,7 @@ export default function ConsolePage() {
                 </div>
               </Link>
 
-              <Link href="/dashboard/projects/new" className="quick-card">
+              <Link href="/dashboard/deploy" className="quick-card">
                 <div className="quick-card-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
                   <GitPullRequest size={18} />
                 </div>
