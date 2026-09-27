@@ -13,6 +13,8 @@ import os from "os";
 
 // ─── Import the Backend Services Worker so it runs concurrently ──────────────
 import "./service-worker.js";
+import { initRemoteExec } from "./remote-exec.js";
+import { startMetricsCollector } from "./metrics-collector.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -727,6 +729,8 @@ const statsInterval = setInterval(async () => {
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
 console.log("[Worker] Build worker started — waiting for jobs...");
+initRemoteExec().catch((e) => console.error("[Remote Exec Error]", e));
+startMetricsCollector();
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 
