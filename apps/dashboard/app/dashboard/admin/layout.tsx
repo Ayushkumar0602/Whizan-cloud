@@ -21,7 +21,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     { href: "/dashboard/admin/containers", label: "Containers", icon: Container },
     { href: "/dashboard/admin/storage", label: "Storage", icon: HardDrive },
     { href: "/dashboard/admin/database", label: "Databases", icon: Database },
-    { href: "/dashboard/admin/logs", label: "VM Logs", icon: Terminal },
+    { href: "/dashboard/admin/logs", label: "Host Logs", icon: Terminal },
   ];
 
   return (

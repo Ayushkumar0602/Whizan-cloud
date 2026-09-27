@@ -1,14 +1,18 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== "production";
+const defaultApiUrl = isDev ? "http://localhost:8000" : "https://whizan-cloud-service.onrender.com";
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || defaultApiUrl;
+
 const nextConfig: NextConfig = {
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com",
+    NEXT_PUBLIC_API_URL: apiUrl,
   },
   async rewrites() {
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com"}/api/:path*`,
+        destination: `${apiUrl}/api/:path*`,
       },
     ];
   },

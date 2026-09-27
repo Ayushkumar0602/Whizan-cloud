@@ -13,6 +13,7 @@ import { envRoutes } from "./routes/env.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { adminRoutes } from "./routes/admin.js";
 import { serviceRoutes } from "./routes/services.js";
+import { databaseRoutes } from "./routes/databases.js";
 import { githubRoutes } from "./routes/github.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
@@ -105,6 +106,7 @@ await app.register(envRoutes, { prefix: "/api/projects" });
 await app.register(webhookRoutes, { prefix: "/api/webhooks" });
 await app.register(adminRoutes, { prefix: "/api/admin" });
 await app.register(serviceRoutes, { prefix: "/api/services" });
+await app.register(databaseRoutes, { prefix: "/api/databases" });
 await app.register(githubRoutes, { prefix: "/api" });
 await app.register(caddyVerifyRoutes, { prefix: "/api" });
 

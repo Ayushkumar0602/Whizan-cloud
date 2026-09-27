@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { deployments as deploymentsApi, type Deployment, getAccessToken } from "@/lib/api";
+import { deployments as deploymentsApi, type Deployment, getAccessToken, getApiBase } from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -21,8 +21,6 @@ import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export default function DeploymentPage() {
   const { id, dId } = useParams<{ id: string; dId: string }>();
@@ -68,7 +66,7 @@ export default function DeploymentPage() {
       return;
     }
 
-    const url = `${API_BASE}/api/projects/deployments/${dId}/logs?token=${token}`;
+    const url = `${getApiBase()}/api/projects/deployments/${dId}/logs?token=${token}`;
     const es = new EventSource(url);
     esRef.current = es;
 

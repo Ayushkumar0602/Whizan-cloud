@@ -1,6 +1,8 @@
 "use client";
 import { useAuth } from "@/lib/auth";
 import { useState } from "react";
+import { getApiBase } from "@/lib/api";
+import { getBaseRouterDomain } from "@/lib/domains";
 import { PageHeader } from "@/components/page-header";
 import {
   User,
@@ -21,17 +23,18 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
-  const edgeDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN || "20.2.136.11.nip.io";
-  const dashboardUrl = typeof window !== "undefined" ? window.location.origin : "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app";
+  const apiUrl = getApiBase();
+  const edgeDomain = getBaseRouterDomain();
+  const dashboardUrl = typeof window !== "undefined" ? window.location.origin : "https://whizan-cloud-service-dashboard.vercel.app";
+  const isLocal = apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
 
   const endpoints = [
-    { label: "API Control Plane", value: apiUrl, desc: "Fastify REST & SSE Control Plane" },
-    { label: "Dashboard Console", value: dashboardUrl, desc: "Production Dashboard on Vercel" },
-    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: "Reverse proxy on Azure VM (20.2.136.11)" },
+    { label: "API Control Plane", value: apiUrl, desc: isLocal ? "Local Fastify REST Control Plane (:8000)" : "Fastify REST & SSE Control Plane on Render" },
+    { label: "Dashboard Console", value: dashboardUrl, desc: isLocal ? "Local Next.js Dashboard (:3000)" : "Production Dashboard on Vercel" },
+    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: isLocal ? "Local Edge Router (:8080)" : "Reverse proxy on Azure VM (20.2.136.11)" },
     { label: "Docker Mesh Bridge", value: "whizan-internal-network", desc: "Internal service mesh with DNS aliases" },
-    { label: "PostgreSQL Database", value: "aws-0-ap-northeast-1.pooler.supabase.com:5432", desc: "Supabase cloud persistence layer" },
-    { label: "Redis & BullMQ", value: "Upstash Redis (TLS)", desc: "Upstash Redis queue & pub/sub broker" },
+    { label: "PostgreSQL Database", value: isLocal ? "localhost:5432 / hostify" : "aws-0-ap-northeast-1.pooler.supabase.com:5432", desc: isLocal ? "Local PostgreSQL Docker Container" : "Supabase cloud persistence layer" },
+    { label: "Redis & BullMQ", value: isLocal ? "localhost:6379" : "Upstash Redis (TLS)", desc: isLocal ? "Local Redis Docker Container" : "Upstash Redis queue & pub/sub broker" },
   ];
 
   function copyValue(val: string, key: string) {

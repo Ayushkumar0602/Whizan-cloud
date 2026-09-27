@@ -1,10 +1,8 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { services, getAccessToken } from "@/lib/api";
+import { services, getAccessToken, getApiBase } from "@/lib/api";
 import { Terminal, Loader2, Globe, RefreshCw, Pause, Play } from "lucide-react";
 import { toast } from "sonner";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export function ServiceLogs({ dId, serviceId }: { dId: string, serviceId: string }) {
   const [logs, setLogs] = useState<string[]>([]);
@@ -28,7 +26,7 @@ export function ServiceLogs({ dId, serviceId }: { dId: string, serviceId: string
 
     setStreaming(true);
     const liveParam = isLive ? "&live=true" : "";
-    const url = `${API_BASE}/api/services/deployments/${dId}/logs?token=${token}${liveParam}`;
+    const url = `${getApiBase()}/api/services/deployments/${dId}/logs?token=${token}${liveParam}`;
     const es = new EventSource(url);
     esRef.current = es;
 

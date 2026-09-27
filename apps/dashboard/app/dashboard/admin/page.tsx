@@ -100,7 +100,11 @@ export default function AdminOverviewPage() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>
-                {isWorkerOnline ? "Cloud Worker Online" : "Cloud Worker Disconnected"}
+                {isWorkerOnline
+                  ? (vm?.hostname?.includes("local") || vm?.platform === "darwin"
+                      ? "Local Development Worker Online"
+                      : "Cloud Worker Online")
+                  : "Worker Disconnected"}
               </span>
               <span className={`status-pill ${isWorkerOnline ? "pill-green" : "pill-red"}`}>
                 {isWorkerOnline ? "OPERATIONAL" : "OFFLINE"}

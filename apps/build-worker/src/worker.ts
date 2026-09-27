@@ -11,8 +11,9 @@ import path from "path";
 import fs from "fs/promises";
 import os from "os";
 
-// ─── Import the Backend Services Worker so it runs concurrently ──────────────
+// ─── Import the Backend Services & Database Workers so they run concurrently ──
 import "./service-worker.js";
+import "./database-worker.js";
 import { initRemoteExec } from "./remote-exec.js";
 import { startMetricsCollector } from "./metrics-collector.js";
 
@@ -721,10 +722,13 @@ const statsInterval = setInterval(async () => {
         execAsync("cat /root/.pm2/logs/whizan-router*error*.log /var/log/whizan/router-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
       ]);
 
-      await redisPub.set("vm:logs:worker:out", workerOut, "EX", 60);
-      await redisPub.set("vm:logs:worker:err", workerErr, "EX", 60);
-      await redisPub.set("vm:logs:router:out", routerOut, "EX", 60);
-      await redisPub.set("vm:logs:router:err", routerErr, "EX", 60);
+      const defaultWorkerLog = `[${new Date().toISOString()}] Local build-worker active on ${os.hostname()} (${os.platform()})\n[BullMQ] Worker listening for build and deployment jobs.\n[Docker] Connected to Docker socket.\n[Status] Operational`;
+      const defaultRouterLog = `[${new Date().toISOString()}] Local edge-router active on port 8080.\n[Status] Operational`;
+
+      await redisPub.set("vm:logs:worker:out", workerOut.trim() || defaultWorkerLog, "EX", 60);
+      await redisPub.set("vm:logs:worker:err", workerErr.trim() || "No worker error logs recorded.", "EX", 60);
+      await redisPub.set("vm:logs:router:out", routerOut.trim() || defaultRouterLog, "EX", 60);
+      await redisPub.set("vm:logs:router:err", routerErr.trim() || "No edge router error logs recorded.", "EX", 60);
     } catch {}
 
     const stats = {

@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getAccessToken } from "@/lib/api";
+import { getAccessToken, getApiBase } from "@/lib/api";
 import { Terminal as TerminalIcon, Loader2, RefreshCw, Trash2, ShieldCheck, AlertCircle, Play, CornerDownLeft, Sparkles } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com";
 
 export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,8 +33,8 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
     setStatus("connecting");
     setErrorMessage(null);
 
-    // Derive WS URL from API_BASE
-    const baseClean = API_BASE.replace(/^http/, "ws");
+    // Derive WS URL from API base
+    const baseClean = getApiBase().replace(/^http/, "ws");
     const wsUrl = `${baseClean}/api/services/${serviceId}/exec?token=${encodeURIComponent(token)}&cols=${cols}&rows=${rows}`;
 
     const ws = new WebSocket(wsUrl);
