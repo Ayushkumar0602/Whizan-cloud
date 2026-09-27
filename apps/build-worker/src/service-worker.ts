@@ -15,9 +15,27 @@ const BUILD_BASE_DIR = process.env.BUILD_BASE_DIR ?? "/tmp/hostify-services";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 
-const redisPub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+const redisOptions = {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  retryStrategy(times: number) {
+    return Math.min(times * 100, 3000);
+  },
+  reconnectOnError() {
+    return true;
+  },
+};
+
+const redisPub = new Redis(REDIS_URL, redisOptions);
+redisPub.on("error", (err) => {
+  if (err.message?.includes("Connection is closed")) return;
+  console.warn("[Service RedisPub warn]", err.message);
+});
+
 const prisma = new PrismaClient();
 const serviceRunner = new ServiceRunner();
+
+console.log("[Service Worker] Loaded and registered for 'service-build' jobs.");
 
 // ─── Worker ──────────────────────────────────────────────────────────────────
 
@@ -293,11 +311,16 @@ worker.on("ready", () => console.log("[Service Worker] Started — waiting for s
 worker.on("active", (job) => console.log(`[Service Worker] Active: processing build for ${job.data.slug} (${job.id})`));
 worker.on("completed", (job) => console.log(`[Service Worker] Job ${job.id} completed for ${job.data.slug}`));
 worker.on("failed", (job, err) => console.error(`[Service Worker] Job ${job?.id} failed:`, err?.message || err));
+worker.on("error", (err) => console.warn(`[Service Worker Queue warn]:`, err?.message || err));
 
 // Export for testability or manual control
 export { worker };
 
-const redisSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+const redisSub = new Redis(REDIS_URL, redisOptions);
+redisSub.on("error", (err) => {
+  if (err.message?.includes("Connection is closed")) return;
+  console.warn("[Service RedisSub warn]", err.message);
+});
 
 const wakingUpServices = new Set<string>();
 
