@@ -115,8 +115,27 @@ const worker = new Worker<BuildJob>(
         data: { status: "BUILDING", buildStartedAt: new Date() },
       });
 
-      // ── 2. Clone repo (always start clean) ──────────────────────────────
-      if (!isResume) {
+      // ── Determine if existing build artifacts on disk can be resumed ───
+      let canResume = false;
+      if (isResume) {
+        try {
+          const stats = await fs.stat(buildDir);
+          if (stats.isDirectory()) {
+            const files = await fs.readdir(buildDir);
+            if (files.some((f) => [".next", "dist", "build", "out", "node_modules"].includes(f))) {
+              canResume = true;
+            }
+          }
+        } catch {
+          canResume = false;
+        }
+      }
+
+      // ── 2. Clone repo (always start clean if fresh build or missing artifacts) ──
+      if (!canResume) {
+        if (isResume) {
+          await log("⚠️ Previous build directory missing on disk, initiating automatic cold-start rebuild...");
+        }
         await log(`Cloning ${repoUrl} (branch: ${branch})...`);
         const { simpleGit } = await import("simple-git");
 
@@ -137,7 +156,7 @@ const worker = new Worker<BuildJob>(
       }
 
       // ── 4. Build inside Docker ───────────────────────────────────────────
-      if (!isResume) {
+      if (!canResume) {
         await log("Starting build container...");
         const exitCode = await runBuild({
           projectId,
@@ -154,7 +173,7 @@ const worker = new Worker<BuildJob>(
         }
         await log("✓ Build successful");
       } else {
-        await log("✓ Build skipped (resuming existing build)");
+        await log("✓ Build skipped (resuming existing build artifacts on disk)");
       }
 
       // ── 5. Analyze output ────────────────────────────────────────────────
