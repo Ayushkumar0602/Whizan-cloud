@@ -74,6 +74,7 @@ const worker = new Worker<BuildJob>(
       projectId,
       repoUrl,
       branch,
+      rootDir = ".",
       buildCommand,
       installCommand,
       framework,
@@ -122,9 +123,11 @@ const worker = new Worker<BuildJob>(
       let canResume = false;
       if (isResume) {
         try {
-          const stats = await fs.stat(buildDir);
+          const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
+          const checkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
+          const stats = await fs.stat(checkDir);
           if (stats.isDirectory()) {
-            const files = await fs.readdir(buildDir);
+            const files = await fs.readdir(checkDir);
             if (files.some((f) => [".next", "dist", "build", "out", "node_modules"].includes(f))) {
               canResume = true;
             }
@@ -164,6 +167,7 @@ const worker = new Worker<BuildJob>(
         const exitCode = await runBuild({
           projectId,
           buildDir,
+          rootDir,
           installCommand,
           buildCommand,
           envVars,
@@ -181,7 +185,7 @@ const worker = new Worker<BuildJob>(
 
       // ── 5. Analyze output ────────────────────────────────────────────────
       await log("Analyzing build output...");
-      const analysis = await analyzeOutput(buildDir, framework);
+      const analysis = await analyzeOutput(buildDir, framework, rootDir);
       await log(`✓ Detected type: ${analysis.type}`);
 
       // ── 6. Start SSR container if needed ────────────────────────────────
@@ -192,7 +196,8 @@ const worker = new Worker<BuildJob>(
           deploymentId,
           buildDir,
           envVars,
-          analysis.serverEntry
+          analysis.serverEntry,
+          rootDir
         );
         await log(`✓ SSR container started on port ${containerPort}`);
       }
@@ -322,6 +327,7 @@ redisSub.on("message", async (channel, message) => {
         projectId: d.projectId,
         repoUrl: d.project.githubRepoUrl,
         branch: d.project.branch,
+        rootDir: d.project.rootDir || ".",
         buildCommand: d.project.buildCommand,
         installCommand: d.project.installCommand,
         outputDir: d.project.outputDir,

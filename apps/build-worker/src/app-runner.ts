@@ -26,18 +26,22 @@ export class AppRunner {
     deploymentId: string,
     buildDir: string,
     envVars: Record<string, string>,
-    serverEntry?: string
+    serverEntry?: string,
+    rootDir?: string
   ): Promise<number> {
     // Stop any old container for this deployment
     await this.stopApp(deploymentId);
+
+    const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
+    const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
 
     const port = await this.findFreePort();
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
     env.push(`PORT=3000`);
     env.push(`HOSTNAME=0.0.0.0`);
 
-    const cmd = serverEntry === ".next/standalone/server.js"
-      ? ["node", ".next/standalone/server.js"]
+    const cmd = serverEntry && serverEntry.endsWith("server.js")
+      ? ["node", cleanRootDir ? ".next/standalone/server.js" : serverEntry]
       : ["npm", "run", "start"];
 
     // Ensure internal service mesh network exists
@@ -59,7 +63,7 @@ export class AppRunner {
     const container = await docker.createContainer({
       Image: SSR_IMAGE,
       Cmd: cmd,
-      WorkingDir: "/app",
+      WorkingDir: workingDir,
       Env: env,
       ExposedPorts: { "3000/tcp": {} },
       HostConfig: {

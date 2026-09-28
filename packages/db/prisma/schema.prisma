@@ -60,6 +60,7 @@ model Project {
   githubRepoId   String?   @map("github_repo_id")
   webhookSecret  String    @map("webhook_secret")  // HMAC secret for this project
   branch         String    @default("main")
+  rootDir        String    @default(".") @map("root_dir")
   buildCommand   String    @default("npm run build") @map("build_command")
   installCommand String    @default("npm install") @map("install_command")
   outputDir      String    @default(".next") @map("output_dir")
