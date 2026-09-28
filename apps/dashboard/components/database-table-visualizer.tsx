@@ -89,6 +89,10 @@ export default function DatabaseTableVisualizer({ database, onOpenQuery }: Props
     setTablesLoading(true);
     try {
       const res = await databases.getTables(database.id);
+      if ((res as any).booting) {
+        setTimeout(loadTables, 2500);
+        return;
+      }
       setTables(res.tables || []);
       setDatabaseSize(res.databaseSize || "N/A");
       if (res.tables && res.tables.length > 0 && !selectedTable) {

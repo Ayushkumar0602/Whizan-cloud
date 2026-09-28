@@ -155,6 +155,13 @@ export const databaseWorker = new Worker<DatabaseJobData>(
         });
 
         const decryptedPassword = decrypt(dbRecord.password);
+        let decryptedReadonlyPassword: string | undefined = undefined;
+        if (dbRecord.readonlyPassword) {
+          try {
+            decryptedReadonlyPassword = decrypt(dbRecord.readonlyPassword);
+          } catch {}
+        }
+
         const runnerOpts: ProvisionDatabaseOptions = {
           id: dbRecord.id,
           slug: dbRecord.slug,
@@ -167,6 +174,10 @@ export const databaseWorker = new Worker<DatabaseJobData>(
           internalPort: dbRecord.internalPort,
           cpuLimit: dbRecord.cpuLimit,
           memoryLimit: dbRecord.memoryLimit,
+          enablePooler: dbRecord.enablePooler,
+          sslEnabled: dbRecord.sslEnabled,
+          ipWhitelist: dbRecord.ipWhitelist,
+          readonlyPassword: decryptedReadonlyPassword,
         };
 
         await databaseRunner.start(databaseId, runnerOpts);
@@ -176,7 +187,8 @@ export const databaseWorker = new Worker<DatabaseJobData>(
           data: { status: "RUNNING", errorMessage: null },
         });
 
-        await log(`✓ Database successfully started.`);
+        await redisPub.set(`db:access:${databaseId}`, Date.now()).catch(() => {});
+        await log(`✓ Database successfully started and operational.`);
       } else if (action === "delete") {
         await log(`🗑️ Deleting database container and cleaning storage volume...`);
 
@@ -210,3 +222,90 @@ export const databaseWorker = new Worker<DatabaseJobData>(
     concurrency: 3,
   }
 );
+
+// ── Inactivity Watchdog: Spin down idle databases after 20 minutes ─────────
+const dbInactivityInterval = setInterval(async () => {
+  try {
+    const runningDatabases = await prisma.databaseService.findMany({
+      where: { status: "RUNNING" },
+    });
+
+    if (runningDatabases.length === 0) return;
+
+    const Docker = (await import("dockerode")).default;
+    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+
+    for (const db of runningDatabases) {
+      const accessKey = `db:access:${db.id}`;
+      const lastAccessRaw = await redisPub.get(accessKey);
+      const lastAccess = lastAccessRaw ? parseInt(lastAccessRaw, 10) : db.updatedAt.getTime();
+      const idleMs = Date.now() - lastAccess;
+
+      // 20 minutes threshold = 20 * 60 * 1000 = 1,200,000 ms
+      if (idleMs > 20 * 60 * 1000) {
+        let hasActiveQueries = false;
+
+        // Check if there are active user queries running in PostgreSQL
+        if (db.type === "POSTGRESQL") {
+          try {
+            const containerName = `whizan-db-${db.id}`;
+            const container = docker.getContainer(containerName);
+            const exec = await container.exec({
+              Cmd: [
+                "psql",
+                "-U",
+                db.username,
+                "-d",
+                db.databaseName,
+                "-t",
+                "-c",
+                "SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND pid <> pg_backend_pid();",
+              ],
+              AttachStdout: true,
+              AttachStderr: true,
+            });
+
+            const stream = await exec.start({ hijack: true, stdin: false });
+            let output = "";
+            stream.on("data", (chunk: Buffer) => {
+              output += chunk.toString();
+            });
+            await new Promise((resolve) => stream.on("end", resolve));
+
+            const count = parseInt(output.trim(), 10);
+            if (!isNaN(count) && count > 0) {
+              hasActiveQueries = true;
+            }
+          } catch {
+            // Container exec failed or container unreachable
+          }
+        }
+
+        if (hasActiveQueries) {
+          // Prolong active state because real database queries are running
+          await redisPub.set(accessKey, Date.now()).catch(() => {});
+          continue;
+        }
+
+        console.log(`[Database Scaler] Database ${db.name} (${db.id}) idle for ${Math.round(idleMs / 60000)}m. Stopping container to save RAM...`);
+        await publishLog(
+          redisPub,
+          `db-${db.id}`,
+          `💤 [Auto-Sleep] Database ${db.name} was idle for 20m with 0 active connections. Container stopped (0 MB RAM). Data volume preserved.`
+        );
+
+        // Gracefully stop container (keeping persistent volume on disk intact)
+        await databaseRunner.stop(db.id).catch((err) => {
+          console.warn(`[Database Scaler] Error stopping db container:`, err.message);
+        });
+
+        await prisma.databaseService.update({
+          where: { id: db.id },
+          data: { status: "STOPPED" },
+        }).catch(() => {});
+      }
+    }
+  } catch (err: any) {
+    console.error("[Database Scaler] Inactivity check error:", err.message);
+  }
+}, 60 * 1000);

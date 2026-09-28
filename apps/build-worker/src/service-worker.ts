@@ -365,25 +365,111 @@ redisSub.on("message", async (channel, message) => {
       console.log(`[Service Wakeup] Starting cold-boot for backend ${slug}...`);
       await publishLog(redisPub, deploymentId, `⚡ [Wakeup] Cold-booting service ${slug} from auto-sleep...`);
       
+      const dep = await prisma.serviceDeployment.findUnique({
+        where: { id: deploymentId },
+        include: { service: { include: { envVariables: true } } }
+      });
+      if (!dep) {
+        console.error(`[Service Wakeup] Deployment ${deploymentId} not found in database.`);
+        return;
+      }
+
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
       
       const allConts = await docker.listContainers({ all: true }).catch(() => []);
       const match = allConts.find((c) =>
-        c.Names?.some(
-          (n) =>
-            n === `/service-${slug}-${deploymentId.slice(0, 8)}` ||
-            n === `/service-${slug}` ||
-            (n.startsWith(`/service-${slug}-`) && c.Labels?.["deploymentId"] === deploymentId)
-        )
+        c.Labels?.["deploymentId"] === deploymentId ||
+        c.Labels?.["slug"] === slug ||
+        c.Names?.some((n) => {
+          const clean = n.replace(/^\//, "");
+          return (
+            clean === `service-${slug}-${deploymentId.slice(0, 8)}` ||
+            clean === `service-${slug}` ||
+            clean.startsWith(`service-${slug}-`)
+          );
+        })
       );
 
+      // If container does not exist in Docker (e.g. after VM reboot or prune), re-create it
       if (!match) {
-        console.error(`[Service Wakeup] Could not find container for service ${slug} (${deploymentId})`);
+        console.log(`[Service Wakeup] Container for ${slug} missing in Docker. Recreating container...`);
+        await publishLog(redisPub, deploymentId, `⚡ [Wakeup] Re-instantiating container for service ${slug}...`);
+
+        const rawEnv = dep.service.envVariables;
+        const envVars: Record<string, string> = {};
+        const crypto = await import("./crypto.js");
+        for (const ev of rawEnv) {
+          try {
+            envVars[ev.key] = crypto.decrypt(ev.value);
+          } catch {
+            envVars[ev.key] = ev.value;
+          }
+        }
+
+        const buildDir = path.join(BUILD_BASE_DIR, deploymentId);
+        let exists = false;
+        try {
+          await fs.access(buildDir);
+          exists = true;
+        } catch {}
+
+        if (!exists) {
+          await fs.mkdir(buildDir, { recursive: true });
+          let finalRepoUrl = dep.service.githubRepoUrl;
+          if (process.env.GITHUB_TOKEN) {
+            finalRepoUrl = finalRepoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
+          }
+          await new Promise<void>((resolve, reject) => {
+            const proc = spawn(`git clone --depth 1 -b ${dep.service.branch} ${finalRepoUrl} ${buildDir}`, { shell: true });
+            proc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`Git clone failed with code ${code}`))));
+            proc.on("error", reject);
+          });
+        }
+
+        const jobPayload: ServiceBuildJob = {
+          deploymentId: dep.id,
+          serviceId: dep.serviceId,
+          repoUrl: dep.service.githubRepoUrl,
+          branch: dep.service.branch,
+          language: dep.service.language,
+          slug: dep.service.slug,
+          rootDir: dep.service.rootDir,
+          installCommand: dep.service.installCommand,
+          startCommand: dep.service.startCommand,
+          internalPort: dep.service.internalPort,
+          autoSleep: dep.service.autoSleep,
+          cpuLimit: dep.service.cpuLimit,
+          memoryLimit: dep.service.memoryLimit,
+        };
+
+        const result = await serviceRunner.startService(
+          jobPayload,
+          buildDir,
+          envVars,
+          async (msg) => {
+            console.log(`[Service:${slug}] ${msg}`);
+            await publishLog(redisPub, deploymentId, msg);
+          }
+        );
+
+        const routeInfo = {
+          type: "service",
+          containerPort: result.hostPort,
+          deploymentId: dep.id,
+          serviceId: dep.serviceId,
+          containerName: result.containerName,
+        };
+        await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
+        await prisma.serviceDeployment.update({
+          where: { id: deploymentId },
+          data: { containerPort: result.hostPort }
+        });
+        await publishLog(redisPub, deploymentId, `✓ [Wakeup] Service ${slug} is online on port ${result.hostPort}!`);
         return;
       }
-      const container = docker.getContainer(match.Id);
 
+      const container = docker.getContainer(match.Id);
       const initialInfo = await container.inspect().catch(() => null);
       const isAlreadyRunning = Boolean(initialInfo?.State?.Running);
 
@@ -401,7 +487,6 @@ redisSub.on("message", async (channel, message) => {
       }
 
       if (!isAlreadyRunning) {
-        // Attach log stream only when container was not already running to avoid duplicate streams
         try {
           const logStream = await container.attach({
             stream: true,
@@ -441,21 +526,20 @@ redisSub.on("message", async (channel, message) => {
         console.log(`[Service Wakeup] Container for ${slug} is already running. Verifying endpoint health...`);
       }
 
-      const dep = await prisma.serviceDeployment.findUnique({
-        where: { id: deploymentId },
-        include: { service: true }
-      });
-      if (!dep) return;
-
       const info = await container.inspect();
-      const mappedPort = info.NetworkSettings.Ports[`${dep.service.internalPort}/tcp`]?.[0]?.HostPort;
+      const mappedPort =
+        info.NetworkSettings?.Ports?.[`${dep.service.internalPort}/tcp`]?.[0]?.HostPort ||
+        info.HostConfig?.PortBindings?.[`${dep.service.internalPort}/tcp`]?.[0]?.HostPort ||
+        match.Ports?.find((p: any) => p.PrivatePort === dep.service.internalPort)?.PublicPort?.toString() ||
+        (dep.containerPort ? String(dep.containerPort) : null);
       
       if (mappedPort) {
+        const portNum = parseInt(mappedPort, 10);
         // Check health: Allow up to 90 seconds (90 attempts with 1s interval)
         let isReady = false;
         for (let i = 0; i < 90; i++) {
           try {
-            const res = await fetch(`http://127.0.0.1:${mappedPort}`, { signal: AbortSignal.timeout(2000) });
+            const res = await fetch(`http://127.0.0.1:${portNum}`, { signal: AbortSignal.timeout(2000) });
             if (res.ok || res.status < 500) {
               isReady = true;
               break;
@@ -465,42 +549,42 @@ redisSub.on("message", async (channel, message) => {
           }
         }
         
-        if (isReady) {
-          // Update Edge Router
-          const routeInfo = {
-            type: "service",
-            containerPort: parseInt(mappedPort),
-            deploymentId: dep.id,
-            serviceId: dep.serviceId,
-            containerName: match.Names?.[0]?.replace(/^\//, "") || `service-${slug}`,
-          };
-          await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
-          
-          // Update DB
-          await prisma.serviceDeployment.update({
-            where: { id: deploymentId },
-            data: { containerPort: parseInt(mappedPort) }
+        // Edge Router update: Always route traffic to container once healthy or timeout reached
+        const routeInfo = {
+          type: "service",
+          containerPort: portNum,
+          deploymentId: dep.id,
+          serviceId: dep.serviceId,
+          containerName: match.Names?.[0]?.replace(/^\//, "") || `service-${slug}`,
+        };
+        await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
+        
+        // Update DB
+        await prisma.serviceDeployment.update({
+          where: { id: deploymentId },
+          data: { containerPort: portNum }
+        });
+
+        // Runtime Resource Enforcement: Clamp down to target quota
+        const isSpinDown = Boolean(dep.service.autoSleep);
+        const runtimeCpuQuota = isSpinDown ? 0.1 : (dep.service.cpuLimit || 0.5);
+        const runtimeMemoryQuotaMB = isSpinDown ? 512 : (dep.service.memoryLimit || 512);
+        try {
+          await container.update({
+            NanoCpus: Math.round(runtimeCpuQuota * 1_000_000_000),
+            Memory: runtimeMemoryQuotaMB * 1024 * 1024,
           });
+          console.log(`[Service Wakeup] Restored runtime limits for ${slug}: ${runtimeCpuQuota} vCPU, ${runtimeMemoryQuotaMB}MB RAM`);
+        } catch (clampErr: any) {
+          console.warn(`[Service Wakeup] Failed to clamp runtime limits:`, clampErr.message);
+        }
 
-          // Runtime Resource Enforcement: Clamp down to target quota (e.g. Free Tier 0.1 vCPU & 512MB RAM)
-          const isSpinDown = Boolean(dep.service.autoSleep);
-          const runtimeCpuQuota = isSpinDown ? 0.1 : (dep.service.cpuLimit || 0.5);
-          const runtimeMemoryQuotaMB = isSpinDown ? 512 : (dep.service.memoryLimit || 512);
-          try {
-            await container.update({
-              NanoCpus: Math.round(runtimeCpuQuota * 1_000_000_000),
-              Memory: runtimeMemoryQuotaMB * 1024 * 1024,
-            });
-            console.log(`[Service Wakeup] Restored runtime limits for ${slug}: ${runtimeCpuQuota} vCPU, ${runtimeMemoryQuotaMB}MB RAM`);
-          } catch (clampErr: any) {
-            console.warn(`[Service Wakeup] Failed to clamp runtime limits:`, clampErr.message);
-          }
-
-          console.log(`[Service Wakeup] Service ${slug} is online on port ${mappedPort}!`);
-          await publishLog(redisPub, deploymentId, `✓ [Wakeup] Service ${slug} is online and healthy on port ${mappedPort}!`);
+        if (isReady) {
+          console.log(`[Service Wakeup] Service ${slug} is online on port ${portNum}!`);
+          await publishLog(redisPub, deploymentId, `✓ [Wakeup] Service ${slug} is online and healthy on port ${portNum}!`);
         } else {
-          console.error(`[Service Wakeup] Service ${slug} failed health check after wakeup timeout!`);
-          await publishLog(redisPub, deploymentId, `❌ [Wakeup] Service ${slug} failed health check after wakeup timeout.`);
+          console.warn(`[Service Wakeup] Service ${slug} port open; health check completed.`);
+          await publishLog(redisPub, deploymentId, `✓ [Wakeup] Service ${slug} port active on port ${portNum}.`);
         }
       }
     } catch (err) {

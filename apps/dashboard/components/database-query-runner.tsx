@@ -106,6 +106,13 @@ export default function DatabaseQueryRunner({ database, initialQuery, onTableSel
     setError(null);
     try {
       const res = await databases.query(database.id, query.trim());
+      if ((res as any).booting) {
+        setError("⚡ Database was asleep to save resources and is spinning up. Auto-executing query in 3 seconds...");
+        setTimeout(() => {
+          handleRunQuery();
+        }, 3000);
+        return;
+      }
       setResult(res);
       // Append to history
       setHistory((prev) => [query.trim(), ...prev.filter((q) => q !== query.trim())].slice(0, 15));

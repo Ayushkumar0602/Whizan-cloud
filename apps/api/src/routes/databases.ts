@@ -33,6 +33,11 @@ async function getDocker() {
 export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Authentication Prehandler ──────────────────────────────────────────────
   fastify.addHook("preHandler", async (request: any, reply) => {
+    // Public wake endpoint can be triggered without auth
+    if (request.url.includes("/public/") && request.url.includes("/wake")) {
+      return;
+    }
+
     // SSE log endpoint sends auth token in query params
     if (request.url.includes("/logs") && request.query?.token) {
       try {
@@ -310,6 +315,67 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     return { message: "Database start initiated" };
   });
 
+  // ── GET & POST /api/databases/:id/wake — Wake up sleeping database ───────────
+  const handleWake = async (request: any, reply: any) => {
+    const userId = request.user?.userId;
+    const { id } = request.params as { id: string };
+
+    const db = await prisma.databaseService.findFirst({
+      where: { id, ...(userId ? { userId } : {}) },
+    });
+
+    if (!db) {
+      return reply.code(404).send({ error: "Database not found" });
+    }
+
+    if (db.status === "RUNNING") {
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      return { status: "RUNNING", booting: false, message: "Database is active and operational." };
+    }
+
+    const isRunning = await ensureDatabaseRunning(db);
+    if (isRunning) {
+      return { status: "RUNNING", booting: false, message: "Database is active and operational." };
+    }
+
+    return reply.code(202).send({
+      status: "PROVISIONING",
+      booting: true,
+      message: "Database is booting up. Please retry in a few seconds.",
+    });
+  };
+
+  fastify.get("/:id/wake", handleWake);
+  fastify.post("/:id/wake", handleWake);
+
+  // ── GET /api/databases/public/:slug/wake — Public wakeup ping by slug ────────
+  fastify.get("/public/:slug/wake", async (request: any, reply: any) => {
+    const { slug } = request.params as { slug: string };
+    const db = await prisma.databaseService.findUnique({
+      where: { slug },
+    });
+
+    if (!db) {
+      return reply.code(404).send({ error: "Database not found" });
+    }
+
+    if (db.status === "RUNNING") {
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      return { status: "RUNNING", booting: false, message: "Database is operational." };
+    }
+
+    const isRunning = await ensureDatabaseRunning(db);
+    if (isRunning) {
+      return { status: "RUNNING", booting: false, message: "Database is operational." };
+    }
+
+    return reply.code(202).send({
+      status: "PROVISIONING",
+      booting: true,
+      message: "Database is booting up. Please retry in a few seconds.",
+    });
+  });
+
   // ── DELETE /api/databases/:id — Delete database ────────────────────────────
   fastify.delete("/:id", async (request: any, reply) => {
     const userId = request.user.userId;
@@ -459,6 +525,43 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // ── Database Auto-Wakeup Helper ──────────────────────────────────────────
+  async function ensureDatabaseRunning(db: any): Promise<boolean> {
+    if (db.status === "RUNNING") {
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      return true;
+    }
+
+    if (db.status === "STOPPED" || db.status === "FAILED") {
+      console.log(`[Database Auto-Wakeup] Database ${db.name} (${db.id}) is ${db.status}. Triggering wakeup...`);
+      await prisma.databaseService.update({
+        where: { id: db.id },
+        data: { status: "PROVISIONING", errorMessage: null },
+      });
+
+      await databaseQueue.add("database-job", {
+        action: "start",
+        databaseId: db.id,
+      });
+    }
+
+    // Wait up to 10 seconds for container to start and become RUNNING
+    const startWait = Date.now();
+    while (Date.now() - startWait < 10000) {
+      await new Promise((r) => setTimeout(r, 600));
+      const current = await prisma.databaseService.findUnique({
+        where: { id: db.id },
+        select: { status: true },
+      });
+      if (current?.status === "RUNNING") {
+        await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   // ── Database Connection Helpers ──────────────────────────────────────────
   async function getPgClientForDb(db: any) {
     let plainPassword = "";
@@ -468,44 +571,52 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       plainPassword = db.password;
     }
 
-    const host =
+    const hostEnv =
       process.env.DB_HOST ||
       process.env.DB_PUBLIC_HOST ||
       process.env.EXTERNAL_DB_HOST ||
-      (BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "localhost");
-    const port = db.externalPort || 5432;
+      (BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "127.0.0.1");
 
-    const client = new PgClient({
-      host,
-      port,
-      user: db.username,
-      password: plainPassword,
-      database: db.databaseName,
-      statement_timeout: 30000,
-      connectionTimeoutMillis: 6000,
-    });
+    // Potential host candidates to connect to:
+    // 1. Host from env / BASE_DOMAIN
+    // 2. 127.0.0.1 (local connection on the VM)
+    // 3. db.slug (internal docker mesh network)
+    const hostCandidates = [
+      { host: hostEnv, port: db.externalPort || 5432 },
+      { host: "127.0.0.1", port: db.externalPort || 5432 },
+      { host: db.slug, port: 5432 },
+    ].filter((c, idx, arr) => c.host && arr.findIndex(x => x.host === c.host && x.port === c.port) === idx);
 
-    try {
-      await client.connect();
-      return client;
-    } catch (err: any) {
-      if (db.slug) {
+    let lastError: any = null;
+
+    for (const target of hostCandidates) {
+      // First try with ssl: { rejectUnauthorized: false }, then try non-SSL
+      const sslConfigs = db.sslEnabled !== false
+        ? [{ rejectUnauthorized: false }, false]
+        : [false, { rejectUnauthorized: false }];
+
+      for (const sslOption of sslConfigs) {
         try {
-          const fallbackClient = new PgClient({
-            host: db.slug,
-            port: 5432,
+          const client = new PgClient({
+            host: target.host,
+            port: target.port,
             user: db.username,
             password: plainPassword,
             database: db.databaseName,
             statement_timeout: 30000,
-            connectionTimeoutMillis: 6000,
+            connectionTimeoutMillis: 5000,
+            ssl: sslOption || undefined,
           });
-          await fallbackClient.connect();
-          return fallbackClient;
-        } catch {}
+
+          await client.connect();
+          return client;
+        } catch (err: any) {
+          lastError = err;
+        }
       }
-      throw new Error(`Failed to connect to PostgreSQL: ${err.message}`);
     }
+
+    throw new Error(`Failed to connect to PostgreSQL: ${lastError?.message || "Connection timeout"}`);
   }
 
   function getRedisClientForDb(db: any) {
@@ -550,8 +661,16 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (db.status !== "RUNNING") {
-      return reply.code(400).send({ error: `Cannot run query: Database status is ${db.status}` });
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({
+          booting: true,
+          error: "Database is booting up from sleep mode. Please retry your query in a few moments.",
+        });
+      }
     }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -645,15 +764,21 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (db.status !== "RUNNING" || db.type !== "POSTGRESQL") {
-      return {
-        slowQueries: [],
-        cacheHitRatio: 100,
-        connectionBreakdown: [],
-        runningQueries: [],
-        databaseSize: "0 MB",
-        databaseSizeBytes: 0,
-      };
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning || db.type !== "POSTGRESQL") {
+        return {
+          slowQueries: [],
+          cacheHitRatio: 100,
+          connectionBreakdown: [],
+          runningQueries: [],
+          databaseSize: "0 MB",
+          databaseSizeBytes: 0,
+          booting: db.status !== "RUNNING",
+        };
+      }
     }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
 
     let client: PgClient | null = null;
     try {
@@ -917,8 +1042,13 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (db.status !== "RUNNING") {
-      return { tables: [], totalTables: 0, databaseSize: "0 kB", databaseSizeBytes: 0 };
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return { tables: [], totalTables: 0, databaseSize: "0 kB", databaseSizeBytes: 0, booting: true };
+      }
     }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1028,6 +1158,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ columns: [], booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+
     if (db.type === "POSTGRESQL") {
       let client;
       try {
@@ -1091,6 +1230,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     if (!db) {
       return reply.code(404).send({ error: "Database not found" });
     }
+
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ rows: [], total: 0, booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1181,6 +1329,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+
     if (db.type === "POSTGRESQL") {
       let client;
       try {
@@ -1242,6 +1399,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+
     if (db.type === "POSTGRESQL") {
       let client;
       try {
@@ -1293,6 +1459,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+
     if (db.type === "POSTGRESQL") {
       let client;
       try {
@@ -1342,6 +1517,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+
     if (db.type === "POSTGRESQL") {
       let client;
       try {
@@ -1384,6 +1568,15 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     if (!db) {
       return reply.code(404).send({ error: "Database not found" });
     }
+
+    if (db.status !== "RUNNING") {
+      const isRunning = await ensureDatabaseRunning(db);
+      if (!isRunning) {
+        return reply.code(202).send({ booting: true, error: "Database is booting up..." });
+      }
+    }
+
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
 
     if (db.type === "POSTGRESQL") {
       let client;

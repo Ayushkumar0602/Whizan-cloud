@@ -661,6 +661,8 @@ export const databases = {
     request<{ message: string }>(`/api/databases/${id}/stop`, { method: "POST" }),
   start: (id: string) =>
     request<{ message: string }>(`/api/databases/${id}/start`, { method: "POST" }),
+  wake: (id: string) =>
+    request<{ status: string; booting: boolean; message: string }>(`/api/databases/${id}/wake`, { method: "POST" }),
   delete: (id: string) =>
     request<{ message: string }>(`/api/databases/${id}`, { method: "DELETE" }),
   getMetrics: (id: string) => request<DatabaseMetrics>(`/api/databases/${id}/metrics`),
