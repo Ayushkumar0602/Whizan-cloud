@@ -263,6 +263,58 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     return { success: true };
   });
 
+  // 5d. Interactive VM Terminal Command Exec (Host VM & Remote VM)
+  fastify.post("/terminal/exec", async (request, reply) => {
+    const { command, cwd, remote } = request.body as {
+      command: string;
+      cwd?: string;
+      remote?: { host: string; port?: number; username: string; password?: string; privateKey?: string };
+    };
+
+    if (command === undefined || command === null) {
+      return reply.code(400).send({ error: "Command required" });
+    }
+
+    const replyChannel = `admin:rpc:terminal:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`;
+    const sub = redis.duplicate();
+
+    return new Promise((resolve) => {
+      let timeout = setTimeout(() => {
+        sub.unsubscribe(replyChannel).catch(() => {});
+        sub.quit().catch(() => {});
+        resolve({
+          stdout: "",
+          stderr: "Command execution timed out after 35 seconds. Process may still be running in background.",
+          exitCode: 124,
+          cwd: cwd || "/opt/whizan"
+        });
+      }, 36000);
+
+      sub.subscribe(replyChannel, () => {
+        redis.publish("admin:commands", JSON.stringify({
+          action: "VM_EXEC",
+          command,
+          cwd: cwd || "/opt/whizan",
+          remote,
+          replyTo: replyChannel,
+        }));
+      });
+
+      sub.on("message", (channel, message) => {
+        if (channel === replyChannel) {
+          clearTimeout(timeout);
+          sub.unsubscribe(replyChannel).catch(() => {});
+          sub.quit().catch(() => {});
+          try {
+            resolve(JSON.parse(message));
+          } catch {
+            resolve({ stdout: message, stderr: "", exitCode: 0, cwd: cwd || "/opt/whizan" });
+          }
+        }
+      });
+    });
+  });
+
   // 6. Get logs
   fastify.get("/logs/:service/:type", async (request, reply) => {
     const { service, type } = request.params as { service: string, type: string };
