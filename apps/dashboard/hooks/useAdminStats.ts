@@ -23,6 +23,13 @@ export type VMStats = {
     totalContainers: number;
     runningContainers: number;
   };
+  dockerSystem?: {
+    imagesSizeMB: number;
+    containersSizeMB: number;
+    volumesSizeMB: number;
+    buildCacheSizeMB: number;
+    totalMB: number;
+  } | null;
   queue: { waiting: number; active: number; completed: number; failed: number };
   files?: { path: string; type: string; sizeMB: number }[];
 };

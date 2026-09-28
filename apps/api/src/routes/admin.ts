@@ -247,6 +247,14 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     return { success: true };
   });
 
+  // 5b. Prune unused Docker system layers & buildkit cache
+  fastify.post("/system/prune-docker", async (request, reply) => {
+    await redis.publish("admin:commands", JSON.stringify({
+      action: "PRUNE_DOCKER"
+    }));
+    return { success: true };
+  });
+
   // 6. Get logs
   fastify.get("/logs/:service/:type", async (request, reply) => {
     const { service, type } = request.params as { service: string, type: string };

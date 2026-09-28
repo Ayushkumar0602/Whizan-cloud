@@ -315,6 +315,7 @@ export const admin = {
   deleteDatabase: (databaseId: string) => request(`/api/admin/databases/${databaseId}`, { method: "DELETE" }),
   killContainer: (containerId: string) => request(`/api/admin/containers/${containerId}`, { method: "DELETE" }),
   deleteFile: (path: string) => request(`/api/admin/files/delete`, { method: "POST", body: JSON.stringify({ path }) }),
+  pruneDocker: () => request(`/api/admin/system/prune-docker`, { method: "POST" }),
   getLogs: (service: string, type: string) => request<{logs: string}>(`/api/admin/logs/${service}/${type}`),
   getContainerLogs: (containerId: string) => request<{logs: string}>(`/api/admin/containers/${containerId}/logs`),
   getDatabaseStats: () => request<any>(`/api/admin/database/stats`),
