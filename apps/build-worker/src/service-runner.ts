@@ -100,28 +100,61 @@ export class ServiceRunner {
     const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
 
     // 5. Intelligent runtime command adjustments (Python, Node, Go)
-    let effectiveInstallCommand = job.installCommand;
-    let effectiveStartCommand = job.startCommand;
+    let effectiveInstallCommand = job.installCommand || "";
+    let effectiveStartCommand = job.startCommand || "";
 
+    let detectedModule: string | null = null;
     if (job.language === "PYTHON") {
-      // Prevent crash if requirements.txt doesn't exist
-      if (effectiveInstallCommand === "pip install -r requirements.txt") {
+      // Check entry files for Python web frameworks
+      const candidateFiles = ["main.py", "app.py", "server.py", "wsgi.py", "index.py"];
+      let isFlask = false;
+      let isFastApi = false;
+
+      for (const fileName of candidateFiles) {
+        try {
+          const filePath = path.join(hostWorkDir, fileName);
+          const content = await fs.readFile(filePath, "utf-8");
+          if (content.includes("Flask(") || content.includes("from flask import") || content.includes("import flask")) {
+            isFlask = true;
+            detectedModule = fileName.replace(/\.py$/, "");
+            break;
+          }
+          if (content.includes("FastAPI(") || content.includes("from fastapi import")) {
+            isFastApi = true;
+            detectedModule = fileName.replace(/\.py$/, "");
+            break;
+          }
+        } catch {}
+      }
+
+      // 1. Dependency installation & auto-healing
+      if (!effectiveInstallCommand || effectiveInstallCommand === "pip install -r requirements.txt") {
         effectiveInstallCommand = "if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo 'No requirements.txt found, skipping pip install'; fi";
       }
 
-      // Check if main.py defines a Flask app without app.run()
-      try {
-        const mainPyPath = path.join(hostWorkDir, "main.py");
-        const mainContent = await fs.readFile(mainPyPath, "utf-8").catch(() => "");
-        if (mainContent.includes("Flask(") || mainContent.includes("from flask import")) {
-          if (!mainContent.includes("app.run(") && !mainContent.includes("__main__")) {
-            if (effectiveStartCommand === "python main.py" || effectiveStartCommand === "python3 main.py") {
-              effectiveStartCommand = `python -m flask --app main run --host 0.0.0.0 --port ${job.internalPort}`;
-              await onLog(`💡 Flask app detected without app.run() in main.py. Running with Flask CLI on port ${job.internalPort}.`);
-            }
-          }
-        }
-      } catch {}
+      // Auto-heal legacy dependencies (e.g. Flask 1.x / Jinja2 / Werkzeug / itsdangerous) or missing framework
+      // Flask 1.x crashes with "cannot import name 'escape' from 'jinja2'" or "cannot import name 'json' from 'itsdangerous'"
+      // Auto-upgrading Flask, Werkzeug, and Jinja2 resolves this seamlessly
+      effectiveInstallCommand += ` && (python -c "import flask" 2>/dev/null || (python -c "import flask" 2>&1 | grep -E "ImportError|No module named" >/dev/null && echo "⚡ Auto-resolving Python framework dependencies & legacy compatibility..." && pip install -U "flask>=3.0" "werkzeug>=3.0" "jinja2>=3.0" --quiet) || true)`;
+
+      if (isFastApi) {
+        effectiveInstallCommand += ` && (python -c "import fastapi" 2>/dev/null || pip install fastapi uvicorn --quiet || true)`;
+      }
+
+      // 2. Start command adjustments
+      const isDefaultStart = !effectiveStartCommand || 
+        effectiveStartCommand === "python main.py" || 
+        effectiveStartCommand === "python3 main.py" ||
+        effectiveStartCommand === "python app.py" ||
+        effectiveStartCommand === "python3 app.py";
+
+      if (isFlask && detectedModule && isDefaultStart) {
+        effectiveStartCommand = `python -m flask --app ${detectedModule} run --host 0.0.0.0 --port ${job.internalPort}`;
+        await onLog(`💡 Flask app detected in ${detectedModule}.py. Running with Flask CLI on 0.0.0.0:${job.internalPort}.`);
+      } else if (isFastApi && detectedModule && isDefaultStart) {
+        effectiveStartCommand = `python -m uvicorn ${detectedModule}:app --host 0.0.0.0 --port ${job.internalPort}`;
+        await onLog(`💡 FastAPI app detected in ${detectedModule}.py. Running with Uvicorn on 0.0.0.0:${job.internalPort}.`);
+      }
     }
 
     // 6. Construct the Docker run command (Install once + Start)
@@ -138,7 +171,7 @@ export class ServiceRunner {
     env.push(`HOST=0.0.0.0`);
     if (job.language === "PYTHON") {
       env.push(`PYTHONUNBUFFERED=1`);
-      env.push(`FLASK_APP=main.py`);
+      env.push(`FLASK_APP=${detectedModule || "main"}.py`);
       env.push(`FLASK_RUN_HOST=0.0.0.0`);
       env.push(`FLASK_RUN_PORT=${job.internalPort}`);
     }
