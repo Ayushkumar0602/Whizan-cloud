@@ -388,6 +388,20 @@ redisSub.on("message", async (channel, message) => {
         return;
       }
 
+      if (payload.action === "PRUNE_DOCKER") {
+        const { exec } = await import("child_process");
+        const util = await import("util");
+        const execAsync = util.promisify(exec);
+        try {
+          console.log("[Admin] Running Docker system prune...");
+          await execAsync("docker system prune -af && docker builder prune -af");
+          console.log("[Admin] Docker system prune completed successfully");
+        } catch (err: any) {
+          console.error("[Admin] Failed to prune docker system", err);
+        }
+        return;
+      }
+
       if (payload.action === "DELETE_FILE") {
         const targetPath = payload.path;
         if (
@@ -395,6 +409,8 @@ redisSub.on("message", async (channel, message) => {
           targetPath.startsWith("/tmp/hostify-builds/") ||
           targetPath.startsWith("/tmp/hostify-services/") ||
           targetPath.startsWith("/tmp/whizan-builds/") ||
+          targetPath.startsWith("/opt/whizan/repos/") ||
+          targetPath.startsWith("/opt/whizan/volumes/") ||
           targetPath.startsWith("/var/log/whizan/") ||
           targetPath.startsWith("/root/.pm2/logs/") ||
           (BUILD_BASE_DIR && targetPath.startsWith(BUILD_BASE_DIR))
@@ -552,6 +568,13 @@ const statsInterval = setInterval(async () => {
 
     // Docker container stats
     let dockerContainers: any[] = [];
+    let dockerSystem: {
+      imagesSizeMB: number;
+      containersSizeMB: number;
+      volumesSizeMB: number;
+      buildCacheSizeMB: number;
+      totalMB: number;
+    } | null = null;
     try {
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
@@ -629,6 +652,24 @@ const statsInterval = setInterval(async () => {
           memPercent: Number(memPercent.toFixed(2)),
         };
       }));
+
+      // Docker system disk usage
+      try {
+        const dfData: any = await (docker as any).df().catch(() => null);
+        if (dfData) {
+          const imagesSize = (dfData.Images || []).reduce((acc: number, img: any) => acc + (img.Size || 0), 0);
+          const containersSize = (dfData.Containers || []).reduce((acc: number, c: any) => acc + (c.SizeRw || 0), 0);
+          const volumesSize = (dfData.Volumes || []).reduce((acc: number, v: any) => acc + (v.UsageData?.Size || 0), 0);
+          const buildCacheSize = (dfData.BuildCache || []).reduce((acc: number, b: any) => acc + (b.Size || 0), 0);
+          dockerSystem = {
+            imagesSizeMB: Math.round(imagesSize / 1024 / 1024),
+            containersSizeMB: Math.round(containersSize / 1024 / 1024),
+            volumesSizeMB: Math.round(volumesSize / 1024 / 1024),
+            buildCacheSizeMB: Math.round(buildCacheSize / 1024 / 1024),
+            totalMB: Math.round((imagesSize + containersSize + volumesSize + buildCacheSize) / 1024 / 1024),
+          };
+        }
+      } catch {}
     } catch (e) {
       console.error("[Stats] Failed to fetch docker stats", e);
     }
@@ -659,7 +700,7 @@ const statsInterval = setInterval(async () => {
       };
     } catch {}
 
-    // Disk files (Builds, Workspaces, and Logs)
+    // Disk files (Builds, Workspaces, Volumes, Repos, and Logs)
     let diskFiles: { path: string; type: string; sizeMB: number; displayName?: string }[] = [];
     try {
       const { exec } = await import("child_process");
@@ -672,6 +713,8 @@ const statsInterval = setInterval(async () => {
         "/tmp/hostify-services/*",
         "/tmp/whizan-builds/*",
         BUILD_BASE_DIR ? `${BUILD_BASE_DIR}/*` : "",
+        "/opt/whizan/volumes/*",
+        "/opt/whizan/repos/*",
         "/var/log/whizan/*",
         "/root/.pm2/logs/*",
       ].filter(Boolean).join(" ");
@@ -684,48 +727,58 @@ const statsInterval = setInterval(async () => {
         let type = "log";
         let displayName = filePath;
 
-        const isBuild =
-          filePath.startsWith("/opt/whizan-builds") ||
-          filePath.startsWith("/tmp/hostify-builds") ||
-          filePath.startsWith("/tmp/hostify-services") ||
-          filePath.startsWith("/tmp/whizan-builds") ||
-          (BUILD_BASE_DIR && filePath.startsWith(BUILD_BASE_DIR));
+        if (filePath.startsWith("/opt/whizan/volumes")) {
+          type = "database-volume";
+          const volName = filePath.split("/").filter(Boolean).pop();
+          displayName = `${filePath} (Managed Database Volume: ${volName})`;
+        } else if (filePath.startsWith("/opt/whizan/repos")) {
+          type = "git-repo";
+          const repoName = filePath.split("/").filter(Boolean).pop();
+          displayName = `${filePath} (Git Cache: ${repoName})`;
+        } else {
+          const isBuild =
+            filePath.startsWith("/opt/whizan-builds") ||
+            filePath.startsWith("/tmp/hostify-builds") ||
+            filePath.startsWith("/tmp/hostify-services") ||
+            filePath.startsWith("/tmp/whizan-builds") ||
+            (BUILD_BASE_DIR && filePath.startsWith(BUILD_BASE_DIR));
 
-        if (isBuild) {
-          const id = filePath.split("/").filter(Boolean).pop();
-          if (id) {
-            try {
-              // 1. Check if it's a backend service deployment
-              const sDep = await prisma.serviceDeployment.findUnique({
-                where: { id },
-                include: { service: true }
-              });
-              if (sDep?.service) {
-                type = "backend-service";
-                displayName = `${filePath} (Backend: ${sDep.service.name} • ${sDep.id.slice(0, 8)})`;
-              } else {
-                // 2. Check if it's a frontend deployment
-                const fDep = await prisma.deployment.findUnique({
+          if (isBuild) {
+            const id = filePath.split("/").filter(Boolean).pop();
+            if (id) {
+              try {
+                // 1. Check if it's a backend service deployment
+                const sDep = await prisma.serviceDeployment.findUnique({
                   where: { id },
-                  include: { project: true }
+                  include: { service: true }
                 });
-                if (fDep?.project) {
-                  type = "frontend-build";
-                  displayName = `${filePath} (Frontend: ${fDep.project.name} • ${fDep.id.slice(0, 8)})`;
+                if (sDep?.service) {
+                  type = "backend-service";
+                  displayName = `${filePath} (Backend: ${sDep.service.name} • ${sDep.id.slice(0, 8)})`;
                 } else {
-                  type = "build-cache";
-                  displayName = `${filePath} (Build Cache / Workspace)`;
+                  // 2. Check if it's a frontend deployment
+                  const fDep = await prisma.deployment.findUnique({
+                    where: { id },
+                    include: { project: true }
+                  });
+                  if (fDep?.project) {
+                    type = "frontend-build";
+                    displayName = `${filePath} (Frontend: ${fDep.project.name} • ${fDep.id.slice(0, 8)})`;
+                  } else {
+                    type = "build-cache";
+                    displayName = `${filePath} (Build Cache / Workspace)`;
+                  }
                 }
+              } catch (e) {
+                type = "build-cache";
+                displayName = `${filePath} (Build Workspace)`;
               }
-            } catch (e) {
-              type = "build-cache";
-              displayName = `${filePath} (Build Workspace)`;
             }
+          } else if (filePath.includes(".pm2/logs") || filePath.startsWith("/var/log")) {
+            type = "system-log";
+            const fileName = filePath.split("/").filter(Boolean).pop();
+            displayName = `${filePath} (${fileName})`;
           }
-        } else if (filePath.includes(".pm2/logs") || filePath.startsWith("/var/log")) {
-          type = "system-log";
-          const fileName = filePath.split("/").filter(Boolean).pop();
-          displayName = `${filePath} (${fileName})`;
         }
         
         return {
@@ -782,6 +835,7 @@ const statsInterval = setInterval(async () => {
         totalContainers: dockerContainers.length,
         runningContainers: dockerContainers.filter((c) => c.state === "running").length,
       },
+      dockerSystem,
       queue: queueStats,
       files: diskFiles,
     };
