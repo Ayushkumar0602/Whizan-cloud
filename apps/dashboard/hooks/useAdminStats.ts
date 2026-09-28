@@ -31,7 +31,11 @@ export type AdminStats = {
   users: number;
   projects: number;
   deployments: number;
+  backendServices?: number;
+  databases?: number;
   allDeployments: any[];
+  allBackendServices?: any[];
+  allDatabases?: any[];
   vmStats: VMStats | null;
 };
 

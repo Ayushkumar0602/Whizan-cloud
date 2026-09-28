@@ -11,14 +11,49 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
 
   // 1. Get overall system stats + VM health from worker
   fastify.get("/stats", async (request, reply) => {
-    const usersCount = await prisma.user.count();
-    const projectsCount = await prisma.project.count();
-    const deploymentsCount = await prisma.deployment.count();
-
-    const allDeployments = await prisma.deployment.findMany({
-      orderBy: { createdAt: "desc" },
-      include: { project: true }
-    });
+    const [
+      usersCount,
+      projectsCount,
+      deploymentsCount,
+      backendServicesCount,
+      databasesCount,
+      allDeployments,
+      allBackendServices,
+      allDatabases
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.project.count(),
+      prisma.deployment.count(),
+      prisma.backendService.count(),
+      prisma.databaseService.count(),
+      prisma.deployment.findMany({
+        orderBy: { createdAt: "desc" },
+        include: { project: true },
+        take: 50,
+      }),
+      prisma.backendService.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          deployments: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+          user: {
+            select: { id: true, email: true, name: true }
+          }
+        },
+        take: 50,
+      }),
+      prisma.databaseService.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            select: { id: true, email: true, name: true }
+          }
+        },
+        take: 50,
+      })
+    ]);
 
     // Read VM stats published by the worker every 15s
     let vmStats = null;
@@ -31,7 +66,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       users: usersCount,
       projects: projectsCount,
       deployments: deploymentsCount,
+      backendServices: backendServicesCount,
+      databases: databasesCount,
       allDeployments,
+      allBackendServices,
+      allDatabases,
       vmStats,
     };
   });
@@ -89,6 +128,76 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       containerId: id
     }));
 
+    return { success: true };
+  });
+
+  // 4b. Stop / pause backend service
+  fastify.post("/services/:id/stop", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const service = await prisma.backendService.findUnique({
+      where: { id },
+      include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } }
+    });
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const latest = service.deployments[0];
+    if (latest) {
+      await prisma.serviceDeployment.update({
+        where: { id: latest.id },
+        data: { status: "PAUSED", containerPort: null }
+      });
+      await redis.publish("admin:commands", JSON.stringify({
+        action: "STOP_CONTAINER",
+        deploymentId: latest.id
+      }));
+    }
+    return { success: true };
+  });
+
+  // 4c. Delete backend service
+  fastify.delete("/services/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const service = await prisma.backendService.findUnique({
+      where: { id },
+      include: { deployments: true }
+    });
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    for (const d of service.deployments) {
+      await redis.publish("admin:commands", JSON.stringify({
+        action: "DELETE_CONTAINER",
+        deploymentId: d.id
+      }));
+    }
+    await prisma.backendService.delete({ where: { id } }).catch(() => {});
+    return { success: true };
+  });
+
+  // 4d. Stop / pause database
+  fastify.post("/databases/:id/stop", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const db = await prisma.databaseService.findUnique({ where: { id } });
+    if (!db) return reply.code(404).send({ error: "Database not found" });
+
+    await prisma.databaseService.update({ where: { id }, data: { status: "STOPPED" } });
+    await redis.publish("admin:commands", JSON.stringify({
+      action: "STOP_CONTAINER",
+      containerId: `whizan-db-${id}`
+    }));
+    return { success: true };
+  });
+
+  // 4e. Delete database
+  fastify.delete("/databases/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const db = await prisma.databaseService.findUnique({ where: { id } });
+    if (!db) return reply.code(404).send({ error: "Database not found" });
+
+    await redis.publish("admin:commands", JSON.stringify({
+      action: "DELETE_CONTAINER",
+      containerId: `whizan-db-${id}`
+    }));
+    await prisma.databaseService.delete({ where: { id } }).catch(() => {});
     return { success: true };
   });
 
