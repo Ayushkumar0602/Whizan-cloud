@@ -545,12 +545,24 @@ export class DatabaseRunner {
     const containerName = `whizan-db-${id}`;
     const poolerName = `whizan-db-pooler-${id}`;
     const container = docker.getContainer(containerName);
-    await container.start();
-    await docker.getContainer(poolerName).start().catch(() => {});
+    
+    try {
+      await container.start();
+      await docker.getContainer(poolerName).start().catch(() => {});
+    } catch (err: any) {
+      if (err.statusCode === 404 || err.message?.includes("No such container") || err.message?.includes("not found")) {
+        console.log(`[DatabaseRunner] Container ${containerName} not found in Docker. Re-provisioning container over existing persistent volume...`);
+        await this.provision(options, async (line) => console.log(`[Database:${id}] ${line}`));
+        return;
+      }
+      if (!err.message?.includes("already started")) {
+        throw err;
+      }
+    }
 
-    const inspect = await container.inspect();
+    const inspect = await container.inspect().catch(() => null);
     const internalPort = options.internalPort || (options.type === "REDIS" ? 6379 : 5432);
-    const hostBindings = inspect.HostConfig?.PortBindings?.[`${internalPort}/tcp`];
+    const hostBindings = inspect?.HostConfig?.PortBindings?.[`${internalPort}/tcp`];
     const externalPort = hostBindings?.[0]?.HostPort ? parseInt(hostBindings[0].HostPort, 10) : 0;
 
     await this.waitForDatabaseReady(container, options, externalPort, internalPort, 45000);
