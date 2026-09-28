@@ -321,6 +321,15 @@ export const admin = {
   getContainerLogs: (containerId: string) => request<{logs: string}>(`/api/admin/containers/${containerId}/logs`),
   getDatabaseStats: () => request<any>(`/api/admin/database/stats`),
   restartService: (service: string) => request(`/api/admin/restart/${service}`, { method: "POST" }),
+  terminalExec: (data: {
+    command: string;
+    cwd?: string;
+    remote?: { host: string; port?: number; username: string; password?: string; privateKey?: string };
+  }) =>
+    request<{ stdout: string; stderr: string; exitCode: number; cwd: string }>("/api/admin/terminal/exec", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // ─── Backend Services ────────────────────────────────────────────────────────

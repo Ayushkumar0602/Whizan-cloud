@@ -402,6 +402,84 @@ redisSub.on("message", async (channel, message) => {
         return;
       }
 
+      if (payload.action === "VM_EXEC") {
+        const { exec } = await import("child_process");
+        const util = await import("util");
+        const execAsync = util.promisify(exec);
+        const { command, cwd = "/opt/whizan", replyTo, remote } = payload;
+
+        try {
+          if (remote && remote.host) {
+            const port = remote.port || 22;
+            const user = remote.username || "azureuser";
+            const escapedCmd = (command || "").replace(/"/g, '\\"');
+            let sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -p ${port} ${user}@${remote.host} "${escapedCmd}"`;
+            if (remote.password) {
+              sshCmd = `sshpass -p '${remote.password.replace(/'/g, "'\\''")}' ${sshCmd}`;
+            }
+            const { stdout, stderr } = await execAsync(sshCmd, { timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
+            if (replyTo) {
+              await redisPub.publish(replyTo, JSON.stringify({ stdout, stderr, exitCode: 0, cwd }));
+            }
+            return;
+          }
+
+          const trimmed = (command || "").trim();
+          let newCwd = cwd;
+          let cmdToRun = command;
+
+          if (trimmed.startsWith("cd ")) {
+            const dest = trimmed.slice(3).trim();
+            const targetDir = path.resolve(cwd, dest || os.homedir());
+            const exists = await fs.stat(targetDir).then((s) => s.isDirectory()).catch(() => false);
+            if (exists) {
+              newCwd = targetDir;
+              cmdToRun = "pwd";
+            } else {
+              if (replyTo) {
+                await redisPub.publish(replyTo, JSON.stringify({
+                  stdout: "",
+                  stderr: `bash: cd: ${dest}: No such file or directory\n`,
+                  exitCode: 1,
+                  cwd
+                }));
+              }
+              return;
+            }
+          }
+
+          const { stdout, stderr } = await execAsync(cmdToRun, {
+            cwd: newCwd,
+            timeout: 35000,
+            maxBuffer: 10 * 1024 * 1024,
+            shell: "/bin/bash",
+            env: {
+              ...process.env,
+              PATH: (process.env.PATH || "") + ":/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/whizan/node_modules/.bin"
+            }
+          });
+
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              stdout,
+              stderr,
+              exitCode: 0,
+              cwd: newCwd
+            }));
+          }
+        } catch (err: any) {
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              stdout: err.stdout || "",
+              stderr: err.stderr || err.message || "Command failed",
+              exitCode: err.code || 1,
+              cwd
+            }));
+          }
+        }
+        return;
+      }
+
       if (payload.action === "CLEAR_BUILD_CACHE") {
         try {
           console.log("[Admin] Clearing /opt/whizan-cache...");
@@ -650,9 +728,65 @@ const statsInterval = setInterval(async () => {
           } catch (err) {}
         }
 
+        const name = c.Names?.[0]?.replace(/^\//, "") ?? "unknown";
+        let entityType: "service" | "database" | "frontend" | "system" = "system";
+        let entityName: string | null = null;
+        let entityLink: string | null = null;
+
+        if (name.startsWith("whizan-db-") || name.startsWith("whizan-pooler-")) {
+          const dbId = name.replace(/^(whizan-db-|whizan-pooler-)/, "");
+          const db = await prisma.databaseService.findUnique({ where: { id: dbId } }).catch(() => null);
+          if (db) {
+            entityType = "database";
+            entityName = `${db.name} (${db.type})`;
+            entityLink = `/dashboard/databases/${db.id}`;
+          } else {
+            entityType = "database";
+            entityName = name;
+          }
+        } else if (name.startsWith("service-")) {
+          const parts = name.split("-");
+          const sDep: any = await (prisma.serviceDeployment as any).findFirst({
+            where: {
+              OR: [
+                { id: { in: parts } },
+                { service: { slug: { in: parts } } }
+              ]
+            },
+            include: { service: true }
+          }).catch(() => null);
+          if (sDep?.service) {
+            entityType = "service";
+            entityName = sDep.service.name;
+            entityLink = `/dashboard/backend/${sDep.service.id}`;
+          } else {
+            const svc = await prisma.backendService.findFirst({
+              where: { slug: { in: parts } }
+            }).catch(() => null);
+            if (svc) {
+              entityType = "service";
+              entityName = svc.name;
+              entityLink = `/dashboard/backend/${svc.id}`;
+            }
+          }
+        } else if (c.Mounts?.some((m: any) => m.Source?.includes("whizan-builds") || m.Source?.includes("hostify-builds"))) {
+          const depId = c.Mounts.find((m: any) => m.Source?.includes("whizan-builds") || m.Source?.includes("hostify-builds"))?.Source?.split("/").pop();
+          if (depId) {
+            const fDep = await prisma.deployment.findUnique({
+              where: { id: depId },
+              include: { project: true }
+            }).catch(() => null);
+            if (fDep?.project) {
+              entityType = "frontend";
+              entityName = fDep.project.name;
+              entityLink = `/dashboard/projects/${fDep.project.id}`;
+            }
+          }
+        }
+
         return {
           id: c.Id.slice(0, 12),
-          name: c.Names?.[0]?.replace(/^\//, "") ?? "unknown",
+          name,
           image: c.Image,
           state: c.State,
           status: c.Status,
@@ -663,13 +797,16 @@ const statsInterval = setInterval(async () => {
           memUsageMB: Number(memUsageMB.toFixed(2)),
           memLimitMB: Number(memLimitMB.toFixed(2)),
           memPercent: Number(memPercent.toFixed(2)),
+          entityType,
+          entityName,
+          entityLink,
         };
       }));
 
       // Docker system disk usage
       try {
         const dfData: any = await (docker as any).df().catch(() => null);
-        if (dfData) {
+        if (dfData && (dfData.Images?.length || dfData.Containers?.length)) {
           const imagesSize = (dfData.Images || []).reduce((acc: number, img: any) => acc + (img.Size || 0), 0);
           const containersSize = (dfData.Containers || []).reduce((acc: number, c: any) => acc + (c.SizeRw || 0), 0);
           const volumesSize = (dfData.Volumes || []).reduce((acc: number, v: any) => acc + (v.UsageData?.Size || 0), 0);
@@ -683,6 +820,51 @@ const statsInterval = setInterval(async () => {
           };
         }
       } catch {}
+
+      // Fallback via CLI if docker.df() returned null or empty
+      if (!dockerSystem) {
+        try {
+          const { exec } = await import("child_process");
+          const util = await import("util");
+          const execAsync = util.promisify(exec);
+          const { stdout } = await execAsync("docker system df 2>/dev/null || true");
+          if (stdout) {
+            let imagesMB = 0, containersMB = 0, volumesMB = 0, buildCacheMB = 0;
+            const toMB = (val: string, unit: string) => {
+              const num = parseFloat(val) || 0;
+              const u = unit.toUpperCase();
+              if (u.includes("TB") || u.includes("T")) return Math.round(num * 1024 * 1024);
+              if (u.includes("GB") || u.includes("G")) return Math.round(num * 1024);
+              if (u.includes("MB") || u.includes("M")) return Math.round(num);
+              if (u.includes("KB") || u.includes("K")) return Math.round(num / 1024);
+              if (u.includes("B")) return Math.round(num / 1024 / 1024);
+              return Math.round(num);
+            };
+
+            for (const line of stdout.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith("TYPE")) continue;
+              const match = trimmed.match(/^([A-Za-z\s]+?)\s+\d+\s+\d+\s+([\d.]+)\s*([A-Za-z]+)/i);
+              if (match) {
+                const type = match[1].trim().toLowerCase();
+                const mb = toMB(match[2], match[3]);
+                if (type.includes("image")) imagesMB = mb;
+                else if (type.includes("container")) containersMB = mb;
+                else if (type.includes("volume")) volumesMB = mb;
+                else if (type.includes("cache")) buildCacheMB = mb;
+              }
+            }
+
+            dockerSystem = {
+              imagesSizeMB: imagesMB,
+              containersSizeMB: containersMB,
+              volumesSizeMB: volumesMB,
+              buildCacheSizeMB: buildCacheMB,
+              totalMB: imagesMB + containersMB + volumesMB + buildCacheMB,
+            };
+          }
+        } catch {}
+      }
     } catch (e) {
       console.error("[Stats] Failed to fetch docker stats", e);
     }
@@ -740,19 +922,64 @@ const statsInterval = setInterval(async () => {
         const sizeMB = parseInt(sizeStr) || 0;
         let type = "log";
         let displayName = filePath;
+        let entityType: "service" | "database" | "frontend" | "system" = "system";
+        let entityName: string | null = null;
+        let entityLink: string | null = null;
 
         if (filePath.startsWith("/opt/whizan-cache")) {
           type = "build-cache";
-          const projId = filePath.split("/").filter(Boolean).pop();
-          displayName = `${filePath} (NPM & Compiler Cache: ${projId})`;
+          const projId = filePath.split("/").filter(Boolean).pop() || "";
+          const [proj, svc] = await Promise.all([
+            prisma.project.findUnique({ where: { id: projId } }).catch(() => null),
+            prisma.backendService.findUnique({ where: { id: projId } }).catch(() => null)
+          ]);
+          if (proj) {
+            entityType = "frontend";
+            entityName = proj.name;
+            entityLink = `/dashboard/projects/${proj.id}`;
+            displayName = `${filePath} (Cache: ${proj.name})`;
+          } else if (svc) {
+            entityType = "service";
+            entityName = svc.name;
+            entityLink = `/dashboard/backend/${svc.id}`;
+            displayName = `${filePath} (Cache: ${svc.name})`;
+          } else {
+            displayName = `${filePath} (NPM & Compiler Cache: ${projId.slice(0, 8)})`;
+          }
         } else if (filePath.startsWith("/opt/whizan/volumes")) {
           type = "database-volume";
-          const volName = filePath.split("/").filter(Boolean).pop();
-          displayName = `${filePath} (Managed Database Volume: ${volName})`;
+          const volName = filePath.split("/").filter(Boolean).pop() || "";
+          const db = await prisma.databaseService.findFirst({
+            where: { OR: [{ id: volName }, { slug: volName }, { databaseName: volName }] }
+          }).catch(() => null);
+          if (db) {
+            entityType = "database";
+            entityName = `${db.name} (${db.type})`;
+            entityLink = `/dashboard/databases/${db.id}`;
+            displayName = `${filePath} (${db.name} Volume)`;
+          } else {
+            displayName = `${filePath} (Database Volume: ${volName.slice(0, 8)})`;
+          }
         } else if (filePath.startsWith("/opt/whizan/repos")) {
           type = "git-repo";
-          const repoName = filePath.split("/").filter(Boolean).pop();
-          displayName = `${filePath} (Git Cache: ${repoName})`;
+          const repoName = filePath.split("/").filter(Boolean).pop() || "";
+          const [svc, proj] = await Promise.all([
+            prisma.backendService.findUnique({ where: { id: repoName } }).catch(() => null),
+            prisma.project.findUnique({ where: { id: repoName } }).catch(() => null)
+          ]);
+          if (svc) {
+            entityType = "service";
+            entityName = svc.name;
+            entityLink = `/dashboard/backend/${svc.id}`;
+            displayName = `${filePath} (${svc.name} Git Repo)`;
+          } else if (proj) {
+            entityType = "frontend";
+            entityName = proj.name;
+            entityLink = `/dashboard/projects/${proj.id}`;
+            displayName = `${filePath} (${proj.name} Git Repo)`;
+          } else {
+            displayName = `${filePath} (Git Cache: ${repoName.slice(0, 8)})`;
+          }
         } else {
           const isBuild =
             filePath.startsWith("/opt/whizan-builds") ||
@@ -765,26 +992,30 @@ const statsInterval = setInterval(async () => {
             const id = filePath.split("/").filter(Boolean).pop();
             if (id) {
               try {
-                // 1. Check if it's a backend service deployment
                 const sDep = await prisma.serviceDeployment.findUnique({
                   where: { id },
                   include: { service: true }
                 });
                 if (sDep?.service) {
                   type = "backend-service";
+                  entityType = "service";
+                  entityName = sDep.service.name;
+                  entityLink = `/dashboard/backend/${sDep.service.id}`;
                   displayName = `${filePath} (Backend: ${sDep.service.name} • ${sDep.id.slice(0, 8)})`;
                 } else {
-                  // 2. Check if it's a frontend deployment
                   const fDep = await prisma.deployment.findUnique({
                     where: { id },
                     include: { project: true }
                   });
                   if (fDep?.project) {
                     type = "frontend-build";
+                    entityType = "frontend";
+                    entityName = fDep.project.name;
+                    entityLink = `/dashboard/projects/${fDep.project.id}`;
                     displayName = `${filePath} (Frontend: ${fDep.project.name} • ${fDep.id.slice(0, 8)})`;
                   } else {
                     type = "build-cache";
-                    displayName = `${filePath} (Build Cache / Workspace)`;
+                    displayName = `${filePath} (Build Workspace)`;
                   }
                 }
               } catch (e) {
@@ -804,6 +1035,9 @@ const statsInterval = setInterval(async () => {
           displayName,
           type,
           sizeMB,
+          entityType,
+          entityName,
+          entityLink,
         };
       }));
       diskFiles.sort((a, b) => b.sizeMB - a.sizeMB);

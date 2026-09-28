@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { admin } from "@/lib/api";
-import { Container, Terminal, X, RefreshCw, Trash2, PowerOff, Copy, Check } from "lucide-react";
+import { Container, Terminal, X, RefreshCw, Trash2, PowerOff, Copy, Check, ExternalLink } from "lucide-react";
 import { useAdminStats } from "../../../../hooks/useAdminStats";
 import { toast } from "sonner";
 
@@ -120,11 +121,45 @@ export default function ContainersPage() {
                     <tr key={c.id}>
                       <td className="mono" style={{ color: "var(--muted)" }}>{c.id.slice(0, 10)}</td>
                       <td>
-                        <div style={{ fontWeight: 600, color: "var(--foreground)" }}>{c.name}</div>
-                        {d && (
-                          <div style={{ fontSize: "0.72rem", color: "var(--accent)", marginTop: "2px" }}>
-                            project: {d.project.name}
-                          </div>
+                        <div style={{ fontWeight: 650, color: "var(--foreground)", fontSize: "0.85rem" }}>{c.name}</div>
+                        {c.entityLink && c.entityName ? (
+                          <Link
+                            href={c.entityLink}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              fontSize: "0.73rem",
+                              color: "var(--accent)",
+                              textDecoration: "none",
+                              marginTop: "0.25rem",
+                              fontWeight: 550,
+                            }}
+                          >
+                            <span>{c.entityType === "database" ? "🗄️" : c.entityType === "service" ? "⚙️" : "🌐"} {c.entityName}</span>
+                            <ExternalLink size={10} />
+                          </Link>
+                        ) : d ? (
+                          <Link
+                            href={`/dashboard/projects/${d.project.id}`}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              fontSize: "0.73rem",
+                              color: "var(--accent)",
+                              textDecoration: "none",
+                              marginTop: "0.25rem",
+                              fontWeight: 550,
+                            }}
+                          >
+                            <span>🌐 {d.project.name}</span>
+                            <ExternalLink size={10} />
+                          </Link>
+                        ) : (
+                          <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.2rem", display: "inline-block" }}>
+                            Host Core Daemon
+                          </span>
                         )}
                       </td>
                       <td className="mono" style={{ color: "var(--muted)", fontSize: "0.75rem" }}>

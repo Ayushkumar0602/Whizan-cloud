@@ -19,6 +19,9 @@ export type VMStats = {
       memUsageMB?: number;
       memLimitMB?: number;
       memPercent?: number;
+      entityType?: "service" | "database" | "frontend" | "system";
+      entityName?: string | null;
+      entityLink?: string | null;
     }[];
     totalContainers: number;
     runningContainers: number;
@@ -31,7 +34,15 @@ export type VMStats = {
     totalMB: number;
   } | null;
   queue: { waiting: number; active: number; completed: number; failed: number };
-  files?: { path: string; type: string; sizeMB: number }[];
+  files?: {
+    path: string;
+    type: string;
+    sizeMB: number;
+    displayName?: string;
+    entityType?: "service" | "database" | "frontend" | "system";
+    entityName?: string | null;
+    entityLink?: string | null;
+  }[];
 };
 
 export type AdminStats = {

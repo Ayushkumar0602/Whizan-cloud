@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { admin } from "@/lib/api";
 import {
   HardDrive,
@@ -15,7 +16,8 @@ import {
   Terminal,
   Server,
   Box,
-  RotateCcw
+  RotateCcw,
+  ExternalLink
 } from "lucide-react";
 import { useAdminStats } from "../../../../hooks/useAdminStats";
 import { toast } from "sonner";
@@ -165,7 +167,11 @@ export default function StoragePage() {
 
           <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.6rem" }}>
             <span style={{ fontSize: "1.65rem", fontWeight: 700, letterSpacing: "-0.03em" }}>
-              {dockerSys ? `${(dockerSys.totalMB / 1024).toFixed(2)} GB` : "..."}
+              {dockerSys && dockerSys.totalMB > 0
+                ? `${(dockerSys.totalMB / 1024).toFixed(2)} GB`
+                : dockerSys && dockerSys.totalMB === 0
+                ? "0.00 GB"
+                : "Awaiting Host..."}
             </span>
             <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
               Engine Images &amp; Layers
@@ -175,19 +181,27 @@ export default function StoragePage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem", fontSize: "0.74rem" }}>
             <div style={{ background: "var(--bg-inset)", padding: "0.35rem 0.55rem", borderRadius: 6 }}>
               <span style={{ color: "var(--muted)" }}>Images: </span>
-              <span className="mono" style={{ fontWeight: 600 }}>{dockerSys ? `${(dockerSys.imagesSizeMB / 1024).toFixed(1)} GB` : "..."}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>
+                {dockerSys ? `${(dockerSys.imagesSizeMB / 1024).toFixed(2)} GB` : "0 GB"}
+              </span>
             </div>
             <div style={{ background: "var(--bg-inset)", padding: "0.35rem 0.55rem", borderRadius: 6 }}>
               <span style={{ color: "var(--muted)" }}>BuildKit: </span>
-              <span className="mono" style={{ fontWeight: 600 }}>{dockerSys ? `${dockerSys.buildCacheSizeMB} MB` : "..."}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>
+                {dockerSys ? `${dockerSys.buildCacheSizeMB} MB` : "0 MB"}
+              </span>
             </div>
             <div style={{ background: "var(--bg-inset)", padding: "0.35rem 0.55rem", borderRadius: 6 }}>
               <span style={{ color: "var(--muted)" }}>Containers: </span>
-              <span className="mono" style={{ fontWeight: 600 }}>{dockerSys ? `${dockerSys.containersSizeMB} MB` : "..."}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>
+                {dockerSys ? `${dockerSys.containersSizeMB} MB` : "0 MB"}
+              </span>
             </div>
             <div style={{ background: "var(--bg-inset)", padding: "0.35rem 0.55rem", borderRadius: 6 }}>
               <span style={{ color: "var(--muted)" }}>Volumes: </span>
-              <span className="mono" style={{ fontWeight: 600 }}>{dockerSys ? `${dockerSys.volumesSizeMB} MB` : "..."}</span>
+              <span className="mono" style={{ fontWeight: 600 }}>
+                {dockerSys ? `${dockerSys.volumesSizeMB} MB` : "0 MB"}
+              </span>
             </div>
           </div>
         </div>
@@ -331,11 +345,35 @@ export default function StoragePage() {
                   return (
                     <tr key={i}>
                       <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
-                          {icon}
-                          <span className="mono" style={{ color: "var(--foreground)", fontSize: "0.8rem" }}>
-                            {(file as any).displayName || file.path}
-                          </span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                            {icon}
+                            <span className="mono" style={{ color: "var(--foreground)", fontSize: "0.8rem", fontWeight: 600 }}>
+                              {(file as any).displayName || file.path}
+                            </span>
+                          </div>
+                          {file.entityLink && file.entityName ? (
+                            <Link
+                              href={file.entityLink}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.3rem",
+                                fontSize: "0.72rem",
+                                color: "var(--accent)",
+                                textDecoration: "none",
+                                marginLeft: "1.45rem",
+                                fontWeight: 550,
+                              }}
+                            >
+                              <span>{file.entityType === "database" ? "🗄️" : file.entityType === "service" ? "⚙️" : "🌐"} {file.entityName}</span>
+                              <ExternalLink size={10} />
+                            </Link>
+                          ) : (
+                            <span className="mono" style={{ fontSize: "0.7rem", color: "var(--muted)", marginLeft: "1.45rem" }}>
+                              {file.path}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td>
