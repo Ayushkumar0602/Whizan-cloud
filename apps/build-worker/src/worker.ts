@@ -402,10 +402,23 @@ redisSub.on("message", async (channel, message) => {
         return;
       }
 
+      if (payload.action === "CLEAR_BUILD_CACHE") {
+        try {
+          console.log("[Admin] Clearing /opt/whizan-cache...");
+          await fs.rm("/opt/whizan-cache", { recursive: true, force: true }).catch(() => {});
+          await fs.mkdir("/opt/whizan-cache", { recursive: true }).catch(() => {});
+          console.log("[Admin] Cleared /opt/whizan-cache successfully");
+        } catch (err: any) {
+          console.error("[Admin] Failed to clear build cache", err);
+        }
+        return;
+      }
+
       if (payload.action === "DELETE_FILE") {
         const targetPath = payload.path;
         if (
           targetPath.startsWith("/opt/whizan-builds/") ||
+          targetPath.startsWith("/opt/whizan-cache/") ||
           targetPath.startsWith("/tmp/hostify-builds/") ||
           targetPath.startsWith("/tmp/hostify-services/") ||
           targetPath.startsWith("/tmp/whizan-builds/") ||
@@ -708,6 +721,7 @@ const statsInterval = setInterval(async () => {
       const execAsync = util.promisify(exec);
       
       const scanDirs = [
+        "/opt/whizan-cache/*",
         "/opt/whizan-builds/*",
         "/tmp/hostify-builds/*",
         "/tmp/hostify-services/*",
@@ -727,7 +741,11 @@ const statsInterval = setInterval(async () => {
         let type = "log";
         let displayName = filePath;
 
-        if (filePath.startsWith("/opt/whizan/volumes")) {
+        if (filePath.startsWith("/opt/whizan-cache")) {
+          type = "build-cache";
+          const projId = filePath.split("/").filter(Boolean).pop();
+          displayName = `${filePath} (NPM & Compiler Cache: ${projId})`;
+        } else if (filePath.startsWith("/opt/whizan/volumes")) {
           type = "database-volume";
           const volName = filePath.split("/").filter(Boolean).pop();
           displayName = `${filePath} (Managed Database Volume: ${volName})`;

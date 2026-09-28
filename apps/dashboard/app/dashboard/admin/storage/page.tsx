@@ -14,7 +14,8 @@ import {
   GitBranch,
   Terminal,
   Server,
-  Box
+  Box,
+  RotateCcw
 } from "lucide-react";
 import { useAdminStats } from "../../../../hooks/useAdminStats";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import { toast } from "sonner";
 export default function StoragePage() {
   const { stats, loading, fetchStats } = useAdminStats();
   const [pruning, setPruning] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
   const [filterType, setFilterType] = useState<string>("all");
 
   const handleFileDelete = async (path: string) => {
@@ -51,6 +53,22 @@ export default function StoragePage() {
     }
   };
 
+  const handleClearCache = async () => {
+    if (!confirm("Clear global NPM and compiler build cache (/opt/whizan-cache)? This can safely reclaim gigabytes of disk space without affecting running services.")) return;
+    setClearingCache(true);
+    try {
+      await admin.clearBuildCache();
+      toast.success("Build cache cleared from host");
+      setTimeout(() => {
+        fetchStats();
+        setClearingCache(false);
+      }, 2500);
+    } catch {
+      toast.error("Failed to clear build cache");
+      setClearingCache(false);
+    }
+  };
+
   if (loading && !stats) {
     return (
       <div className="page-loading">
@@ -65,8 +83,13 @@ export default function StoragePage() {
   const dockerSys = vm?.dockerSystem;
 
   const files = vm?.files || [];
+  const cacheTotalMB = files
+    .filter((f) => f.type === "build-cache")
+    .reduce((acc, f) => acc + (f.sizeMB || 0), 0);
+
   const filteredFiles = files.filter((f) => {
     if (filterType === "all") return true;
+    if (filterType === "cache") return f.type === "build-cache";
     if (filterType === "databases") return f.type === "database-volume";
     if (filterType === "repos") return f.type === "git-repo";
     if (filterType === "frontend") return f.type === "frontend-build";
@@ -119,7 +142,7 @@ export default function StoragePage() {
 
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--muted)" }}>
             <span>Free: {disk ? `${(disk.freeMB / 1024).toFixed(1)} GB` : "..."}</span>
-            <span>Filesystem: ext4 NVMe</span>
+            <span>Swap: ~4.1 GB reserved</span>
           </div>
         </div>
 
@@ -128,7 +151,7 @@ export default function StoragePage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <Box size={16} style={{ color: "#38bdf8" }} />
-              <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>Docker Daemon Storage</span>
+              <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>Docker Daemon Footprint</span>
             </div>
             <button
               className="btn btn-secondary btn-sm"
@@ -136,7 +159,7 @@ export default function StoragePage() {
               disabled={pruning}
               style={{ fontSize: "0.72rem", padding: "0.2rem 0.6rem", height: 26 }}
             >
-              <Sparkles size={11} /> {pruning ? "Pruning..." : "Prune Cache"}
+              <Sparkles size={11} /> {pruning ? "Pruning..." : "Prune Images"}
             </button>
           </div>
 
@@ -145,7 +168,7 @@ export default function StoragePage() {
               {dockerSys ? `${(dockerSys.totalMB / 1024).toFixed(2)} GB` : "..."}
             </span>
             <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
-              Images &amp; Layers
+              Engine Images &amp; Layers
             </span>
           </div>
 
@@ -168,6 +191,39 @@ export default function StoragePage() {
             </div>
           </div>
         </div>
+
+        {/* Card 3: Build & Package Cache */}
+        <div className="card" style={{ padding: "1.25rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Sparkles size={16} style={{ color: "#eab308" }} />
+              <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>NPM &amp; Compiler Cache</span>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleClearCache}
+              disabled={clearingCache}
+              style={{ fontSize: "0.72rem", padding: "0.2rem 0.6rem", height: 26 }}
+            >
+              <RotateCcw size={11} /> {clearingCache ? "Clearing..." : "Clear Cache"}
+            </button>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.6rem" }}>
+            <span style={{ fontSize: "1.65rem", fontWeight: 700, letterSpacing: "-0.03em" }}>
+              {cacheTotalMB >= 1024
+                ? `${(cacheTotalMB / 1024).toFixed(2)} GB`
+                : `${cacheTotalMB} MB`}
+            </span>
+            <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>
+              /opt/whizan-cache
+            </span>
+          </div>
+
+          <p style={{ fontSize: "0.74rem", color: "var(--muted)", margin: 0, lineHeight: 1.4 }}>
+            Speed-up cache for Next.js builds &amp; NPM tarballs. Safe to wipe at any time to free up multiple gigabytes.
+          </p>
+        </div>
       </div>
 
       {/* ─── Scanned Items Table ────────────────────────────────────────────── */}
@@ -185,6 +241,7 @@ export default function StoragePage() {
             <div className="tab-pills" style={{ display: "flex", gap: "0.25rem", background: "var(--bg-inset)", padding: "0.2rem", borderRadius: 8 }}>
               {[
                 { id: "all", label: "All" },
+                { id: "cache", label: "Build Cache" },
                 { id: "databases", label: "DB Volumes" },
                 { id: "repos", label: "Git Repos" },
                 { id: "frontend", label: "Frontend" },
@@ -249,6 +306,11 @@ export default function StoragePage() {
                     badgeColor = "#10b981";
                     badgeBorder = "rgba(16, 185, 129, 0.25)";
                     icon = <Server size={14} style={{ color: "#10b981" }} />;
+                  } else if (file.type === "build-cache") {
+                    badgeBg = "rgba(234, 179, 8, 0.15)";
+                    badgeColor = "#eab308";
+                    badgeBorder = "rgba(234, 179, 8, 0.3)";
+                    icon = <Sparkles size={14} style={{ color: "#eab308" }} />;
                   } else if (file.type === "database-volume") {
                     badgeBg = "rgba(168, 85, 247, 0.15)";
                     badgeColor = "#c084fc";
