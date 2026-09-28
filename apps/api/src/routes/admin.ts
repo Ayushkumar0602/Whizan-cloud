@@ -255,6 +255,14 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     return { success: true };
   });
 
+  // 5c. Clear global build and npm cache (/opt/whizan-cache)
+  fastify.post("/system/clear-cache", async (request, reply) => {
+    await redis.publish("admin:commands", JSON.stringify({
+      action: "CLEAR_BUILD_CACHE"
+    }));
+    return { success: true };
+  });
+
   // 6. Get logs
   fastify.get("/logs/:service/:type", async (request, reply) => {
     const { service, type } = request.params as { service: string, type: string };
