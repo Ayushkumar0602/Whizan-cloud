@@ -10,6 +10,7 @@ import { spawn } from "child_process";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
+const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const BUILD_BASE_DIR =
   process.env.BUILD_BASE_DIR && !process.env.BUILD_BASE_DIR.startsWith("/tmp")
     ? process.env.BUILD_BASE_DIR
