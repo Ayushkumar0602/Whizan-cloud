@@ -81,13 +81,54 @@ export class ServiceRunner {
     // 3. Find a free host port for the new (green) container
     const hostPort = await this.findFreePort();
 
-    // 4. Construct the Docker run command (Install once + Start)
-    // We create a .hostify_installed stamp file so restarts and wakeups from sleep
-    // don't repeat the installCommand, while new deployments run it cleanly.
+    // 4. Resolve root directory & verify if folder exists
+    let cleanRootDir = job.rootDir && job.rootDir !== "." ? job.rootDir.replace(/^\/+|\/+$/g, "") : "";
+    if (cleanRootDir) {
+      const fullSubPath = path.join(buildDir, cleanRootDir);
+      try {
+        const stat = await fs.stat(fullSubPath);
+        if (!stat.isDirectory()) {
+          await onLog(`⚠️ Root directory '${cleanRootDir}' is not a directory. Falling back to repository root.`);
+          cleanRootDir = "";
+        }
+      } catch {
+        await onLog(`⚠️ Root directory '${cleanRootDir}' was not found in cloned repository. Falling back to repository root.`);
+        cleanRootDir = "";
+      }
+    }
+    const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
+    const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
+
+    // 5. Intelligent runtime command adjustments (Python, Node, Go)
+    let effectiveInstallCommand = job.installCommand;
+    let effectiveStartCommand = job.startCommand;
+
+    if (job.language === "PYTHON") {
+      // Prevent crash if requirements.txt doesn't exist
+      if (effectiveInstallCommand === "pip install -r requirements.txt") {
+        effectiveInstallCommand = "if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo 'No requirements.txt found, skipping pip install'; fi";
+      }
+
+      // Check if main.py defines a Flask app without app.run()
+      try {
+        const mainPyPath = path.join(hostWorkDir, "main.py");
+        const mainContent = await fs.readFile(mainPyPath, "utf-8").catch(() => "");
+        if (mainContent.includes("Flask(") || mainContent.includes("from flask import")) {
+          if (!mainContent.includes("app.run(") && !mainContent.includes("__main__")) {
+            if (effectiveStartCommand === "python main.py" || effectiveStartCommand === "python3 main.py") {
+              effectiveStartCommand = `python -m flask --app main run --host 0.0.0.0 --port ${job.internalPort}`;
+              await onLog(`💡 Flask app detected without app.run() in main.py. Running with Flask CLI on port ${job.internalPort}.`);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 6. Construct the Docker run command (Install once + Start)
     const cmd = [
       "sh",
       "-c",
-      `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && ${job.installCommand} && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${job.startCommand}`
+      `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && ${effectiveInstallCommand} && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${effectiveStartCommand}`
     ];
 
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
@@ -95,6 +136,12 @@ export class ServiceRunner {
     env.push(`PORT=${job.internalPort}`);
     env.push(`HOSTNAME=0.0.0.0`);
     env.push(`HOST=0.0.0.0`);
+    if (job.language === "PYTHON") {
+      env.push(`PYTHONUNBUFFERED=1`);
+      env.push(`FLASK_APP=main.py`);
+      env.push(`FLASK_RUN_HOST=0.0.0.0`);
+      env.push(`FLASK_RUN_PORT=${job.internalPort}`);
+    }
 
     // Unique blue/green container name
     const shortId = job.deploymentId.slice(0, 8);
@@ -155,9 +202,6 @@ export class ServiceRunner {
       const existing = docker.getContainer(containerName);
       await existing.remove({ force: true }).catch(() => {});
     } catch {}
-
-    const cleanRootDir = job.rootDir && job.rootDir !== "." ? job.rootDir.replace(/^\/+/, "") : "";
-    const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
 
     const container = await docker.createContainer({
       name: containerName,

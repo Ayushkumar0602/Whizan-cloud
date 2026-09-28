@@ -142,7 +142,12 @@ export default function NewServicePage() {
 
           <div className="form-fields-group" style={{ marginTop: "1rem" }}>
             <div className="form-field">
-              <label className="field-label">Root Directory (Optional)</label>
+              <label className="field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>Root Directory (Optional)</span>
+                <span style={{ fontSize: "0.72rem", background: "rgba(56, 189, 248, 0.1)", color: "var(--accent)", padding: "0.15rem 0.45rem", borderRadius: "4px" }}>
+                  Monorepo / Subfolder
+                </span>
+              </label>
               <input
                 type="text"
                 placeholder="./ or api/"
@@ -150,6 +155,9 @@ export default function NewServicePage() {
                 value={formData.rootDir}
                 onChange={e => setFormData({ ...formData, rootDir: e.target.value })}
               />
+              <span className="field-hint">
+                Leave as <code>.</code> if your service code is at the repository root. Only enter a subfolder (e.g. <code>api</code> or <code>backend</code>) if situated in a monorepo. Do not enter the repository name.
+              </span>
             </div>
           </div>
         </div>
