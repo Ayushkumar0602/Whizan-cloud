@@ -10,8 +10,10 @@ import { spawn } from "child_process";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const BUILD_BASE_DIR = process.env.BUILD_BASE_DIR ?? "/tmp/hostify-services";
+const BUILD_BASE_DIR =
+  process.env.BUILD_BASE_DIR && !process.env.BUILD_BASE_DIR.startsWith("/tmp")
+    ? process.env.BUILD_BASE_DIR
+    : "/opt/whizan/repos";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 
@@ -378,7 +380,7 @@ redisSub.on("message", async (channel, message) => {
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
       
       const allConts = await docker.listContainers({ all: true }).catch(() => []);
-      const match = allConts.find((c) =>
+      let match = allConts.find((c) =>
         c.Labels?.["deploymentId"] === deploymentId ||
         c.Labels?.["slug"] === slug ||
         c.Names?.some((n) => {
@@ -390,6 +392,60 @@ redisSub.on("message", async (channel, message) => {
           );
         })
       );
+
+      // Validate container mounts & health if match exists
+      if (match) {
+        const container = docker.getContainer(match.Id);
+        const inspect = await container.inspect().catch(() => null);
+        let isCorrupted = false;
+
+        if (!inspect) {
+          isCorrupted = true;
+        } else {
+          const mounts = inspect.Mounts || [];
+          for (const m of mounts) {
+            if (m.Destination === "/app" || m.Destination.startsWith("/app")) {
+              const hostSource = m.Source;
+              try {
+                if (hostSource.startsWith("/tmp")) {
+                  console.log(`[Service Wakeup] Mount source ${hostSource} is in volatile /tmp. Purging container.`);
+                  isCorrupted = true;
+                  break;
+                }
+                const stat = await fs.stat(hostSource);
+                if (!stat.isDirectory()) {
+                  isCorrupted = true;
+                  break;
+                }
+                const files = await fs.readdir(hostSource);
+                if (files.length === 0) {
+                  console.log(`[Service Wakeup] Mount source ${hostSource} is empty! Purging container.`);
+                  isCorrupted = true;
+                  break;
+                }
+              } catch {
+                console.log(`[Service Wakeup] Mount source ${hostSource} does not exist! Purging container.`);
+                isCorrupted = true;
+                break;
+              }
+            }
+          }
+
+          if (inspect.State?.Restarting) {
+            console.log(`[Service Wakeup] Container ${match.Id} is in restart loop. Purging container.`);
+            isCorrupted = true;
+          }
+        }
+
+        if (isCorrupted) {
+          console.log(`[Service Wakeup] Removing corrupted container ${match.Id} for ${slug} to trigger fresh cold-boot...`);
+          try {
+            await container.stop({ t: 2 }).catch(() => {});
+            await container.remove({ force: true }).catch(() => {});
+          } catch {}
+          match = undefined;
+        }
+      }
 
       // If container does not exist in Docker (e.g. after VM reboot or prune), re-create it
       if (!match) {

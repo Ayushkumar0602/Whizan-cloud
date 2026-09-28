@@ -135,6 +135,12 @@ const server = http.createServer(async (req, res) => {
 
   // ── STATIC: Serve files directly from disk ─────────────────────────────────
   if (type === "static" && staticDir) {
+    const indexHtml = path.join(staticDir, "index.html");
+    if (!fs.existsSync(staticDir) || !fs.existsSync(indexHtml)) {
+      console.warn(`[Router] Static directory or index.html missing on disk for ${slug} (${staticDir}). Triggering cold-start rebuild...`);
+      await handleWakeupAndProxy(deployment, req, res, slug);
+      return;
+    }
     const serve = getStaticServer(staticDir);
     const startBytes = res.socket?.bytesWritten || 0;
     serve(req as any, res as any, finalhandler(req, res) as any);
