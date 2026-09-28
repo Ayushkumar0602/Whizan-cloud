@@ -555,7 +555,7 @@ export class DatabaseRunner {
         await this.provision(options, async (line) => console.log(`[Database:${id}] ${line}`));
         return;
       }
-      if (!err.message?.includes("already started")) {
+      if (err.statusCode !== 304 && !err.message?.includes("already started")) {
         throw err;
       }
     }

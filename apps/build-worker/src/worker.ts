@@ -20,7 +20,10 @@ import { startMetricsCollector } from "./metrics-collector.js";
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const BUILD_BASE_DIR = process.env.BUILD_BASE_DIR ?? "/tmp/hostify-builds";
+const BUILD_BASE_DIR =
+  process.env.BUILD_BASE_DIR && !process.env.BUILD_BASE_DIR.startsWith("/tmp")
+    ? process.env.BUILD_BASE_DIR
+    : "/opt/whizan/repos";
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
@@ -792,6 +795,34 @@ const statsInterval = setInterval(async () => {
 console.log("[Worker] Build worker started — waiting for jobs...");
 initRemoteExec().catch((e) => console.error("[Remote Exec Error]", e));
 startMetricsCollector();
+
+// ── Database Reconciliation on VM Startup ──────────────────────────────────
+(async () => {
+  try {
+    const runningDbs = await prisma.databaseService.findMany({
+      where: { status: "RUNNING" },
+    });
+    if (runningDbs.length > 0) {
+      console.log(`[Reconciler] Found ${runningDbs.length} running database(s) in DB. Verifying Docker containers...`);
+      const Docker = (await import("dockerode")).default;
+      const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+      const containers = await docker.listContainers({ all: true }).catch(() => []);
+
+      for (const db of runningDbs) {
+        const cName = `whizan-db-${db.id}`;
+        const match = containers.find((c) => c.Names?.some((n) => n === `/${cName}`));
+        if (match && match.State !== "running") {
+          console.log(`[Reconciler] Resuming stopped container ${cName} on VM startup...`);
+          const c = docker.getContainer(match.Id);
+          await c.start().catch((e: any) => console.warn(`[Reconciler] Start notice for ${cName}:`, e.message));
+          await redisPub.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[Reconciler] Database startup check notice:", err.message);
+  }
+})();
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 

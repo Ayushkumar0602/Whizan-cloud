@@ -67,7 +67,10 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch {}
     }
 
-    const host = process.env.DB_PUBLIC_HOST || process.env.EXTERNAL_DB_HOST || BASE_DOMAIN;
+    const host =
+      process.env.DB_PUBLIC_HOST ||
+      process.env.EXTERNAL_DB_HOST ||
+      (BASE_DOMAIN && BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "20.2.136.11");
     const internalPort = db.internalPort || (db.type === "REDIS" ? 6379 : 5432);
     const externalPort = db.externalPort;
     const poolerPort = db.poolerPort;
@@ -532,22 +535,20 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return true;
     }
 
-    if (db.status === "STOPPED" || db.status === "FAILED") {
-      console.log(`[Database Auto-Wakeup] Database ${db.name} (${db.id}) is ${db.status}. Triggering wakeup...`);
-      await prisma.databaseService.update({
-        where: { id: db.id },
-        data: { status: "PROVISIONING", errorMessage: null },
-      });
+    console.log(`[Database Auto-Wakeup] Database ${db.name} (${db.id}) is ${db.status}. Triggering wakeup...`);
+    await prisma.databaseService.update({
+      where: { id: db.id },
+      data: { status: "PROVISIONING", errorMessage: null },
+    });
 
-      await databaseQueue.add("database-job", {
-        action: "start",
-        databaseId: db.id,
-      });
-    }
+    await databaseQueue.add("database-job", {
+      action: "start",
+      databaseId: db.id,
+    });
 
-    // Wait up to 10 seconds for container to start and become RUNNING
+    // Wait up to 15 seconds for container to start and become RUNNING
     const startWait = Date.now();
-    while (Date.now() - startWait < 10000) {
+    while (Date.now() - startWait < 15000) {
       await new Promise((r) => setTimeout(r, 600));
       const current = await prisma.databaseService.findUnique({
         where: { id: db.id },
@@ -575,14 +576,16 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       process.env.DB_HOST ||
       process.env.DB_PUBLIC_HOST ||
       process.env.EXTERNAL_DB_HOST ||
-      (BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "127.0.0.1");
+      (BASE_DOMAIN && BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "20.2.136.11");
 
     // Potential host candidates to connect to:
     // 1. Host from env / BASE_DOMAIN
-    // 2. 127.0.0.1 (local connection on the VM)
-    // 3. db.slug (internal docker mesh network)
+    // 2. 20.2.136.11 (Azure VM public IP)
+    // 3. 127.0.0.1 (local connection on the VM)
+    // 4. db.slug (internal docker mesh network)
     const hostCandidates = [
       { host: hostEnv, port: db.externalPort || 5432 },
+      { host: "20.2.136.11", port: db.externalPort || 5432 },
       { host: "127.0.0.1", port: db.externalPort || 5432 },
       { host: db.slug, port: 5432 },
     ].filter((c, idx, arr) => c.host && arr.findIndex(x => x.host === c.host && x.port === c.port) === idx);
