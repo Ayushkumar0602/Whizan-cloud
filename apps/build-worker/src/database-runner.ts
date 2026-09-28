@@ -339,6 +339,7 @@ export class DatabaseRunner {
         name: poolerContainerName,
         Image: "edoburu/pgbouncer:latest",
         Env: [
+          `DATABASE_URL=postgres://${options.username}:${options.password}@${options.slug}:5432/${options.databaseName}`,
           `DB_USER=${options.username}`,
           `DB_PASSWORD=${options.password}`,
           `DB_HOST=${options.slug}`,
@@ -350,7 +351,8 @@ export class DatabaseRunner {
           `DEFAULT_POOL_SIZE=25`,
           `MIN_POOL_SIZE=5`,
           `RESERVE_POOL_SIZE=5`,
-          `AUTH_TYPE=any`,
+          `AUTH_TYPE=scram-sha-256`,
+          `SERVER_TLS_SSLMODE=prefer`,
           `ADMIN_USERS=${options.username}`,
         ],
         Labels: {
