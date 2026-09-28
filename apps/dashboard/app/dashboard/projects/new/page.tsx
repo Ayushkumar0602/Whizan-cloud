@@ -55,6 +55,7 @@ export default function NewProjectPage() {
     slug: "",
     githubRepoUrl: "",
     branch: "main",
+    rootDir: ".",
     framework: "NEXTJS",
     buildCommand: "npm run build",
     installCommand: "npm install",
@@ -212,7 +213,29 @@ export default function NewProjectPage() {
                 onSelectRepo={handleRepoSelect}
                 selectedUrl={form.githubRepoUrl}
                 selectedBranch={form.branch}
+                onBranchChange={branch => setField("branch", branch)}
               />
+
+              <div className="form-fields-group" style={{ marginTop: "1.25rem" }}>
+                <div className="form-field">
+                  <label className="field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>Root Directory / Project Path</span>
+                    <span style={{ fontSize: "0.72rem", background: "rgba(56, 189, 248, 0.1)", color: "var(--accent)", padding: "0.15rem 0.45rem", borderRadius: "4px" }}>
+                      Monorepo / Subfolder
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input mono"
+                    placeholder="./ (or frontend, client, apps/web)"
+                    value={form.rootDir || ""}
+                    onChange={e => setField("rootDir", e.target.value)}
+                  />
+                  <span className="field-hint">
+                    Leave as <code>.</code> if your frontend project is located at the root of the repository, or specify the subfolder path (e.g. <code>frontend</code> or <code>client</code>) if located in a monorepo.
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Project Identity */}
@@ -298,6 +321,28 @@ export default function NewProjectPage() {
 
               <div className="form-grid-2" style={{ marginTop: "1rem" }}>
                 <div className="form-field">
+                  <label className="field-label">Root Directory</label>
+                  <input
+                    className="input mono"
+                    placeholder="."
+                    value={form.rootDir || "."}
+                    onChange={e => setField("rootDir", e.target.value)}
+                  />
+                  <span className="field-hint">e.g. . or frontend or client</span>
+                </div>
+                <div className="form-field">
+                  <label className="field-label">Output Directory</label>
+                  <input
+                    className="input mono"
+                    value={form.outputDir}
+                    onChange={e => setField("outputDir", e.target.value)}
+                  />
+                  <span className="field-hint">e.g. .next for Next.js, dist for Vite, build for React SPA</span>
+                </div>
+              </div>
+
+              <div className="form-grid-2" style={{ marginTop: "0.75rem" }}>
+                <div className="form-field">
                   <label className="field-label">Install Command</label>
                   <input
                     className="input mono"
@@ -313,16 +358,6 @@ export default function NewProjectPage() {
                     onChange={e => setField("buildCommand", e.target.value)}
                   />
                 </div>
-              </div>
-
-              <div className="form-field">
-                <label className="field-label">Output Directory</label>
-                <input
-                  className="input mono"
-                  value={form.outputDir}
-                  onChange={e => setField("outputDir", e.target.value)}
-                />
-                <span className="field-hint">e.g. .next for Next.js, dist for Vite, build for React SPA</span>
               </div>
             </div>
           </div>
@@ -362,6 +397,10 @@ export default function NewProjectPage() {
               <div className="review-row">
                 <span className="review-label">Target Branch</span>
                 <span className="review-value mono">{form.branch}</span>
+              </div>
+              <div className="review-row">
+                <span className="review-label">Root Directory</span>
+                <span className="review-value mono">{form.rootDir || "."}</span>
               </div>
               <div className="review-row">
                 <span className="review-label">Framework Preset</span>

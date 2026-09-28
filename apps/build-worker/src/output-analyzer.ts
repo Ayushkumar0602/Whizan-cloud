@@ -14,10 +14,14 @@ export interface AnalysisResult {
  */
 export async function analyzeOutput(
   buildDir: string,
-  framework: string
+  framework: string,
+  rootDir?: string
 ): Promise<AnalysisResult> {
+  const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
+  const targetDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
 
-  const exists = (rel: string) => fs.existsSync(path.join(buildDir, rel));
+  const exists = (rel: string) => fs.existsSync(path.join(targetDir, rel));
+  const relToBuild = (rel: string) => (cleanRootDir ? path.posix.join(cleanRootDir, rel) : rel);
 
   // ── Next.js ──────────────────────────────────────────────────────────────
   if (framework === "NEXTJS" || exists(".next")) {
@@ -30,22 +34,22 @@ export async function analyzeOutput(
 
       return {
         type: "hybrid",
-        staticDir: hasStaticAssets ? ".next/static" : undefined,
-        serverEntry: ".next/standalone/server.js",
+        staticDir: hasStaticAssets ? relToBuild(".next/static") : undefined,
+        serverEntry: relToBuild(".next/standalone/server.js"),
         hasApiRoutes,
       };
     }
 
     // next export or static-only: produces /out directory
     if (exists("out")) {
-      return { type: "static", staticDir: "out" };
+      return { type: "static", staticDir: relToBuild("out") };
     }
 
     // Standard next build without standalone — treat as SSR
     if (exists(".next/server")) {
       return {
         type: "ssr",
-        serverEntry: "node_modules/.bin/next",
+        serverEntry: relToBuild("node_modules/.bin/next"),
         hasApiRoutes: exists(".next/server/pages/api") || exists(".next/server/app/api"),
       };
     }
@@ -53,18 +57,18 @@ export async function analyzeOutput(
 
   // ── Vite / Create React App ───────────────────────────────────────────────
   if (framework === "VITE" || framework === "REACT") {
-    if (exists("dist")) return { type: "static", staticDir: "dist" };
-    if (exists("build")) return { type: "static", staticDir: "build" };
+    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
+    if (exists("build")) return { type: "static", staticDir: relToBuild("build") };
   }
 
   // ── Astro ────────────────────────────────────────────────────────────────
   if (framework === "ASTRO") {
-    if (exists("dist")) return { type: "static", staticDir: "dist" };
+    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
   }
 
   // ── Generic fallback ─────────────────────────────────────────────────────
   for (const dir of ["dist", "build", "out", "public"]) {
-    if (exists(dir)) return { type: "static", staticDir: dir };
+    if (exists(dir)) return { type: "static", staticDir: relToBuild(dir) };
   }
 
   throw new Error("Could not detect build output. Check your build command and output directory.");

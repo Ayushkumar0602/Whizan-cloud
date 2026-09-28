@@ -10,6 +10,7 @@ const CreateProjectSchema = z.object({
   slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
   githubRepoUrl: z.string().url(),
   branch: z.string().default("main"),
+  rootDir: z.string().default("."),
   buildCommand: z.string().default("npm run build"),
   installCommand: z.string().default("npm install"),
   outputDir: z.string().default(".next"),

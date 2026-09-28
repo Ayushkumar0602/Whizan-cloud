@@ -57,6 +57,61 @@ export function GitHubRepoPicker({
   const [branches, setBranches] = useState<string[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
   const [manualMode, setManualMode] = useState(false);
+  const [manualUrl, setManualUrl] = useState(selectedUrl || "");
+  const [manualBranch, setManualBranch] = useState(selectedBranch || "main");
+
+  useEffect(() => {
+    if (selectedUrl) setManualUrl(selectedUrl);
+  }, [selectedUrl]);
+
+  useEffect(() => {
+    if (selectedBranch) setManualBranch(selectedBranch);
+  }, [selectedBranch]);
+
+  function parseGitInfo(rawUrl: string, branch: string): SelectedRepoInfo {
+    const trimmed = rawUrl.trim();
+    const match = trimmed.match(/(?:[:/])([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git|\/)?$/);
+    const owner = match ? match[1] : "custom";
+    const name = match ? match[2] : (trimmed.split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || "web-project");
+    const defaultBranch = branch.trim() || "main";
+    return {
+      name,
+      fullName: `${owner}/${name}`,
+      cloneUrl: trimmed,
+      defaultBranch,
+      branches: [defaultBranch],
+      isPrivate: false,
+      owner,
+    };
+  }
+
+  const handleApplyManual = () => {
+    const trimmedUrl = manualUrl.trim();
+    if (!trimmedUrl) {
+      toast.error("Please enter a Git clone URL");
+      return;
+    }
+    if (!trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://") && !trimmedUrl.startsWith("git@")) {
+      toast.error("Please enter a valid Git clone URL (e.g. https://github.com/user/repo.git)");
+      return;
+    }
+    const branchName = manualBranch.trim() || "main";
+    const info = parseGitInfo(trimmedUrl, branchName);
+    setSelectedRepo(null);
+    onSelectRepo(info);
+    if (onBranchChange) onBranchChange(branchName);
+    toast.success(`Repository configured: ${info.fullName}`);
+  };
+
+  const handleUrlBlur = () => {
+    const trimmed = manualUrl.trim();
+    if (trimmed && (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("git@"))) {
+      const branchName = manualBranch.trim() || "main";
+      const info = parseGitInfo(trimmed, branchName);
+      onSelectRepo(info);
+      if (onBranchChange) onBranchChange(branchName);
+    }
+  };
 
   // Check connection status on load
   const checkStatus = async () => {
@@ -286,13 +341,18 @@ export function GitHubRepoPicker({
             borderRadius: "10px",
             display: "flex",
             flexDirection: "column",
-            gap: "0.85rem",
+            gap: "1rem",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--foreground)" }}>
-              Manual Git Repository URL
-            </span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div>
+              <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <Globe size={15} className="text-accent" /> Manual Git Repository URL
+              </span>
+              <p style={{ fontSize: "0.78rem", color: "var(--muted)", margin: "0.2rem 0 0" }}>
+                Enter any public or authenticated HTTPS Git clone URL (GitHub, GitLab, Bitbucket).
+              </p>
+            </div>
             {!status?.connected && (
               <button
                 type="button"
@@ -313,9 +373,86 @@ export function GitHubRepoPicker({
               </button>
             )}
           </div>
-          <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
-            Paste any HTTPS Git clone URL (e.g., <code>https://github.com/username/repository</code>).
-          </p>
+
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 3, minWidth: 260, display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)" }}>
+                Repository Clone URL *
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="url"
+                  className="input mono"
+                  placeholder="https://github.com/username/repository.git"
+                  value={manualUrl}
+                  onChange={(e) => setManualUrl(e.target.value)}
+                  onBlur={handleUrlBlur}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleApplyManual();
+                    }
+                  }}
+                  style={{ height: 38, fontSize: "0.85rem" }}
+                />
+              </div>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 120, display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+              <label style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)" }}>
+                Branch
+              </label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  className="input mono"
+                  placeholder="main"
+                  value={manualBranch}
+                  onChange={(e) => {
+                    setManualBranch(e.target.value);
+                    if (onBranchChange) onBranchChange(e.target.value);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleApplyManual();
+                    }
+                  }}
+                  style={{ height: 38, fontSize: "0.85rem" }}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleApplyManual}
+              style={{ height: 38, padding: "0 1.25rem", gap: "0.4rem", whiteSpace: "nowrap" }}
+            >
+              <Check size={15} /> Apply Repository
+            </button>
+          </div>
+
+          {selectedUrl && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.6rem 0.85rem",
+                background: "rgba(16, 185, 129, 0.08)",
+                border: "1px solid rgba(16, 185, 129, 0.2)",
+                borderRadius: "6px",
+                fontSize: "0.8rem",
+                color: "#10b981",
+              }}
+            >
+              <Check size={14} />
+              <span>
+                Configured: <strong className="mono">{selectedUrl}</strong> &nbsp;•&nbsp; Branch: <strong className="mono">{selectedBranch || manualBranch}</strong>
+              </span>
+            </div>
+          )}
         </div>
       ) : (
         /* GitHub Repos Selector */

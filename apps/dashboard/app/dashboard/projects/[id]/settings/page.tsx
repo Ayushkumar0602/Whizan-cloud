@@ -37,6 +37,15 @@ export default function ProjectSettingsPage() {
   const [addingDomain, setAddingDomain] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
 
+  const [buildForm, setBuildForm] = useState({
+    rootDir: ".",
+    branch: "main",
+    buildCommand: "npm run build",
+    installCommand: "npm install",
+    outputDir: ".next",
+  });
+  const [savingBuild, setSavingBuild] = useState(false);
+
   async function load() {
     try {
       const [p, envs, domains] = await Promise.all([
@@ -45,12 +54,33 @@ export default function ProjectSettingsPage() {
         customDomains.list(id),
       ]);
       setProject(p);
+      setBuildForm({
+        rootDir: p.rootDir || ".",
+        branch: p.branch || "main",
+        buildCommand: p.buildCommand || "npm run build",
+        installCommand: p.installCommand || "npm install",
+        outputDir: p.outputDir || ".next",
+      });
       setEnvList(envs);
       setDomainList(domains);
     } catch {
       toast.error("Failed to load settings");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSaveBuild(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingBuild(true);
+    try {
+      await projects.update(id, buildForm);
+      toast.success("Build & directory settings updated");
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update build settings");
+    } finally {
+      setSavingBuild(false);
     }
   }
 
@@ -334,6 +364,79 @@ export default function ProjectSettingsPage() {
               {addingDomain ? <Loader2 size={14} className="spin-icon" /> : <Plus size={14} />}
               <span>Add Domain</span>
             </button>
+          </form>
+        </div>
+
+        {/* Build & Directory Settings */}
+        <div className="card">
+          <div className="settings-header">
+            <div>
+              <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Build & Directory Configuration</h2>
+              <p className="card-sub">Configure the root directory for monorepos, branch, and build commands</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveBuild} className="form-stack">
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label className="field-label">Root Directory / Project Path</label>
+                <input
+                  className="input mono"
+                  placeholder="."
+                  value={buildForm.rootDir}
+                  onChange={e => setBuildForm({ ...buildForm, rootDir: e.target.value })}
+                />
+                <span className="field-hint">e.g. <code>.</code> or <code>frontend</code> or <code>client</code></span>
+              </div>
+              <div className="form-field">
+                <label className="field-label">Target Branch</label>
+                <input
+                  className="input mono"
+                  value={buildForm.branch}
+                  onChange={e => setBuildForm({ ...buildForm, branch: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label className="field-label">Install Command</label>
+                <input
+                  className="input mono"
+                  value={buildForm.installCommand}
+                  onChange={e => setBuildForm({ ...buildForm, installCommand: e.target.value })}
+                />
+              </div>
+              <div className="form-field">
+                <label className="field-label">Build Command</label>
+                <input
+                  className="input mono"
+                  value={buildForm.buildCommand}
+                  onChange={e => setBuildForm({ ...buildForm, buildCommand: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-field">
+              <label className="field-label">Output Directory</label>
+              <input
+                className="input mono"
+                value={buildForm.outputDir}
+                onChange={e => setBuildForm({ ...buildForm, outputDir: e.target.value })}
+              />
+              <span className="field-hint">e.g. .next for Next.js, dist for Vite</span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={savingBuild}
+              >
+                {savingBuild ? <Loader2 size={14} className="spin-icon" /> : <Check size={14} />}
+                <span>Save Build Settings</span>
+              </button>
+            </div>
           </form>
         </div>
 

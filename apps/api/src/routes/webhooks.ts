@@ -72,6 +72,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         projectId: project.id,
         repoUrl: project.githubRepoUrl,
         branch: project.branch,
+        rootDir: project.rootDir || ".",
         buildCommand: project.buildCommand,
         installCommand: project.installCommand,
         outputDir: project.outputDir,

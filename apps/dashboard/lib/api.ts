@@ -249,6 +249,7 @@ export type Project = {
   slug: string;
   githubRepoUrl: string;
   branch: string;
+  rootDir?: string;
   buildCommand: string;
   installCommand: string;
   outputDir: string;
@@ -295,6 +296,7 @@ export type CreateProjectData = {
   slug: string;
   githubRepoUrl: string;
   branch?: string;
+  rootDir?: string;
   buildCommand?: string;
   installCommand?: string;
   outputDir?: string;

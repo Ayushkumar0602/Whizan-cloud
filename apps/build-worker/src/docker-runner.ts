@@ -6,6 +6,7 @@ export interface BuildJob {
   projectId: string;
   repoUrl: string;
   branch: string;
+  rootDir?: string;
   buildCommand: string;
   installCommand: string;
   outputDir: string;
@@ -17,6 +18,7 @@ export interface BuildJob {
 interface RunBuildOptions {
   projectId: string;
   buildDir: string;
+  rootDir?: string;
   installCommand: string;
   buildCommand: string;
   envVars: Record<string, string>;
@@ -34,7 +36,9 @@ const BUILD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max per build
  * Returns the container exit code (0 = success).
  */
 export async function runBuild(opts: RunBuildOptions): Promise<number> {
-  let { projectId, buildDir, installCommand, buildCommand, envVars, onLog, abortSignal } = opts;
+  let { projectId, buildDir, rootDir, installCommand, buildCommand, envVars, onLog, abortSignal } = opts;
+  const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
+  const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
 
   // Force Node to garbage collect and not use excessive RAM
   envVars["NODE_OPTIONS"] = "--max_old_space_size=2048";
@@ -47,14 +51,18 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
   // Format env vars for Docker
   const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
 
+  const cdCmd = cleanRootDir ? `cd "/app/${cleanRootDir}" && ` : "";
   const cmd = [
     "sh",
     "-c",
     // chmod first so root-owned mount is writable, then install + build
-    `set -e && chmod -R 777 /app && echo "--- Installing dependencies ---" && ${installCommand} && echo "--- Building ---" && ${buildCommand}`,
+    `set -e && chmod -R 777 /app && ${cdCmd}echo "--- Installing dependencies ---" && ${installCommand} && echo "--- Building ---" && ${buildCommand}`,
   ];
 
   await onLog(`Container image: ${BUILD_IMAGE}`);
+  if (cleanRootDir) {
+    await onLog(`Root directory: ${cleanRootDir}`);
+  }
   await onLog(`Command: ${installCommand} && ${buildCommand}`);
 
   // Pull image if not present
@@ -68,17 +76,19 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
   await fs.mkdir(npmCache, { recursive: true }).catch(() => {});
   await fs.mkdir(nextCache, { recursive: true }).catch(() => {});
 
+  const nextCacheContainerPath = cleanRootDir ? `/app/${cleanRootDir}/.next/cache` : `/app/.next/cache`;
+
   const container = await docker.createContainer({
     Image: BUILD_IMAGE,
     Cmd: cmd,
-    WorkingDir: "/app",
+    WorkingDir: workingDir,
     Env: env,
     HostConfig: {
       // Mount the cloned repo and persistent caches
       Binds: [
         `${path.resolve(buildDir)}:/app`,
         `${npmCache}:/root/.npm`,
-        `${nextCache}:/app/.next/cache`
+        `${nextCache}:${nextCacheContainerPath}`
       ],
       // We explicitly removed the 2GB Memory cap so Docker is allowed to use 
       // the VM's free 3GB of RAM and the Swap file you created.
