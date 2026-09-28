@@ -23,19 +23,29 @@ import {
   Clock,
   Code2,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  XCircle,
   ExternalLink,
   Zap,
   ShieldCheck,
   Lock,
   Globe,
+  Loader2,
+  Radio,
+  FileCode,
+  Layers,
+  Sparkles,
+  ChevronDown
 } from "lucide-react";
-import { databases, type ManagedDatabase, type DatabaseMetrics } from "@/lib/api";
+import { databases, type ManagedDatabase, type DatabaseMetrics, type UrlConnectionTestResult } from "@/lib/api";
 import DatabaseQueryRunner from "@/components/database-query-runner";
 import DatabaseTableVisualizer from "@/components/database-table-visualizer";
 import DatabaseRedisExplorer from "@/components/database-redis-explorer";
 import DatabaseInsightsPanel from "@/components/database-insights-panel";
 import DatabaseSecurityPanel from "@/components/database-security-panel";
 import { maskDatabaseUrl, ConfidentialBadge } from "@/lib/security-mask";
+import { toast } from "sonner";
 
 export default function DatabaseDetailPage() {
   const { id } = useParams() as { id: string };
@@ -47,22 +57,25 @@ export default function DatabaseDetailPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Active tab
+  // Active tab navigation
   const [activeTab, setActiveTab] = useState<
     "overview" | "explorer" | "query" | "insights" | "metrics" | "security" | "logs" | "settings"
   >("overview");
+
+  // Connection mode: pooled, direct, ssl, readonly
   const [urlMode, setUrlMode] = useState<"pooled" | "direct" | "ssl" | "readonly">("pooled");
-  const [activeSqlPreset, setActiveSqlPreset] = useState<string>("");
 
   // Show/hide passwords & secrets
-  const [showPassword, setShowPassword] = useState(false);
   const [showInternalSecret, setShowInternalSecret] = useState(false);
   const [showExternalSecret, setShowExternalSecret] = useState(false);
-  const [showSnippetSecret, setShowSnippetSecret] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Snippet language
-  const [snippetLang, setSnippetLang] = useState<"nodejs" | "python" | "cli">("nodejs");
+  const [snippetLang, setSnippetLang] = useState<"prisma" | "nodejs" | "python" | "go" | "gui">("prisma");
+
+  // Live Connection Diagnostic state
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<UrlConnectionTestResult | null>(null);
 
   // Logs state
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -120,9 +133,6 @@ export default function DatabaseDetailPage() {
           }
         } catch {}
       });
-      eventSource.onerror = () => {
-        // SSE auto-reconnects
-      };
     } catch {}
 
     return () => {
@@ -137,10 +147,29 @@ export default function DatabaseDetailPage() {
     }
   }, [logLines]);
 
-  function copy(text: string, key: string) {
+  function copy(text: string, key: string, label: string = "Copied to clipboard") {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
+    toast.success(label);
     setTimeout(() => setCopiedKey(null), 2000);
+  }
+
+  // Run Connection Diagnostic
+  async function runConnectionProbe(urlToTest: string) {
+    setTestingConnection(true);
+    try {
+      const res = await databases.testUrlConnection(urlToTest);
+      setDiagnosticResult(res);
+      if (res.ok) {
+        toast.success(`Probe healthy! Latency: ${res.latencyMs}ms (${res.version || "Connected"})`);
+      } else {
+        toast.error(`Probe failed: ${res.error || "Connection timed out"}`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to execute connection probe");
+    } finally {
+      setTestingConnection(false);
+    }
   }
 
   async function handleRestart() {
@@ -148,9 +177,10 @@ export default function DatabaseDetailPage() {
     setActionLoading("restart");
     try {
       await databases.restart(id);
+      toast.success("Database restart sequence initiated");
       await loadData();
     } catch (err: any) {
-      alert(err.message || "Failed to restart database");
+      toast.error(err.message || "Failed to restart database");
     } finally {
       setActionLoading(null);
     }
@@ -163,12 +193,14 @@ export default function DatabaseDetailPage() {
     try {
       if (isStopping) {
         await databases.stop(id);
+        toast.success("Database stopped");
       } else {
         await databases.start(id);
+        toast.success("Database started");
       }
       await loadData();
     } catch (err: any) {
-      alert(err.message || "Action failed");
+      toast.error(err.message || "Action failed");
     } finally {
       setActionLoading(null);
     }
@@ -184,45 +216,31 @@ export default function DatabaseDetailPage() {
     setActionLoading("delete");
     try {
       await databases.delete(id);
+      toast.success("Database deleted");
       router.push("/dashboard/databases");
     } catch (err: any) {
-      alert(err.message || "Failed to delete database");
+      toast.error(err.message || "Failed to delete database");
       setActionLoading(null);
     }
   }
 
   if (loading) {
     return (
-      <div style={{ padding: "4rem 2rem", textAlign: "center" }}>
-        <div className="spinner" style={{ margin: "0 auto 1rem" }} />
-        <p style={{ color: "var(--muted)" }}>Connecting to database cluster...</p>
+      <div className="page-loading">
+        <div className="spinner" />
+        <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>Connecting to managed database telemetry...</p>
       </div>
     );
   }
 
   if (error || !db) {
     return (
-      <div style={{ maxWidth: 800, margin: "2rem auto", padding: "2rem" }}>
-        <div
-          style={{
-            padding: "2rem",
-            background: "rgba(239, 68, 68, 0.08)",
-            border: "1px solid rgba(239, 68, 68, 0.2)",
-            borderRadius: "var(--radius)",
-            color: "#ef4444",
-          }}
-        >
-          <h3>Database cluster unavailable</h3>
-          <p style={{ marginTop: "0.5rem", fontSize: "0.9rem" }}>{error || "Could not load database."}</p>
-          <Link
-            href="/dashboard/databases"
-            style={{
-              display: "inline-block",
-              marginTop: "1rem",
-              color: "var(--foreground)",
-              fontWeight: 600,
-            }}
-          >
+      <div className="error-container">
+        <div className="card error-card">
+          <AlertCircle size={28} color="#ef4444" />
+          <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>Database cluster unavailable</h3>
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{error || "Could not load database."}</p>
+          <Link href="/dashboard/databases" className="btn btn-secondary btn-sm" style={{ marginTop: "1rem" }}>
             ← Return to Databases
           </Link>
         </div>
@@ -235,1010 +253,1114 @@ export default function DatabaseDetailPage() {
   const isRunning = db.status === "RUNNING";
   const isTransitioning = db.status === "PROVISIONING" || db.status === "RESTARTING";
 
-  return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      {/* Back button */}
-      <Link
-        href="/dashboard/databases"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "0.4rem",
-          color: "var(--muted)",
-          fontSize: "0.875rem",
-          fontWeight: 500,
-          marginBottom: "1.25rem",
-          textDecoration: "none",
-        }}
-      >
-        <ArrowLeft size={16} /> Back to Databases
-      </Link>
+  // Compute Active Selected Connection URL
+  const activeDisplayUrl =
+    isPostgres && urlMode === "pooled"
+      ? (db.pooledUrl || db.externalUrl)
+      : isPostgres && urlMode === "ssl"
+      ? (db.sslUrl || `${db.externalUrl}?sslmode=require`)
+      : isPostgres && urlMode === "readonly"
+      ? (db.readonlyUrl || "Read-only role not generated yet. Visit Security & Access tab.")
+      : db.externalUrl;
 
-      {/* Main Header Card */}
-      <div
-        style={{
-          background: "var(--card)",
-          border: "1px solid var(--card-border)",
-          borderRadius: "var(--radius-lg)",
-          padding: "1.75rem",
-          marginBottom: "2rem",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "1.5rem",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
-            <div
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 12,
-                background: isPostgres
-                  ? "rgba(59, 130, 246, 0.15)"
-                  : isRedis
-                  ? "rgba(239, 68, 68, 0.15)"
-                  : "rgba(245, 158, 11, 0.15)",
-                border: `1px solid ${isPostgres ? "#3b82f640" : "#ef444440"}`,
-                color: isPostgres ? "#3b82f6" : "#ef4444",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 800,
-                fontSize: "1.1rem",
-              }}
-            >
+  return (
+    <div className="db-page">
+      {/* Top Breadcrumb */}
+      <div className="db-topbar">
+        <Link href="/dashboard/databases" className="breadcrumb" style={{ marginBottom: 0 }}>
+          <ArrowLeft size={15} /> Back to Databases
+        </Link>
+        <span className="mesh-dns-indicator mono">
+          <Radio size={12} color="#38bdf8" />
+          <span>{db.slug}:{db.internalPort}</span>
+        </span>
+      </div>
+
+      {/* Main Hero Card */}
+      <div className="db-hero-card">
+        <div className="hero-top">
+          <div className="hero-brand">
+            <div className={`engine-icon-box engine-${db.type.toLowerCase()}`}>
               {isPostgres ? "PG" : isRedis ? "RD" : "MY"}
             </div>
 
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                <h1 style={{ fontSize: "1.5rem", fontWeight: 800, letterSpacing: "-0.02em" }}>{db.name}</h1>
+              <div className="hero-kicker">Managed Stateful Database</div>
+              <div className="hero-title-row">
+                <h1 className="hero-title">{db.name}</h1>
 
-                {/* Status Badge */}
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                    padding: "3px 10px",
-                    borderRadius: 9999,
-                    fontSize: "0.75rem",
-                    fontWeight: 700,
-                    background: isRunning
-                      ? "rgba(16, 185, 129, 0.15)"
-                      : isTransitioning
-                      ? "rgba(245, 158, 11, 0.15)"
-                      : "rgba(239, 68, 68, 0.15)",
-                    color: isRunning ? "#10b981" : isTransitioning ? "#f59e0b" : "#ef4444",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      background: "currentColor",
-                    }}
-                  />
+                <span className={`status-pill pill-${db.status.toLowerCase()}`}>
+                  <span className="pulse-dot" />
                   {db.status}
                 </span>
 
-                <span
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "var(--muted)",
-                    background: "var(--bg-inset)",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                  }}
-                >
+                <span className="spec-tag mono">
                   {db.type} {db.version}
                 </span>
 
-                <span
-                  style={{
-                    fontSize: "0.8rem",
-                    color: "var(--muted)",
-                    background: "var(--bg-inset)",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    border: "1px solid var(--border)",
-                  }}
-                >
-                  {db.instanceType?.toUpperCase()} ({db.cpuLimit} vCPU, {db.memoryLimit}MB RAM)
+                <span className="spec-tag mono">
+                  {db.instanceType?.toUpperCase()} ({db.cpuLimit} vCPU • {db.memoryLimit}MB RAM)
                 </span>
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "1.25rem",
-                  marginTop: "0.5rem",
-                  fontSize: "0.85rem",
-                  color: "var(--muted)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span>
-                  Mesh DNS: <code style={{ color: "var(--foreground)" }}>{db.slug}:{db.internalPort}</code>
-                </span>
+              <div className="hero-meta-row mono">
+                <span>Mesh DNS: <strong>{db.slug}:{db.internalPort}</strong></span>
                 {db.externalPort && (
-                  <span>
-                    External: <code style={{ color: "var(--foreground)" }}>{db.externalHost}:{db.externalPort}</code>
-                  </span>
+                  <>
+                    <span>•</span>
+                    <span>Direct Port: <strong>{db.externalPort}</strong></span>
+                  </>
                 )}
-                <span>
-                  Created: {new Date(db.createdAt).toLocaleDateString()}
-                </span>
+                {db.poolerPort && (
+                  <>
+                    <span>•</span>
+                    <span>PgBouncer Port: <strong>{db.poolerPort}</strong></span>
+                  </>
+                )}
+                <span>•</span>
+                <span>Created {new Date(db.createdAt).toLocaleDateString()}</span>
               </div>
             </div>
           </div>
 
-          {/* Action Buttons Toolbar */}
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          {/* Action Toolbar */}
+          <div className="hero-actions">
             <button
               onClick={handleRestart}
               disabled={actionLoading !== null || !isRunning}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                padding: "0.55rem 0.9rem",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--bg-inset)",
-                border: "1px solid var(--border)",
-                color: "var(--foreground)",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                opacity: !isRunning || actionLoading ? 0.6 : 1,
-              }}
+              className="btn btn-secondary btn-sm"
             >
-              <RotateCcw size={15} />
-              {actionLoading === "restart" ? "Restarting..." : "Restart"}
+              {actionLoading === "restart" ? <Loader2 size={13} className="spin-icon" /> : <RotateCcw size={13} />}
+              <span>Restart</span>
             </button>
 
             <button
               onClick={handleStopStart}
               disabled={actionLoading !== null || isTransitioning}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                padding: "0.55rem 0.9rem",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--bg-inset)",
-                border: "1px solid var(--border)",
-                color: isRunning ? "var(--muted)" : "var(--success)",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              className="btn btn-secondary btn-sm"
             >
-              {isRunning ? <Square size={15} /> : <Play size={15} />}
-              {isRunning ? "Stop" : "Start"}
+              {isRunning ? <Square size={13} /> : <Play size={13} />}
+              <span>{isRunning ? "Stop" : "Start"}</span>
             </button>
 
             <button
               onClick={handleDelete}
               disabled={actionLoading !== null}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.4rem",
-                padding: "0.55rem 0.9rem",
-                borderRadius: "var(--radius-sm)",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.25)",
-                color: "#ef4444",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              className="btn btn-danger btn-sm"
+              title="Delete database"
             >
-              <Trash2 size={15} />
-              Delete
+              {actionLoading === "delete" ? <Loader2 size={13} className="spin-icon" /> : <Trash2 size={13} />}
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div
-          style={{
-            display: "flex",
-            gap: "1.5rem",
-            marginTop: "1.75rem",
-            borderBottom: "1px solid var(--border)",
-            paddingBottom: "0.5rem",
-          }}
-        >
+        {/* Tab Navigation Row */}
+        <div className="tab-bar">
           {(
             [
-              { id: "overview", label: "Overview & Connect" },
-              { id: "explorer", label: isRedis ? "Key-Value Browser" : "Table Explorer & Data" },
-              { id: "query", label: isRedis ? "Redis CLI Console" : "SQL Query Console" },
-              ...(isPostgres ? [{ id: "insights", label: "Query Insights & Locks" }] : []),
-              { id: "metrics", label: "Metrics & Performance" },
-              ...(isPostgres ? [{ id: "security", label: "Security & Access" }] : []),
-              { id: "logs", label: "Live Server Logs" },
-              { id: "settings", label: "Settings & Storage" },
+              { id: "overview", label: "Overview & Connect", icon: Globe },
+              { id: "explorer", label: isRedis ? "Key-Value Browser" : "Table Explorer & Data", icon: Database },
+              { id: "query", label: isRedis ? "Redis CLI Console" : "SQL Query Console", icon: Terminal },
+              ...(isPostgres ? [{ id: "insights", label: "Query Insights & Locks", icon: Activity }] : []),
+              { id: "metrics", label: "Metrics & Usage", icon: Cpu },
+              ...(isPostgres ? [{ id: "security", label: "Security & Access", icon: ShieldCheck }] : []),
+              { id: "logs", label: "Live Server Logs", icon: Clock },
+              { id: "settings", label: "Settings & Storage", icon: HardDrive },
             ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: "0.9rem",
-                fontWeight: 600,
-                color: activeTab === tab.id ? "var(--accent)" : "var(--muted)",
-                borderBottom: activeTab === tab.id ? "2px solid var(--accent)" : "2px solid transparent",
-                paddingBottom: "0.6rem",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`tab-btn ${isActive ? "tab-btn-active" : ""}`}
+              >
+                <Icon size={14} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* ─── TAB 1: OVERVIEW & CONNECTION STRINGS ─────────────────────────── */}
       {activeTab === "overview" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          {/* Internal URL Card */}
-          <div
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--card-border)",
-              borderRadius: "var(--radius)",
-              padding: "1.5rem",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
+        <div className="tab-content-wrap">
+          {/* Quick Metrics & Engine Summary */}
+          <div className="quick-stats-grid">
+            <div className="card quick-stat-card">
+              <span className="qstat-label"><Database size={13} className="text-accent" /> Engine Type</span>
+              <span className="qstat-value">{db.type} {db.version}</span>
+              <span className="qstat-sub mono">{isPostgres ? "Transaction-journaled WAL" : isRedis ? "AOF persistence" : "InnoDB storage"}</span>
+            </div>
+
+            <div className="card quick-stat-card">
+              <span className="qstat-label"><Cpu size={13} style={{ color: "#38bdf8" }} /> Compute Allocation</span>
+              <span className="qstat-value">{db.cpuLimit} vCPU • {db.memoryLimit}MB</span>
+              <span className="qstat-sub mono">{db.instanceType?.toUpperCase()} Instance</span>
+            </div>
+
+            <div className="card quick-stat-card">
+              <span className="qstat-label"><Radio size={13} style={{ color: "#10b981" }} /> Internal Mesh DNS</span>
+              <span className="qstat-value mono" style={{ fontSize: "1.1rem" }}>{db.slug}</span>
+              <span className="qstat-sub mono">Port: {db.internalPort} (whizan-internal)</span>
+            </div>
+
+            <div className="card quick-stat-card">
+              <span className="qstat-label"><Shield size={13} style={{ color: "#ec4899" }} /> Security &amp; Encryption</span>
+              <span className="qstat-value" style={{ fontSize: "1.1rem" }}>
+                {db.sslEnabled !== false ? "TLS 1.3 Active" : "Plaintext"}
+              </span>
+              <span className="qstat-sub mono">
+                {db.poolerPort ? "PgBouncer sidecar enabled" : "Direct socket access"}
+              </span>
+            </div>
+          </div>
+
+          {/* Internal Private Mesh Connection Card */}
+          <div className="card connection-card">
+            <div className="card-header-flex">
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                  <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Internal Connection String</h3>
-                  <ConfidentialBadge label="Confidential • Secret" />
+                  <h3 className="card-title">Internal Mesh Connection String</h3>
+                  <ConfidentialBadge label="Private • Zero Latency" />
                 </div>
-                <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.2rem" }}>
-                  Use this URL in your Backend Services and APIs hosted on Whizan. Traffic stays within the private isolated mesh network at zero latency.
+                <p className="card-subtitle">
+                  Use this URL in your Backend Services, APIs, and microservices hosted on Whizan. Traffic stays within the private Docker mesh network with 0ms egress fees.
                 </p>
               </div>
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  color: "var(--success)",
-                  background: "rgba(16, 185, 129, 0.12)",
-                  padding: "3px 8px",
-                  borderRadius: 4,
-                }}
-              >
-                Zero Latency • Private Mesh
+              <span className="badge badge-ready">
+                Private Network DNS
               </span>
             </div>
 
-            <div
-              style={{
-                background: "var(--bg-inset)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-                padding: "0.75rem 1rem",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "1rem",
-              }}
-            >
-              <code style={{ fontSize: "0.85rem", color: "var(--foreground)", wordBreak: "break-all", fontFamily: "monospace" }}>
+            <div className="connection-url-box">
+              <code className="url-code mono">
                 {maskDatabaseUrl(db.internalUrl, showInternalSecret) || "Generating internal connection URL..."}
               </code>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+              <div className="url-box-actions">
                 <button
+                  className="btn btn-secondary btn-sm"
                   onClick={() => setShowInternalSecret(!showInternalSecret)}
-                  title={showInternalSecret ? "Hide confidential credentials" : "Show confidential credentials"}
-                  style={{
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 4,
-                    padding: "0.4rem 0.75rem",
-                    color: "var(--muted)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.35rem",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                  }}
+                  title={showInternalSecret ? "Hide secret" : "Reveal credentials"}
                 >
-                  {showInternalSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-                  {showInternalSecret ? "Hide" : "Reveal"}
+                  {showInternalSecret ? <EyeOff size={13} /> : <Eye size={13} />}
+                  <span>{showInternalSecret ? "Hide" : "Reveal"}</span>
                 </button>
+
                 <button
-                  onClick={() => copy(db.internalUrl, "internalUrl")}
-                  style={{
-                    background: "var(--card)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 4,
-                    padding: "0.4rem 0.8rem",
-                    color: copiedKey === "internalUrl" ? "var(--success)" : "var(--foreground)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.4rem",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                  }}
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => copy(db.internalUrl, "internalUrl", "Internal URL copied")}
                 >
-                  {copiedKey === "internalUrl" ? <Check size={14} /> : <Copy size={14} />}
-                  {copiedKey === "internalUrl" ? "Copied Secret!" : "Copy"}
+                  {copiedKey === "internalUrl" ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                  <span>{copiedKey === "internalUrl" ? "Copied" : "Copy"}</span>
                 </button>
               </div>
             </div>
           </div>
 
-          {/* External URL Card with Multi-Mode Selector */}
+          {/* External Connection String Card with Mode Switcher & Real-time Diagnostic */}
           {db.externalUrl && (
-            <div
-              style={{
-                background: "var(--card)",
-                border: "1px solid var(--card-border)",
-                borderRadius: "var(--radius)",
-                padding: "1.5rem",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.85rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div className="card connection-card">
+              <div className="card-header-flex">
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>External Connection String</h3>
-                    <ConfidentialBadge label="Confidential • Secret" />
+                    <h3 className="card-title">External Client Connection String</h3>
+                    <ConfidentialBadge label="Public Host Access" />
                   </div>
-                  <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+                  <p className="card-subtitle">
                     {isPostgres && urlMode === "pooled"
-                      ? `Transaction-mode pooling via PgBouncer on port ${db.poolerPort || db.externalPort}. Recommended for Next.js, Vercel, and high-concurrency apps.`
+                      ? `Transaction-mode pooling via PgBouncer on port ${db.poolerPort || db.externalPort}. Highly recommended for Next.js, Vercel, and high-concurrency apps.`
                       : isPostgres && urlMode === "ssl"
                       ? "Direct socket connection enforcing TLS 1.3 encryption in transit (sslmode=require)."
                       : isPostgres && urlMode === "readonly"
-                      ? "Restricted read-only role (SELECT only) for BI, Metabase, and reporting."
-                      : "Direct socket connection. Ideal for database migrations and CLI schema pushes."}
+                      ? "Restricted read-only role (SELECT only) for Metabase, analytics, and reporting."
+                      : "Direct socket connection. Ideal for database migrations, Prisma CLI, and GUI tools."}
                   </p>
                 </div>
 
-                {/* Connection Mode Selector for PostgreSQL */}
+                {/* Mode Selector for PostgreSQL */}
                 {isPostgres && (
-                  <div style={{ display: "flex", gap: "0.35rem", background: "var(--bg-inset)", padding: "3px", borderRadius: 8 }}>
+                  <div className="mode-toggle-group">
                     <button
+                      className={`mode-btn ${urlMode === "pooled" ? "mode-btn-active" : ""}`}
                       onClick={() => setUrlMode("pooled")}
-                      style={{
-                        padding: "0.25rem 0.65rem",
-                        borderRadius: 6,
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        border: "none",
-                        cursor: "pointer",
-                        background: urlMode === "pooled" ? "var(--card)" : "transparent",
-                        color: urlMode === "pooled" ? "var(--foreground)" : "var(--muted)",
-                        boxShadow: urlMode === "pooled" ? "0 1px 4px rgba(0,0,0,0.2)" : "none",
-                      }}
                     >
-                      ⚡ Pooled (PgBouncer)
+                      <Zap size={11} /> ⚡ Pooled (PgBouncer)
                     </button>
                     <button
+                      className={`mode-btn ${urlMode === "direct" ? "mode-btn-active" : ""}`}
                       onClick={() => setUrlMode("direct")}
-                      style={{
-                        padding: "0.25rem 0.65rem",
-                        borderRadius: 6,
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        border: "none",
-                        cursor: "pointer",
-                        background: urlMode === "direct" ? "var(--card)" : "transparent",
-                        color: urlMode === "direct" ? "var(--foreground)" : "var(--muted)",
-                        boxShadow: urlMode === "direct" ? "0 1px 4px rgba(0,0,0,0.2)" : "none",
-                      }}
                     >
-                      Direct
+                      🔌 Direct Socket
                     </button>
                     <button
+                      className={`mode-btn ${urlMode === "ssl" ? "mode-btn-active" : ""}`}
                       onClick={() => setUrlMode("ssl")}
-                      style={{
-                        padding: "0.25rem 0.65rem",
-                        borderRadius: 6,
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        border: "none",
-                        cursor: "pointer",
-                        background: urlMode === "ssl" ? "var(--card)" : "transparent",
-                        color: urlMode === "ssl" ? "var(--foreground)" : "var(--muted)",
-                        boxShadow: urlMode === "ssl" ? "0 1px 4px rgba(0,0,0,0.2)" : "none",
-                      }}
                     >
-                      🔒 SSL Direct
+                      🔒 SSL Enforced
                     </button>
                     <button
+                      className={`mode-btn ${urlMode === "readonly" ? "mode-btn-active" : ""}`}
                       onClick={() => setUrlMode("readonly")}
-                      style={{
-                        padding: "0.25rem 0.65rem",
-                        borderRadius: 6,
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        border: "none",
-                        cursor: "pointer",
-                        background: urlMode === "readonly" ? "var(--card)" : "transparent",
-                        color: urlMode === "readonly" ? "var(--foreground)" : "var(--muted)",
-                        boxShadow: urlMode === "readonly" ? "0 1px 4px rgba(0,0,0,0.2)" : "none",
-                      }}
                     >
-                      Read-Only
+                      👁️ Read-Only
                     </button>
                   </div>
                 )}
               </div>
 
               {/* Display active selected URL */}
-              {(() => {
-                const activeDisplayUrl =
-                  isPostgres && urlMode === "pooled"
-                    ? (db.pooledUrl || db.externalUrl)
-                    : isPostgres && urlMode === "ssl"
-                    ? (db.sslUrl || `${db.externalUrl}?sslmode=require`)
-                    : isPostgres && urlMode === "readonly"
-                    ? (db.readonlyUrl || "Read-only role not yet generated. Switch to Security & Access tab to generate it.")
-                    : db.externalUrl;
+              <div className="connection-url-box">
+                <code className="url-code mono">
+                  {maskDatabaseUrl(activeDisplayUrl, showExternalSecret)}
+                </code>
 
-                const isUrlValid = activeDisplayUrl.startsWith("postgres") || activeDisplayUrl.startsWith("redis");
-
-                return (
-                  <div
-                    style={{
-                      background: "var(--bg-inset)",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--radius-sm)",
-                      padding: "0.75rem 1rem",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "1rem",
-                    }}
+                <div className="url-box-actions">
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowExternalSecret(!showExternalSecret)}
                   >
-                    <code style={{ fontSize: "0.85rem", color: "var(--foreground)", wordBreak: "break-all", fontFamily: "monospace" }}>
-                      {maskDatabaseUrl(activeDisplayUrl, showExternalSecret)}
-                    </code>
-                    {isUrlValid ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                        <button
-                          onClick={() => setShowExternalSecret(!showExternalSecret)}
-                          title={showExternalSecret ? "Hide confidential credentials" : "Show confidential credentials"}
-                          style={{
-                            background: "var(--card)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 4,
-                            padding: "0.4rem 0.75rem",
-                            color: "var(--muted)",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.35rem",
-                            fontSize: "0.8rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {showExternalSecret ? <EyeOff size={14} /> : <Eye size={14} />}
-                          {showExternalSecret ? "Hide" : "Reveal"}
-                        </button>
-                        <button
-                          onClick={() => copy(activeDisplayUrl, "externalUrl")}
-                          style={{
-                            background: "var(--card)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 4,
-                            padding: "0.4rem 0.8rem",
-                            color: copiedKey === "externalUrl" ? "var(--success)" : "var(--foreground)",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.4rem",
-                            fontSize: "0.8rem",
-                            fontWeight: 600,
-                          }}
-                        >
-                          {copiedKey === "externalUrl" ? <Check size={14} /> : <Copy size={14} />}
-                          {copiedKey === "externalUrl" ? "Copied Secret!" : "Copy"}
-                        </button>
-                      </div>
-                    ) : null}
+                    {showExternalSecret ? <EyeOff size={13} /> : <Eye size={13} />}
+                    <span>{showExternalSecret ? "Hide" : "Reveal"}</span>
+                  </button>
+
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => copy(activeDisplayUrl, "externalUrl", "Connection string copied")}
+                  >
+                    {copiedKey === "externalUrl" ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                    <span>{copiedKey === "externalUrl" ? "Copied" : "Copy URL"}</span>
+                  </button>
+
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => copy(`DATABASE_URL="${activeDisplayUrl}"`, "envCopy", ".env snippet copied")}
+                    title="Copy formatted for .env file"
+                  >
+                    {copiedKey === "envCopy" ? <Check size={13} color="#10b981" /> : <FileCode size={13} />}
+                    <span>.env</span>
+                  </button>
+
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => runConnectionProbe(activeDisplayUrl)}
+                    disabled={testingConnection}
+                  >
+                    {testingConnection ? <Loader2 size={13} className="spin-icon" /> : <Zap size={13} />}
+                    <span>{testingConnection ? "Testing..." : "Test Connection"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Real-Time Diagnostic Test Banner */}
+              {diagnosticResult && (
+                <div className={`diag-result-box ${diagnosticResult.ok ? "diag-success" : "diag-error"}`}>
+                  <div className="diag-header">
+                    {diagnosticResult.ok ? (
+                      <CheckCircle2 size={16} color="#10b981" />
+                    ) : (
+                      <XCircle size={16} color="#f43f5e" />
+                    )}
+                    <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>
+                      {diagnosticResult.ok ? "Connection Probe Verified Healthy" : "Connection Probe Failed"}
+                    </span>
+                    <span className="diag-chip mono">
+                      {diagnosticResult.latencyMs}ms latency
+                    </span>
+                    {diagnosticResult.version && (
+                      <span className="diag-chip mono">
+                        {diagnosticResult.version.split(" ")[0]} {diagnosticResult.version.split(" ")[1]}
+                      </span>
+                    )}
                   </div>
-                );
-              })()}
+                  {diagnosticResult.error && (
+                    <p className="diag-error-text mono">{diagnosticResult.error}</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Connection Parameters Breakdown Table */}
-          <div
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--card-border)",
-              borderRadius: "var(--radius)",
-              padding: "1.5rem",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "1rem" }}>
-              Connection Parameters
-            </h3>
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
-              {/* Host */}
-              <div style={{ padding: "0.85rem", background: "var(--bg-inset)", borderRadius: "var(--radius-sm)" }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>HOST</span>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.3rem" }}>
-                  <code style={{ fontSize: "0.85rem" }}>{db.slug}</code>
-                  <button onClick={() => copy(db.slug, "host")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}>
-                    {copiedKey === "host" ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                  </button>
-                </div>
+          {/* Application Usage & Code Snippets Guide */}
+          <div className="card snippets-card">
+            <div className="card-header-flex" style={{ marginBottom: "1rem" }}>
+              <div>
+                <h3 className="card-title">Application Usage &amp; Integration Guide</h3>
+                <p className="card-subtitle">Drop-in configuration snippets for your frameworks and GUI clients</p>
               </div>
 
-              {/* Port */}
-              <div style={{ padding: "0.85rem", background: "var(--bg-inset)", borderRadius: "var(--radius-sm)" }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>INTERNAL PORT / EXTERNAL PORT</span>
-                <div style={{ marginTop: "0.3rem", fontSize: "0.85rem" }}>
-                  <code>{db.internalPort}</code> (Mesh) / <code>{db.externalPort || "None"}</code> (Public)
-                </div>
+              <div className="snippet-tabs-row">
+                <button
+                  className={`snippet-tab ${snippetLang === "prisma" ? "snippet-tab-active" : ""}`}
+                  onClick={() => setSnippetLang("prisma")}
+                >
+                  Prisma ORM
+                </button>
+                <button
+                  className={`snippet-tab ${snippetLang === "nodejs" ? "snippet-tab-active" : ""}`}
+                  onClick={() => setSnippetLang("nodejs")}
+                >
+                  Node.js / Next.js
+                </button>
+                <button
+                  className={`snippet-tab ${snippetLang === "python" ? "snippet-tab-active" : ""}`}
+                  onClick={() => setSnippetLang("python")}
+                >
+                  Python (SQLAlchemy)
+                </button>
+                <button
+                  className={`snippet-tab ${snippetLang === "go" ? "snippet-tab-active" : ""}`}
+                  onClick={() => setSnippetLang("go")}
+                >
+                  Go (pgx)
+                </button>
+                <button
+                  className={`snippet-tab ${snippetLang === "gui" ? "snippet-tab-active" : ""}`}
+                  onClick={() => setSnippetLang("gui")}
+                >
+                  DBeaver / TablePlus
+                </button>
               </div>
+            </div>
 
-              {/* Username */}
-              <div style={{ padding: "0.85rem", background: "var(--bg-inset)", borderRadius: "var(--radius-sm)" }}>
-                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>USER</span>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.3rem" }}>
-                  <code style={{ fontSize: "0.85rem" }}>{db.username}</code>
-                  <button onClick={() => copy(db.username, "user")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}>
-                    {copiedKey === "user" ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                  </button>
-                </div>
-              </div>
+            {/* Snippet Content */}
+            <div className="snippet-code-box">
+              {snippetLang === "prisma" && (
+                <pre className="code-pre mono">
+{`// schema.prisma
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // ${urlMode === "pooled" ? "Pooled URL for serverless queries" : "Direct URL"}
+${urlMode === "pooled" && db.externalUrl ? `  directUrl = env("DIRECT_URL")   // Direct port ${db.externalPort} for migrations\n` : ""}}
 
-              {/* Database Name */}
-              {isPostgres && (
-                <div style={{ padding: "0.85rem", background: "var(--bg-inset)", borderRadius: "var(--radius-sm)" }}>
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>DATABASE NAME</span>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.3rem" }}>
-                    <code style={{ fontSize: "0.85rem" }}>{db.databaseName}</code>
-                    <button onClick={() => copy(db.databaseName, "dbname")} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}>
-                      {copiedKey === "dbname" ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                    </button>
+// .env
+DATABASE_URL="${activeDisplayUrl}"
+${urlMode === "pooled" && db.externalUrl ? `DIRECT_URL="${db.externalUrl}?sslmode=require"` : ""}`}
+                </pre>
+              )}
+
+              {snippetLang === "nodejs" && (
+                <pre className="code-pre mono">
+{`import { Pool } from "pg";
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || "${activeDisplayUrl}",
+  ssl: { rejectUnauthorized: false }, // Enforces SSL in transit
+  max: 20,                            // Maximum connections in pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+export default pool;`}
+                </pre>
+              )}
+
+              {snippetLang === "python" && (
+                <pre className="code-pre mono">
+{`from sqlalchemy import create_engine
+
+# For SQLAlchemy / psycopg2 / asyncpg:
+DATABASE_URL = "${activeDisplayUrl}"
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True
+)`}
+                </pre>
+              )}
+
+              {snippetLang === "go" && (
+                <pre className="code-pre mono">
+{`package main
+
+import (
+    "context"
+    "os"
+    "github.com/jackc/pgx/v5/pgxpool"
+)
+
+func main() {
+    dbUrl := os.Getenv("DATABASE_URL")
+    if dbUrl == "" {
+        dbUrl = "${activeDisplayUrl}"
+    }
+    pool, err := pgxpool.New(context.Background(), dbUrl)
+    if err != nil {
+        panic(err)
+    }
+    defer pool.Close()
+}`}
+                </pre>
+              )}
+
+              {snippetLang === "gui" && (
+                <div className="gui-params-grid">
+                  <div className="gui-param-item">
+                    <span className="gui-label">Host</span>
+                    <span className="gui-val mono">{db.externalHost || "20.2.136.11"}</span>
+                  </div>
+                  <div className="gui-param-item">
+                    <span className="gui-label">Port</span>
+                    <span className="gui-val mono">{urlMode === "pooled" ? (db.poolerPort || db.externalPort) : db.externalPort}</span>
+                  </div>
+                  <div className="gui-param-item">
+                    <span className="gui-label">Database</span>
+                    <span className="gui-val mono">{db.databaseName}</span>
+                  </div>
+                  <div className="gui-param-item">
+                    <span className="gui-label">Username</span>
+                    <span className="gui-val mono">{db.username}</span>
+                  </div>
+                  <div className="gui-param-item">
+                    <span className="gui-label">SSL Mode</span>
+                    <span className="gui-val mono">Require / Allow (rejectUnauthorized: false)</span>
+                  </div>
+                  <div className="gui-param-item">
+                    <span className="gui-label">Password</span>
+                    <span className="gui-val mono">{db.decryptedPassword ? "•••••••• (Revealed above)" : "Set at creation"}</span>
                   </div>
                 </div>
               )}
-
-              {/* Password */}
-              <div style={{ padding: "0.85rem", background: "var(--bg-inset)", borderRadius: "var(--radius-sm)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>PASSWORD</span>
-                    <ConfidentialBadge size="xs" label="Secret" />
-                  </div>
-                  <button
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "var(--muted)",
-                      cursor: "pointer",
-                      fontSize: "0.75rem",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.3rem",
-                    }}
-                  >
-                    {showPassword ? <EyeOff size={13} /> : <Eye size={13} />}
-                    {showPassword ? "Hide" : "Reveal"}
-                  </button>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.3rem" }}>
-                  <code style={{ fontSize: "0.85rem", fontFamily: "monospace" }}>
-                    {showPassword ? db.decryptedPassword : "••••••••••••••••••••••••"}
-                  </code>
-                  <button
-                    onClick={() => copy(db.decryptedPassword || "", "password")}
-                    style={{ border: "none", background: "transparent", cursor: "pointer", color: copiedKey === "password" ? "var(--success)" : "var(--muted)" }}
-                    title="Copy secret password"
-                  >
-                    {copiedKey === "password" ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
-
-          {/* Quick Connect Code Snippets */}
-          {(() => {
-            function getCodeSnippet(lang: "nodejs" | "python" | "cli", reveal = false) {
-              const rawInternal = db?.internalUrl || "";
-              const internal = reveal ? rawInternal : maskDatabaseUrl(rawInternal, false);
-              const rawExternal = db?.externalUrl || "";
-              const external = reveal ? rawExternal : maskDatabaseUrl(rawExternal, false);
-
-              if (lang === "nodejs") {
-                return isPostgres
-                  ? `// .env\nDATABASE_URL="${internal}"\n\n// schema.prisma\ndatasource db {\n  provider = "postgresql"\n  url      = env("DATABASE_URL")\n}`
-                  : `// Redis connection\nimport { Redis } from "ioredis";\nconst redis = new Redis("${internal}");`;
-              }
-              if (lang === "python") {
-                return isPostgres
-                  ? `# Python SQLAlchemy\nimport os\nfrom sqlalchemy import create_engine\n\nDATABASE_URL = "${internal}"\nengine = create_engine(DATABASE_URL)`
-                  : `# Python Redis\nimport redis\nr = redis.from_url("${internal}")\nr.set("ping", "pong")`;
-              }
-              return isPostgres
-                ? `# Connect using psql CLI on your laptop:\npsql "${external}"`
-                : `# Connect using redis-cli on your laptop:\nredis-cli -u "${external}"`;
-            }
-
-            return (
-              <div
-                style={{
-                  background: "var(--card)",
-                  border: "1px solid var(--card-border)",
-                  borderRadius: "var(--radius)",
-                  padding: "1.5rem",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    <Code2 size={18} style={{ color: "var(--accent)" }} />
-                    <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Quick Connect Snippets</h3>
-                    <ConfidentialBadge size="xs" label="Protected" />
-                  </div>
-
-                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
-                    {(["nodejs", "python", "cli"] as const).map((lang) => (
-                      <button
-                        key={lang}
-                        onClick={() => setSnippetLang(lang)}
-                        style={{
-                          padding: "0.3rem 0.75rem",
-                          borderRadius: 4,
-                          border: "none",
-                          background: snippetLang === lang ? "var(--accent)" : "var(--bg-inset)",
-                          color: snippetLang === lang ? "#fff" : "var(--muted)",
-                          fontSize: "0.8rem",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {lang === "nodejs" ? "Node.js (Prisma/pg)" : lang === "python" ? "Python" : "CLI Terminal"}
-                      </button>
-                    ))}
-
-                    <button
-                      onClick={() => setShowSnippetSecret(!showSnippetSecret)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.3rem",
-                        padding: "0.3rem 0.65rem",
-                        borderRadius: 4,
-                        background: "var(--bg-inset)",
-                        border: "1px solid var(--border)",
-                        color: "var(--muted)",
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                      title={showSnippetSecret ? "Hide confidential credentials" : "Reveal confidential credentials"}
-                    >
-                      {showSnippetSecret ? <EyeOff size={13} /> : <Eye size={13} />}
-                      {showSnippetSecret ? "Hide Secrets" : "Reveal Secrets"}
-                    </button>
-
-                    <button
-                      onClick={() => copy(getCodeSnippet(snippetLang, true), `snippet-${snippetLang}`)}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.35rem",
-                        padding: "0.3rem 0.75rem",
-                        borderRadius: 4,
-                        background: "var(--bg-inset)",
-                        border: "1px solid var(--border)",
-                        color: copiedKey === `snippet-${snippetLang}` ? "var(--success)" : "var(--foreground)",
-                        fontSize: "0.78rem",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {copiedKey === `snippet-${snippetLang}` ? <Check size={13} /> : <Copy size={13} />}
-                      {copiedKey === `snippet-${snippetLang}` ? "Copied Snippet!" : "Copy Snippet"}
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#0d1117",
-                    borderRadius: "var(--radius-sm)",
-                    padding: "1rem",
-                    color: "#e6edf3",
-                    fontSize: "0.85rem",
-                    fontFamily: "monospace",
-                    overflowX: "auto",
-                    position: "relative",
-                  }}
-                >
-                  <pre style={{ margin: 0 }}>
-                    {getCodeSnippet(snippetLang, showSnippetSecret)}
-                  </pre>
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
 
-      {/* ─── TAB 2: TABLE EXPLORER & DATA VISUALIZER ─────────────────────── */}
+      {/* ─── TAB 2: TABLE EXPLORER & DATA ─────────────────────────────────── */}
       {activeTab === "explorer" && (
-        isRedis ? (
-          <DatabaseRedisExplorer
-            database={db}
-            onOpenCli={(cmd) => {
-              setActiveSqlPreset(cmd);
-              setActiveTab("query");
-            }}
-          />
-        ) : (
-          <DatabaseTableVisualizer
-            database={db}
-            onOpenQuery={(sql) => {
-              setActiveSqlPreset(sql);
-              setActiveTab("query");
-            }}
-          />
-        )
+        <div className="tab-content-wrap">
+          {isRedis ? (
+            <DatabaseRedisExplorer database={db} />
+          ) : (
+            <DatabaseTableVisualizer database={db} />
+          )}
+        </div>
       )}
 
       {/* ─── TAB 3: SQL / REDIS QUERY CONSOLE ─────────────────────────────── */}
       {activeTab === "query" && (
-        <DatabaseQueryRunner
-          database={db}
-          initialQuery={activeSqlPreset}
-        />
-      )}
-
-      {/* ─── TAB 4: LIVE METRICS ─────────────────────────────────────────── */}
-      {activeTab === "metrics" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
-            {/* CPU Gauge */}
-            <div
-              style={{
-                background: "var(--card)",
-                border: "1px solid var(--card-border)",
-                borderRadius: "var(--radius)",
-                padding: "1.5rem",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                <span style={{ fontSize: "0.9rem", color: "var(--muted)", fontWeight: 600 }}>CPU USAGE</span>
-                <Cpu size={20} style={{ color: "var(--accent)" }} />
-              </div>
-              <div style={{ fontSize: "2.5rem", fontWeight: 800, marginBottom: "0.5rem" }}>
-                {metrics ? `${metrics.cpuPercent}%` : "0.0%"}
-              </div>
-              <div
-                style={{
-                  height: 8,
-                  borderRadius: 4,
-                  background: "var(--bg-inset)",
-                  overflow: "hidden",
-                  marginTop: "1rem",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.min(100, (metrics?.cpuPercent || 0) * 2)}%`,
-                    background: "var(--accent)",
-                    transition: "width 0.3s ease",
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.5rem" }}>
-                Allocation: {db.cpuLimit} vCPU limit enforced
-              </div>
-            </div>
-
-            {/* Memory Gauge */}
-            <div
-              style={{
-                background: "var(--card)",
-                border: "1px solid var(--card-border)",
-                borderRadius: "var(--radius)",
-                padding: "1.5rem",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                <span style={{ fontSize: "0.9rem", color: "var(--muted)", fontWeight: 600 }}>MEMORY USAGE</span>
-                <Activity size={20} style={{ color: "var(--success)" }} />
-              </div>
-              <div style={{ fontSize: "2.5rem", fontWeight: 800, marginBottom: "0.5rem" }}>
-                {metrics ? `${metrics.memoryMB} MB` : "0 MB"}{" "}
-                <span style={{ fontSize: "1rem", color: "var(--muted)", fontWeight: 400 }}>
-                  / {db.memoryLimit} MB
-                </span>
-              </div>
-              <div
-                style={{
-                  height: 8,
-                  borderRadius: 4,
-                  background: "var(--bg-inset)",
-                  overflow: "hidden",
-                  marginTop: "1rem",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${Math.min(100, ((metrics?.memoryMB || 0) / db.memoryLimit) * 100)}%`,
-                    background: "var(--success)",
-                    transition: "width 0.3s ease",
-                  }}
-                />
-              </div>
-              <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.5rem" }}>
-                Max headroom: {db.memoryLimit - (metrics?.memoryMB || 0)} MB remaining
-              </div>
-            </div>
-          </div>
+        <div className="tab-content-wrap">
+          <DatabaseQueryRunner database={db} />
         </div>
       )}
 
-      {/* ─── TAB: QUERY INSIGHTS & LOCKS ─────────────────────────────────── */}
-      {activeTab === "insights" && (
-        <DatabaseInsightsPanel databaseId={id} db={db} />
+      {/* ─── TAB 4: QUERY INSIGHTS & LOCKS ────────────────────────────────── */}
+      {activeTab === "insights" && isPostgres && (
+        <div className="tab-content-wrap">
+          <DatabaseInsightsPanel databaseId={db.id} db={db} />
+        </div>
       )}
 
-      {/* ─── TAB: SECURITY & ACCESS CONTROL ──────────────────────────────── */}
-      {activeTab === "security" && (
-        <DatabaseSecurityPanel databaseId={id} db={db} onRefresh={loadData} />
-      )}
-
-      {/* ─── TAB: LIVE SERVER LOGS ───────────────────────────────────────── */}
-      {activeTab === "logs" && (
-        <div
-          style={{
-            background: "var(--card)",
-            border: "1px solid var(--card-border)",
-            borderRadius: "var(--radius)",
-            padding: "1.5rem",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <Terminal size={18} style={{ color: "var(--accent)" }} />
-              <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Database Output & Query Logs</h3>
+      {/* ─── TAB 5: REAL-TIME METRICS & UTILIZATION ───────────────────────── */}
+      {activeTab === "metrics" && (
+        <div className="tab-content-wrap">
+          <div className="card">
+            <div className="card-header-flex" style={{ marginBottom: "1.25rem" }}>
+              <div>
+                <h3 className="card-title">Live Hardware Metrics &amp; Telemetry</h3>
+                <p className="card-subtitle">Real-time resource utilization directly from Docker cgroups</p>
+              </div>
+              <span className="badge badge-ready">Updated every 2.5s</span>
             </div>
-            <button
-              onClick={() => setLogLines([])}
-              style={{
-                background: "var(--bg-inset)",
-                border: "1px solid var(--border)",
-                borderRadius: 4,
-                padding: "0.3rem 0.75rem",
-                fontSize: "0.8rem",
-                color: "var(--muted)",
-                cursor: "pointer",
-              }}
-            >
-              Clear
-            </button>
-          </div>
 
-          <div
-            ref={logTerminalRef}
-            style={{
-              background: "#090d16",
-              borderRadius: "var(--radius-sm)",
-              padding: "1rem",
-              fontFamily: "monospace",
-              fontSize: "0.8rem",
-              color: "#38bdf8",
-              height: 480,
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.25rem",
-            }}
-          >
-            {logLines.length === 0 ? (
-              <div style={{ color: "#64748b", textAlign: "center", marginTop: "4rem" }}>
-                Listening for logs from database container...
+            {metrics ? (
+              <div className="quick-stats-grid" style={{ marginBottom: 0 }}>
+                <div className="card quick-stat-card">
+                  <span className="qstat-label"><Cpu size={13} className="text-accent" /> Container CPU</span>
+                  <span className="qstat-value">{metrics.cpuPercent}%</span>
+                  <span className="qstat-sub mono">Quota: {db.cpuLimit} vCPU</span>
+                </div>
+
+                <div className="card quick-stat-card">
+                  <span className="qstat-label"><HardDrive size={13} style={{ color: "#38bdf8" }} /> Memory Usage</span>
+                  <span className="qstat-value">{metrics.memoryMB} MB</span>
+                  <span className="qstat-sub mono">
+                    Limit: {metrics.memoryLimitMB} MB ({metrics.memoryLimitMB ? Math.round((metrics.memoryMB / metrics.memoryLimitMB) * 100) : 0}%)
+                  </span>
+                </div>
+
+                <div className="card quick-stat-card">
+                  <span className="qstat-label"><Activity size={13} style={{ color: "#10b981" }} /> Engine Status</span>
+                  <span className="qstat-value" style={{ textTransform: "capitalize" }}>{metrics.status}</span>
+                  <span className="qstat-sub mono">{metrics.isRunning ? "Container Active" : "Container Paused"}</span>
+                </div>
+
+                <div className="card quick-stat-card">
+                  <span className="qstat-label"><Server size={13} style={{ color: "#ec4899" }} /> Storage Allocation</span>
+                  <span className="qstat-value">
+                    {db.instanceType === "pro" ? "50 GB" : db.instanceType === "standard" ? "20 GB" : "10 GB"}
+                  </span>
+                  <span className="qstat-sub mono">Persistent NVMe Volume</span>
+                </div>
               </div>
             ) : (
-              logLines.map((line, idx) => (
-                <div key={idx} style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                  {line}
-                </div>
-              ))
+              <div className="page-loading" style={{ padding: "2rem" }}>
+                <div className="spinner" />
+                <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>Collecting container telemetry...</span>
+              </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ─── TAB 4: SETTINGS & DANGER ZONE ───────────────────────────────── */}
+      {/* ─── TAB 6: SECURITY & ACCESS CONTROL ─────────────────────────────── */}
+      {activeTab === "security" && isPostgres && (
+        <div className="tab-content-wrap">
+          <DatabaseSecurityPanel databaseId={db.id} db={db} onRefresh={loadData} />
+        </div>
+      )}
+
+      {/* ─── TAB 7: LIVE SERVER LOGS ──────────────────────────────────────── */}
+      {activeTab === "logs" && (
+        <div className="tab-content-wrap">
+          <div className="card" style={{ padding: "1.25rem" }}>
+            <div className="card-header-flex" style={{ marginBottom: "1rem" }}>
+              <div>
+                <h3 className="card-title">Live Engine Log Stream</h3>
+                <p className="card-subtitle">Real-time STDOUT &amp; STDERR output from database engine container</p>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setLogLines([])}
+              >
+                Clear Terminal
+              </button>
+            </div>
+
+            <div ref={logTerminalRef} className="log-terminal mono">
+              {logLines.length === 0 ? (
+                <div style={{ color: "var(--muted)", textAlign: "center", marginTop: "4rem" }}>
+                  Listening for real-time logs from {db.slug}...
+                </div>
+              ) : (
+                logLines.map((line, idx) => (
+                  <div key={idx} className="log-line">
+                    {line}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB 8: SETTINGS & STORAGE DANGER ZONE ────────────────────────── */}
       {activeTab === "settings" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          {/* Storage Volume Info */}
-          <div
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--card-border)",
-              borderRadius: "var(--radius)",
-              padding: "1.5rem",
-            }}
-          >
-            <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.5rem" }}>
-              Storage Volume Allocation
-            </h3>
-            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "1rem" }}>
-              Physical volume mount on host disk. Data is committed directly to disk using transaction journaling.
+        <div className="tab-content-wrap">
+          <div className="card">
+            <h3 className="card-title" style={{ marginBottom: "0.5rem" }}>Storage Volume Allocation</h3>
+            <p className="card-subtitle" style={{ marginBottom: "1rem" }}>
+              Dedicated host filesystem volume mount. Database transactions are synced directly to disk via atomic write-ahead logging.
             </p>
-            <div
-              style={{
-                background: "var(--bg-inset)",
-                padding: "0.75rem 1rem",
-                borderRadius: "var(--radius-sm)",
-                fontSize: "0.85rem",
-                fontFamily: "monospace",
-              }}
-            >
-              {db.volumePath || "Mounted to dedicated container host volume"}
+            <div className="connection-url-box mono" style={{ fontSize: "0.85rem" }}>
+              {db.volumePath || `/var/lib/whizan/volumes/db-${db.id}/data`}
             </div>
           </div>
 
-          {/* Danger Zone */}
-          <div
-            style={{
-              background: "rgba(239, 68, 68, 0.05)",
-              border: "1px solid rgba(239, 68, 68, 0.25)",
-              borderRadius: "var(--radius)",
-              padding: "1.5rem",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#ef4444", marginBottom: "0.5rem" }}>
+          <div className="card danger-card">
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--danger)", marginBottom: "0.5rem" }}>
               <AlertTriangle size={18} />
-              <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Danger Zone</h3>
+              <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>Permanent Destruction Zone</h3>
             </div>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "1.25rem" }}>
-              Deleting this database will permanently stop the container and destroy all data on the disk volume. There is no recovery.
+              Deleting this database cluster will immediately stop and wipe the container, destroy all schemas and tables, and shred all persistent volume files on disk. This action is irreversible.
             </p>
             <button
               onClick={handleDelete}
-              style={{
-                padding: "0.6rem 1.25rem",
-                borderRadius: "var(--radius-sm)",
-                background: "#ef4444",
-                border: "none",
-                color: "#fff",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-                cursor: "pointer",
-              }}
+              className="btn btn-danger"
+              disabled={actionLoading !== null}
             >
-              Permanently Delete Database
+              <Trash2 size={14} />
+              <span>Permanently Delete Database</span>
             </button>
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        .db-page {
+          max-width: 1250px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+          padding-bottom: 3rem;
+        }
+
+        .db-topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
+
+        .mesh-dns-indicator {
+          font-size: 0.75rem;
+          color: var(--muted);
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          background: var(--bg-inset);
+          padding: 0.2rem 0.6rem;
+          border-radius: 6px;
+          border: 1px solid var(--card-border);
+        }
+
+        /* ─── Hero Card ─── */
+        .db-hero-card {
+          background: var(--card);
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-lg);
+          padding: 1.6rem 1.8rem 0;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        .hero-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 1.5rem;
+          flex-wrap: wrap;
+          padding-bottom: 1.5rem;
+        }
+
+        .hero-brand {
+          display: flex;
+          align-items: center;
+          gap: 1.25rem;
+        }
+
+        .engine-icon-box {
+          width: 52px;
+          height: 52px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 850;
+          font-size: 1.2rem;
+          flex-shrink: 0;
+        }
+        .engine-postgresql {
+          background: rgba(59, 130, 246, 0.15);
+          color: #3b82f6;
+          border: 1px solid rgba(59, 130, 246, 0.35);
+        }
+        .engine-redis {
+          background: rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+          border: 1px solid rgba(239, 68, 68, 0.35);
+        }
+        .engine-mysql {
+          background: rgba(245, 158, 11, 0.15);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.35);
+        }
+
+        .hero-kicker {
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--accent);
+          margin-bottom: 0.15rem;
+        }
+
+        .hero-title-row {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+        }
+
+        .hero-title {
+          font-size: 1.55rem;
+          font-weight: 800;
+          color: var(--foreground);
+          letter-spacing: -0.02em;
+        }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.2rem 0.65rem;
+          border-radius: 9999px;
+          font-size: 0.72rem;
+          font-weight: 750;
+          letter-spacing: 0.02em;
+        }
+        .pill-running {
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        .pill-stopped {
+          background: rgba(239, 68, 68, 0.15);
+          color: #ef4444;
+          border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+        .pill-provisioning, .pill-restarting {
+          background: rgba(245, 158, 11, 0.15);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .pulse-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+          box-shadow: 0 0 6px currentColor;
+        }
+
+        .spec-tag {
+          font-size: 0.72rem;
+          padding: 0.15rem 0.5rem;
+          background: var(--bg-inset);
+          border: 1px solid var(--card-border);
+          border-radius: 6px;
+          color: var(--muted);
+        }
+
+        .hero-meta-row {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-top: 0.45rem;
+          font-size: 0.76rem;
+          color: var(--muted);
+          flex-wrap: wrap;
+        }
+
+        .hero-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        /* ─── Tab Bar ─── */
+        .tab-bar {
+          display: flex;
+          gap: 0.35rem;
+          border-top: 1px solid var(--card-border);
+          padding: 0.5rem 0 0.8rem;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .tab-bar::-webkit-scrollbar {
+          display: none;
+        }
+
+        .tab-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          padding: 0.55rem 0.95rem;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          font-weight: 650;
+          color: var(--muted);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+          font-family: inherit;
+        }
+        .tab-btn:hover {
+          color: var(--foreground);
+          background: var(--bg-inset);
+        }
+        .tab-btn-active {
+          background: var(--bg-inset) !important;
+          color: var(--foreground) !important;
+          border-color: var(--card-border) !important;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        }
+
+        /* ─── Tab Content ─── */
+        .tab-content-wrap {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+          animation: fadeIn 0.18s ease;
+        }
+
+        /* ─── Quick Stats Grid ─── */
+        .quick-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 1rem;
+        }
+        .quick-stat-card {
+          padding: 1.15rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.3rem;
+        }
+        .qstat-label {
+          font-size: 0.74rem;
+          font-weight: 650;
+          color: var(--muted);
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+        }
+        .qstat-value {
+          font-size: 1.35rem;
+          font-weight: 800;
+          color: var(--foreground);
+          letter-spacing: -0.01em;
+        }
+        .qstat-sub {
+          font-size: 0.7rem;
+          color: var(--muted);
+        }
+
+        /* ─── Connection Card ─── */
+        .connection-card {
+          padding: 1.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .connection-url-box {
+          background: var(--bg-inset);
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-sm);
+          padding: 0.85rem 1.15rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .url-code {
+          font-size: 0.84rem;
+          color: var(--foreground);
+          word-break: break-all;
+          line-height: 1.5;
+          flex: 1;
+          min-width: 250px;
+        }
+        .url-box-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          flex-shrink: 0;
+        }
+
+        .mode-toggle-group {
+          display: flex;
+          gap: 0.25rem;
+          background: var(--bg-inset);
+          padding: 3px;
+          border-radius: 8px;
+          border: 1px solid var(--card-border);
+        }
+        .mode-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.3rem;
+          padding: 0.28rem 0.65rem;
+          border-radius: 6px;
+          font-size: 0.74rem;
+          font-weight: 650;
+          border: none;
+          background: transparent;
+          color: var(--muted);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          font-family: inherit;
+        }
+        .mode-btn:hover {
+          color: var(--foreground);
+        }
+        .mode-btn-active {
+          background: var(--card) !important;
+          color: var(--foreground) !important;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+
+        /* ─── Diagnostic Banner ─── */
+        .diag-result-box {
+          border-radius: var(--radius-sm);
+          padding: 0.85rem 1.15rem;
+          border: 1px solid transparent;
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+          animation: fadeIn 0.2s ease;
+        }
+        .diag-success {
+          background: rgba(16, 185, 129, 0.08);
+          border-color: rgba(16, 185, 129, 0.25);
+          color: #10b981;
+        }
+        .diag-error {
+          background: rgba(244, 63, 94, 0.08);
+          border-color: rgba(244, 63, 94, 0.25);
+          color: #f43f5e;
+        }
+        .diag-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+        }
+        .diag-chip {
+          font-size: 0.7rem;
+          padding: 0.1rem 0.45rem;
+          border-radius: 4px;
+          background: rgba(0,0,0,0.2);
+          color: inherit;
+        }
+        .diag-error-text {
+          font-size: 0.76rem;
+          color: #f43f5e;
+          line-height: 1.4;
+        }
+
+        /* ─── Snippets Card ─── */
+        .snippets-card {
+          padding: 1.5rem;
+        }
+        .snippet-tabs-row {
+          display: flex;
+          gap: 0.3rem;
+          background: var(--bg-inset);
+          padding: 3px;
+          border-radius: 8px;
+          border: 1px solid var(--card-border);
+          overflow-x: auto;
+        }
+        .snippet-tab {
+          padding: 0.3rem 0.75rem;
+          border-radius: 6px;
+          font-size: 0.76rem;
+          font-weight: 650;
+          border: none;
+          background: transparent;
+          color: var(--muted);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+          font-family: inherit;
+        }
+        .snippet-tab:hover {
+          color: var(--foreground);
+        }
+        .snippet-tab-active {
+          background: var(--card) !important;
+          color: var(--foreground) !important;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        }
+
+        .snippet-code-box {
+          background: var(--bg-inset);
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-sm);
+          padding: 1rem 1.25rem;
+        }
+        .code-pre {
+          font-size: 0.8rem;
+          line-height: 1.6;
+          color: var(--foreground);
+          margin: 0;
+          overflow-x: auto;
+        }
+
+        .gui-params-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 0.75rem;
+        }
+        .gui-param-item {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          padding: 0.65rem 0.85rem;
+          background: var(--card);
+          border: 1px solid var(--card-border);
+          border-radius: 6px;
+        }
+        .gui-label {
+          font-size: 0.68rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--muted);
+        }
+        .gui-val {
+          font-size: 0.82rem;
+          color: var(--foreground);
+          word-break: break-all;
+        }
+
+        /* ─── Log Terminal ─── */
+        .log-terminal {
+          background: #090d16;
+          border: 1px solid var(--card-border);
+          border-radius: var(--radius-sm);
+          padding: 1rem 1.25rem;
+          font-size: 0.78rem;
+          color: #38bdf8;
+          height: 480px;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+          line-height: 1.5;
+        }
+        .log-line {
+          white-space: pre-wrap;
+          word-break: break-all;
+        }
+
+        /* ─── Danger Card ─── */
+        .danger-card {
+          background: rgba(239, 68, 68, 0.04);
+          border: 1px solid rgba(239, 68, 68, 0.25);
+          border-radius: var(--radius);
+          padding: 1.5rem;
+        }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 1024px) {
+          .quick-stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 640px) {
+          .quick-stats-grid {
+            grid-template-columns: 1fr;
+          }
+          .hero-top {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .hero-actions {
+            width: 100%;
+          }
+          .hero-actions .btn {
+            flex: 1;
+          }
+          .connection-url-box {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .url-box-actions {
+            width: 100%;
+            justify-content: flex-end;
+          }
+        }
+      `}</style>
     </div>
   );
 }
