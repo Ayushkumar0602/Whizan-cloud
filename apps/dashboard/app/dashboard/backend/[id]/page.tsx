@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Globe, GitBranch, Play, Terminal, Clock, Server, Trash2,
   Loader2, Key, ExternalLink, Activity, Cpu, Check, Zap, Moon, Copy,
-  ChevronDown, Plus, PanelLeftClose, PanelLeftOpen, FileCode2, ArrowRight, Radio
+  ChevronDown, Plus, PanelLeftClose, PanelLeftOpen, FileCode2, ArrowRight, Radio, Sliders
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -31,6 +31,15 @@ export default function BackendServicePage() {
   const [deploying, setDeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // Service configuration editable fields
+  const [configOpen, setConfigOpen] = useState(false);
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [rootDir, setRootDir] = useState(".");
+  const [installCommand, setInstallCommand] = useState("");
+  const [startCommand, setStartCommand] = useState("");
+  const [internalPort, setInternalPort] = useState(8000);
+  const [branch, setBranch] = useState("main");
+
   const [envKey, setEnvKey] = useState("");
   const [envValue, setEnvValue] = useState("");
   const [envSecret, setEnvSecret] = useState(true);
@@ -48,6 +57,11 @@ export default function BackendServicePage() {
     try {
       const s = await services.get(id);
       setService(s);
+      setRootDir(s.rootDir || ".");
+      setInstallCommand(s.installCommand || "");
+      setStartCommand(s.startCommand || "");
+      setInternalPort(s.internalPort || 8000);
+      setBranch(s.branch || "main");
       if (s.deployments.length > 0 && !selectedDId) setSelectedDId(s.deployments[0].id);
     } catch {
       toast.error("Service not found");
@@ -65,6 +79,29 @@ export default function BackendServicePage() {
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
   }, [service]);
+
+  async function handleSaveConfig(redeploy = false) {
+    if (!service) return;
+    setSavingConfig(true);
+    try {
+      const updated = await services.update(service.id, {
+        rootDir: rootDir.trim() || ".",
+        installCommand: installCommand.trim(),
+        startCommand: startCommand.trim(),
+        internalPort: Number(internalPort) || 8000,
+        branch: branch.trim() || "main",
+      });
+      setService(prev => prev ? { ...prev, ...updated } : null);
+      toast.success("Service configuration saved");
+      if (redeploy) {
+        await triggerDeploy();
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update configuration");
+    } finally {
+      setSavingConfig(false);
+    }
+  }
 
   async function triggerDeploy() {
     setDeploying(true);
@@ -366,6 +403,115 @@ export default function BackendServicePage() {
                     <span>💡 Applies on next deploy</span>
                     <button type="button" onClick={triggerDeploy} disabled={deploying} className="btn btn-secondary btn-sm">
                       <Play size={12} /> Redeploy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Build & Runtime Configuration — Collapsible */}
+            <div className="card env-collapse-card" style={{ marginBottom: "1rem" }}>
+              <button
+                className="env-collapse-header"
+                onClick={() => setConfigOpen(v => !v)}
+                aria-expanded={configOpen}
+              >
+                <div className="env-collapse-left">
+                  <Sliders size={16} className="text-accent" />
+                  <div>
+                    <span className="env-collapse-title">Service Configuration</span>
+                    <span className="env-collapse-sub">Commands, root directory &amp; port</span>
+                  </div>
+                </div>
+                <div className="env-collapse-right">
+                  <span className="env-chevron" style={{ transform: configOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                    <ChevronDown size={16} />
+                  </span>
+                </div>
+              </button>
+
+              {configOpen && (
+                <div className="env-collapse-body">
+                  <div className="form-group-item">
+                    <label className="form-label-sm">Root Directory</label>
+                    <input
+                      type="text"
+                      className="input mono"
+                      placeholder="."
+                      value={rootDir}
+                      onChange={e => setRootDir(e.target.value)}
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.2rem", display: "block" }}>
+                      Use <code>.</code> for repo root, or subfolder (e.g. <code>backend</code>)
+                    </span>
+                  </div>
+
+                  <div className="form-group-item" style={{ marginTop: "0.6rem" }}>
+                    <label className="form-label-sm">Install Command</label>
+                    <input
+                      type="text"
+                      className="input mono"
+                      placeholder={service.language === "PYTHON" ? "pip install -r requirements.txt" : "npm install"}
+                      value={installCommand}
+                      onChange={e => setInstallCommand(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group-item" style={{ marginTop: "0.6rem" }}>
+                    <label className="form-label-sm">Start Command</label>
+                    <input
+                      type="text"
+                      className="input mono"
+                      placeholder={service.language === "PYTHON" ? "python main.py" : "npm start"}
+                      value={startCommand}
+                      onChange={e => setStartCommand(e.target.value)}
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.2rem", display: "block" }}>
+                      {service.language === "PYTHON" ? "Flask apps without app.run() run automatically via Flask CLI" : "Command to start listening container"}
+                    </span>
+                  </div>
+
+                  <div className="env-inputs-row" style={{ marginTop: "0.6rem" }}>
+                    <div className="env-input-wrap">
+                      <label className="form-label-sm">Port</label>
+                      <input
+                        type="number"
+                        className="input mono"
+                        placeholder="8000"
+                        value={internalPort}
+                        onChange={e => setInternalPort(Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="env-input-wrap">
+                      <label className="form-label-sm">Branch</label>
+                      <input
+                        type="text"
+                        className="input mono"
+                        placeholder="main"
+                        value={branch}
+                        onChange={e => setBranch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.9rem" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleSaveConfig(false)}
+                      disabled={savingConfig}
+                      style={{ flex: 1, justifyContent: "center" }}
+                    >
+                      {savingConfig ? <Loader2 size={13} className="spin-icon" /> : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSaveConfig(true)}
+                      disabled={savingConfig || deploying}
+                      style={{ flex: 1.3, justifyContent: "center" }}
+                    >
+                      {savingConfig ? <Loader2 size={13} className="spin-icon" /> : <><Play size={12} /> Save &amp; Deploy</>}
                     </button>
                   </div>
                 </div>
