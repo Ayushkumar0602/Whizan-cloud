@@ -14,7 +14,16 @@ const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const BUILD_BASE_DIR =
   process.env.BUILD_BASE_DIR && !process.env.BUILD_BASE_DIR.startsWith("/tmp")
     ? process.env.BUILD_BASE_DIR
-    : "/opt/whizan/repos";
+    : process.platform === "darwin"
+      ? path.resolve(process.cwd(), ".repos")
+      : "/opt/whizan/repos";
+
+const SOURCE_BASE_DIR =
+  process.env.SOURCE_BASE_DIR && !process.env.SOURCE_BASE_DIR.startsWith("/tmp")
+    ? process.env.SOURCE_BASE_DIR
+    : process.platform === "darwin"
+      ? path.resolve(process.cwd(), ".sources")
+      : "/opt/whizan/sources";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 
@@ -94,28 +103,25 @@ const worker = new Worker<ServiceBuildJob>(
 
       if (isDirectUpload) {
         await log("📦 Unpacking direct uploaded backend service archive...");
-        const persistentSourceDir = path.join("/tmp/whizan/service-sources", serviceId);
+        const persistentSourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
         const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
         const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
 
         if (uploadBase64) {
           const archiveBuffer = Buffer.from(uploadBase64, "base64");
-          // Persist a copy for future manual redeployments
+          // Persist archive permanently across VM reboots and restarts
           await fs.mkdir(persistentSourceDir, { recursive: true });
           await fs.writeFile(persistentArchive, archiveBuffer);
 
-          const tempArchive = path.join("/tmp", `upload-${deploymentId}.tar.gz`);
-          await fs.writeFile(tempArchive, archiveBuffer);
           const { execFile } = await import("child_process");
           const { promisify } = await import("util");
           const execFileAsync = promisify(execFile);
-          await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+          await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
           await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-          await fs.rm(tempArchive, { force: true }).catch(() => {});
           await redisPub.del(`upload:${deploymentId}`).catch(() => {});
-          await log("✓ Direct upload archive extracted successfully.");
+          await log("✓ Direct upload archive extracted successfully to persistent storage.");
         } else {
-          // Fallback: check if persistent source archive exists on VM
+          // Fallback: check if persistent source archive exists in /opt/whizan/sources
           let archiveFound = false;
           try {
             await fs.access(persistentArchive);
@@ -123,17 +129,17 @@ const worker = new Worker<ServiceBuildJob>(
           } catch {}
 
           if (archiveFound) {
-            await log("📦 Rebuilding from cached direct-upload source archive...");
+            await log("📦 Rebuilding from persistent direct-upload source archive...");
             const { execFile } = await import("child_process");
             const { promisify } = await import("util");
             const execFileAsync = promisify(execFile);
             await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await log("✓ Cached source archive extracted successfully.");
+            await log("✓ Persistent source archive extracted successfully.");
           } else {
             const existing = await fs.readdir(buildDir).catch(() => []);
             if (existing.length === 0) {
-              throw new Error("Direct upload archive was not found in cache or on disk. Please upload files or link a GitHub repository to redeploy.");
+              throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
             }
             await log("✓ Using existing direct upload files on disk.");
           }
@@ -521,21 +527,44 @@ redisSub.on("message", async (channel, message) => {
         const buildDir = path.join(BUILD_BASE_DIR, deploymentId);
         let exists = false;
         try {
-          await fs.access(buildDir);
-          exists = true;
+          const files = await fs.readdir(buildDir);
+          if (files.length > 0) exists = true;
         } catch {}
 
         if (!exists) {
           await fs.mkdir(buildDir, { recursive: true });
-          let finalRepoUrl = dep.service.githubRepoUrl;
-          if (process.env.GITHUB_TOKEN) {
-            finalRepoUrl = finalRepoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
+          const isDirect = !dep.service.githubRepoUrl || dep.service.githubRepoUrl === "direct-upload" || dep.service.githubRepoUrl.trim() === "";
+
+          if (isDirect) {
+            const persistentArchive = path.join(SOURCE_BASE_DIR, "services", dep.serviceId, "source.tar.gz");
+            let archiveExists = false;
+            try {
+              await fs.access(persistentArchive);
+              archiveExists = true;
+            } catch {}
+
+            if (archiveExists) {
+              await publishLog(redisPub, deploymentId, `📦 [Wakeup] Restoring from persistent source archive...`);
+              const { execFile } = await import("child_process");
+              const { promisify } = await import("util");
+              const execFileAsync = promisify(execFile);
+              await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
+              await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+              await publishLog(redisPub, deploymentId, `✓ [Wakeup] Source restored successfully.`);
+            } else {
+              throw new Error(`Cannot wake up service ${slug}: neither build directory nor persistent source archive was found on disk.`);
+            }
+          } else {
+            let finalRepoUrl = dep.service.githubRepoUrl;
+            if (process.env.GITHUB_TOKEN && !finalRepoUrl.includes("@github.com")) {
+              finalRepoUrl = finalRepoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
+            }
+            await new Promise<void>((resolve, reject) => {
+              const proc = spawn(`git clone --depth 1 -b ${dep.service.branch} ${finalRepoUrl} ${buildDir}`, { shell: true });
+              proc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`Git clone failed with code ${code}`))));
+              proc.on("error", reject);
+            });
           }
-          await new Promise<void>((resolve, reject) => {
-            const proc = spawn(`git clone --depth 1 -b ${dep.service.branch} ${finalRepoUrl} ${buildDir}`, { shell: true });
-            proc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`Git clone failed with code ${code}`))));
-            proc.on("error", reject);
-          });
         }
 
         const jobPayload: ServiceBuildJob = {
