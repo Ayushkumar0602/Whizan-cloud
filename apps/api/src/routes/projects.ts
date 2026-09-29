@@ -5,7 +5,7 @@ import { generateWebhookSecret } from "../lib/crypto.js";
 import { redisClient } from "../lib/redis.js";
 import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
 
-const CreateProjectSchema = z.object({
+const BaseProjectSchema = z.object({
   name: z.string().min(1).max(60),
   slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
   githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
@@ -17,7 +17,11 @@ const CreateProjectSchema = z.object({
   framework: z.enum(["NEXTJS", "REACT", "VITE", "ASTRO", "CUSTOM"]).default("NEXTJS"),
 });
 
-const UpdateProjectSchema = CreateProjectSchema.partial().omit({ slug: true });
+const CreateProjectSchema = BaseProjectSchema.extend({
+  envVars: z.record(z.string(), z.any()).optional(),
+});
+
+const UpdateProjectSchema = BaseProjectSchema.partial().omit({ slug: true });
 
 export async function projectRoutes(fastify: FastifyInstance) {
   fastify.addHook("preHandler", fastify.authenticate);
@@ -48,9 +52,31 @@ export async function projectRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const { envVars, ...projectData } = body.data;
+
     const project = await prisma.project.create({
-      data: { ...body.data, slug: finalSlug, userId, webhookSecret: generateWebhookSecret() },
+      data: { ...projectData, slug: finalSlug, userId, webhookSecret: generateWebhookSecret() },
     });
+
+    if (envVars && Object.keys(envVars).length > 0) {
+      try {
+        const { encrypt } = await import("../lib/crypto.js");
+        const operations = Object.entries(envVars).map(([rawKey, rawVal]) => {
+          const key = String(rawKey).trim();
+          const valStr = typeof rawVal === "object" && rawVal !== null ? JSON.stringify(rawVal) : String(rawVal ?? "");
+          const encryptedValue = encrypt(valStr);
+          return prisma.envVariable.upsert({
+            where: { projectId_key: { projectId: project.id, key } },
+            update: { value: encryptedValue, isSecret: true },
+            create: { projectId: project.id, key, value: encryptedValue, isSecret: true },
+          });
+        });
+        await prisma.$transaction(operations);
+      } catch (err: any) {
+        fastify.log.error(`Failed to batch save initial envVars for project ${project.id}: ${err.message}`);
+      }
+    }
+
     return reply.code(201).send(project);
   });
 
