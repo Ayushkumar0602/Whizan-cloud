@@ -23,7 +23,16 @@ const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const BUILD_BASE_DIR =
   process.env.BUILD_BASE_DIR && !process.env.BUILD_BASE_DIR.startsWith("/tmp")
     ? process.env.BUILD_BASE_DIR
-    : "/opt/whizan/repos";
+    : process.platform === "darwin"
+      ? path.resolve(process.cwd(), ".repos")
+      : "/opt/whizan/repos";
+
+const SOURCE_BASE_DIR =
+  process.env.SOURCE_BASE_DIR && !process.env.SOURCE_BASE_DIR.startsWith("/tmp")
+    ? process.env.SOURCE_BASE_DIR
+    : process.platform === "darwin"
+      ? path.resolve(process.cwd(), ".sources")
+      : "/opt/whizan/sources";
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
@@ -151,28 +160,25 @@ const worker = new Worker<BuildJob>(
 
         if (isDirectUpload) {
           await log("📦 Unpacking direct uploaded code archive...");
-          const persistentSourceDir = path.join("/tmp/whizan/project-sources", projectId);
+          const persistentSourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
           const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
 
           if (uploadBase64) {
             const archiveBuffer = Buffer.from(uploadBase64, "base64");
-            // Persist a copy for future manual redeployments
+            // Persist archive permanently across VM reboots and restarts
             await fs.mkdir(persistentSourceDir, { recursive: true });
             await fs.writeFile(persistentArchive, archiveBuffer);
 
-            const tempArchive = path.join(os.tmpdir(), `upload-${deploymentId}.tar.gz`);
-            await fs.writeFile(tempArchive, archiveBuffer);
             const { execFile } = await import("child_process");
             const { promisify } = await import("util");
             const execFileAsync = promisify(execFile);
-            await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+            await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await fs.rm(tempArchive, { force: true }).catch(() => {});
             await redisPub.del(`upload:${deploymentId}`).catch(() => {});
-            await log("✓ Direct upload archive extracted successfully");
+            await log("✓ Direct upload archive extracted successfully to persistent storage");
           } else {
-            // Fallback: check if persistent source archive exists on VM
+            // Fallback: check if persistent source archive exists in /opt/whizan/sources
             let archiveFound = false;
             try {
               await fs.access(persistentArchive);
@@ -180,17 +186,17 @@ const worker = new Worker<BuildJob>(
             } catch {}
 
             if (archiveFound) {
-              await log("📦 Rebuilding from cached direct-upload source archive...");
+              await log("📦 Rebuilding from persistent direct-upload source archive...");
               const { execFile } = await import("child_process");
               const { promisify } = await import("util");
               const execFileAsync = promisify(execFile);
               await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
               await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-              await log("✓ Cached source archive extracted successfully");
+              await log("✓ Persistent source archive extracted successfully");
             } else {
               const existing = await fs.readdir(buildDir).catch(() => []);
               if (existing.length === 0) {
-                throw new Error("Direct upload archive was not found in cache or on disk. Please upload files or link a GitHub repository to redeploy.");
+                throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
               }
               await log("✓ Using existing direct upload files on disk");
             }
@@ -422,13 +428,13 @@ redisSub.on("message", async (channel, message) => {
           }
         }
 
-        // 2. Remove all build and source directories on VM disk
+        // 2. Remove all build and persistent source directories on VM disk
         try {
-          const sourceDir = path.join("/tmp/whizan/service-sources", serviceId);
+          const sourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
           await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
-              await fs.rm(path.join("/tmp/whizan/service-builds", dId), { recursive: true, force: true }).catch(() => {});
+              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
               await redisPub.del(`build-logs:${dId}`).catch(() => {});
             }
           }
@@ -466,9 +472,9 @@ redisSub.on("message", async (channel, message) => {
           }
         }
 
-        // 2. Remove build and source directories on VM disk
+        // 2. Remove build and persistent source directories on VM disk
         try {
-          const sourceDir = path.join("/tmp/whizan/project-sources", projectId);
+          const sourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
@@ -505,7 +511,6 @@ redisSub.on("message", async (channel, message) => {
         }
         if (payload.action === "DELETE_CONTAINER") {
           await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
-          await fs.rm(path.join("/tmp/whizan/service-builds", dId), { recursive: true, force: true }).catch(() => {});
         }
         return;
       }
@@ -666,10 +671,12 @@ redisSub.on("message", async (channel, message) => {
           targetPath.startsWith("/tmp/hostify-services/") ||
           targetPath.startsWith("/tmp/whizan-builds/") ||
           targetPath.startsWith("/opt/whizan/repos/") ||
+          targetPath.startsWith("/opt/whizan/sources/") ||
           targetPath.startsWith("/opt/whizan/volumes/") ||
           targetPath.startsWith("/var/log/whizan/") ||
           targetPath.startsWith("/root/.pm2/logs/") ||
-          (BUILD_BASE_DIR && targetPath.startsWith(BUILD_BASE_DIR))
+          (BUILD_BASE_DIR && targetPath.startsWith(BUILD_BASE_DIR)) ||
+          (SOURCE_BASE_DIR && targetPath.startsWith(SOURCE_BASE_DIR))
         ) {
           console.log(`[Admin] Deleting file/directory: ${targetPath}`);
           await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
@@ -1070,10 +1077,9 @@ const statsInterval = setInterval(async () => {
       const scanDirs = [
         "/opt/whizan-cache/*",
         "/opt/whizan-builds/*",
-        "/tmp/hostify-builds/*",
-        "/tmp/hostify-services/*",
-        "/tmp/whizan-builds/*",
+        "/opt/whizan/sources/*",
         BUILD_BASE_DIR ? `${BUILD_BASE_DIR}/*` : "",
+        SOURCE_BASE_DIR ? `${SOURCE_BASE_DIR}/*` : "",
         "/opt/whizan/volumes/*",
         "/opt/whizan/repos/*",
         "/var/log/whizan/*",

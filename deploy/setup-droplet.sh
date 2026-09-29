@@ -46,7 +46,7 @@ npm install -g pm2 tsx --quiet
 
 # ── 5. Clone & install ──────────────────────────────
 echo "[6/8] Cloning repository..."
-mkdir -p /opt/whizan /opt/whizan-builds /var/log/whizan
+mkdir -p /opt/whizan /opt/whizan/repos /opt/whizan/sources /opt/whizan/volumes /opt/whizan-cache /opt/whizan-builds /var/log/whizan
 git clone https://github.com/Ayushkumar0602/Whizan-cloud-service.git /opt/whizan
 cd /opt/whizan
 npm install --production=false
