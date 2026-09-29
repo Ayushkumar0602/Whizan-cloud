@@ -159,6 +159,19 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "whizan_set_env_vars",
+    description: "Sets, updates, or patches environment variables (including large credentials like Firebase Admin service account JSON) on a Whizan service or project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["service", "project"], description: "Whether targeting a backend service or frontend project" },
+        targetId: { type: "string", description: "The Whizan ID of the service or project" },
+        envVars: { type: "object", description: "Dictionary of key-value environment variables to encrypt and store" },
+      },
+      required: ["targetType", "targetId", "envVars"],
+    },
+  },
+  {
     name: "whizan_check_health",
     description: "Pings a deployed live URL to verify HTTP readiness, response headers, and CORS compatibility.",
     inputSchema: {
@@ -215,15 +228,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_create_service": {
         const service = await client.createService((args || {}) as any);
+        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+        const expectedLiveUrl = `http://${service.slug}.${baseDomain}`;
         return {
-          content: [{ type: "text", text: JSON.stringify(service, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Service '${service.name}' registered successfully.`,
+                  service,
+                  expectedLiveUrl,
+                  protocol: "http",
+                  note: `The live URL will be active at ${expectedLiveUrl} once direct deployment completes. Note: Use http:// (not https://) as Edge Router operates on Port 80.`,
+                  nextStep: `Deploy your code to this service by running whizan_deploy_direct with targetType: "service" and targetId: "${service.id}".`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 
       case "whizan_create_project": {
         const project = await client.createProject((args || {}) as any);
+        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+        const expectedLiveUrl = `http://${project.slug}.${baseDomain}`;
         return {
-          content: [{ type: "text", text: JSON.stringify(project, null, 2) }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Project '${project.name}' registered successfully.`,
+                  project,
+                  expectedLiveUrl,
+                  protocol: "http",
+                  nextStep: `Deploy your frontend code by running whizan_deploy_direct with targetType: "project" and targetId: "${project.id}".`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_set_env_vars": {
+        const { targetType, targetId, envVars } = (args || {}) as any;
+        const results = await client.setEnvVars(targetType, targetId, envVars || {});
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Updated ${Object.keys(results).length} environment variables on ${targetType} ${targetId}.`,
+                  results,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 

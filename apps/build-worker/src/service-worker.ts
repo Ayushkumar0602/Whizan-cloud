@@ -103,6 +103,7 @@ const worker = new Worker<ServiceBuildJob>(
           const { promisify } = await import("util");
           const execFileAsync = promisify(execFile);
           await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+          await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
           await fs.rm(tempArchive, { force: true }).catch(() => {});
           await redisPub.del(`upload:${deploymentId}`).catch(() => {});
           await log("✓ Direct upload archive extracted successfully.");
