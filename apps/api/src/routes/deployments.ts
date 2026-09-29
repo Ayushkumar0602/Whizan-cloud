@@ -128,9 +128,19 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
 
       const inProgress = await prisma.deployment.findFirst({
         where: { projectId: id, status: { in: ["QUEUED", "BUILDING"] } },
+        orderBy: { createdAt: "desc" },
       });
       if (inProgress) {
-        return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+        const isStale = Date.now() - new Date(inProgress.createdAt).getTime() > 180_000; // 3 minutes
+        const force = (request.query as any)?.force === "true" || request.headers["x-force-deploy"] === "true";
+        if (isStale || force) {
+          await prisma.deployment.update({
+            where: { id: inProgress.id },
+            data: { status: "FAILED", buildFinishedAt: new Date() },
+          });
+        } else {
+          return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+        }
       }
 
       const data = await request.file();
@@ -141,6 +151,13 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       const buffer = await data.toBuffer();
       if (buffer.length === 0) {
         return reply.code(400).send({ error: "Uploaded archive is empty." });
+      }
+
+      const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024; // 50MB
+      if (buffer.length > MAX_ARCHIVE_BYTES) {
+        return reply.code(413).send({
+          error: `Archive payload exceeds the 50MB limit (${(buffer.length / (1024 * 1024)).toFixed(1)}MB). Please ensure venv/, node_modules, and bulky datasets are excluded in your .gitignore.`
+        });
       }
 
       const deployment = await prisma.deployment.create({
@@ -154,8 +171,16 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      // Save base64 payload in Redis with 15m TTL
-      await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+      try {
+        // Save base64 payload in Redis with 15m TTL
+        await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+      } catch (redisErr: any) {
+        await prisma.deployment.update({
+          where: { id: deployment.id },
+          data: { status: "FAILED", buildFinishedAt: new Date() },
+        });
+        return reply.code(500).send({ error: "Failed to stage archive in Redis: " + redisErr.message });
+      }
 
       await buildQueue.add("build", {
         deploymentId: deployment.id,

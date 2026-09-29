@@ -238,6 +238,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           deploymentResult = await client.uploadProjectArchive(targetId, archiveBuffer);
         }
 
+        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+        const slug = deploymentResult?.service?.slug || deploymentResult?.project?.slug || targetId;
+        const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+
         return {
           content: [
             {
@@ -245,7 +249,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   success: true,
-                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued.`,
+                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on Azure VM.`,
+                  deploymentId: deploymentResult.id,
+                  status: deploymentResult.status,
+                  expectedLiveUrl,
+                  nextSteps: [
+                    `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
+                    `2. Once build status reaches ACTIVE, your service is live and reachable at ${expectedLiveUrl}.`,
+                    `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl}.`
+                  ],
                   deployment: deploymentResult,
                 },
                 null,
