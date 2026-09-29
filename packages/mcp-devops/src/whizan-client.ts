@@ -276,23 +276,49 @@ export class WhizanClient {
     return results;
   }
 
-  async getBuildLogs(deploymentId: string): Promise<string[]> {
+  async getBuildLogs(deploymentId: string): Promise<{ deploymentId: string; status: string; logs: string[]; errorMessage?: string | null; liveUrl?: string | null }> {
     await this.loadConfig();
-    // Try services deployment logs first, fallback to projects
+    // Try services deployment logs first with JSON accept header
     let res = await fetch(`${this.config.apiUrl}/api/services/deployments/${deploymentId}/logs`, {
-      headers: this.getHeaders(),
+      headers: this.getHeaders({ Accept: "application/json" }),
     });
-    if (!res.ok) {
+    if (!res.ok && res.status === 404) {
       res = await fetch(`${this.config.apiUrl}/api/projects/deployments/${deploymentId}/logs`, {
-        headers: this.getHeaders(),
+        headers: this.getHeaders({ Accept: "application/json" }),
       });
     }
-    if (!res.ok) return [];
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return {
+        deploymentId,
+        status: "ERROR",
+        logs: [`[Failed to retrieve logs from server: HTTP ${res.status} ${errText}]`],
+      };
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data: any = await res.json();
+      return {
+        deploymentId,
+        status: data.status || "UNKNOWN",
+        logs: Array.isArray(data.logs) ? data.logs : [],
+        errorMessage: data.errorMessage,
+        liveUrl: data.liveUrl,
+      };
+    }
+
     const text = await res.text();
-    return text
+    const lines = text
       .split("\n")
       .map((line) => line.replace(/^data:\s*/, "").trim())
-      .filter((line) => line && line !== "[DONE]");
+      .filter((line) => line && line !== "[DONE]" && line !== "__DONE__");
+
+    return {
+      deploymentId,
+      status: "STREAMED",
+      logs: lines,
+    };
   }
 
   async checkHealth(rawUrl: string): Promise<{ ok: boolean; status: number; message: string; effectiveUrl: string }> {

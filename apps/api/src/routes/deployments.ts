@@ -365,27 +365,90 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // ── GET /api/projects/deployments/:dId/logs — SSE (token auth) ─────────────
+  // ── GET /api/projects/deployments/:dId/logs — SSE (token auth) or JSON (API key / token) ─────────────
   fastify.get(
     "/deployments/:dId/logs",
     async (request, reply) => {
       const { dId } = request.params as { dId: string };
-      const { token } = request.query as { token?: string };
+      const { token, apiKey, live } = request.query as { token?: string; apiKey?: string; live?: string };
+      const isLiveRequested = live === "true";
 
-      if (!token) return reply.code(401).send({ error: "Missing token" });
-      try {
-        await request.jwtVerify({ onlyCookie: false });
-      } catch {
-        try {
-          fastify.jwt.verify(token);
-        } catch {
-          return reply.code(401).send({ error: "Invalid token" });
+      // 1. Authenticate (support JWT tokens, Bearer API keys, x-api-key header, or query params)
+      let authUser: { userId: string; email?: string } | null = null;
+      const authHeader = request.headers.authorization;
+      const apiKeyHeader = request.headers["x-api-key"] as string | undefined;
+      const rawKey =
+        apiKeyHeader ||
+        apiKey ||
+        (authHeader?.startsWith("Bearer whz_live_") ? authHeader.slice(7) : null) ||
+        (token?.startsWith("whz_live_") ? token : null);
+
+      if (rawKey && typeof rawKey === "string" && rawKey.startsWith("whz_live_")) {
+        const crypto = await import("crypto");
+        const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+        const apiKeyRecord = await prisma.apiKey.findUnique({
+          where: { keyHash },
+          include: { user: true },
+        });
+        if (apiKeyRecord) {
+          authUser = { userId: apiKeyRecord.userId, email: apiKeyRecord.user.email };
         }
+      }
+
+      if (!authUser) {
+        const jwtToken = token || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null);
+        if (jwtToken) {
+          try {
+            const decoded: any = fastify.jwt.verify(jwtToken);
+            if (decoded && decoded.userId) authUser = decoded;
+          } catch {}
+        }
+      }
+
+      if (!authUser) {
+        try {
+          await request.jwtVerify({ onlyCookie: false });
+          if (request.user) authUser = request.user;
+        } catch {}
+      }
+
+      if (!authUser) {
+        return reply.code(401).send({ error: "Unauthorized: Invalid or missing token/API key" });
+      }
+
+      // 2. Fetch deployment and verify ownership
+      const deployment = await prisma.deployment.findUnique({
+        where: { id: dId },
+        include: { project: true },
+      });
+      if (!deployment || deployment.project.userId !== authUser.userId) {
+        return reply.code(404).send({ error: "Deployment not found" });
       }
 
       const channel = `logs:${dId}`;
       const listKey = `build-logs:${dId}`;
+      const stored = await redisClient.lrange(listKey, 0, -1);
+      const cleanLogs = stored.filter((line) => line !== "__DONE__");
 
+      // 3. Return JSON if caller requests JSON or if live stream was not explicitly requested
+      const acceptHeader = request.headers.accept || "";
+      const wantsJson = acceptHeader.includes("application/json") || (!isLiveRequested && !acceptHeader.includes("text/event-stream"));
+
+      if (wantsJson) {
+        return reply.send({
+          deploymentId: dId,
+          projectId: deployment.projectId,
+          slug: deployment.project.slug,
+          status: deployment.status,
+          liveUrl: deployment.url,
+          buildStartedAt: deployment.buildStartedAt,
+          buildFinishedAt: deployment.buildFinishedAt,
+          errorMessage: deployment.errorMessage,
+          logs: cleanLogs,
+        });
+      }
+
+      // 4. Otherwise stream SSE (Dashboard or live tail)
       reply.raw.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -398,28 +461,27 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         reply.raw.write(`data: ${JSON.stringify({ log: line })}\n\n`);
       };
 
-      // Replay stored logs first
-      const stored = await redisClient.lrange(listKey, 0, -1);
-      for (const line of stored) sendEvent(line);
+      for (const line of cleanLogs) {
+        sendEvent(line);
+      }
 
-      // If already done, close immediately
-      const deployment = await prisma.deployment.findUnique({ where: { id: dId } });
-      if (deployment && ["READY", "FAILED", "CANCELLED", "PAUSED"].includes(deployment.status)) {
+      if (["READY", "FAILED", "CANCELLED", "PAUSED"].includes(deployment.status)) {
         sendEvent("__DONE__");
         reply.raw.end();
         return;
       }
 
-      // Subscribe to live channel
       const sub = redisSub.duplicate();
       await sub.subscribe(channel);
 
       sub.on("message", (_ch: string, message: string) => {
-        sendEvent(message);
         if (message === "__DONE__") {
+          sendEvent("__DONE__");
           sub.unsubscribe(channel).catch(() => {});
           sub.quit().catch(() => {});
           reply.raw.end();
+        } else {
+          sendEvent(message);
         }
       });
 

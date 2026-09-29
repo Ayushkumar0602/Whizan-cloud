@@ -26,6 +26,7 @@ export interface AnalysisReport {
   };
   ignoredSecretsFound: string[];
   recommendations: string[];
+  mandatoryDeploymentRules: string[];
 }
 
 export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisReport> {
@@ -53,6 +54,14 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     },
     ignoredSecretsFound: [],
     recommendations: [],
+    mandatoryDeploymentRules: [
+      "PHASE 1 (AUDIT): Review detected ports and host binding above. Application MUST bind to 0.0.0.0 (not 127.0.0.1).",
+      "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE triggering deployment.",
+      "PHASE 3 (CREATE): Register service/project via whizan_create_service or whizan_create_project with correct language and internalPort.",
+      "PHASE 4 (UPLOAD): Upload code via whizan_deploy_direct. Wait for upload confirmation and save deploymentId.",
+      "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
+      "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). Note: Use http:// (not https://) for *.nip.io domains on Azure VM."
+    ],
   };
 
   const filesInRoot: string[] = await fs.readdir(root).catch(() => [] as string[]);
@@ -166,7 +175,7 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     }
   }
 
-  // 6. Scan environment variables
+  // 6. Scan environment variables (Node.js & Python)
   const envVarMatches = new Set<string>();
   const envRegex = /process\.env\.([A-Z0-9_]+)/g;
   let match: RegExpExecArray | null;
@@ -175,21 +184,32 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       envVarMatches.add(match[1]);
     }
   }
+
+  const pyEnvRegex = /(?:os\.environ(?:\.get)?|os\.getenv)\s*\(\s*["']([A-Z0-9_]+)["']/g;
+  while ((match = pyEnvRegex.exec(combinedCode)) !== null) {
+    if (!["PORT"].includes(match[1])) {
+      envVarMatches.add(match[1]);
+    }
+  }
   report.envVariables.referencedInCode = Array.from(envVarMatches);
 
-  // Check local .env
-  try {
-    const envContent = await fs.readFile(path.join(root, ".env"), "utf8");
-    const localKeys = envContent
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#") && line.includes("="))
-      .map((line) => line.split("=")[0].trim());
-    report.envVariables.definedInLocalEnv = localKeys;
-    report.envVariables.missingFromLocalEnv = report.envVariables.referencedInCode.filter(
-      (k) => !localKeys.includes(k)
-    );
-  } catch {}
+  // Check local .env files (.env, .env.local, .env.example, .env.production)
+  const envFiles = [".env", ".env.local", ".env.example", ".env.production"];
+  const localKeys = new Set<string>();
+  for (const envFile of envFiles) {
+    try {
+      const envContent = await fs.readFile(path.join(root, envFile), "utf8");
+      envContent
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#") && line.includes("="))
+        .forEach((line) => localKeys.add(line.split("=")[0].trim()));
+    } catch {}
+  }
+  report.envVariables.definedInLocalEnv = Array.from(localKeys);
+  report.envVariables.missingFromLocalEnv = report.envVariables.referencedInCode.filter(
+    (k) => !localKeys.has(k)
+  );
 
   // 7. Check for ignored files like serviceAccountKey.json
   try {
