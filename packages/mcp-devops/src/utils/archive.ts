@@ -25,6 +25,7 @@ const DEFAULT_IGNORES = [
   ".svn",
   ".hg",
   ".DS_Store",
+  "._*",
   "Thumbs.db",
 
   // Python Artifacts
@@ -138,7 +139,9 @@ export async function packDirectory(
       "-C",
       resolvedDir,
       ".",
-    ]);
+    ], {
+      env: { ...process.env, COPYFILE_DISABLE: "1" }
+    });
 
     const buffer = await fs.readFile(tempArchive);
 
