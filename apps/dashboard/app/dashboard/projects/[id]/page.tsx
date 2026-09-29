@@ -237,12 +237,18 @@ export default function ProjectPage() {
       {/* Project KPI Cards */}
       <div className="stats-grid" style={{ marginBottom: "2rem" }}>
         <div className="stat-card">
-          <div className="stat-label">GitHub Repository</div>
-          <a href={project.githubRepoUrl} target="_blank" rel="noopener" className="stat-repo-link mono">
-            <Github size={14} />
-            <span>{project.githubRepoUrl.replace("https://github.com/", "")}</span>
-            <ExternalLink size={12} />
-          </a>
+          <div className="stat-label">Source Code</div>
+          {project.githubRepoUrl && project.githubRepoUrl !== "direct-upload" ? (
+            <a href={project.githubRepoUrl} target="_blank" rel="noopener" className="stat-repo-link mono">
+              <Github size={14} />
+              <span>{project.githubRepoUrl.replace("https://github.com/", "")}</span>
+              <ExternalLink size={12} />
+            </a>
+          ) : (
+            <div className="stat-repo-link mono" style={{ color: "var(--muted)" }}>
+              <span>Direct Upload Archive</span>
+            </div>
+          )}
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Deployments</div>

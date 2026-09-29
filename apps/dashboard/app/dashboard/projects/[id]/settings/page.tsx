@@ -38,6 +38,7 @@ export default function ProjectSettingsPage() {
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
 
   const [buildForm, setBuildForm] = useState({
+    githubRepoUrl: "",
     rootDir: ".",
     branch: "main",
     buildCommand: "npm run build",
@@ -55,6 +56,7 @@ export default function ProjectSettingsPage() {
       ]);
       setProject(p);
       setBuildForm({
+        githubRepoUrl: p.githubRepoUrl === "direct-upload" ? "" : (p.githubRepoUrl || ""),
         rootDir: p.rootDir || ".",
         branch: p.branch || "main",
         buildCommand: p.buildCommand || "npm run build",
@@ -377,6 +379,19 @@ export default function ProjectSettingsPage() {
           </div>
 
           <form onSubmit={handleSaveBuild} className="form-stack">
+            <div className="form-field">
+              <label className="field-label">GitHub Repository URL</label>
+              <input
+                className="input mono"
+                placeholder="https://github.com/username/repository (leave blank for direct-upload)"
+                value={buildForm.githubRepoUrl}
+                onChange={e => setBuildForm({ ...buildForm, githubRepoUrl: e.target.value })}
+              />
+              <span className="field-hint">
+                Link a GitHub repository to deploy from Git. Leave blank or empty to use direct-upload archives.
+              </span>
+            </div>
+
             <div className="form-grid-2">
               <div className="form-field">
                 <label className="field-label">Root Directory / Project Path</label>

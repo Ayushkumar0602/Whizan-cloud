@@ -172,10 +172,10 @@ export const deployments = {
   get: (projectId: string, deploymentId: string) =>
     request<Deployment>(`/api/projects/${projectId}/deployments/${deploymentId}`),
 
-  trigger: (projectId: string) =>
+  trigger: (projectId: string, data?: { githubRepoUrl?: string; branch?: string; rootDir?: string; buildCommand?: string; installCommand?: string; outputDir?: string }) =>
     request<Deployment>(`/api/projects/${projectId}/deployments`, {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify(data || {}),
     }),
 
   cancel: (projectId: string, deploymentId: string) =>
@@ -476,7 +476,7 @@ export const services = {
   create: (data: CreateServiceData) => request<BackendService>("/api/services", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<CreateServiceData>) => request<BackendService>(`/api/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) => request(`/api/services/${id}`, { method: "DELETE" }),
-  deploy: (id: string) => request<ServiceDeployment>(`/api/services/${id}/deploy`, { method: "POST" }),
+  deploy: (id: string, data?: { githubRepoUrl?: string; branch?: string; rootDir?: string; installCommand?: string; startCommand?: string }) => request<ServiceDeployment>(`/api/services/${id}/deploy`, { method: "POST", body: JSON.stringify(data || {}) }),
   getDeployment: (id: string, dId: string) => request<ServiceDeployment>(`/api/services/deployments/${dId}`),
   getEnv: (id: string) => request<ServiceEnvVariable[]>(`/api/services/${id}/env`),
   setEnv: (id: string, key: string, value: string, isSecret = true) => request<{id:string}>(`/api/services/${id}/env`, { method: "POST", body: JSON.stringify({ key, value, isSecret }) }),

@@ -90,13 +90,20 @@ const worker = new Worker<ServiceBuildJob>(
       await fs.rm(buildDir, { recursive: true, force: true });
       await fs.mkdir(buildDir, { recursive: true });
 
-      const isDirectUpload = Boolean((job.data as any).isDirectUpload);
+      const isDirectUpload = Boolean((job.data as any).isDirectUpload) || !repoUrl || repoUrl === "direct-upload" || repoUrl.trim() === "";
 
       if (isDirectUpload) {
         await log("📦 Unpacking direct uploaded backend service archive...");
+        const persistentSourceDir = path.join("/tmp/whizan/service-sources", serviceId);
+        const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
         const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+
         if (uploadBase64) {
           const archiveBuffer = Buffer.from(uploadBase64, "base64");
+          // Persist a copy for future manual redeployments
+          await fs.mkdir(persistentSourceDir, { recursive: true });
+          await fs.writeFile(persistentArchive, archiveBuffer);
+
           const tempArchive = path.join("/tmp", `upload-${deploymentId}.tar.gz`);
           await fs.writeFile(tempArchive, archiveBuffer);
           const { execFile } = await import("child_process");
@@ -108,18 +115,39 @@ const worker = new Worker<ServiceBuildJob>(
           await redisPub.del(`upload:${deploymentId}`).catch(() => {});
           await log("✓ Direct upload archive extracted successfully.");
         } else {
-          const existing = await fs.readdir(buildDir).catch(() => []);
-          if (existing.length === 0) {
-            throw new Error("Direct upload archive was not found in cache or on disk.");
+          // Fallback: check if persistent source archive exists on VM
+          let archiveFound = false;
+          try {
+            await fs.access(persistentArchive);
+            archiveFound = true;
+          } catch {}
+
+          if (archiveFound) {
+            await log("📦 Rebuilding from cached direct-upload source archive...");
+            const { execFile } = await import("child_process");
+            const { promisify } = await import("util");
+            const execFileAsync = promisify(execFile);
+            await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
+            await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+            await log("✓ Cached source archive extracted successfully.");
+          } else {
+            const existing = await fs.readdir(buildDir).catch(() => []);
+            if (existing.length === 0) {
+              throw new Error("Direct upload archive was not found in cache or on disk. Please upload files or link a GitHub repository to redeploy.");
+            }
+            await log("✓ Using existing direct upload files on disk.");
           }
-          await log("✓ Using existing direct upload files on disk.");
         }
       } else {
+        if (!repoUrl || repoUrl === "direct-upload") {
+          throw new Error("No valid Git repository URL provided for this service. Please specify a GitHub repository or deploy via direct upload.");
+        }
+
         await log(`Cloning ${branch} from ${repoUrl}...`);
         
         // Handle private repos (Assumes GITHUB_TOKEN is available in env)
         let finalRepoUrl = repoUrl;
-        if (process.env.GITHUB_TOKEN) {
+        if (process.env.GITHUB_TOKEN && !finalRepoUrl.includes("@github.com")) {
           finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
         }
 

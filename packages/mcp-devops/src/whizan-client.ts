@@ -331,4 +331,81 @@ export class WhizanClient {
       return { ok: false, status: 0, effectiveUrl: url, message: `Could not connect to ${url}: ${err.message}` };
     }
   }
+
+  async redeploy(
+    targetType: "service" | "project",
+    targetId: string,
+    options?: { githubRepoUrl?: string; branch?: string; commitMessage?: string }
+  ): Promise<any> {
+    await this.loadConfig();
+    const endpoint = targetType === "service" ? `services/${targetId}/deploy` : `projects/${targetId}/deployments`;
+    const res = await fetch(`${this.config.apiUrl}/api/${endpoint}`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(options || {}),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(`Redeployment failed: ${JSON.stringify(err)}`);
+    }
+
+    return res.json();
+  }
+
+  async linkGitRepo(
+    targetType: "service" | "project",
+    targetId: string,
+    githubRepoUrl: string,
+    branch = "main",
+    deployNow = true
+  ): Promise<any> {
+    await this.loadConfig();
+    // Update repository setting on the service or project
+    const updateEndpoint = targetType === "service" ? `services/${targetId}` : `projects/${targetId}`;
+    const updateMethod = targetType === "service" ? "PUT" : "PATCH";
+
+    const updateRes = await fetch(`${this.config.apiUrl}/api/${updateEndpoint}`, {
+      method: updateMethod,
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ githubRepoUrl, branch }),
+    });
+
+    if (!updateRes.ok) {
+      const err = await updateRes.json().catch(() => ({ error: `HTTP ${updateRes.status}` }));
+      throw new Error(`Failed to update Git repository: ${JSON.stringify(err)}`);
+    }
+
+    const updatedEntity = await updateRes.json();
+
+    let deployment = null;
+    if (deployNow) {
+      deployment = await this.redeploy(targetType, targetId, {
+        githubRepoUrl,
+        branch,
+        commitMessage: `Linked and deployed from ${githubRepoUrl}`,
+      });
+    }
+
+    return {
+      entity: updatedEntity,
+      deployment,
+    };
+  }
+
+  async deleteResource(targetType: "service" | "project", targetId: string): Promise<boolean> {
+    await this.loadConfig();
+    const endpoint = targetType === "service" ? `services/${targetId}` : `projects/${targetId}`;
+    const res = await fetch(`${this.config.apiUrl}/api/${endpoint}`, {
+      method: "DELETE",
+      headers: this.getHeaders(),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new Error(`Failed to delete ${targetType}: ${JSON.stringify(err)}`);
+    }
+
+    return true;
+  }
 }
