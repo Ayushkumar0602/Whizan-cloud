@@ -86,51 +86,76 @@ const worker = new Worker<ServiceBuildJob>(
 
       await log("Environment variables loaded.");
 
-      // 2. Clone Repository
+      // 2. Clone Repository or unpack direct upload archive
       await fs.rm(buildDir, { recursive: true, force: true });
       await fs.mkdir(buildDir, { recursive: true });
 
-      await log(`Cloning ${branch} from ${repoUrl}...`);
-      
-      // Handle private repos (Assumes GITHUB_TOKEN is available in env)
-      let finalRepoUrl = repoUrl;
-      if (process.env.GITHUB_TOKEN) {
-        finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
-      }
+      const isDirectUpload = Boolean((job.data as any).isDirectUpload);
 
-      const cloneCmd = `git clone --depth 1 -b ${branch} ${finalRepoUrl} ${buildDir}`;
-      await new Promise<void>((resolve, reject) => {
-        const proc = spawn(cloneCmd, { shell: true });
-        let stderrData = "";
-        proc.stdout?.on("data", (data) => {
-          const lines = data.toString().split("\n").filter(Boolean);
-          lines.forEach((l: string) => log(l).catch(() => {}));
-        });
-        proc.stderr?.on("data", (data) => {
-          const str = data.toString();
-          stderrData += str;
-          const lines = str.split("\n").filter(Boolean);
-          lines.forEach((l: string) => {
-            const safe = process.env.GITHUB_TOKEN
-              ? l.replaceAll(process.env.GITHUB_TOKEN, "***")
-              : l;
-            log(safe).catch(() => {});
-          });
-        });
-        proc.on("close", (code) => {
-          if (code === 0) resolve();
-          else {
-            const masked = process.env.GITHUB_TOKEN
-              ? stderrData.replaceAll(process.env.GITHUB_TOKEN, "***")
-              : stderrData;
-            const lastLine = masked.trim().split("\n").filter(Boolean).pop() || `Exit code ${code}`;
-            reject(new Error(`Git clone failed: ${lastLine}`));
+      if (isDirectUpload) {
+        await log("📦 Unpacking direct uploaded backend service archive...");
+        const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+        if (uploadBase64) {
+          const archiveBuffer = Buffer.from(uploadBase64, "base64");
+          const tempArchive = path.join("/tmp", `upload-${deploymentId}.tar.gz`);
+          await fs.writeFile(tempArchive, archiveBuffer);
+          const { execFile } = await import("child_process");
+          const { promisify } = await import("util");
+          const execFileAsync = promisify(execFile);
+          await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+          await fs.rm(tempArchive, { force: true }).catch(() => {});
+          await redisPub.del(`upload:${deploymentId}`).catch(() => {});
+          await log("✓ Direct upload archive extracted successfully.");
+        } else {
+          const existing = await fs.readdir(buildDir).catch(() => []);
+          if (existing.length === 0) {
+            throw new Error("Direct upload archive was not found in cache or on disk.");
           }
-        });
-        proc.on("error", (err) => reject(err));
-      });
+          await log("✓ Using existing direct upload files on disk.");
+        }
+      } else {
+        await log(`Cloning ${branch} from ${repoUrl}...`);
+        
+        // Handle private repos (Assumes GITHUB_TOKEN is available in env)
+        let finalRepoUrl = repoUrl;
+        if (process.env.GITHUB_TOKEN) {
+          finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
+        }
 
-      await log(`✓ Repository cloned successfully.`);
+        const cloneCmd = `git clone --depth 1 -b ${branch} ${finalRepoUrl} ${buildDir}`;
+        await new Promise<void>((resolve, reject) => {
+          const proc = spawn(cloneCmd, { shell: true });
+          let stderrData = "";
+          proc.stdout?.on("data", (data) => {
+            const lines = data.toString().split("\n").filter(Boolean);
+            lines.forEach((l: string) => log(l).catch(() => {}));
+          });
+          proc.stderr?.on("data", (data) => {
+            const str = data.toString();
+            stderrData += str;
+            const lines = str.split("\n").filter(Boolean);
+            lines.forEach((l: string) => {
+              const safe = process.env.GITHUB_TOKEN
+                ? l.replaceAll(process.env.GITHUB_TOKEN, "***")
+                : l;
+              log(safe).catch(() => {});
+            });
+          });
+          proc.on("close", (code) => {
+            if (code === 0) resolve();
+            else {
+              const masked = process.env.GITHUB_TOKEN
+                ? stderrData.replaceAll(process.env.GITHUB_TOKEN, "***")
+                : stderrData;
+              const lastLine = masked.trim().split("\n").filter(Boolean).pop() || `Exit code ${code}`;
+              reject(new Error(`Git clone failed: ${lastLine}`));
+            }
+          });
+          proc.on("error", (err) => reject(err));
+        });
+
+        await log(`✓ Repository cloned successfully.`);
+      }
 
       // 3. Load latest service resource configuration (autoSleep, cpuLimit, memoryLimit)
       const latestService = await prisma.backendService.findUnique({ where: { id: serviceId } });

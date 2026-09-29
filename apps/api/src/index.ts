@@ -5,6 +5,7 @@ import fastifyJwt from "@fastify/jwt";
 import fastifyCors from "@fastify/cors";
 import fastifyRateLimit from "@fastify/rate-limit";
 import fastifyWebsocket from "@fastify/websocket";
+import fastifyMultipart from "@fastify/multipart";
 
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes, caddyVerifyRoutes } from "./routes/projects.js";
@@ -15,6 +16,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { serviceRoutes } from "./routes/services.js";
 import { databaseRoutes } from "./routes/databases.js";
 import { githubRoutes } from "./routes/github.js";
+import { localOpencodeRoutes } from "./routes/local-opencode.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -71,6 +73,8 @@ await app.register(fastifyCors, {
   credentials: true,
 });
 
+import crypto from "crypto";
+
 await app.register(fastifyCookie, {
   secret: process.env.COOKIE_SECRET!,
 });
@@ -81,7 +85,28 @@ await app.register(fastifyJwt, {
 });
 
 // Decorator so routes can use fastify.authenticate as a preHandler
+// Supports both JWT tokens (cookies or Bearer) and API keys (whz_live_...)
 app.decorate("authenticate", async (request: any, reply: any) => {
+  const authHeader = request.headers.authorization;
+  const apiKeyHeader = request.headers["x-api-key"];
+  const rawKey = apiKeyHeader || (authHeader?.startsWith("Bearer whz_live_") ? authHeader.slice(7) : null);
+
+  if (rawKey && typeof rawKey === "string" && rawKey.startsWith("whz_live_")) {
+    const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+    const apiKeyRecord = await prisma.apiKey.findUnique({
+      where: { keyHash },
+      include: { user: true },
+    });
+
+    if (apiKeyRecord) {
+      request.user = { userId: apiKeyRecord.userId, email: apiKeyRecord.user.email };
+      // Update lastUsedAt asynchronously
+      prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+      return;
+    }
+    return reply.code(401).send({ error: "Invalid API key" });
+  }
+
   try {
     await request.jwtVerify();
   } catch {
@@ -97,6 +122,12 @@ await app.register(fastifyRateLimit, {
 
 await app.register(fastifyWebsocket);
 
+await app.register(fastifyMultipart, {
+  limits: {
+    fileSize: 100 * 1024 * 1024, // 100 MB max for direct code archives
+  },
+});
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 await app.register(authRoutes, { prefix: "/api/auth" });
@@ -109,6 +140,7 @@ await app.register(serviceRoutes, { prefix: "/api/services" });
 await app.register(databaseRoutes, { prefix: "/api/databases" });
 await app.register(githubRoutes, { prefix: "/api" });
 await app.register(caddyVerifyRoutes, { prefix: "/api" });
+await app.register(localOpencodeRoutes, { prefix: "/api/local-opencode" });
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 

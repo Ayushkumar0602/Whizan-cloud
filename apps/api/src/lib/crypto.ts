@@ -1,7 +1,10 @@
 import * as crypto from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
-const KEY = Buffer.from(process.env.ENCRYPTION_KEY!, "hex"); // 32-byte hex key
+const KEY = Buffer.from(
+  process.env.ENCRYPTION_KEY || "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "hex"
+); // 32-byte hex key
 
 /**
  * Encrypts plaintext using AES-256-GCM.

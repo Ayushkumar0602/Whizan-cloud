@@ -137,20 +137,45 @@ const worker = new Worker<BuildJob>(
         }
       }
 
-      // ── 2. Clone repo (always start clean if fresh build or missing artifacts) ──
+      // ── 2. Clone repo or unpack direct upload (always start clean if fresh build or missing artifacts) ──
+      const isDirectUpload = Boolean((job.data as any).isDirectUpload);
+
       if (!canResume) {
         if (isResume) {
           await log("⚠️ Previous build directory missing on disk, initiating automatic cold-start rebuild...");
         }
-        await log(`Cloning ${repoUrl} (branch: ${branch})...`);
-        const { simpleGit } = await import("simple-git");
 
         // Always wipe and re-create the build dir to avoid stale leftovers
         await fs.rm(buildDir, { recursive: true, force: true }).catch(() => {});
         await fs.mkdir(buildDir, { recursive: true });
 
-        await simpleGit().clone(repoUrl, buildDir, ["--depth=1", `--branch=${branch}`]);
-        await log("✓ Clone complete");
+        if (isDirectUpload) {
+          await log("📦 Unpacking direct uploaded code archive...");
+          const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+          if (uploadBase64) {
+            const archiveBuffer = Buffer.from(uploadBase64, "base64");
+            const tempArchive = path.join(os.tmpdir(), `upload-${deploymentId}.tar.gz`);
+            await fs.writeFile(tempArchive, archiveBuffer);
+            const { execFile } = await import("child_process");
+            const { promisify } = await import("util");
+            const execFileAsync = promisify(execFile);
+            await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+            await fs.rm(tempArchive, { force: true }).catch(() => {});
+            await redisPub.del(`upload:${deploymentId}`).catch(() => {});
+            await log("✓ Direct upload archive extracted successfully");
+          } else {
+            const existing = await fs.readdir(buildDir).catch(() => []);
+            if (existing.length === 0) {
+              throw new Error("Direct upload archive was not found in cache or on disk.");
+            }
+            await log("✓ Using existing direct upload files on disk");
+          }
+        } else {
+          await log(`Cloning ${repoUrl} (branch: ${branch})...`);
+          const { simpleGit } = await import("simple-git");
+          await simpleGit().clone(repoUrl, buildDir, ["--depth=1", `--branch=${branch}`]);
+          await log("✓ Clone complete");
+        }
       }
 
       // ── 3. Load & decrypt env vars ───────────────────────────────────────

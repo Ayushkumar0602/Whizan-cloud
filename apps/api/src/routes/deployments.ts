@@ -114,6 +114,67 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     }
   );
 
+  // ── POST /api/projects/:id/deployments/upload ────────────────────────────────
+  // Direct tarball upload from IDE / CLI without requiring GitHub
+  fastify.post(
+    "/:id/deployments/upload",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const { userId } = request.user;
+
+      const project = await prisma.project.findFirst({ where: { id, userId } });
+      if (!project) return reply.code(404).send({ error: "Project not found" });
+
+      const inProgress = await prisma.deployment.findFirst({
+        where: { projectId: id, status: { in: ["QUEUED", "BUILDING"] } },
+      });
+      if (inProgress) {
+        return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+      }
+
+      const data = await request.file();
+      if (!data) {
+        return reply.code(400).send({ error: "No archive file uploaded. Send as multipart/form-data field 'file'." });
+      }
+
+      const buffer = await data.toBuffer();
+      if (buffer.length === 0) {
+        return reply.code(400).send({ error: "Uploaded archive is empty." });
+      }
+
+      const deployment = await prisma.deployment.create({
+        data: {
+          projectId: id,
+          commitHash: "direct",
+          commitMessage: "Direct IDE upload",
+          branch: "main",
+          status: "QUEUED",
+          uploadType: "direct",
+        },
+      });
+
+      // Save base64 payload in Redis with 15m TTL
+      await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+
+      await buildQueue.add("build", {
+        deploymentId: deployment.id,
+        projectId: project.id,
+        repoUrl: "direct-upload",
+        branch: "main",
+        rootDir: project.rootDir || ".",
+        buildCommand: project.buildCommand,
+        installCommand: project.installCommand,
+        outputDir: project.outputDir,
+        framework: project.framework,
+        slug: project.slug,
+        isDirectUpload: true,
+      } as any);
+
+      return reply.code(201).send(deployment);
+    }
+  );
+
   // ── POST /api/projects/:id/deployments/:dId/cancel ──────────────────────────
   fastify.post(
     "/:id/deployments/:dId/cancel",
