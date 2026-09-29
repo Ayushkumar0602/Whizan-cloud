@@ -51,7 +51,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_analyze_workspace",
-    description: "Audits a local directory to identify project type (backend, frontend, monorepo), runtime, listening ports, 127.0.0.1 binding traps, CORS readiness, and environment variable requirements.",
+    description: "PHASE 1 (MANDATORY): Always run this first before any deployment. Audits local directory to identify project type (backend, frontend, monorepo), runtime/language, listening ports, 127.0.0.1 binding traps, CORS readiness, and environment variable requirements.",
     inputSchema: {
       type: "object",
       properties: {
@@ -83,7 +83,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_create_service",
-    description: "Registers a new backend microservice on Whizan Cloud (Node.js, Python, Go) with optional encrypted environment variables.",
+    description: "PHASE 3 (FOR BACKENDS): Registers a new backend microservice on Whizan Cloud (Node.js, Python, Go). Language, internalPort, and startCommand must match the Phase 1 audit. Environment variables can be passed here or via whizan_set_env_vars.",
     inputSchema: {
       type: "object",
       properties: {
@@ -104,7 +104,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_create_project",
-    description: "Registers a new frontend or fullstack web project on Whizan Cloud (Next.js, Vite, React, Astro).",
+    description: "PHASE 3 (FOR FRONTENDS): Registers a new frontend or fullstack web project on Whizan Cloud (Next.js, Vite, React, Astro).",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,7 +122,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_deploy_direct",
-    description: "Packs the local workspace directory (strictly respecting .gitignore and omitting node_modules/.git/build artifacts) into a tarball and uploads it directly to Whizan Cloud for instant building and containerization.",
+    description: "PHASE 4: Packs the workspace and uploads directly to Whizan Cloud. NOTE: Uploading enqueues the build job on Azure VM. Agents MUST capture the returned deploymentId and proceed to Phase 5 (whizan_get_build_logs).",
     inputSchema: {
       type: "object",
       properties: {
@@ -149,7 +149,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_get_build_logs",
-    description: "Retrieves the latest execution logs from the Whizan build worker for a deployment to diagnose build failures.",
+    description: "PHASE 5 (MANDATORY): Retrieves execution logs and build status from the Azure VM worker. Agents MUST poll this every 5-10s until status reaches READY/ACTIVE or FAILED. Never declare completion before build finishes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -160,7 +160,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_set_env_vars",
-    description: "Sets, updates, or patches environment variables (including large credentials like Firebase Admin service account JSON) on a Whizan service or project.",
+    description: "PHASE 2 (MANDATORY IF SECRETS REQUIRED): Sets, updates, or patches environment variables on a Whizan service or project. Agents must call this BEFORE triggering deployment to avoid container boot failures.",
     inputSchema: {
       type: "object",
       properties: {
@@ -173,7 +173,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_check_health",
-    description: "Pings a deployed live URL to verify HTTP readiness, response headers, and CORS compatibility. Automatically converts https:// to http:// for *.nip.io domains since the Azure VM Edge Router operates on Port 80 (HTTP).",
+    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200). Note: Use http:// (not https://) for *.nip.io domains since the Azure VM Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -389,9 +389,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_get_build_logs": {
         const { deploymentId } = (args || {}) as any;
-        const logs = await client.getBuildLogs(deploymentId);
+        const result = await client.getBuildLogs(deploymentId);
+
+        let guidance = "";
+        if (result.status === "ACTIVE" || result.status === "READY") {
+          guidance = `✓ Service is online and ready! Verified live URL: ${result.liveUrl || "(check service slug)"}. You MUST now call whizan_check_health to verify HTTP readiness.`;
+        } else if (result.status === "FAILED") {
+          guidance = `✗ Build failed! Analyze the logs above to identify the missing dependency, build command error, or configuration issue. Fix the issue and call whizan_redeploy.`;
+        } else if (result.status === "CANCELLED") {
+          guidance = `Deployment was cancelled.`;
+        } else {
+          guidance = `Deployment is in progress (Status: ${result.status}). The build worker on Azure VM is executing your build. Wait 5-10 seconds and call whizan_get_build_logs again. DO NOT assume deployment is finished until status is READY/ACTIVE or FAILED.`;
+        }
+
         return {
-          content: [{ type: "text", text: logs.join("\n") || "No build logs recorded yet." }],
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  deploymentId,
+                  status: result.status,
+                  liveUrl: result.liveUrl,
+                  errorMessage: result.errorMessage,
+                  logCount: result.logs.length,
+                  guidance,
+                  logs: result.logs.length > 0 ? result.logs : ["No log entries emitted yet. The build worker is preparing the container environment..."],
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 
