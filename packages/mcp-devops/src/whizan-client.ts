@@ -130,6 +130,11 @@ export class WhizanClient {
     envVars?: Record<string, string>;
   }): Promise<any> {
     await this.loadConfig();
+    const isStaticFrontend = params.framework === "VITE" || params.framework === "REACT" || params.framework === "ASTRO";
+    const resolvedOutputDir = params.outputDir && (params.outputDir !== ".next" || !isStaticFrontend)
+      ? params.outputDir
+      : (isStaticFrontend ? "dist" : ".next");
+
     const res = await fetch(`${this.config.apiUrl}/api/projects`, {
       method: "POST",
       headers: this.getHeaders({ "Content-Type": "application/json" }),
@@ -142,7 +147,7 @@ export class WhizanClient {
         rootDir: params.rootDir || ".",
         buildCommand: params.buildCommand || "npm run build",
         installCommand: params.installCommand || "npm install",
-        outputDir: params.outputDir || ".next",
+        outputDir: resolvedOutputDir,
         envVars: params.envVars,
       }),
     });

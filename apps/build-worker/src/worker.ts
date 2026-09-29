@@ -815,19 +815,100 @@ const scalerInterval = setInterval(async () => {
 
 // ─── VM Health Stats Reporter ────────────────────────────────────────────────
 
+let prevCpus: { idle: number; total: number }[] = [];
+
+function getRealCpuUsage(): number {
+  const cpus = os.cpus();
+  if (prevCpus.length !== cpus.length) {
+    prevCpus = cpus.map((c) => ({
+      idle: c.times.idle,
+      total: Object.values(c.times).reduce((a, b) => a + b, 0),
+    }));
+    const load = os.loadavg()[0];
+    return Math.min(100, Math.max(0, Math.round((load / Math.max(1, cpus.length)) * 1000) / 10));
+  }
+
+  let totalDiff = 0;
+  let idleDiff = 0;
+  for (let i = 0; i < cpus.length; i++) {
+    const curTotal = Object.values(cpus[i].times).reduce((a, b) => a + b, 0);
+    const curIdle = cpus[i].times.idle;
+    totalDiff += curTotal - prevCpus[i].total;
+    idleDiff += curIdle - prevCpus[i].idle;
+    prevCpus[i] = { idle: curIdle, total: curTotal };
+  }
+
+  if (totalDiff <= 0) return 0;
+  const usage = ((totalDiff - idleDiff) / totalDiff) * 100;
+  return Math.min(100, Math.max(0, Math.round(usage * 10) / 10));
+}
+
+async function getRealMemoryStats(): Promise<{
+  totalMB: number;
+  usedMB: number;
+  freeMB: number;
+  availableMB: number;
+  cachedMB: number;
+  buffersMB: number;
+  usagePercent: number;
+}> {
+  try {
+    const meminfo = await fs.readFile("/proc/meminfo", "utf8");
+    const lines = meminfo.split("\n");
+    const getKB = (key: string): number => {
+      const line = lines.find((l) => l.startsWith(`${key}:`));
+      if (!line) return 0;
+      const parts = line.split(/\s+/);
+      return parseInt(parts[1] || "0", 10);
+    };
+
+    const totalKB = getKB("MemTotal");
+    const freeKB = getKB("MemFree");
+    const availableKB = getKB("MemAvailable");
+    const buffersKB = getKB("Buffers");
+    const cachedKB = getKB("Cached") + getKB("SReclaimable");
+
+    if (totalKB > 0 && availableKB > 0) {
+      const usedKB = totalKB - availableKB;
+      const totalMB = Math.round(totalKB / 1024);
+      const usedMB = Math.round(usedKB / 1024);
+      const availableMB = Math.round(availableKB / 1024);
+      const cachedMB = Math.round(cachedKB / 1024);
+      const buffersMB = Math.round(buffersKB / 1024);
+      const usagePercent = Math.round((usedKB / totalKB) * 1000) / 10;
+
+      return {
+        totalMB,
+        usedMB,
+        freeMB: availableMB,
+        availableMB,
+        cachedMB,
+        buffersMB,
+        usagePercent,
+      };
+    }
+  } catch {}
+
+  // Fallback for non-Linux platforms (e.g. macOS dev)
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  return {
+    totalMB: Math.round(totalMem / 1024 / 1024),
+    usedMB: Math.round(usedMem / 1024 / 1024),
+    freeMB: Math.round(freeMem / 1024 / 1024),
+    availableMB: Math.round(freeMem / 1024 / 1024),
+    cachedMB: 0,
+    buffersMB: 0,
+    usagePercent: Math.round((usedMem / totalMem) * 1000) / 10,
+  };
+}
+
 const statsInterval = setInterval(async () => {
   try {
     const cpus = os.cpus();
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-
-    // CPU usage averaged across all cores
-    const cpuUsage = cpus.reduce((acc, cpu) => {
-      const total = Object.values(cpu.times).reduce((a, b) => a + b, 0);
-      const idle = cpu.times.idle;
-      return acc + ((total - idle) / total) * 100;
-    }, 0) / cpus.length;
+    const cpuUsage = getRealCpuUsage();
+    const memoryStats = await getRealMemoryStats();
 
     // Docker container stats
     let dockerContainers: any[] = [];
@@ -1246,12 +1327,7 @@ const statsInterval = setInterval(async () => {
         model: cpus[0]?.model ?? "unknown",
         usagePercent: Math.round(cpuUsage * 10) / 10,
       },
-      memory: {
-        totalMB: Math.round(totalMem / 1024 / 1024),
-        usedMB: Math.round(usedMem / 1024 / 1024),
-        freeMB: Math.round(freeMem / 1024 / 1024),
-        usagePercent: Math.round((usedMem / totalMem) * 1000) / 10,
-      },
+      memory: memoryStats,
       disk: diskStats,
       docker: {
         containers: dockerContainers,
@@ -1264,14 +1340,14 @@ const statsInterval = setInterval(async () => {
     };
 
     if (redisPub.status === "ready") {
-      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 60);
+      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 15);
     }
   } catch (err: any) {
     if (!err?.message?.includes("Connection is closed")) {
       console.warn("[Stats] Notice:", err?.message || err);
     }
   }
-}, 15_000);
+}, 3_000);
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 

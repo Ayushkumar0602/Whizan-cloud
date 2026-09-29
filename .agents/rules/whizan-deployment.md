@@ -61,10 +61,11 @@ Before creating any cloud resource or triggering any deployment:
      - `startCommand`: Explicit start command (e.g. `python -m uvicorn main:app --host 0.0.0.0 --port 8000`).
      - `autoSleep`: `true` for standard/free tier with scale-to-zero; `false` for dedicated always-on.
 2. If deploying a frontend (Next.js, Vite, React, Astro):
-   - Call `whizan_create_project`:
-     - `framework`: `NEXTJS`, `REACT`, `VITE`, or `ASTRO`.
-     - `buildCommand`: e.g. `npm run build`.
-     - `outputDir`: e.g. `.next` or `dist`.
+   - **CRITICAL**: Use `whizan_create_project` (NEVER `whizan_create_service`).
+   - `framework`: `NEXTJS`, `REACT`, `VITE`, or `ASTRO`.
+   - `buildCommand`: `npm run build` (or matching package.json).
+   - `outputDir`: MUST be `"dist"` for Vite, React, Astro; or `".next"` for Next.js.
+   - For Phase 4, use `targetType: "project"`.
 
 ---
 

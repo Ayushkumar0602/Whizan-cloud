@@ -282,6 +282,7 @@ export type Deployment = {
   branch: string;
   status: "QUEUED" | "BUILDING" | "READY" | "FAILED" | "CANCELLED" | "PAUSED";
   deploymentType?: "STATIC" | "SSR" | "HYBRID";
+  uploadType?: string;
   url?: string;
   containerPort?: number;
   buildStartedAt?: string;

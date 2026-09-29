@@ -1,5 +1,6 @@
 import {
   PIPELINE_STEPS,
+  getPipelineSteps,
   pipelineHeadline,
   pipelineStateFor,
 } from "@/lib/pipeline";
@@ -10,18 +11,21 @@ export function DeployPipeline({
   logs = [],
   compact = false,
   legend = false,
+  isDirectUpload = false,
 }: {
   status?: string;
   logs?: string[];
   compact?: boolean;
   legend?: boolean;
+  isDirectUpload?: boolean;
 }) {
+  const steps = getPipelineSteps(isDirectUpload);
   const headline = legend
     ? {
         title: "Every frontend follows this path",
         body: "When a deploy starts, this tracker lights up so you always know the current step.",
       }
-    : pipelineHeadline(status, logs);
+    : pipelineHeadline(status, logs, isDirectUpload);
 
   return (
     <div className={`pipeline ${compact ? "pipeline-compact" : ""}`}>
@@ -33,7 +37,7 @@ export function DeployPipeline({
         </div>
       )}
       <ol className="pipeline-track">
-        {PIPELINE_STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const state = pipelineStateFor(step.id, status, logs);
           return (
             <li key={step.id} className={`pipeline-step pipeline-step-${state}`}>
@@ -49,7 +53,7 @@ export function DeployPipeline({
                     i + 1
                   )}
                 </div>
-                {i < PIPELINE_STEPS.length - 1 && <span className="pipeline-line" />}
+                {i < steps.length - 1 && <span className="pipeline-line" />}
               </div>
               <div className="pipeline-copy">
                 <div className="pipeline-label">{step.label}</div>
