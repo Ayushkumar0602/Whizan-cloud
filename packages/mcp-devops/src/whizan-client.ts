@@ -100,6 +100,7 @@ export class WhizanClient {
         isPublic: params.isPublic !== undefined ? params.isPublic : true,
         autoSleep: params.autoSleep !== undefined ? params.autoSleep : false,
         instanceType: params.instanceType || "starter",
+        envVars: params.envVars,
       }),
     });
 
@@ -110,15 +111,9 @@ export class WhizanClient {
 
     const service: any = await res.json();
 
-    // If env vars are provided, set them
+    // Ensure all env vars are saved via bulk endpoint
     if (params.envVars && Object.keys(params.envVars).length > 0) {
-      for (const [key, value] of Object.entries(params.envVars)) {
-        await fetch(`${this.config.apiUrl}/api/services/${service.id}/env`, {
-          method: "POST",
-          headers: this.getHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ key, value, isSecret: true }),
-        }).catch(() => {});
-      }
+      await this.setEnvVars("service", service.id, params.envVars).catch(() => {});
     }
 
     return service;
@@ -148,6 +143,7 @@ export class WhizanClient {
         buildCommand: params.buildCommand || "npm run build",
         installCommand: params.installCommand || "npm install",
         outputDir: params.outputDir || ".next",
+        envVars: params.envVars,
       }),
     });
 
@@ -159,13 +155,7 @@ export class WhizanClient {
     const project: any = await res.json();
 
     if (params.envVars && Object.keys(params.envVars).length > 0) {
-      for (const [key, value] of Object.entries(params.envVars)) {
-        await fetch(`${this.config.apiUrl}/api/projects/${project.id}/env`, {
-          method: "POST",
-          headers: this.getHeaders({ "Content-Type": "application/json" }),
-          body: JSON.stringify({ key, value, isSecret: true }),
-        }).catch(() => {});
-      }
+      await this.setEnvVars("project", project.id, params.envVars).catch(() => {});
     }
 
     return project;
@@ -244,19 +234,44 @@ export class WhizanClient {
   async setEnvVars(
     targetType: "service" | "project",
     targetId: string,
-    envVars: Record<string, string>
+    envVars: Record<string, any>
   ): Promise<Record<string, boolean>> {
     await this.loadConfig();
     const endpoint = targetType === "service" ? "services" : "projects";
     const results: Record<string, boolean> = {};
 
-    for (const [key, value] of Object.entries(envVars)) {
-      const res = await fetch(`${this.config.apiUrl}/api/${endpoint}/${targetId}/env`, {
+    // 1. Try single-request bulk endpoint
+    try {
+      const bulkRes = await fetch(`${this.config.apiUrl}/api/${endpoint}/${targetId}/env/bulk`, {
         method: "POST",
         headers: this.getHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ key, value: String(value), isSecret: true }),
+        body: JSON.stringify({ envVars, isSecret: true }),
       });
-      results[key] = res.ok;
+
+      if (bulkRes.ok) {
+        for (const key of Object.keys(envVars)) {
+          results[key] = true;
+        }
+        return results;
+      }
+    } catch {
+      // Fall through to individual upserts
+    }
+
+    // 2. Fallback: Sequential upsert with proper value stringification
+    for (const [rawKey, rawVal] of Object.entries(envVars)) {
+      const key = String(rawKey).trim();
+      const valStr = typeof rawVal === "object" && rawVal !== null ? JSON.stringify(rawVal) : String(rawVal ?? "");
+      try {
+        const res = await fetch(`${this.config.apiUrl}/api/${endpoint}/${targetId}/env`, {
+          method: "POST",
+          headers: this.getHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ key, value: valStr, isSecret: true }),
+        });
+        results[key] = res.ok;
+      } catch {
+        results[key] = false;
+      }
     }
     return results;
   }

@@ -220,6 +220,12 @@ export const envVars = {
       body: JSON.stringify(data),
     }),
 
+  setBulk: (projectId: string, envVars: Record<string, any>, isSecret = true) =>
+    request<{ success: boolean; count: number; keys: string[] }>(`/api/projects/${projectId}/env/bulk`, {
+      method: "POST",
+      body: JSON.stringify({ envVars, isSecret }),
+    }),
+
   delete: (projectId: string, key: string) =>
     request(`/api/projects/${projectId}/env/${key}`, { method: "DELETE" }),
 };
@@ -474,6 +480,7 @@ export const services = {
   getDeployment: (id: string, dId: string) => request<ServiceDeployment>(`/api/services/deployments/${dId}`),
   getEnv: (id: string) => request<ServiceEnvVariable[]>(`/api/services/${id}/env`),
   setEnv: (id: string, key: string, value: string, isSecret = true) => request<{id:string}>(`/api/services/${id}/env`, { method: "POST", body: JSON.stringify({ key, value, isSecret }) }),
+  setBulkEnv: (id: string, envVars: Record<string, any>, isSecret = true) => request<{ success: boolean; count: number; keys: string[] }>(`/api/services/${id}/env/bulk`, { method: "POST", body: JSON.stringify({ envVars, isSecret }) }),
   deleteEnv: (id: string, key: string) => request(`/api/services/${id}/env/${key}`, { method: "DELETE" }),
   getMetrics: (id: string) => request<ServiceMetricsResponse>(`/api/services/${id}/metrics`),
   streamMetrics: (id: string): EventSource => {

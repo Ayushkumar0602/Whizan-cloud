@@ -151,17 +151,23 @@ export default function BackendServicePage() {
     setSavingEnv(true);
     try {
       const lines = bulkEnvText.split("\n");
-      let count = 0;
+      const envMap: Record<string, string> = {};
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith("#")) continue;
         const eqIdx = trimmed.indexOf("=");
         if (eqIdx === -1) continue;
-        const key = trimmed.slice(0, eqIdx).trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+        const key = trimmed.slice(0, eqIdx).trim();
         let val = trimmed.slice(eqIdx + 1).trim();
         if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
         else if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
-        if (key && val) { await services.setEnv(id, key, val, true); count++; }
+        if (key) {
+          envMap[key] = val;
+        }
+      }
+      const count = Object.keys(envMap).length;
+      if (count > 0) {
+        await services.setBulkEnv(id, envMap, true);
       }
       toast.success(`Saved ${count} environment variables`);
       setBulkEnvText(""); setBulkEnvMode(false);
@@ -580,7 +586,7 @@ export default function BackendServicePage() {
                           <input
                             required type="text" className="input mono" placeholder="DATABASE_URL"
                             value={envKey}
-                            onChange={e => setEnvKey(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
+                            onChange={e => setEnvKey(e.target.value.replace(/[^a-zA-Z0-9_.-]/g, ""))}
                           />
                         </div>
                         <div className="env-input-wrap" style={{ flex: 1.6 }}>
