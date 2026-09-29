@@ -286,7 +286,7 @@ export default function McpGuidePage() {
     },
     {
       q: "How does the agent rewire my frontend?",
-      a: "Once your backend service finishes deploying and is healthy, the MCP returns the live public URL (e.g. `https://my-backend.20.2.136.11.nip.io`). Your agent then automatically updates your frontend `.env` (like `VITE_API_URL` or `NEXT_PUBLIC_API_URL`), giving you a fully connected fullstack application with zero manual copy-pasting.",
+      a: "Once your backend service finishes deploying and is healthy, the MCP returns the live public URL (e.g. `http://my-backend.20.2.136.11.nip.io`). Your agent then automatically updates your frontend `.env` (like `VITE_API_URL` or `NEXT_PUBLIC_API_URL`), giving you a fully connected fullstack application with zero manual copy-pasting.",
     },
   ];
 

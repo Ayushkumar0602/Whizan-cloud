@@ -173,11 +173,11 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_check_health",
-    description: "Pings a deployed live URL to verify HTTP readiness, response headers, and CORS compatibility.",
+    description: "Pings a deployed live URL to verify HTTP readiness, response headers, and CORS compatibility. Automatically converts https:// to http:// for *.nip.io domains since the Azure VM Edge Router operates on Port 80 (HTTP).",
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string", description: "The full public URL to ping" },
+        url: { type: "string", description: "The full public URL to ping (e.g. http://<slug>.20.2.136.11.nip.io/health)" },
       },
       required: ["url"],
     },
@@ -326,8 +326,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   expectedLiveUrl,
                   nextSteps: [
                     `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
-                    `2. Once build status reaches ACTIVE, your service is live and reachable at ${expectedLiveUrl}.`,
-                    `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl}.`
+                    `2. Once build status reaches ACTIVE, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
+                    `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl} (use http://, not https://).`
                   ],
                   deployment: deploymentResult,
                 },

@@ -295,16 +295,40 @@ export class WhizanClient {
       .filter((line) => line && line !== "[DONE]");
   }
 
-  async checkHealth(url: string): Promise<{ ok: boolean; status: number; message: string }> {
+  async checkHealth(rawUrl: string): Promise<{ ok: boolean; status: number; message: string; effectiveUrl: string }> {
+    let url = rawUrl;
+    // Azure VM Edge Router listens on Port 80 (HTTP). Port 443 (HTTPS) is not bound.
+    // If the client supplies https:// for a nip.io domain or VM IP, automatically normalize to http://.
+    if (url.startsWith("https://") && (url.includes(".nip.io") || url.includes("20.2.136.11"))) {
+      url = url.replace(/^https:\/\//i, "http://");
+    }
+
     try {
       const res = await fetch(url, { method: "GET", timeout: 8000 } as any);
       return {
         ok: res.status < 400,
         status: res.status,
-        message: res.status < 400 ? "Service healthy and reachable." : `Received HTTP status ${res.status}`,
+        effectiveUrl: url,
+        message:
+          res.status < 400
+            ? `Service healthy and reachable at ${url}.${rawUrl.startsWith("https://") ? " (Note: Automatically converted https:// to http:// because Edge Router operates on Port 80)." : ""}`
+            : `Received HTTP status ${res.status}`,
       };
     } catch (err: any) {
-      return { ok: false, status: 0, message: `Could not connect to ${url}: ${err.message}` };
+      // In case rawUrl was https and failed, attempt immediate http fallback
+      if (rawUrl.startsWith("https://") && url === rawUrl) {
+        try {
+          const fallbackUrl = rawUrl.replace(/^https:\/\//i, "http://");
+          const fallbackRes = await fetch(fallbackUrl, { method: "GET", timeout: 8000 } as any);
+          return {
+            ok: fallbackRes.status < 400,
+            status: fallbackRes.status,
+            effectiveUrl: fallbackUrl,
+            message: `Service healthy and reachable at ${fallbackUrl}. (Note: HTTPS port 443 was refused; automatically fell back to HTTP port 80).`,
+          };
+        } catch {}
+      }
+      return { ok: false, status: 0, effectiveUrl: url, message: `Could not connect to ${url}: ${err.message}` };
     }
   }
 }

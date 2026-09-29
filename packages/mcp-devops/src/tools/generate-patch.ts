@@ -49,13 +49,20 @@ export function generatePatch(params: {
         filesToUpdate: ["package.json"],
       };
 
-    case "frontend_api_url":
+    case "frontend_api_url": {
+      let effectiveBackendUrl = backendUrl;
+      if (!effectiveBackendUrl) {
+        effectiveBackendUrl = "http://<service-slug>.20.2.136.11.nip.io";
+      } else if (effectiveBackendUrl.includes("nip.io") && effectiveBackendUrl.startsWith("https://")) {
+        effectiveBackendUrl = effectiveBackendUrl.replace(/^https:\/\//i, "http://");
+      }
       return {
         issue: "frontend_api_url",
-        description: "Updates frontend configuration to point to the newly deployed Whizan backend URL.",
-        suggestedCode: `// .env.production or frontend config:\nVITE_API_URL="${backendUrl || "https://<service-slug>.20.2.136.11.nip.io"}"\nNEXT_PUBLIC_API_URL="${backendUrl || "https://<service-slug>.20.2.136.11.nip.io"}"`,
+        description: "Updates frontend configuration to point to the newly deployed Whizan backend URL (HTTP on Port 80).",
+        suggestedCode: `// .env.production or frontend config:\nVITE_API_URL="${effectiveBackendUrl}"\nNEXT_PUBLIC_API_URL="${effectiveBackendUrl}"`,
         filesToUpdate: [".env", ".env.production", "src/config.ts", "src/api.ts"],
       };
+    }
 
     default:
       return {
