@@ -55,8 +55,8 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
   const cmd = [
     "sh",
     "-c",
-    // chmod first so root-owned mount is writable, then install + build
-    `set -e && chmod -R 777 /app && ${cdCmd}echo "--- Installing dependencies ---" && ${installCommand} && echo "--- Building ---" && ${buildCommand}`,
+    // chmod first (suppressing stderr warnings on macOS hidden metadata files), then set -e, install + build
+    `chmod -R 777 /app 2>/dev/null || true; set -e; ${cdCmd}echo "--- Installing dependencies ---" && ${installCommand} && echo "--- Building ---" && ${buildCommand}`,
   ];
 
   await onLog(`Container image: ${BUILD_IMAGE}`);
