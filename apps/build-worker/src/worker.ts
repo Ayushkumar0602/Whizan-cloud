@@ -162,10 +162,30 @@ const worker = new Worker<BuildJob>(
           await log("📦 Unpacking direct uploaded code archive...");
           const persistentSourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
-          const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+          let archiveBuffer: Buffer | null = null;
+          const chunksCountStr = await redisPub.get(`upload:${deploymentId}:chunks`);
+          if (chunksCountStr) {
+            const totalChunks = parseInt(chunksCountStr, 10);
+            const chunks: Buffer[] = [];
+            for (let i = 0; i < totalChunks; i++) {
+              const chunkBase64 = await redisPub.get(`upload:${deploymentId}:chunk:${i}`);
+              if (!chunkBase64) {
+                throw new Error(`Corrupted upload: missing archive chunk ${i} of ${totalChunks}`);
+              }
+              chunks.push(Buffer.from(chunkBase64, "base64"));
+              await redisPub.del(`upload:${deploymentId}:chunk:${i}`).catch(() => {});
+            }
+            await redisPub.del(`upload:${deploymentId}:chunks`).catch(() => {});
+            archiveBuffer = Buffer.concat(chunks);
+          } else {
+            const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+            if (uploadBase64) {
+              archiveBuffer = Buffer.from(uploadBase64, "base64");
+              await redisPub.del(`upload:${deploymentId}`).catch(() => {});
+            }
+          }
 
-          if (uploadBase64) {
-            const archiveBuffer = Buffer.from(uploadBase64, "base64");
+          if (archiveBuffer) {
             // Persist archive permanently across VM reboots and restarts
             await fs.mkdir(persistentSourceDir, { recursive: true });
             await fs.writeFile(persistentArchive, archiveBuffer);
@@ -175,7 +195,6 @@ const worker = new Worker<BuildJob>(
             const execFileAsync = promisify(execFile);
             await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await redisPub.del(`upload:${deploymentId}`).catch(() => {});
             await log("✓ Direct upload archive extracted successfully to persistent storage");
           } else {
             // Fallback: check if persistent source archive exists in /opt/whizan/sources

@@ -341,7 +341,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_deploy_direct": {
         const { targetType, targetId, workspaceDir } = (args || {}) as any;
-        const archiveBuffer = await packDirectory(workspaceDir || ".");
+        const archiveBuffer = await packDirectory(workspaceDir || ".", targetType);
         
         let deploymentResult: any;
         if (targetType === "service") {

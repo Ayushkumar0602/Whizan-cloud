@@ -198,12 +198,22 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       });
 
       try {
-        // Save base64 payload in Redis with 15m TTL
-        await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+        // Save payload in Redis with 15m TTL (chunked in 2MB slices to prevent Upstash ERR max request size exceeded)
+        const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
+        const totalChunks = Math.ceil(buffer.length / CHUNK_SIZE);
+        if (totalChunks > 1) {
+          for (let i = 0; i < totalChunks; i++) {
+            const chunk = buffer.subarray(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+            await redisClient.set(`upload:${deployment.id}:chunk:${i}`, chunk.toString("base64"), "EX", 900);
+          }
+          await redisClient.set(`upload:${deployment.id}:chunks`, totalChunks.toString(), "EX", 900);
+        } else {
+          await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+        }
       } catch (redisErr: any) {
         await prisma.deployment.update({
           where: { id: deployment.id },
-          data: { status: "FAILED", buildFinishedAt: new Date() },
+          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: `Failed to stage archive in Redis: ${redisErr.message}` },
         });
         return reply.code(500).send({ error: "Failed to stage archive in Redis: " + redisErr.message });
       }

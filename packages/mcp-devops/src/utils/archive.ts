@@ -62,18 +62,38 @@ const DEFAULT_IGNORES = [
   "yarn-debug.log*",
   "yarn-error.log*",
 
-  // Nested Archives
+  // Nested Archives & Large Binary Media
   "*.tar.gz",
   "*.tgz",
   "*.zip",
   "*.rar",
+  "*.mov",
+  "*.mp4",
+  "*.avi",
+  "*.mkv",
+  "*.iso",
+  "*.dmg",
+  "*.parquet",
 ];
 
 /**
  * Parses user's .gitignore file if present and combines with default ignores
  */
-export async function getIgnorePatterns(workspaceDir: string): Promise<string[]> {
+export async function getIgnorePatterns(
+  workspaceDir: string,
+  targetType?: "service" | "project"
+): Promise<string[]> {
   const ignoreSet = new Set<string>(DEFAULT_IGNORES);
+
+  // If packing for a frontend project, omit backend-specific folders if present
+  if (targetType === "project") {
+    ignoreSet.add("backend");
+    ignoreSet.add("server");
+  } else if (targetType === "service") {
+    ignoreSet.add("frontend");
+    ignoreSet.add("client");
+  }
+
   const gitignorePath = path.join(workspaceDir, ".gitignore");
 
   try {
@@ -99,11 +119,14 @@ export async function getIgnorePatterns(workspaceDir: string): Promise<string[]>
  * respecting .gitignore and default exclusion rules.
  * Returns the tarball as a Buffer.
  */
-export async function packDirectory(workspaceDir: string): Promise<Buffer> {
+export async function packDirectory(
+  workspaceDir: string,
+  targetType?: "service" | "project"
+): Promise<Buffer> {
   const resolvedDir = path.resolve(workspaceDir);
   const tempArchive = path.join(os.tmpdir(), `whizan-upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.tar.gz`);
 
-  const ignores = await getIgnorePatterns(resolvedDir);
+  const ignores = await getIgnorePatterns(resolvedDir, targetType);
   const excludeArgs = ignores.flatMap((pat) => ["--exclude", pat]);
 
   try {
