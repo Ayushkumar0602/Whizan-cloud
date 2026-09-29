@@ -241,15 +241,43 @@ export class WhizanClient {
     return res.json();
   }
 
+  async setEnvVars(
+    targetType: "service" | "project",
+    targetId: string,
+    envVars: Record<string, string>
+  ): Promise<Record<string, boolean>> {
+    await this.loadConfig();
+    const endpoint = targetType === "service" ? "services" : "projects";
+    const results: Record<string, boolean> = {};
+
+    for (const [key, value] of Object.entries(envVars)) {
+      const res = await fetch(`${this.config.apiUrl}/api/${endpoint}/${targetId}/env`, {
+        method: "POST",
+        headers: this.getHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ key, value: String(value), isSecret: true }),
+      });
+      results[key] = res.ok;
+    }
+    return results;
+  }
+
   async getBuildLogs(deploymentId: string): Promise<string[]> {
     await this.loadConfig();
-    // Fetch logs via API endpoint
-    const res = await fetch(`${this.config.apiUrl}/api/projects/deployments/${deploymentId}/logs?token=auth`, {
+    // Try services deployment logs first, fallback to projects
+    let res = await fetch(`${this.config.apiUrl}/api/services/deployments/${deploymentId}/logs`, {
       headers: this.getHeaders(),
     });
+    if (!res.ok) {
+      res = await fetch(`${this.config.apiUrl}/api/projects/deployments/${deploymentId}/logs`, {
+        headers: this.getHeaders(),
+      });
+    }
     if (!res.ok) return [];
     const text = await res.text();
-    return text.split("\n").filter(Boolean);
+    return text
+      .split("\n")
+      .map((line) => line.replace(/^data:\s*/, "").trim())
+      .filter((line) => line && line !== "[DONE]");
   }
 
   async checkHealth(url: string): Promise<{ ok: boolean; status: number; message: string }> {

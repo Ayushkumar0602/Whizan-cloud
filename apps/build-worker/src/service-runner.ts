@@ -236,6 +236,14 @@ export class ServiceRunner {
       await existing.remove({ force: true }).catch(() => {});
     } catch {}
 
+    // Ensure build directory and files are writable by the container process
+    try {
+      const { execFile } = await import("child_process");
+      const { promisify } = await import("util");
+      const execFileAsync = promisify(execFile);
+      await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+    } catch {}
+
     const container = await docker.createContainer({
       name: containerName,
       Image: image,
@@ -265,7 +273,6 @@ export class ServiceRunner {
           "SYS_ADMIN", // No mounting filesystems or kernel tampering
           "SYS_RAWIO", // No raw IO access
           "SYS_PTRACE", // No process tracing/hijacking
-          "DAC_OVERRIDE", // Strict filesystem permission enforcement
         ],
         SecurityOpt: ["no-new-privileges:true"], // Prevent setuid privilege escalation
         RestartPolicy: { Name: "unless-stopped" },
