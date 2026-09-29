@@ -203,31 +203,19 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: "Service not found" });
 
     try {
-      // 1. Cleanup Docker Container
-      const Docker = (await import("dockerode")).default;
-      const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-      const allContainers = await docker.listContainers({ all: true }).catch(() => []);
-      const matches = allContainers.filter(c =>
-        c.Names?.some(n => n === `/service-${existing.slug}` || n.startsWith(`/service-${existing.slug}-`)) ||
-        c.Labels?.["serviceId"] === id
-      );
-      for (const info of matches) {
-        try {
-          const container = docker.getContainer(info.Id);
-          if (info.State === "running") {
-            await container.stop({ t: 2 }).catch(() => {});
-          }
-          await container.remove({ force: true }).catch(() => {});
-        } catch {}
-      }
+      const deployments = await prisma.serviceDeployment.findMany({
+        where: { serviceId: id },
+        select: { id: true },
+      });
+      const deploymentIds = deployments.map(d => d.id);
 
-      // 2. Clear Edge Router Cache
-      await redisClient.del(`deployment:${existing.slug}`);
+      const { cleanupServiceResources } = await import("../lib/resource-cleaner.js");
+      await cleanupServiceResources(id, existing.slug, deploymentIds);
     } catch (cleanupErr) {
-      console.error(`Failed to cleanup docker/redis for service ${existing.slug}`, cleanupErr);
+      console.error(`Failed to cleanup resources for service ${existing.slug}`, cleanupErr);
     }
 
-    // 3. Database Deletion (Cascades to Deployments & EnvVars)
+    // Database Deletion (Cascades to Deployments & EnvVars)
     await prisma.backendService.delete({ where: { id } });
     return reply.code(204).send();
   });
@@ -237,8 +225,31 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { userId } = request.user;
 
-    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    let service = await prisma.backendService.findFirst({ where: { id, userId } });
     if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    // Allow user or MCP to optionally update repository details on redeploy
+    const body = request.body as {
+      githubRepoUrl?: string;
+      branch?: string;
+      rootDir?: string;
+      installCommand?: string;
+      startCommand?: string;
+      commitMessage?: string;
+    } | undefined;
+
+    if (body?.githubRepoUrl !== undefined) {
+      service = await prisma.backendService.update({
+        where: { id },
+        data: {
+          githubRepoUrl: body.githubRepoUrl || "direct-upload",
+          ...(body.branch ? { branch: body.branch } : {}),
+          ...(body.rootDir ? { rootDir: body.rootDir } : {}),
+          ...(body.installCommand ? { installCommand: body.installCommand } : {}),
+          ...(body.startCommand ? { startCommand: body.startCommand } : {}),
+        },
+      });
+    }
 
     const inProgress = await prisma.serviceDeployment.findFirst({
       where: { serviceId: id, status: { in: ["QUEUED", "BUILDING"] } },
@@ -251,13 +262,14 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       data: {
         serviceId: id,
         commitHash: "manual",
-        commitMessage: "Manual deploy",
+        commitMessage: body?.commitMessage || (body?.githubRepoUrl ? `Redeploy from ${body.githubRepoUrl}` : "Manual redeploy"),
         branch: service.branch,
         status: "QUEUED",
       },
     });
 
-    const repoUrl = await getAuthenticatedGitUrl(service.githubRepoUrl, userId);
+    const isDirectUpload = !service.githubRepoUrl || service.githubRepoUrl === "direct-upload" || service.githubRepoUrl.trim() === "";
+    const repoUrl = isDirectUpload ? "direct-upload" : await getAuthenticatedGitUrl(service.githubRepoUrl, userId);
 
     await serviceQueue.add("service-build", {
       deploymentId: deployment.id,
@@ -274,6 +286,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       instanceType: service.instanceType,
       cpuLimit: service.cpuLimit,
       memoryLimit: service.memoryLimit,
+      isDirectUpload,
     });
 
     return reply.code(201).send(deployment);

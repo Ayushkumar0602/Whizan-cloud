@@ -74,8 +74,32 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string };
       const { userId } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      let project = await prisma.project.findFirst({ where: { id, userId } });
       if (!project) return reply.code(404).send({ error: "Project not found" });
+
+      const body = request.body as {
+        githubRepoUrl?: string;
+        branch?: string;
+        rootDir?: string;
+        buildCommand?: string;
+        installCommand?: string;
+        outputDir?: string;
+        commitMessage?: string;
+      } | undefined;
+
+      if (body?.githubRepoUrl !== undefined) {
+        project = await prisma.project.update({
+          where: { id },
+          data: {
+            githubRepoUrl: body.githubRepoUrl || "direct-upload",
+            ...(body.branch ? { branch: body.branch } : {}),
+            ...(body.rootDir ? { rootDir: body.rootDir } : {}),
+            ...(body.buildCommand ? { buildCommand: body.buildCommand } : {}),
+            ...(body.installCommand ? { installCommand: body.installCommand } : {}),
+            ...(body.outputDir ? { outputDir: body.outputDir } : {}),
+          },
+        });
+      }
 
       // Prevent double-deploy
       const inProgress = await prisma.deployment.findFirst({
@@ -89,13 +113,14 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         data: {
           projectId: id,
           commitHash: "manual",
-          commitMessage: "Manual deploy",
+          commitMessage: body?.commitMessage || (body?.githubRepoUrl ? `Redeploy from ${body.githubRepoUrl}` : "Manual redeploy"),
           branch: project.branch,
           status: "QUEUED",
         },
       });
 
-      const repoUrl = await getAuthenticatedGitUrl(project.githubRepoUrl, userId);
+      const isDirectUpload = !project.githubRepoUrl || project.githubRepoUrl === "direct-upload" || project.githubRepoUrl.trim() === "";
+      const repoUrl = isDirectUpload ? "direct-upload" : await getAuthenticatedGitUrl(project.githubRepoUrl, userId);
 
       await buildQueue.add("build", {
         deploymentId: deployment.id,
@@ -108,6 +133,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         outputDir: project.outputDir,
         framework: project.framework,
         slug: project.slug,
+        isDirectUpload,
       });
 
       return reply.code(201).send(deployment);

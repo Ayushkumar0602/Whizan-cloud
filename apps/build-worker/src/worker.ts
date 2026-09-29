@@ -138,7 +138,7 @@ const worker = new Worker<BuildJob>(
       }
 
       // ── 2. Clone repo or unpack direct upload (always start clean if fresh build or missing artifacts) ──
-      const isDirectUpload = Boolean((job.data as any).isDirectUpload);
+      const isDirectUpload = Boolean((job.data as any).isDirectUpload) || !repoUrl || repoUrl === "direct-upload" || repoUrl.trim() === "";
 
       if (!canResume) {
         if (isResume) {
@@ -151,26 +151,55 @@ const worker = new Worker<BuildJob>(
 
         if (isDirectUpload) {
           await log("📦 Unpacking direct uploaded code archive...");
+          const persistentSourceDir = path.join("/tmp/whizan/project-sources", projectId);
+          const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
           const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+
           if (uploadBase64) {
             const archiveBuffer = Buffer.from(uploadBase64, "base64");
+            // Persist a copy for future manual redeployments
+            await fs.mkdir(persistentSourceDir, { recursive: true });
+            await fs.writeFile(persistentArchive, archiveBuffer);
+
             const tempArchive = path.join(os.tmpdir(), `upload-${deploymentId}.tar.gz`);
             await fs.writeFile(tempArchive, archiveBuffer);
             const { execFile } = await import("child_process");
             const { promisify } = await import("util");
             const execFileAsync = promisify(execFile);
             await execFileAsync("tar", ["-xzf", tempArchive, "-C", buildDir]);
+            await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
             await fs.rm(tempArchive, { force: true }).catch(() => {});
             await redisPub.del(`upload:${deploymentId}`).catch(() => {});
             await log("✓ Direct upload archive extracted successfully");
           } else {
-            const existing = await fs.readdir(buildDir).catch(() => []);
-            if (existing.length === 0) {
-              throw new Error("Direct upload archive was not found in cache or on disk.");
+            // Fallback: check if persistent source archive exists on VM
+            let archiveFound = false;
+            try {
+              await fs.access(persistentArchive);
+              archiveFound = true;
+            } catch {}
+
+            if (archiveFound) {
+              await log("📦 Rebuilding from cached direct-upload source archive...");
+              const { execFile } = await import("child_process");
+              const { promisify } = await import("util");
+              const execFileAsync = promisify(execFile);
+              await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
+              await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+              await log("✓ Cached source archive extracted successfully");
+            } else {
+              const existing = await fs.readdir(buildDir).catch(() => []);
+              if (existing.length === 0) {
+                throw new Error("Direct upload archive was not found in cache or on disk. Please upload files or link a GitHub repository to redeploy.");
+              }
+              await log("✓ Using existing direct upload files on disk");
             }
-            await log("✓ Using existing direct upload files on disk");
           }
         } else {
+          if (!repoUrl || repoUrl === "direct-upload") {
+            throw new Error("No valid Git repository URL provided for this project. Please specify a GitHub repository or deploy via direct upload.");
+          }
+
           await log(`Cloning ${repoUrl} (branch: ${branch})...`);
           const { simpleGit } = await import("simple-git");
           await simpleGit().clone(repoUrl, buildDir, ["--depth=1", `--branch=${branch}`]);
@@ -369,6 +398,117 @@ redisSub.on("message", async (channel, message) => {
       
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+
+      if (payload.action === "DELETE_SERVICE") {
+        const { serviceId, slug, deploymentIds } = payload;
+        console.log(`[Admin] Deleting all VM resources for service ${slug} (${serviceId})`);
+        
+        // 1. Stop and remove all Docker containers for this service
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+        const matches = allContainers.filter((c: any) =>
+          c.Labels?.["serviceId"] === serviceId ||
+          c.Labels?.["slug"] === slug ||
+          c.Names?.some((n: string) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`)) ||
+          (Array.isArray(deploymentIds) && c.Labels?.["deploymentId"] && deploymentIds.includes(c.Labels["deploymentId"]))
+        );
+        for (const info of matches) {
+          try {
+            const container = docker.getContainer(info.Id);
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
+            await container.remove({ force: true }).catch(() => {});
+            console.log(`[Admin] Removed service container ${info.Names?.[0] || info.Id}`);
+          } catch (err: any) {
+            console.error(`[Admin] Error removing container ${info.Id}:`, err.message);
+          }
+        }
+
+        // 2. Remove all build and source directories on VM disk
+        try {
+          const sourceDir = path.join("/tmp/whizan/service-sources", serviceId);
+          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
+          if (Array.isArray(deploymentIds)) {
+            for (const dId of deploymentIds) {
+              await fs.rm(path.join("/tmp/whizan/service-builds", dId), { recursive: true, force: true }).catch(() => {});
+              await redisPub.del(`build-logs:${dId}`).catch(() => {});
+            }
+          }
+        } catch (err: any) {
+          console.error(`[Admin] Error cleaning service files:`, err.message);
+        }
+
+        // 3. Clear edge-router routing key
+        if (slug) {
+          await redisPub.del(`deployment:${slug}`).catch(() => {});
+        }
+        return;
+      }
+
+      if (payload.action === "DELETE_PROJECT") {
+        const { projectId, slug, deploymentIds } = payload;
+        console.log(`[Admin] Deleting all VM resources for project ${slug} (${projectId})`);
+
+        // 1. Stop and remove all Docker containers for this project
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+        const matches = allContainers.filter((c: any) =>
+          c.Labels?.["projectId"] === projectId ||
+          c.Labels?.["slug"] === slug ||
+          (Array.isArray(deploymentIds) && c.Labels?.["deploymentId"] && deploymentIds.includes(c.Labels["deploymentId"])) ||
+          c.Mounts?.some((m: any) => Array.isArray(deploymentIds) && deploymentIds.some((dId: string) => m.Source?.includes(dId)))
+        );
+        for (const info of matches) {
+          try {
+            const container = docker.getContainer(info.Id);
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
+            await container.remove({ force: true }).catch(() => {});
+            console.log(`[Admin] Removed project container ${info.Names?.[0] || info.Id}`);
+          } catch (err: any) {
+            console.error(`[Admin] Error removing project container:`, err.message);
+          }
+        }
+
+        // 2. Remove build and source directories on VM disk
+        try {
+          const sourceDir = path.join("/tmp/whizan/project-sources", projectId);
+          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
+          if (Array.isArray(deploymentIds)) {
+            for (const dId of deploymentIds) {
+              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
+              await redisPub.del(`build-logs:${dId}`).catch(() => {});
+            }
+          }
+        } catch (err: any) {
+          console.error(`[Admin] Error cleaning project files:`, err.message);
+        }
+
+        // 3. Clear edge-router routing key
+        if (slug) {
+          await redisPub.del(`deployment:${slug}`).catch(() => {});
+        }
+        return;
+      }
+
+      if (payload.action === "STOP_CONTAINER" || payload.action === "DELETE_CONTAINER") {
+        const dId = payload.deploymentId;
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+        const matches = allContainers.filter((c: any) =>
+          c.Labels?.["deploymentId"] === dId ||
+          c.Mounts?.some((m: any) => m.Source?.includes(dId))
+        );
+        for (const info of matches) {
+          try {
+            const container = docker.getContainer(info.Id);
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
+            if (payload.action === "DELETE_CONTAINER") {
+              await container.remove({ force: true }).catch(() => {});
+            }
+          } catch {}
+        }
+        if (payload.action === "DELETE_CONTAINER") {
+          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
+          await fs.rm(path.join("/tmp/whizan/service-builds", dId), { recursive: true, force: true }).catch(() => {});
+        }
+        return;
+      }
 
       if (payload.action === "KILL_CONTAINER_BY_ID") {
         const cId = payload.containerId;

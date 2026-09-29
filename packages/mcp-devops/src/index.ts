@@ -182,6 +182,47 @@ const TOOLS: Tool[] = [
       required: ["url"],
     },
   },
+  {
+    name: "whizan_redeploy",
+    description: "Triggers a redeployment of an existing service or project using cached source code or a newly specified Git repository.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["service", "project"], description: "Whether targeting a backend service or frontend project" },
+        targetId: { type: "string", description: "The Whizan ID of the service or project" },
+        githubRepoUrl: { type: "string", description: "Optional: update to a new GitHub repository URL before deploying" },
+        branch: { type: "string", description: "Optional: Git branch to build (default: main)" },
+      },
+      required: ["targetType", "targetId"],
+    },
+  },
+  {
+    name: "whizan_link_git_repo",
+    description: "Links a GitHub repository (public or private) to an existing Whizan service or project and immediately triggers a fresh build and deployment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["service", "project"], description: "Whether targeting a backend service or frontend project" },
+        targetId: { type: "string", description: "The Whizan ID of the service or project" },
+        githubRepoUrl: { type: "string", description: "The GitHub repository URL (e.g. https://github.com/owner/repo)" },
+        branch: { type: "string", description: "The branch to deploy (default: main)" },
+        deployNow: { type: "boolean", description: "Whether to immediately trigger a deployment (default: true)" },
+      },
+      required: ["targetType", "targetId", "githubRepoUrl"],
+    },
+  },
+  {
+    name: "whizan_delete_resource",
+    description: "Deletes a service or project completely, cleanly stopping and removing all Docker containers and wiping build/source files from the Azure VM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["service", "project"], description: "Whether deleting a backend service or frontend project" },
+        targetId: { type: "string", description: "The Whizan ID of the service or project to delete" },
+      },
+      required: ["targetType", "targetId"],
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────
@@ -359,6 +400,73 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const health = await client.checkHealth(url);
         return {
           content: [{ type: "text", text: JSON.stringify(health, null, 2) }],
+        };
+      }
+
+      case "whizan_redeploy": {
+        const { targetType, targetId, githubRepoUrl, branch } = (args || {}) as any;
+        const deployment = await client.redeploy(targetType, targetId, { githubRepoUrl, branch });
+        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+        const expectedLiveUrl = `http://${deployment?.service?.slug || deployment?.project?.slug || targetId}.${baseDomain}`;
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Redeployment enqueued for ${targetType} '${targetId}'.`,
+                  deploymentId: deployment.id,
+                  status: deployment.status,
+                  expectedLiveUrl,
+                  nextStep: `Call whizan_get_build_logs with deploymentId: "${deployment.id}" to follow live progress.`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_link_git_repo": {
+        const { targetType, targetId, githubRepoUrl, branch, deployNow } = (args || {}) as any;
+        const result = await client.linkGitRepo(targetType, targetId, githubRepoUrl, branch, deployNow);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Linked repository '${githubRepoUrl}' (branch: ${branch || "main"}) to ${targetType} '${targetId}'.`,
+                  result,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_delete_resource": {
+        const { targetType, targetId } = (args || {}) as any;
+        await client.deleteResource(targetType, targetId);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: `Successfully deleted ${targetType} '${targetId}'. Docker containers stopped and removed; build files wiped from VM.`,
+                },
+                null,
+                2
+              ),
+            },
+          ],
         };
       }
 

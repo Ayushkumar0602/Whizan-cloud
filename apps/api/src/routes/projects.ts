@@ -172,12 +172,14 @@ export async function projectRoutes(fastify: FastifyInstance) {
     });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
-    // 1. Stop all SSR containers + wipe build dirs + clear Redis keys
+    // 1. Clean up VM Docker containers, build/source directories, and Redis cache
+    const deploymentIds = project.deployments.map((d: any) => d.id);
+    const { cleanupProjectResources } = await import("../lib/resource-cleaner.js");
+    await cleanupProjectResources(id, project.slug, deploymentIds);
+
     await Promise.all(
       project.deployments.map(async (d: typeof project.deployments[number]) => {
         await Promise.all([
-          stopDeploymentContainer(d.id),
-          deleteBuildDir(d.id),
           redisClient.del(`build-logs:${d.id}`),
           // Cancel any in-progress build jobs
           ...(["QUEUED", "BUILDING"].includes(d.status)

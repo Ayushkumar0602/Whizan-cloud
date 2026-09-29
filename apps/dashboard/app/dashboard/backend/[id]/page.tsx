@@ -39,6 +39,7 @@ export default function BackendServicePage() {
   const [startCommand, setStartCommand] = useState("");
   const [internalPort, setInternalPort] = useState(8000);
   const [branch, setBranch] = useState("main");
+  const [githubRepoUrl, setGithubRepoUrl] = useState("");
 
   const [envKey, setEnvKey] = useState("");
   const [envValue, setEnvValue] = useState("");
@@ -62,6 +63,7 @@ export default function BackendServicePage() {
       setStartCommand(s.startCommand || "");
       setInternalPort(s.internalPort || 8000);
       setBranch(s.branch || "main");
+      setGithubRepoUrl(s.githubRepoUrl || "direct-upload");
       if (s.deployments.length > 0 && !selectedDId) setSelectedDId(s.deployments[0].id);
     } catch {
       toast.error("Service not found");
@@ -85,6 +87,7 @@ export default function BackendServicePage() {
     setSavingConfig(true);
     try {
       const updated = await services.update(service.id, {
+        githubRepoUrl: githubRepoUrl.trim() || "direct-upload",
         rootDir: rootDir.trim() || ".",
         installCommand: installCommand.trim(),
         startCommand: startCommand.trim(),
@@ -103,10 +106,11 @@ export default function BackendServicePage() {
     }
   }
 
-  async function triggerDeploy() {
+  async function triggerDeploy(options?: { githubRepoUrl?: string; branch?: string }) {
     setDeploying(true);
     try {
-      const newD = await services.deploy(id);
+      const deployOpts = options || (githubRepoUrl && githubRepoUrl !== "direct-upload" ? { githubRepoUrl, branch } : undefined);
+      const newD = await services.deploy(id, deployOpts);
       toast.success("Deployment triggered");
       setSelectedDId(newD.id);
       await load();
@@ -261,7 +265,7 @@ export default function BackendServicePage() {
             </div>
           </div>
           <div className="detail-hero-actions">
-            <button className="btn btn-primary btn-lg" onClick={triggerDeploy} disabled={deploying || isBuilding}>
+            <button className="btn btn-primary btn-lg" onClick={() => triggerDeploy()} disabled={deploying || isBuilding}>
               {deploying || isBuilding
                 ? <><Loader2 size={16} className="spin-icon" /> Deploying...</>
                 : <><Play size={16} fill="currentColor" /> Deploy Now</>}
@@ -407,7 +411,7 @@ export default function BackendServicePage() {
                   </div>
                   <div className="redeploy-note-box">
                     <span>💡 Applies on next deploy</span>
-                    <button type="button" onClick={triggerDeploy} disabled={deploying} className="btn btn-secondary btn-sm">
+                    <button type="button" onClick={() => triggerDeploy()} disabled={deploying} className="btn btn-secondary btn-sm">
                       <Play size={12} /> Redeploy
                     </button>
                   </div>
@@ -439,6 +443,22 @@ export default function BackendServicePage() {
               {configOpen && (
                 <div className="env-collapse-body">
                   <div className="form-group-item">
+                    <label className="form-label-sm">GitHub Repository URL (Optional)</label>
+                    <input
+                      type="text"
+                      className="input mono"
+                      placeholder="https://github.com/owner/repo or 'direct-upload'"
+                      value={githubRepoUrl}
+                      onChange={e => setGithubRepoUrl(e.target.value)}
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "var(--muted)", marginTop: "0.2rem", display: "block" }}>
+                      {!githubRepoUrl || githubRepoUrl === "direct-upload"
+                        ? "Currently deployed via Direct Upload (MCP/CLI). Enter a GitHub URL to switch to Git deployment."
+                        : "Git clone URL (private repos use authenticated GitHub account). Enter 'direct-upload' to switch back to MCP uploads."}
+                    </span>
+                  </div>
+
+                  <div className="form-group-item" style={{ marginTop: "0.6rem" }}>
                     <label className="form-label-sm">Root Directory</label>
                     <input
                       type="text"
