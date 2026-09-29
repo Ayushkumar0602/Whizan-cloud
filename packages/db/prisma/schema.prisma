@@ -28,9 +28,27 @@ model User {
   projects         Project[]
   backendServices  BackendService[]
   databaseServices DatabaseService[]
-  refreshTokens RefreshToken[]
+  refreshTokens    RefreshToken[]
+  apiKeys          ApiKey[]
 
   @@map("users")
+}
+
+// ─────────────────────────────────────────
+//  API KEYS (FOR IDE MCP / CLI ACCESS)
+// ─────────────────────────────────────────
+model ApiKey {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  name       String    @default("IDE MCP Key")
+  keyHash    String    @unique @map("key_hash")
+  keyPrefix  String    @map("key_prefix") // e.g. "whz_live_a1b2..."
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
 }
 
 // ─────────────────────────────────────────
@@ -56,7 +74,7 @@ model Project {
   userId         String    @map("user_id")
   name           String
   slug           String    @unique   // used for <slug>.localhost subdomain
-  githubRepoUrl  String    @map("github_repo_url")
+  githubRepoUrl  String    @default("") @map("github_repo_url")
   githubRepoId   String?   @map("github_repo_id")
   webhookSecret  String    @map("webhook_secret")  // HMAC secret for this project
   branch         String    @default("main")
@@ -98,6 +116,7 @@ model Deployment {
   branch           String
   status           DeploymentStatus @default(QUEUED)
   deploymentType   DeploymentType?  @map("deployment_type")
+  uploadType       String?          @default("git") @map("upload_type") // "git" or "direct"
   url              String?          // e.g. my-app.localhost
   containerPort    Int?             @map("container_port")  // for SSR/hybrid apps
   buildStartedAt   DateTime?        @map("build_started_at")
@@ -189,7 +208,7 @@ model BackendService {
   userId         String          @map("user_id")
   name           String
   slug           String          @unique   // e.g. api-service.localhost
-  githubRepoUrl  String          @map("github_repo_url")
+  githubRepoUrl  String          @default("") @map("github_repo_url")
   branch         String          @default("main")
   language       BackendLanguage @default(NODEJS)
   rootDir        String          @default(".") @map("root_dir")
@@ -230,6 +249,7 @@ model ServiceDeployment {
   commitMessage    String?          @map("commit_message")
   branch           String
   status           DeploymentStatus @default(QUEUED)
+  uploadType       String?          @default("git") @map("upload_type") // "git" or "direct"
   containerPort    Int?             @map("container_port")  // Mapped host port
   buildStartedAt   DateTime?        @map("build_started_at")
   buildFinishedAt  DateTime?        @map("build_finished_at")

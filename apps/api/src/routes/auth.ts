@@ -148,4 +148,79 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.send(user);
     }
   );
+
+  // ─── API Key Management (for IDE MCP & CLI) ────────────────────────────────
+
+  // POST /api/auth/api-keys
+  fastify.post(
+    "/api-keys",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const body = request.body as { name?: string };
+      const name = body?.name?.trim() || "IDE MCP Key";
+
+      const rawSecret = crypto.randomBytes(24).toString("hex");
+      const fullKey = `whz_live_${rawSecret}`;
+      const keyPrefix = `whz_live_${rawSecret.slice(0, 6)}...`;
+      const keyHash = crypto.createHash("sha256").update(fullKey).digest("hex");
+
+      const apiKey = await prisma.apiKey.create({
+        data: {
+          userId,
+          name,
+          keyHash,
+          keyPrefix,
+        },
+      });
+
+      // Return the plaintext key ONCE
+      return reply.code(201).send({
+        id: apiKey.id,
+        name: apiKey.name,
+        key: fullKey,
+        keyPrefix: apiKey.keyPrefix,
+        createdAt: apiKey.createdAt,
+      });
+    }
+  );
+
+  // GET /api/auth/api-keys
+  fastify.get(
+    "/api-keys",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const keys = await prisma.apiKey.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          name: true,
+          keyPrefix: true,
+          lastUsedAt: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return reply.send(keys);
+    }
+  );
+
+  // DELETE /api/auth/api-keys/:id
+  fastify.delete(
+    "/api-keys/:id",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const { id } = request.params as { id: string };
+
+      const existing = await prisma.apiKey.findFirst({
+        where: { id, userId },
+      });
+      if (!existing) return reply.code(404).send({ error: "API key not found" });
+
+      await prisma.apiKey.delete({ where: { id } });
+      return reply.send({ ok: true });
+    }
+  );
 }

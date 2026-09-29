@@ -29,7 +29,7 @@ export const INSTANCE_TIERS: Record<string, { cpu: number; memory: number; label
 const CreateServiceSchema = z.object({
   name: z.string().min(1).max(60),
   slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  githubRepoUrl: z.string().url(),
+  githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
   branch: z.string().default("main"),
   language: z.enum(["NODEJS", "PYTHON", "GO", "DOCKERFILE"]).default("NODEJS"),
   rootDir: z.string().default("."),
@@ -249,6 +249,67 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       cpuLimit: service.cpuLimit,
       memoryLimit: service.memoryLimit,
     });
+
+    return reply.code(201).send(deployment);
+  });
+
+  // POST /api/services/:id/deploy/upload
+  // Direct tarball upload from IDE / CLI without requiring GitHub
+  fastify.post("/:id/deploy/upload", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { userId } = request.user;
+
+    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const inProgress = await prisma.serviceDeployment.findFirst({
+      where: { serviceId: id, status: { in: ["QUEUED", "BUILDING"] } },
+    });
+    if (inProgress) {
+      return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+    }
+
+    const data = await request.file();
+    if (!data) {
+      return reply.code(400).send({ error: "No archive file uploaded. Send as multipart/form-data field 'file'." });
+    }
+
+    const buffer = await data.toBuffer();
+    if (buffer.length === 0) {
+      return reply.code(400).send({ error: "Uploaded archive is empty." });
+    }
+
+    const deployment = await prisma.serviceDeployment.create({
+      data: {
+        serviceId: id,
+        commitHash: "direct",
+        commitMessage: "Direct IDE upload",
+        branch: "main",
+        status: "QUEUED",
+        uploadType: "direct",
+      },
+    });
+
+    // Save base64 payload in Redis with 15m TTL
+    await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
+
+    await serviceQueue.add("service-build", {
+      deploymentId: deployment.id,
+      serviceId: service.id,
+      repoUrl: "direct-upload",
+      branch: "main",
+      language: service.language,
+      rootDir: service.rootDir,
+      installCommand: service.installCommand,
+      startCommand: service.startCommand,
+      internalPort: service.internalPort,
+      slug: service.slug,
+      autoSleep: service.autoSleep,
+      instanceType: service.instanceType,
+      cpuLimit: service.cpuLimit,
+      memoryLimit: service.memoryLimit,
+      isDirectUpload: true,
+    } as any);
 
     return reply.code(201).send(deployment);
   });

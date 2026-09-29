@@ -8,7 +8,7 @@ import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner
 const CreateProjectSchema = z.object({
   name: z.string().min(1).max(60),
   slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
-  githubRepoUrl: z.string().url(),
+  githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
   branch: z.string().default("main"),
   rootDir: z.string().default("."),
   buildCommand: z.string().default("npm run build"),

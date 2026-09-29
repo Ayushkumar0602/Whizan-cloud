@@ -1,7 +1,7 @@
 "use client";
 import { useAuth } from "@/lib/auth";
-import { useState } from "react";
-import { getApiBase } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { getApiBase, apiKeysApi, type ApiKeyItem, type CreatedApiKey } from "@/lib/api";
 import { getBaseRouterDomain } from "@/lib/domains";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -15,7 +15,12 @@ import {
   Check,
   Calendar,
   Lock,
-  ExternalLink
+  ExternalLink,
+  Key,
+  Plus,
+  Trash2,
+  Bot,
+  Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -44,7 +49,74 @@ export default function SettingsPage() {
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
+  // ─── API Keys & MCP State ──────────────────────────────────────────────────
+  const [keys, setKeys] = useState<ApiKeyItem[]>([]);
+  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [keyName, setKeyName] = useState("");
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [creatingKey, setCreatingKey] = useState(false);
+
+  useEffect(() => {
+    loadKeys();
+  }, []);
+
+  async function loadKeys() {
+    setLoadingKeys(true);
+    try {
+      const data = await apiKeysApi.list();
+      setKeys(data);
+    } catch {
+      // Ignored if offline
+    } finally {
+      setLoadingKeys(false);
+    }
+  }
+
+  async function handleCreateKey(e: React.FormEvent) {
+    e.preventDefault();
+    setCreatingKey(true);
+    try {
+      const created = await apiKeysApi.create(keyName.trim() || undefined);
+      setNewKey(created);
+      setKeyName("");
+      toast.success("API key generated successfully");
+      loadKeys();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to create API key");
+    } finally {
+      setCreatingKey(false);
+    }
+  }
+
+  async function handleDeleteKey(id: string) {
+    try {
+      await apiKeysApi.delete(id);
+      toast.success("API key revoked");
+      setKeys((prev) => prev.filter((k) => k.id !== id));
+      if (newKey?.id === id) setNewKey(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke key");
+    }
+  }
+
   const initials = (user?.name || user?.email || "U")[0].toUpperCase();
+
+  const mcpConfigSnippet = JSON.stringify(
+    {
+      mcpServers: {
+        whizan: {
+          command: "npx",
+          args: ["-y", "@whizan/mcp-devops"],
+          env: {
+            WHIZAN_API_URL: apiUrl,
+            WHIZAN_API_KEY: newKey?.key || "whz_live_YOUR_KEY_HERE",
+          },
+        },
+      },
+    },
+    null,
+    2
+  );
 
   return (
     <div className="page" style={{ maxWidth: 840 }}>
@@ -82,6 +154,179 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* IDE DevOps MCP & API Keys */}
+        <div className="card">
+          <div style={{ marginBottom: "1.25rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Bot size={18} style={{ color: "#38bdf8" }} />
+              <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+                IDE DevOps MCP & API Keys
+              </h2>
+            </div>
+            <p className="card-sub" style={{ marginTop: "0.25rem" }}>
+              Empower AI coding agents inside Cursor, Windsurf, or VS Code to autonomously inspect, adapt, and deploy your codebases to Whizan Cloud.
+            </p>
+          </div>
+
+          {/* New Key Alert */}
+          {newKey && (
+            <div
+              style={{
+                background: "rgba(16, 185, 129, 0.08)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                borderRadius: "8px",
+                padding: "1rem",
+                marginBottom: "1.25rem",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981" }}>
+                  🎉 New API Key Generated ({newKey.name})
+                </span>
+                <span style={{ fontSize: "0.75rem", color: "#f59e0b" }}>
+                  ⚠️ Copy it now — it won&apos;t be shown again!
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <code
+                  style={{
+                    flex: 1,
+                    background: "rgba(0,0,0,0.4)",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "0.82rem",
+                    wordBreak: "break-all",
+                    color: "#38bdf8",
+                  }}
+                  className="mono"
+                >
+                  {newKey.key}
+                </code>
+                <button
+                  onClick={() => copyValue(newKey.key, "new-api-key")}
+                  className="btn btn-secondary"
+                  style={{ padding: "0.5rem 0.85rem", fontSize: "0.8rem", display: "flex", gap: "0.35rem", alignItems: "center" }}
+                >
+                  {copiedKey === "new-api-key" ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                  Copy Key
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Create Key Form */}
+          <form onSubmit={handleCreateKey} style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem" }}>
+            <input
+              type="text"
+              placeholder="Key label (e.g. Cursor MacBook, Windsurf CLI)"
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
+              className="input"
+              style={{ flex: 1, fontSize: "0.85rem", padding: "0.5rem 0.85rem" }}
+            />
+            <button
+              type="submit"
+              disabled={creatingKey}
+              className="btn btn-primary"
+              style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.82rem", whiteSpace: "nowrap" }}
+            >
+              <Plus size={14} />
+              {creatingKey ? "Creating..." : "Generate Key"}
+            </button>
+          </form>
+
+          {/* Active Keys List */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <div style={{ fontSize: "0.82rem", fontWeight: 650, color: "var(--foreground)", marginBottom: "0.6rem" }}>
+              Active API Keys ({keys.length})
+            </div>
+            {keys.length === 0 ? (
+              <div style={{ fontSize: "0.8rem", color: "var(--muted)", padding: "0.75rem 0" }}>
+                No API keys created yet. Generate one above to connect your IDE.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {keys.map((k) => (
+                  <div
+                    key={k.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.6rem 0.85rem",
+                      background: "var(--bg-inset)",
+                      border: "1px solid var(--card-border)",
+                      borderRadius: "6px",
+                      fontSize: "0.8rem",
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontWeight: 600, color: "var(--foreground)", marginRight: "0.5rem" }}>
+                        {k.name}
+                      </span>
+                      <code className="mono" style={{ color: "var(--muted)", fontSize: "0.76rem" }}>
+                        {k.keyPrefix}
+                      </code>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        {k.lastUsedAt ? `Used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "Never used"}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteKey(k.id)}
+                        title="Revoke Key"
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                          padding: "2px",
+                          display: "flex",
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* MCP JSON Snippet */}
+          <div style={{ borderTop: "1px solid var(--card-border)", paddingTop: "1rem" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "0.82rem", fontWeight: 650, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <Sparkles size={13} style={{ color: "#38bdf8" }} />
+                IDE MCP Configuration (.cursor/mcp.json)
+              </span>
+              <button
+                onClick={() => copyValue(mcpConfigSnippet, "mcp-config")}
+                className="btn btn-secondary"
+                style={{ padding: "3px 8px", fontSize: "0.72rem", display: "flex", gap: "0.3rem", alignItems: "center" }}
+              >
+                {copiedKey === "mcp-config" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                Copy JSON
+              </button>
+            </div>
+            <pre
+              style={{
+                background: "var(--bg-inset)",
+                padding: "0.75rem",
+                borderRadius: "6px",
+                border: "1px solid var(--card-border)",
+                fontSize: "0.74rem",
+                overflowX: "auto",
+                color: "#94a3b8",
+                lineHeight: "1.4",
+              }}
+              className="mono"
+            >
+              {mcpConfigSnippet}
+            </pre>
+          </div>
+        </div>
+
         {/* Local Infrastructure & Gateway Endpoints */}
         <div className="card">
           <div style={{ marginBottom: "1.25rem" }}>
@@ -94,7 +339,7 @@ export default function SettingsPage() {
           </div>
 
           <div className="endpoints-list">
-            {endpoints.map(ep => (
+            {endpoints.map((ep) => (
               <div key={ep.label} className="endpoint-row">
                 <div className="endpoint-meta">
                   <span className="endpoint-label">{ep.label}</span>

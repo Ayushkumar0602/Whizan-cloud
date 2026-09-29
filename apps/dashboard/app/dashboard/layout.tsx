@@ -7,7 +7,7 @@ import { BrandMark } from "@/components/brand";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen, Database
+  PanelLeftClose, PanelLeftOpen, Database, Bot, Sparkles
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +34,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login");
+    if (!loading && !user) {
+      if (
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+      ) {
+        return;
+      }
+      router.replace("/login");
+    }
   }, [user, loading, router]);
 
   useEffect(() => {
@@ -75,6 +83,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Compute & Apps",
       items: [
+        { href: "/dashboard/opencode",  icon: Bot,         label: "OpenCode Studio",   match: (p: string) => p.startsWith("/dashboard/opencode"), badge: "Local AI" },
         { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend"),  badge: "Docker" },
         { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases"), badge: "Managed" },
         { href: "/dashboard/hosting",   icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
@@ -84,6 +93,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Platform & Admin",
       items: [
+        { href: "/dashboard/mcp",      icon: Sparkles,    label: "DevOps MCP",        match: (p: string) => p.startsWith("/dashboard/mcp"), badge: "AI Agent" },
         { href: "/dashboard/admin",    icon: ShieldAlert, label: "Admin Console",     match: (p: string) => p.startsWith("/dashboard/admin") },
         { href: "/dashboard/settings", icon: Settings,    label: "Settings",          match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
@@ -95,7 +105,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push("/login");
   }
 
-  const initials = (user.name || user.email || "U")[0].toUpperCase();
+  const initials = (user?.name || user?.email || "U")[0]?.toUpperCase() || "U";
 
   // Full expanded sidebar content
   const fullSidebarContent = (

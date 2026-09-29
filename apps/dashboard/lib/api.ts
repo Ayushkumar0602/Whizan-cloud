@@ -239,6 +239,7 @@ export type User = {
   email: string;
   name?: string;
   avatarUrl?: string;
+  role?: string;
   createdAt: string;
 };
 
@@ -820,6 +821,31 @@ export const databases = {
     request<{ success: boolean; database: ManagedDatabase }>(`/api/databases/${id}/security`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }),
+};
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedApiKey extends ApiKeyItem {
+  key: string;
+}
+
+export const apiKeysApi = {
+  list: () => request<ApiKeyItem[]>("/api/auth/api-keys"),
+  create: (name?: string) =>
+    request<CreatedApiKey>("/api/auth/api-keys", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/api/auth/api-keys/${id}`, {
+      method: "DELETE",
     }),
 };
 
