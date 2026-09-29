@@ -79,7 +79,24 @@ export default function McpGuidePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
+  const [execMode, setExecMode] = useState<"local" | "npx">("local");
+
   const effectiveKey = newKey?.key || (selectedKey.startsWith("whz_live_") ? selectedKey : "whz_live_YOUR_API_KEY");
+
+  const getRunner = () => {
+    if (execMode === "local") {
+      return {
+        command: "node",
+        args: ["packages/mcp-devops/dist/index.js"],
+      };
+    }
+    return {
+      command: "npx",
+      args: ["-y", "@whizan/mcp-devops"],
+    };
+  };
+
+  const runner = getRunner();
 
   // Config snippets for various IDEs
   const configs = {
@@ -91,8 +108,7 @@ export default function McpGuidePage() {
         {
           mcpServers: {
             whizan: {
-              command: "npx",
-              args: ["-y", "@whizan/mcp-devops"],
+              ...runner,
               env: {
                 WHIZAN_API_URL: apiUrl,
                 WHIZAN_API_KEY: effectiveKey,
@@ -112,8 +128,7 @@ export default function McpGuidePage() {
         {
           mcpServers: {
             whizan: {
-              command: "npx",
-              args: ["-y", "@whizan/mcp-devops"],
+              ...runner,
               env: {
                 WHIZAN_API_URL: apiUrl,
                 WHIZAN_API_KEY: effectiveKey,
@@ -133,8 +148,7 @@ export default function McpGuidePage() {
         {
           mcpServers: {
             whizan: {
-              command: "npx",
-              args: ["-y", "@whizan/mcp-devops"],
+              ...runner,
               env: {
                 WHIZAN_API_URL: apiUrl,
                 WHIZAN_API_KEY: effectiveKey,
@@ -161,8 +175,7 @@ export default function McpGuidePage() {
         {
           mcpServers: {
             whizan: {
-              command: "npx",
-              args: ["-y", "@whizan/mcp-devops"],
+              ...runner,
               env: {
                 WHIZAN_API_URL: apiUrl,
                 WHIZAN_API_KEY: effectiveKey,
@@ -398,6 +411,42 @@ export default function McpGuidePage() {
           <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>
             Choose Your AI Coding Environment
           </h2>
+        </div>
+
+        {/* Execution Mode Selector */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", background: "rgba(0,0,0,0.25)", padding: "0.35rem", borderRadius: "8px", width: "fit-content", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setExecMode("local")}
+            style={{
+              padding: "0.35rem 0.75rem",
+              borderRadius: "6px",
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+              background: execMode === "local" ? "var(--accent)" : "transparent",
+              color: execMode === "local" ? "#fff" : "var(--muted)",
+            }}
+          >
+            💻 Workspace / Direct Node (Instant, No NPM Publish)
+          </button>
+          <button
+            onClick={() => setExecMode("npx")}
+            style={{
+              padding: "0.35rem 0.75rem",
+              borderRadius: "6px",
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+              background: execMode === "npx" ? "var(--accent)" : "transparent",
+              color: execMode === "npx" ? "#fff" : "var(--muted)",
+            }}
+          >
+            🌐 NPX Package (@whizan/mcp-devops)
+          </button>
         </div>
 
         {/* IDE Tabs */}
