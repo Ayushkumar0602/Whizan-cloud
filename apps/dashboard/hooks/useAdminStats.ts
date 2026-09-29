@@ -7,7 +7,15 @@ export type VMStats = {
   platform: string;
   uptime: number;
   cpu: { cores: number; model: string; usagePercent: number };
-  memory: { totalMB: number; usedMB: number; freeMB: number; usagePercent: number };
+  memory: {
+    totalMB: number;
+    usedMB: number;
+    freeMB: number;
+    availableMB?: number;
+    cachedMB?: number;
+    buffersMB?: number;
+    usagePercent: number;
+  };
   disk: { totalMB: number; usedMB: number; freeMB: number; usagePercent: number };
   docker: {
     containers: {
@@ -78,7 +86,7 @@ export function useAdminStats(autoRefresh = true) {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchStats, 15_000);
+    const interval = setInterval(fetchStats, 3_000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 

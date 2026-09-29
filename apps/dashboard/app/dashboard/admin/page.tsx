@@ -374,59 +374,73 @@ export default function AdminOverviewPage() {
 
       {/* VM Hardware Resources: CPU & Memory & Disk */}
       {vm && (
-        <div className="vm-gauges-grid">
-          <div className="card gauge-card">
-            <div className="gauge-header">
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <Cpu size={16} className="text-accent" />
-                <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Host CPU Utilization</span>
-              </div>
-              <span className="gauge-percent mono">{vm.cpu.usagePercent}%</span>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ fontSize: "0.82rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--muted)" }}>
+                Host Hardware Telemetry
+              </span>
             </div>
-            <ProgressBar
-              percent={vm.cpu.usagePercent}
-              color={vm.cpu.usagePercent > 80 ? "#f43f5e" : vm.cpu.usagePercent > 50 ? "#f59e0b" : "#10b981"}
-            />
-            <div className="gauge-footer mono">
-              {vm.cpu.cores} Cores • {vm.cpu.model.slice(0, 42)}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#10b981", fontWeight: 600 }}>
+              <span className="live-stream-dot" style={{ width: 7, height: 7, background: "#10b981", borderRadius: "50%", display: "inline-block", boxShadow: "0 0 8px #10b981" }} />
+              <span>Realtime (3s sync)</span>
             </div>
           </div>
 
-          <div className="card gauge-card">
-            <div className="gauge-header">
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <HardDrive size={16} className="text-accent" />
-                <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Host RAM Allocation</span>
-              </div>
-              <span className="gauge-percent mono">{vm.memory.usagePercent}%</span>
-            </div>
-            <ProgressBar
-              percent={vm.memory.usagePercent}
-              color={vm.memory.usagePercent > 80 ? "#f43f5e" : vm.memory.usagePercent > 50 ? "#f59e0b" : "#10b981"}
-            />
-            <div className="gauge-footer mono">
-              {vm.memory.usedMB} MB used / {vm.memory.totalMB} MB total ({vm.memory.freeMB} MB free)
-            </div>
-          </div>
-
-          {vm.disk && (
+          <div className="vm-gauges-grid">
             <div className="card gauge-card">
               <div className="gauge-header">
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <Server size={16} className="text-accent" />
-                  <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Persistent NVMe Disk</span>
+                  <Cpu size={16} className="text-accent" />
+                  <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Host CPU Utilization</span>
                 </div>
-                <span className="gauge-percent mono">{vm.disk.usagePercent}%</span>
+                <span className="gauge-percent mono">{vm.cpu.usagePercent}%</span>
               </div>
               <ProgressBar
-                percent={vm.disk.usagePercent}
-                color={vm.disk.usagePercent > 85 ? "#f43f5e" : vm.disk.usagePercent > 65 ? "#f59e0b" : "#38bdf8"}
+                percent={vm.cpu.usagePercent}
+                color={vm.cpu.usagePercent > 80 ? "#f43f5e" : vm.cpu.usagePercent > 50 ? "#f59e0b" : "#10b981"}
               />
               <div className="gauge-footer mono">
-                {Math.round(vm.disk.usedMB / 1024)}GB used / {Math.round(vm.disk.totalMB / 1024)}GB total
+                {vm.cpu.cores} Cores • {vm.cpu.model.slice(0, 36)} • Realtime Delta
               </div>
             </div>
-          )}
+
+            <div className="card gauge-card">
+              <div className="gauge-header">
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <HardDrive size={16} className="text-accent" />
+                  <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Host RAM Allocation</span>
+                </div>
+                <span className="gauge-percent mono">{vm.memory.usagePercent}%</span>
+              </div>
+              <ProgressBar
+                percent={vm.memory.usagePercent}
+                color={vm.memory.usagePercent > 80 ? "#f43f5e" : vm.memory.usagePercent > 50 ? "#f59e0b" : "#10b981"}
+              />
+              <div className="gauge-footer mono">
+                {vm.memory.usedMB} MB used / {vm.memory.totalMB} MB total ({vm.memory.freeMB || vm.memory.availableMB} MB available{vm.memory.cachedMB ? ` • ${vm.memory.cachedMB}MB cache` : ""})
+              </div>
+            </div>
+
+            {vm.disk && (
+              <div className="card gauge-card">
+                <div className="gauge-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Server size={16} className="text-accent" />
+                    <span style={{ fontWeight: 650, fontSize: "0.88rem" }}>Persistent NVMe Disk</span>
+                  </div>
+                  <span className="gauge-percent mono">{vm.disk.usagePercent}%</span>
+                </div>
+                <ProgressBar
+                  percent={vm.disk.usagePercent}
+                  color={vm.disk.usagePercent > 85 ? "#f43f5e" : vm.disk.usagePercent > 65 ? "#f59e0b" : "#38bdf8"}
+                />
+                <div className="gauge-footer mono">
+                  {Math.round(vm.disk.usedMB / 1024)}GB used / {Math.round(vm.disk.totalMB / 1024)}GB total ({vm.disk.freeMB > 0 ? `${Math.round(vm.disk.freeMB / 1024)}GB free` : ""})
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

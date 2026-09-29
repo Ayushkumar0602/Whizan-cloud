@@ -114,7 +114,7 @@ const TOOLS: Tool[] = [
         rootDir: { type: "string", default: "." },
         buildCommand: { type: "string", default: "npm run build" },
         installCommand: { type: "string", default: "npm install" },
-        outputDir: { type: "string", default: ".next" },
+        outputDir: { type: "string", description: "Build output directory: 'dist' for Vite/React/Astro, or '.next' for Next.js" },
         envVars: { type: "object", description: "Key-value dictionary of environment variables" },
       },
       required: ["name", "slug"],

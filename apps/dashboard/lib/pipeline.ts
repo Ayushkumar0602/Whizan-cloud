@@ -14,18 +14,26 @@ export type PipelineStep = {
   hint: string;
 };
 
-export const PIPELINE_STEPS: PipelineStep[] = [
-  { id: "queued", label: "Queued", hint: "Waiting for a free build worker" },
-  { id: "clone", label: "Clone", hint: "Pulling the repository" },
-  { id: "install", label: "Install", hint: "Installing dependencies" },
-  { id: "build", label: "Build", hint: "Compiling your frontend" },
-  { id: "publish", label: "Publish", hint: "Serving the build on the edge" },
-  { id: "ready", label: "Live", hint: "Your site is available" },
-];
+export function getPipelineSteps(isDirectUpload = false): PipelineStep[] {
+  return [
+    { id: "queued", label: "Queued", hint: "Waiting for a free build worker" },
+    {
+      id: "clone",
+      label: isDirectUpload ? "Unpack" : "Clone",
+      hint: isDirectUpload ? "Extracting uploaded code archive" : "Pulling the repository",
+    },
+    { id: "install", label: "Install", hint: "Installing dependencies" },
+    { id: "build", label: "Build", hint: "Compiling your frontend" },
+    { id: "publish", label: "Publish", hint: "Serving the build on the edge" },
+    { id: "ready", label: "Live", hint: "Your site is available" },
+  ];
+}
 
-const ORDER: PipelineStepId[] = PIPELINE_STEPS.map(s => s.id);
+export const PIPELINE_STEPS = getPipelineSteps(false);
 
-function inferBuildingStep(logs: string[]): PipelineStepId {
+const ORDER: PipelineStepId[] = ["queued", "clone", "install", "build", "publish", "ready"];
+
+function inferBuildingStep(logs: string[] = []): PipelineStepId {
   const text = logs.join("\n").toLowerCase();
   if (
     text.includes("published") ||
@@ -53,7 +61,14 @@ function inferBuildingStep(logs: string[]): PipelineStepId {
   ) {
     return "install";
   }
-  if (text.includes("clon") || text.includes("git ") || text.includes("checkout")) {
+  if (
+    text.includes("clon") ||
+    text.includes("git ") ||
+    text.includes("checkout") ||
+    text.includes("unpack") ||
+    text.includes("archive") ||
+    text.includes("extracted")
+  ) {
     return "clone";
   }
   return "clone";
@@ -100,14 +115,31 @@ export function pipelineStateFor(
   return "pending";
 }
 
-export function pipelineHeadline(status?: string, logs: string[] = []) {
-  const step = PIPELINE_STEPS.find(s => s.id === currentPipelineStep(status, logs));
+export function pipelineHeadline(status?: string, logs: string[] = [], isDirectUpload = false) {
+  const steps = getPipelineSteps(isDirectUpload);
+  const currentId = currentPipelineStep(status, logs);
+  const step = steps.find((s) => s.id === currentId);
+
   if (!status) return { title: "Waiting", body: "Deployment has not started yet." };
   if (status === "READY") return { title: "Live", body: "Build finished. Your frontend is being served." };
   if (status === "PAUSED") return { title: "Paused", body: "The deployment is stopped. Resume to bring it back." };
-  if (status === "FAILED") return { title: "Failed", body: step ? `Stopped during ${step.label.toLowerCase()}. Check the logs below.` : "The deployment did not finish." };
+  if (status === "FAILED") {
+    if (step?.id === "clone") {
+      return {
+        title: "Failed",
+        body: isDirectUpload
+          ? "Stopped during archive unpacking / setup. Check the logs below."
+          : "Stopped during repository clone. Check the logs below.",
+      };
+    }
+    return {
+      title: "Failed",
+      body: step ? `Stopped during ${step.label.toLowerCase()}. Check the logs below.` : "The deployment did not finish.",
+    };
+  }
   if (status === "CANCELLED") return { title: "Cancelled", body: "This deployment was stopped before it went live." };
   if (status === "QUEUED") return { title: "Queued", body: "You’re in line. A worker will pick this up next." };
   if (step) return { title: step.label, body: step.hint };
   return { title: "Deploying", body: "Follow the steps — we’ll mark each one as it completes." };
 }
+

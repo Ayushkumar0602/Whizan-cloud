@@ -252,7 +252,11 @@ export default function DeploymentPage() {
 
       {/* Visual Pipeline Progress */}
       <div style={{ marginBottom: "1.5rem" }}>
-        <DeployPipeline status={deployment?.status} logs={logs} />
+        <DeployPipeline
+          status={deployment?.status}
+          logs={logs}
+          isDirectUpload={deployment?.uploadType === "direct" || deployment?.commitHash === "direct"}
+        />
       </div>
 
       {/* Failure Banner */}

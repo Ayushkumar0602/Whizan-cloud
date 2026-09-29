@@ -27,6 +27,17 @@ export interface AnalysisReport {
   ignoredSecretsFound: string[];
   recommendations: string[];
   mandatoryDeploymentRules: string[];
+  recommendedDeploymentConfig?: {
+    targetType: "service" | "project";
+    toolToCall: "whizan_create_service" | "whizan_create_project";
+    framework?: "NEXTJS" | "REACT" | "VITE" | "ASTRO" | "CUSTOM";
+    language?: "NODEJS" | "PYTHON" | "GO" | "DOCKERFILE";
+    outputDir?: string;
+    buildCommand?: string;
+    installCommand?: string;
+    internalPort?: number;
+    startCommand?: string;
+  };
 }
 
 export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisReport> {
@@ -55,10 +66,12 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     ignoredSecretsFound: [],
     recommendations: [],
     mandatoryDeploymentRules: [
-      "PHASE 1 (AUDIT): Review detected ports and host binding above. Application MUST bind to 0.0.0.0 (not 127.0.0.1).",
-      "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE triggering deployment.",
-      "PHASE 3 (CREATE): Register service/project via whizan_create_service or whizan_create_project with correct language and internalPort.",
-      "PHASE 4 (UPLOAD): Upload code via whizan_deploy_direct. Wait for upload confirmation and save deploymentId.",
+      "PHASE 1 (AUDIT): Review detected projectType, framework, and port config. NEVER deploy blind.",
+      "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE starting build.",
+      "PHASE 3 (PROVISION):",
+      "  - IF FRONTEND (Vite, React, Astro, Next.js): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js). NEVER call whizan_create_service for frontends.",
+      "  - IF BACKEND (Node.js, Python, Go): Call whizan_create_service. Set internalPort to the listening port and ensure 0.0.0.0 host binding.",
+      "PHASE 4 (UPLOAD): Upload workspace archive using whizan_deploy_direct. Save the returned deploymentId.",
       "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
       "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). Note: Use http:// (not https://) for *.nip.io domains on Azure VM."
     ],
@@ -247,6 +260,52 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
   if (report.hasPackageJson && !report.hasStartScript) {
     report.recommendations.push(
       "package.json is missing a 'start' script. Add \"start\": \"node dist/index.js\" (or \"node src/index.ts\")."
+    );
+  }
+
+  // 9. Recommended Deployment Config
+  if (report.projectType === "frontend") {
+    const isVite = report.framework?.includes("Vite");
+    const isAstro = report.framework?.includes("Astro");
+    report.recommendedDeploymentConfig = {
+      targetType: "project",
+      toolToCall: "whizan_create_project",
+      framework: isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
+      outputDir: isVite || isAstro ? "dist" : "dist",
+      buildCommand: report.scripts.build ? "npm run build" : undefined,
+      installCommand: "npm install",
+    };
+    report.recommendations.push(
+      `FRONTEND DETECTED (${report.framework || "Web App"}): Must deploy as a frontend web project using 'whizan_create_project' with framework='${report.recommendedDeploymentConfig.framework}' and outputDir='${report.recommendedDeploymentConfig.outputDir}'. DO NOT deploy via whizan_create_service.`
+    );
+  } else if (report.framework === "Next.js" || report.projectType === "fullstack") {
+    report.recommendedDeploymentConfig = {
+      targetType: "project",
+      toolToCall: "whizan_create_project",
+      framework: "NEXTJS",
+      outputDir: ".next",
+      buildCommand: "npm run build",
+      installCommand: "npm install",
+    };
+    report.recommendations.push(
+      "NEXT.JS / FULLSTACK DETECTED: Deploy using 'whizan_create_project' with framework='NEXTJS' and outputDir='.next'."
+    );
+  } else if (report.projectType === "backend") {
+    const language = report.detectedRuntimes.includes("Python")
+      ? "PYTHON"
+      : report.detectedRuntimes.includes("Go")
+      ? "GO"
+      : "NODEJS";
+    report.recommendedDeploymentConfig = {
+      targetType: "service",
+      toolToCall: "whizan_create_service",
+      language,
+      internalPort: report.portConfig.detectedHardcodedPort || 8000,
+      startCommand: report.scripts.start ? "npm start" : undefined,
+      installCommand: report.hasPackageJson ? "npm install" : undefined,
+    };
+    report.recommendations.push(
+      `BACKEND SERVICE DETECTED (${language}): Deploy using 'whizan_create_service' with language='${language}' and internalPort=${report.recommendedDeploymentConfig.internalPort}.`
     );
   }
 

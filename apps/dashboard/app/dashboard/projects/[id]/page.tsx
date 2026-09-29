@@ -214,7 +214,15 @@ export default function ProjectPage() {
       <div style={{ margin: "2rem 0 1.5rem" }}>
         {latestDeploy ? (
           <div>
-            <DeployPipeline status={latestDeploy.status} />
+            <DeployPipeline
+              status={latestDeploy.status}
+              isDirectUpload={
+                !project.githubRepoUrl ||
+                project.githubRepoUrl === "direct-upload" ||
+                latestDeploy.uploadType === "direct" ||
+                latestDeploy.commitHash === "direct"
+              }
+            />
             {isActive && (
               <p className="pipeline-watch-hint">
                 Build in progress. Follow live build steps and terminal logs in real time.{" "}
