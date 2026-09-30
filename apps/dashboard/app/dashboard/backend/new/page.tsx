@@ -1,6 +1,6 @@
 "use client";
-import { useState } from "react";
-import { services } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { services, type AiAnalysisResponse } from "@/lib/api";
 import { getServiceIngressUrl } from "@/lib/domains";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -21,7 +21,14 @@ import {
   Globe,
   Lock,
   Terminal,
-  Code
+  Code,
+  Sparkles,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  Info,
+  Layers,
+  Workflow
 } from "lucide-react";
 
 const INSTANCE_PLANS = [
@@ -34,7 +41,16 @@ const INSTANCE_PLANS = [
 export default function NewServicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [envText, setEnvText] = useState("");
+  
+  // AI analysis state
+  const [aiAnalysis, setAiAnalysis] = useState<AiAnalysisResponse["analysis"] | null>(null);
+  const [guardrailRefused, setGuardrailRefused] = useState(false);
+  const [refusalReason, setRefusalReason] = useState<string | null>(null);
+  const [mandatoryEnvs, setMandatoryEnvs] = useState<Array<{ name: string; description: string; example?: string; required: boolean }>>([]);
+  const [mandatoryInputs, setMandatoryInputs] = useState<Record<string, string>>({});
+
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -45,12 +61,108 @@ export default function NewServicePage() {
     installCommand: "npm install",
     startCommand: "npm start",
     internalPort: 8000,
+    isWorker: false,
     isPublic: false,
     autoSleep: true,
     instanceType: "free" as "free" | "starter" | "standard" | "pro" | "pro_plus",
     cpuLimit: 0.1,
     memoryLimit: 512,
   });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const repoParam = params.get("repo");
+      if (repoParam) {
+        const repoName = repoParam.split("/").pop()?.replace(".git", "") || "";
+        setFormData(prev => ({
+          ...prev,
+          githubRepoUrl: repoParam,
+          name: prev.name || repoName,
+          slug: prev.slug || repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        }));
+        handleRunAiAnalysis(repoParam, "main");
+      }
+    }
+  }, []);
+
+  const handleRunAiAnalysis = async (urlToAnalyze?: string, branchToAnalyze?: string) => {
+    const repoUrl = urlToAnalyze || formData.githubRepoUrl;
+    const branchName = branchToAnalyze || formData.branch || "main";
+
+    if (!repoUrl) {
+      toast.error("Please enter or select a repository to analyze");
+      return;
+    }
+
+    setAnalyzing(true);
+    setGuardrailRefused(false);
+    setRefusalReason(null);
+
+    try {
+      toast.info("🤖 Gemini 3.5 Flash Lite is inspecting repository...", { duration: 3000 });
+      const res = await services.analyze({
+        githubRepoUrl: repoUrl,
+        branch: branchName,
+      });
+
+      if (!res.success || !res.analysis) {
+        throw new Error("Repository analysis failed");
+      }
+
+      const { analysis } = res;
+
+      // 1. Guardrail Check
+      if (!analysis.isDeployable) {
+        setGuardrailRefused(true);
+        setRefusalReason(analysis.rejectionReason || "This project is not supported by Whizan Cloud.");
+        setAiAnalysis(analysis);
+        toast.error("🛑 Whizan System Guardrail: Repository cannot be deployed.");
+        return;
+      }
+
+      // 2. Guardrail Passed: Auto-fill stack, commands, port
+      setGuardrailRefused(false);
+      setRefusalReason(null);
+      setAiAnalysis(analysis);
+
+      setFormData(prev => ({
+        ...prev,
+        language: analysis.language,
+        installCommand: analysis.installCommand || prev.installCommand,
+        startCommand: analysis.startCommand || prev.startCommand,
+        internalPort: analysis.recommendedPort !== undefined ? analysis.recommendedPort : prev.internalPort,
+        isWorker: Boolean(analysis.isWorker),
+      }));
+
+      // 3. Populate mandatory environment variables
+      if (analysis.requiredEnvVars && analysis.requiredEnvVars.length > 0) {
+        setMandatoryEnvs(analysis.requiredEnvVars);
+        const initialInputs: Record<string, string> = {};
+        analysis.requiredEnvVars.forEach(v => {
+          initialInputs[v.name] = v.example || "";
+        });
+        setMandatoryInputs(initialInputs);
+
+        const newTemplate = analysis.requiredEnvVars
+          .map(v => `${v.name}=${v.example || ""}`)
+          .join("\n");
+        setEnvText(prev => {
+          if (!prev.trim()) return newTemplate;
+          const existingKeys = new Set(prev.split("\n").map(l => l.split("=")[0].trim()));
+          const toAdd = analysis.requiredEnvVars.filter(v => !existingKeys.has(v.name));
+          if (toAdd.length === 0) return prev;
+          return prev + "\n" + toAdd.map(v => `${v.name}=${v.example || ""}`).join("\n");
+        });
+      }
+
+      toast.success(`✨ Gemini 3.5 Flash Lite detected ${analysis.stack} (${analysis.framework})!`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to analyze repository with AI");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const handleRepoSelect = (info: SelectedRepoInfo) => {
     const cloneUrl = info.cloneUrl || "";
@@ -71,6 +183,29 @@ export default function NewServicePage() {
     });
 
     toast.success(`Selected repository: ${info.fullName || info.name}`);
+    // Automatically trigger Gemini AI analysis
+    handleRunAiAnalysis(cloneUrl, defaultBranch);
+  };
+
+  const handleMandatoryInputChange = (key: string, val: string) => {
+    setMandatoryInputs(prev => {
+      const updated = { ...prev, [key]: val };
+      // Update envText dynamically
+      const lines = envText.split("\n").filter(Boolean);
+      let found = false;
+      const newLines = lines.map(line => {
+        if (line.startsWith(`${key}=`)) {
+          found = true;
+          return `${key}=${val}`;
+        }
+        return line;
+      });
+      if (!found) {
+        newLines.push(`${key}=${val}`);
+      }
+      setEnvText(newLines.join("\n"));
+      return updated;
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -79,9 +214,18 @@ export default function NewServicePage() {
       toast.error("Please select or enter a GitHub repository URL");
       return;
     }
+
+    if (guardrailRefused) {
+      toast.error(`Cannot deploy: ${refusalReason || "Blocked by Whizan System Guardrail"}`);
+      return;
+    }
+
     setLoading(true);
     try {
-      const service = await services.create(formData);
+      const service = await services.create({
+        ...formData,
+        internalPort: formData.isWorker ? 0 : Number(formData.internalPort) || 8000,
+      });
 
       // Parse and save ENV variables
       if (envText.trim()) {
@@ -113,14 +257,14 @@ export default function NewServicePage() {
   };
 
   return (
-    <div className="page" style={{ maxWidth: 840 }}>
+    <div className="page" style={{ maxWidth: 880 }}>
       <Link href="/dashboard/backend" className="breadcrumb">
         <ArrowLeft size={15} /> Back to Backend Services
       </Link>
 
       <PageHeader
         title="Deploy a Backend Service"
-        subtitle="Connect any public or private Git repository to automatically build, isolate, and host your Node.js, Python, or Go API on Docker."
+        subtitle="Connect any Git repository to automatically build, isolate, and host your Node.js, Python, Go, Rust, Java, or Docker API on Azure VM."
       />
 
       <form onSubmit={handleSubmit} className="form-stack">
@@ -140,6 +284,102 @@ export default function NewServicePage() {
             selectedBranch={formData.branch}
           />
 
+          {/* AI Repository Analyzer Trigger Button */}
+          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => handleRunAiAnalysis()}
+              disabled={analyzing || !formData.githubRepoUrl}
+              className="btn btn-secondary"
+              style={{
+                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(56, 189, 248, 0.15))",
+                borderColor: "rgba(99, 102, 241, 0.35)",
+                color: "var(--foreground)",
+                fontWeight: 600,
+                fontSize: "0.85rem",
+              }}
+            >
+              {analyzing ? (
+                <>
+                  <Loader2 size={16} className="spin-icon" style={{ color: "#6366f1" }} />
+                  Gemini 3.5 Flash Lite is inspecting repository...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={16} style={{ color: "#6366f1" }} />
+                  Run AI Repository Analysis (Gemini 3.5 Flash Lite)
+                </>
+              )}
+            </button>
+            <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+              Inspects README, package manifests, and codebase to auto-configure stack, commands & ports.
+            </span>
+          </div>
+
+          {/* System Guardrail Refusal Banner */}
+          {guardrailRefused && (
+            <div
+              style={{
+                marginTop: "1.25rem",
+                padding: "1rem 1.25rem",
+                borderRadius: "10px",
+                background: "rgba(239, 68, 68, 0.1)",
+                border: "1px solid rgba(239, 68, 68, 0.3)",
+                color: "#f87171",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                <ShieldAlert size={24} style={{ color: "#ef4444", flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fca5a5" }}>
+                    🛑 Deployment Refused by Whizan System Guardrail
+                  </div>
+                  <div style={{ fontSize: "0.86rem", marginTop: "0.35rem", lineHeight: 1.5, color: "#fecaca" }}>
+                    {refusalReason}
+                  </div>
+                  <div style={{ fontSize: "0.78rem", marginTop: "0.6rem", color: "#f87171", opacity: 0.9 }}>
+                    Whizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications (PyQt, Tkinter, Electron), native mobile apps (iOS/Android), and one-shot CLI scripts cannot be hosted.
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* System Guardrail Passed Banner */}
+          {aiAnalysis && !guardrailRefused && (
+            <div
+              style={{
+                marginTop: "1.25rem",
+                padding: "1rem 1.25rem",
+                borderRadius: "10px",
+                background: "linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(99, 102, 241, 0.08))",
+                border: "1px solid rgba(16, 185, 129, 0.25)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                <ShieldCheck size={22} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+                    <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#10b981" }}>
+                      ✨ Verified Deployable by Gemini 3.5 Flash Lite
+                    </div>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <span className="plan-tag tag-green" style={{ fontSize: "0.72rem" }}>
+                        {aiAnalysis.stack} ({aiAnalysis.framework})
+                      </span>
+                      <span className="plan-tag" style={{ fontSize: "0.72rem", background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}>
+                        {aiAnalysis.isWorker ? "Worker Process" : `Port ${aiAnalysis.recommendedPort}`}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "0.82rem", color: "var(--foreground)", marginTop: "0.4rem", lineHeight: 1.5 }}>
+                    {aiAnalysis.explanation}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="form-fields-group" style={{ marginTop: "1rem" }}>
             <div className="form-field">
               <label className="field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -156,7 +396,7 @@ export default function NewServicePage() {
                 onChange={e => setFormData({ ...formData, rootDir: e.target.value })}
               />
               <span className="field-hint">
-                Leave as <code>.</code> if your service code is at the repository root. Only enter a subfolder (e.g. <code>api</code> or <code>backend</code>) if situated in a monorepo. Do not enter the repository name.
+                Leave as <code>.</code> if your service code is at the repository root. Only enter a subfolder if situated in a monorepo.
               </span>
             </div>
           </div>
@@ -167,8 +407,8 @@ export default function NewServicePage() {
           <div className="form-step-header">
             <div className="step-num-box">2</div>
             <div>
-              <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Service Identity & Runtime</h2>
-              <p className="card-sub">Choose your runtime stack and service mesh alias</p>
+              <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Service Identity & Runtime Stack</h2>
+              <p className="card-sub">Stack-independent execution (Node.js, Python, Go, Rust, Java, Dockerfile)</p>
             </div>
           </div>
 
@@ -225,6 +465,10 @@ export default function NewServicePage() {
                     install = "go mod download";
                     start = "go run main.go";
                   }
+                  if (lang === "DOCKERFILE") {
+                    install = "";
+                    start = "";
+                  }
                   setFormData({
                     ...formData,
                     language: lang,
@@ -234,8 +478,9 @@ export default function NewServicePage() {
                 }}
               >
                 <option value="NODEJS">Node.js (LTS 20)</option>
-                <option value="PYTHON">Python 3.11</option>
+                <option value="PYTHON">Python 3.11 (FastAPI, Flask, Django)</option>
                 <option value="GO">Go 1.22</option>
+                <option value="DOCKERFILE">Dockerfile / Polyglot (Rust, Java, PHP, Ruby)</option>
               </select>
             </div>
           </div>
@@ -247,7 +492,7 @@ export default function NewServicePage() {
             <div className="step-num-box">3</div>
             <div>
               <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Build Commands & Networking</h2>
-              <p className="card-sub">Fine-tune dependency installation and container listening port</p>
+              <p className="card-sub">Fine-tune dependency installation, start command, and port binding</p>
             </div>
           </div>
 
@@ -260,6 +505,7 @@ export default function NewServicePage() {
                   className="input mono"
                   value={formData.installCommand}
                   onChange={e => setFormData({ ...formData, installCommand: e.target.value })}
+                  placeholder={formData.language === "DOCKERFILE" ? "Handled by Dockerfile" : "npm install"}
                 />
               </div>
               <div className="form-field">
@@ -269,6 +515,7 @@ export default function NewServicePage() {
                   className="input mono"
                   value={formData.startCommand}
                   onChange={e => setFormData({ ...formData, startCommand: e.target.value })}
+                  placeholder={formData.language === "DOCKERFILE" ? "Leave blank to use Docker CMD" : "npm start"}
                 />
               </div>
             </div>
@@ -279,28 +526,59 @@ export default function NewServicePage() {
                 <input
                   type="number"
                   required
+                  disabled={formData.isWorker}
                   className="input mono"
-                  value={formData.internalPort}
+                  value={formData.isWorker ? 0 : formData.internalPort}
                   onChange={e => setFormData({ ...formData, internalPort: parseInt(e.target.value) || 8000 })}
                 />
+                <span className="field-hint">
+                  {formData.isWorker ? "Worker process has no listening HTTP port." : "Port app listens on (ensure code binds to 0.0.0.0)."}
+                </span>
               </div>
 
-              <div className="form-field checkbox-card-wrap">
-                <label className="checkbox-toggle-card">
+              <div className="form-field" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", justifyContent: "center" }}>
+                {/* Background Worker Checkbox */}
+                <label className="checkbox-toggle-card" style={{ padding: "0.75rem 1rem" }}>
                   <input
                     type="checkbox"
-                    checked={formData.isPublic}
-                    onChange={e => setFormData({ ...formData, isPublic: e.target.checked })}
+                    checked={formData.isWorker}
+                    onChange={e => {
+                      const isWorker = e.target.checked;
+                      setFormData({
+                        ...formData,
+                        isWorker,
+                        internalPort: isWorker ? 0 : 8000,
+                        isPublic: isWorker ? false : formData.isPublic,
+                      });
+                    }}
                   />
                   <div>
                     <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "var(--foreground)" }}>
-                      Expose to Public Internet
+                      Background Queue Worker (No HTTP Port)
                     </div>
-                    <div style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: "2px" }}>
-                      Creates a public domain ingress route at <strong>{getServiceIngressUrl(formData.slug || "slug")}</strong>
+                    <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "2px" }}>
+                      Monitors continuous process liveness (Celery, BullMQ, Kafka consumers)
                     </div>
                   </div>
                 </label>
+
+                {!formData.isWorker && (
+                  <label className="checkbox-toggle-card" style={{ padding: "0.75rem 1rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={formData.isPublic}
+                      onChange={e => setFormData({ ...formData, isPublic: e.target.checked })}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "var(--foreground)" }}>
+                        Expose to Public Internet
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "2px" }}>
+                        Routes traffic at <strong>{getServiceIngressUrl(formData.slug || "slug")}</strong>
+                      </div>
+                    </div>
+                  </label>
+                )}
               </div>
             </div>
           </div>
@@ -416,10 +694,61 @@ export default function NewServicePage() {
           <div className="form-step-header">
             <div className="step-num-box">5</div>
             <div>
-              <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Environment Variables (Optional)</h2>
-              <p className="card-sub">Paste your .env configuration to securely inject at container boot</p>
+              <h2 className="card-title" style={{ fontSize: "1.05rem" }}>Environment Variables</h2>
+              <p className="card-sub">Configure required secrets and runtime variables (AES-256 encrypted)</p>
             </div>
           </div>
+
+          {/* AI Discovered Mandatory Environment Variables Interactive Form */}
+          {mandatoryEnvs.length > 0 && (
+            <div
+              style={{
+                marginBottom: "1.25rem",
+                padding: "1rem 1.25rem",
+                borderRadius: "10px",
+                background: "rgba(245, 158, 11, 0.08)",
+                border: "1px solid rgba(245, 158, 11, 0.25)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                <AlertTriangle size={18} style={{ color: "#f59e0b" }} />
+                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#f59e0b" }}>
+                  Mandatory Environment Variables Discovered by AI
+                </span>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                The AI repository analyzer discovered the following required variables from the repository README or code. Fill them in below:
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {mandatoryEnvs.map(env => (
+                  <div key={env.name} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <label className="mono" style={{ fontWeight: 600, fontSize: "0.82rem", color: "var(--foreground)" }}>
+                        {env.name}
+                      </label>
+                      <span style={{ fontSize: "0.7rem", color: "#f59e0b", background: "rgba(245, 158, 11, 0.15)", padding: "0.1rem 0.4rem", borderRadius: "4px" }}>
+                        Required
+                      </span>
+                    </div>
+                    {env.description && (
+                      <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                        {env.description}
+                      </span>
+                    )}
+                    <input
+                      type="text"
+                      className="input mono"
+                      style={{ fontSize: "0.8rem", padding: "0.45rem 0.75rem" }}
+                      placeholder={env.example ? `Example: ${env.example}` : `Enter ${env.name}`}
+                      value={mandatoryInputs[env.name] || ""}
+                      onChange={e => handleMandatoryInputChange(env.name, e.target.value)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="form-fields-group">
             <textarea
@@ -441,10 +770,26 @@ export default function NewServicePage() {
           <Link href="/dashboard/backend" className="btn btn-secondary btn-lg">
             Cancel
           </Link>
-          <button type="submit" className="btn btn-primary btn-lg" disabled={loading}>
+          <button
+            type="submit"
+            className="btn btn-lg"
+            disabled={loading || guardrailRefused}
+            style={{
+              background: guardrailRefused
+                ? "#ef4444"
+                : "linear-gradient(135deg, var(--accent), #38bdf8)",
+              color: "#fff",
+              opacity: guardrailRefused ? 0.8 : 1,
+              cursor: guardrailRefused ? "not-allowed" : "pointer",
+            }}
+          >
             {loading ? (
               <>
                 <Loader2 size={16} className="spin-icon" /> Creating Container Service...
+              </>
+            ) : guardrailRefused ? (
+              <>
+                <ShieldAlert size={16} /> Blocked by System Guardrail
               </>
             ) : (
               <>
@@ -468,47 +813,27 @@ export default function NewServicePage() {
           align-items: center;
           gap: 0.85rem;
           margin-bottom: 1.25rem;
-          padding-bottom: 0.85rem;
-          border-bottom: 1px solid var(--card-border);
         }
+
         .step-num-box {
-          width: 30px;
-          height: 30px;
+          width: 32px;
+          height: 32px;
           border-radius: 8px;
-          background: var(--accent-gradient);
-          color: #ffffff;
+          background: rgba(99, 102, 241, 0.12);
+          color: var(--accent);
           display: flex;
           align-items: center;
           justify-content: center;
           font-weight: 700;
-          font-size: 0.85rem;
+          font-size: 0.9rem;
           flex-shrink: 0;
-        }
-        .card-sub {
-          font-size: 0.8rem;
-          color: var(--muted);
-          margin-top: 0.15rem;
+          border: 1px solid rgba(99, 102, 241, 0.25);
         }
 
         .form-fields-group {
           display: flex;
           flex-direction: column;
           gap: 1rem;
-        }
-        .form-field {
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-        }
-        .field-label {
-          font-size: 0.78rem;
-          font-weight: 650;
-          color: var(--foreground);
-        }
-        .field-hint {
-          font-size: 0.74rem;
-          color: var(--muted);
-          margin-top: 0.2rem;
         }
 
         .form-grid-2 {
@@ -517,146 +842,155 @@ export default function NewServicePage() {
           gap: 1rem;
         }
 
-        .input-icon-wrap {
-          position: relative;
-        }
-        .input-prefix-icon {
-          position: absolute;
-          left: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: var(--muted);
-          pointer-events: none;
-        }
-        .with-prefix-icon {
-          padding-left: 2.35rem;
+        @media (max-width: 640px) {
+          .form-grid-2 {
+            grid-template-columns: 1fr;
+          }
         }
 
-        .checkbox-card-wrap {
-          justify-content: flex-end;
-        }
         .checkbox-toggle-card {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           gap: 0.75rem;
-          padding: 0.75rem 1rem;
-          border-radius: 8px;
-          background: var(--bg-inset);
-          border: 1px solid var(--card-border);
+          padding: 0.85rem 1rem;
+          background: var(--card);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
           cursor: pointer;
         }
-        .checkbox-toggle-card input {
-          margin-top: 3px;
+
+        .checkbox-toggle-card input[type="checkbox"] {
+          width: 17px;
+          height: 17px;
+          accent-color: var(--accent);
+          cursor: pointer;
         }
 
-        /* Plan Mode Cards */
         .plan-mode-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 1rem;
         }
+
+        @media (max-width: 640px) {
+          .plan-mode-grid {
+            grid-template-columns: 1fr;
+          }
+        }
+
         .plan-mode-card {
           padding: 1.15rem;
-          border-radius: 10px;
-          border: 1px solid var(--card-border);
-          background: var(--bg-inset);
+          border-radius: var(--radius);
+          border: 1px solid var(--border);
+          background: var(--card);
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: all 0.2s ease;
           display: flex;
           flex-direction: column;
+          gap: 0.6rem;
         }
+
         .plan-mode-card:hover {
-          border-color: var(--muted-fg);
+          border-color: var(--card-border-hover);
         }
+
         .plan-mode-active-free {
-          border: 2px solid #f59e0b !important;
-          background: rgba(245, 158, 11, 0.08) !important;
+          border-color: #f59e0b !important;
+          background: rgba(245, 158, 11, 0.05) !important;
         }
+
         .plan-mode-active-dedicated {
-          border: 2px solid #10b981 !important;
-          background: rgba(16, 185, 129, 0.08) !important;
+          border-color: #10b981 !important;
+          background: rgba(16, 185, 129, 0.05) !important;
         }
+
         .plan-mode-top {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 0.45rem;
         }
+
         .plan-mode-title {
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          font-weight: 700;
+          font-weight: 600;
           font-size: 0.95rem;
           color: var(--foreground);
         }
+
         .plan-mode-desc {
           font-size: 0.78rem;
           color: var(--muted);
           line-height: 1.45;
-          margin-bottom: 0.85rem;
-          flex: 1;
+          margin: 0;
         }
+
         .plan-tag {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          font-size: 0.74rem;
-          font-weight: 650;
-          padding: 0.25rem 0.6rem;
-          border-radius: 6px;
+          align-self: flex-start;
+          font-size: 0.72rem;
+          font-weight: 600;
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
         }
+
         .tag-amber {
-          background: rgba(245, 158, 11, 0.15);
+          background: rgba(245, 158, 11, 0.12);
           color: #f59e0b;
-          border: 1px solid rgba(245, 158, 11, 0.3);
         }
+
         .tag-green {
-          background: rgba(16, 185, 129, 0.15);
+          background: rgba(16, 185, 129, 0.12);
           color: #10b981;
-          border: 1px solid rgba(16, 185, 129, 0.3);
         }
 
         .dedicated-sub-grid {
-          margin-top: 1rem;
+          margin-top: 0.5rem;
           padding-top: 1rem;
-          border-top: 1px solid var(--card-border);
+          border-top: 1px solid var(--border);
         }
+
         .dedicated-plans-selector {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-          gap: 0.75rem;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 0.65rem;
         }
+
+        @media (max-width: 640px) {
+          .dedicated-plans-selector {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+
         .sub-plan-btn {
           display: flex;
           flex-direction: column;
-          align-items: flex-start;
-          padding: 0.75rem 0.9rem;
-          border-radius: 8px;
-          background: var(--bg-inset);
-          border: 1px solid var(--card-border);
+          gap: 0.35rem;
+          padding: 0.75rem;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border);
+          background: var(--card);
           cursor: pointer;
+          text-align: left;
           transition: all 0.15s ease;
         }
-        .sub-plan-btn:hover {
-          background: var(--card-hover);
-        }
+
         .sub-plan-selected {
-          border: 2px solid #10b981 !important;
-          background: rgba(16, 185, 129, 0.1) !important;
+          border-color: #10b981 !important;
+          background: rgba(16, 185, 129, 0.08) !important;
         }
+
         .sub-plan-name {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          width: 100%;
-          font-weight: 650;
-          font-size: 0.88rem;
+          font-weight: 600;
+          font-size: 0.84rem;
           color: var(--foreground);
-          margin-bottom: 0.2rem;
         }
+
         .sub-plan-spec {
-          font-size: 0.74rem;
+          font-size: 0.7rem;
           color: var(--muted);
         }
 
@@ -666,20 +1000,7 @@ export default function NewServicePage() {
           justify-content: flex-end;
           gap: 0.75rem;
           margin-top: 1rem;
-        }
-
-        @media (max-width: 640px) {
-          .form-grid-2,
-          .plan-mode-grid {
-            grid-template-columns: 1fr;
-          }
-          .form-submit-row {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          .form-submit-row .btn {
-            width: 100%;
-          }
+          margin-bottom: 3rem;
         }
       `}</style>
     </div>

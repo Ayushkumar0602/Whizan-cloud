@@ -478,6 +478,26 @@ export type MeshPingResponse = {
   network: string;
 };
 
+export type AiAnalysisResponse = {
+  success: boolean;
+  analysis: {
+    isDeployable: boolean;
+    rejectionReason: string | null;
+    stack: string;
+    framework: string;
+    targetType: "service" | "project";
+    language: "NODEJS" | "PYTHON" | "GO" | "DOCKERFILE";
+    isWorker: boolean;
+    recommendedPort: number;
+    installCommand: string;
+    buildCommand: string;
+    startCommand: string;
+    requiredEnvVars: Array<{ name: string; description: string; example?: string; required: boolean }>;
+    optionalEnvVars: Array<{ name: string; description: string; example?: string; required: boolean }>;
+    explanation: string;
+  };
+};
+
 export const services = {
   list: () => request<ServiceWithLatestDeploy[]>("/api/services"),
   get: (id: string) => request<ServiceWithDetails>(`/api/services/${id}`),
@@ -497,6 +517,7 @@ export const services = {
   },
   getMeshCatalog: () => request<MeshServiceItem[]>("/api/services/mesh/catalog"),
   pingMesh: (data: MeshPingRequest) => request<MeshPingResponse>("/api/services/mesh/ping", { method: "POST", body: JSON.stringify(data) }),
+  analyze: (data: { githubRepoUrl?: string; branch?: string; readme?: string }) => request<AiAnalysisResponse>("/api/services/analyze", { method: "POST", body: JSON.stringify(data) }),
 };
 
 // ─── Managed Databases ───────────────────────────────────────────────────────
