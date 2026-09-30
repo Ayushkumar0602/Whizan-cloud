@@ -73,7 +73,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_analyze_workspace",
-    description: "PHASE 1 (MANDATORY): Always run this first before any deployment. Audits local directory to identify project type (backend, frontend, monorepo), runtime/language, listening ports, 127.0.0.1 binding traps, CORS readiness, and environment variable requirements. Checks for existing deployments in local context (.whizan.json) and on Whizan Cloud so agents can redeploy without creating duplicates.",
+    description: "PHASE 1 (MANDATORY): Always run this first before any deployment. Audits local directory, runs Gemini Flash 3.5 Lite AI repository analysis on README & package manifests, auto-selects stack, build & start commands, checks AI system guardrails (refusing non-deployable desktop/mobile/CLI projects), and identifies mandatory environment variables to prompt the user.",
     inputSchema: {
       type: "object",
       properties: {
@@ -105,7 +105,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_create_service",
-    description: "PHASE 3 (FOR BACKENDS): Registers a new backend microservice on Whizan Cloud (Node.js, Python, Go). COMPUTE POLICY: Compute and RAM are governed strictly by the user's subscription tier. On Hobby plan, compute is strictly locked to free tier (0.1 vCPU, 512MB RAM, autoSleep=true) and agents must NOT allocate higher compute. Only Professional plan users can choose custom tiers (standard, pro, pro_plus).",
+    description: "PHASE 3 (FOR BACKENDS & WORKERS): Registers a new backend microservice, API, or background queue worker on Whizan Cloud (Node.js, Python, Go, Rust, Java, PHP, Dockerfile). COMPUTE POLICY: Compute and RAM are governed strictly by the user's subscription tier. On Hobby plan, compute is strictly locked to free tier (0.1 vCPU, 512MB RAM, autoSleep=true). Only Professional plan users can choose custom tiers (standard, pro, pro_plus).",
     inputSchema: {
       type: "object",
       properties: {
@@ -115,7 +115,8 @@ const TOOLS: Tool[] = [
         rootDir: { type: "string", default: "." },
         installCommand: { type: "string", default: "npm install" },
         startCommand: { type: "string", default: "npm start" },
-        internalPort: { type: "number", default: 8000 },
+        internalPort: { type: "number", default: 8000, description: "Internal port service listens on (set to 0 for background queue workers)" },
+        isWorker: { type: "boolean", default: false, description: "Set to true if this is a background worker, queue consumer, or daemon without an HTTP listener" },
         isPublic: { type: "boolean", default: true },
         autoSleep: { type: "boolean", default: true, description: "Whether to enable scale-to-zero (forced on Hobby plan)" },
         instanceType: { type: "string", default: "free", enum: ["free", "starter", "standard", "pro", "pro_plus"], description: "Instance tier (strictly 'free' for Hobby plan)" },
@@ -420,6 +421,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
         }
 
+        if (!report.guardrailPassed) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${report.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.\n\nFull Audit:\n` + JSON.stringify(report, null, 2),
+              },
+            ],
+          };
+        }
+
         return {
           content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
         };
@@ -434,6 +446,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_create_service": {
         const serviceArgs = (args || {}) as any;
+
+        // System Guardrail pre-check
+        const checkDir = serviceArgs.rootDir || ".";
+        try {
+          const audit = await analyzeWorkspace(checkDir);
+          if (!audit.guardrailPassed) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+                },
+              ],
+            };
+          }
+        } catch {}
         
         // Enforce Hobby subscription tier compute limits
         let authProfile: any = null;
@@ -523,6 +551,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_create_project": {
         const projectArgs = (args || {}) as any;
+
+        // System Guardrail pre-check
+        const checkDir = projectArgs.rootDir || ".";
+        try {
+          const audit = await analyzeWorkspace(checkDir);
+          if (!audit.guardrailPassed) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+                },
+              ],
+            };
+          }
+        } catch {}
+
         let project: any;
         try {
           project = await client.createProject(projectArgs);
@@ -619,6 +664,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "whizan_deploy_direct": {
         const { targetType, targetId, workspaceDir } = (args || {}) as any;
         const targetDirectory = workspaceDir || ".";
+
+        // System Guardrail pre-check
+        try {
+          const audit = await analyzeWorkspace(targetDirectory);
+          if (!audit.guardrailPassed) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+                },
+              ],
+            };
+          }
+        } catch {}
+
         const archiveBuffer = await packDirectory(targetDirectory, targetType);
         
         let deploymentResult: any;

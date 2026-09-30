@@ -24,6 +24,8 @@ export interface ExistingDeploymentMatch {
   actionRecommendation: string;
 }
 
+import { analyzeWorkspaceWithAI, type AiAnalysisResult, type EnvVarSpec } from "./ai-analyzer.js";
+
 export interface AnalysisReport {
   projectType: "backend" | "frontend" | "fullstack" | "monorepo" | "unknown";
   detectedRuntimes: string[];
@@ -50,6 +52,11 @@ export interface AnalysisReport {
   ignoredSecretsFound: string[];
   recommendations: string[];
   mandatoryDeploymentRules: string[];
+  guardrailPassed: boolean;
+  refusalReason?: string | null;
+  aiAnalysis?: AiAnalysisResult;
+  requiredEnvVarsToPrompt?: EnvVarSpec[];
+  optionalEnvVars?: EnvVarSpec[];
   localWhizanConfig?: LocalWhizanConfig;
   existingDeployment?: ExistingDeploymentMatch;
   recommendedDeploymentConfig?: {
@@ -62,6 +69,7 @@ export interface AnalysisReport {
     installCommand?: string;
     internalPort?: number;
     startCommand?: string;
+    isWorker?: boolean;
   };
 }
 
@@ -90,6 +98,8 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     },
     ignoredSecretsFound: [],
     recommendations: [],
+    guardrailPassed: true,
+    refusalReason: null,
     mandatoryDeploymentRules: [
       "PHASE 1 (AUDIT): Review detected projectType, framework, existingDeployment, and port config. NEVER deploy blind.",
       "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE starting build.",
@@ -343,5 +353,66 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     );
   }
 
+  // 10. AI Repository Analyzer & System Guardrails (Gemini 3.5 Flash Lite)
+  try {
+    const aiResult = await analyzeWorkspaceWithAI(root);
+    report.aiAnalysis = aiResult;
+    report.guardrailPassed = aiResult.isDeployable;
+    report.refusalReason = aiResult.rejectionReason;
+    report.requiredEnvVarsToPrompt = aiResult.requiredEnvVars;
+    report.optionalEnvVars = aiResult.optionalEnvVars;
+
+    if (!aiResult.isDeployable) {
+      report.recommendations.unshift(
+        `🛑 [WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED] ${aiResult.rejectionReason}`
+      );
+      // Remove deployment configuration so agents refuse deployment
+      report.recommendedDeploymentConfig = undefined;
+      return report;
+    }
+
+    // Enhance stack & framework from AI deep analysis
+    if (aiResult.framework && aiResult.framework !== "Custom") {
+      report.framework = aiResult.framework;
+    }
+
+    if (aiResult.targetType === "project") {
+      const isVite = aiResult.framework.includes("Vite");
+      const isAstro = aiResult.framework.includes("Astro");
+      const isNext = aiResult.framework.includes("Next");
+      report.recommendedDeploymentConfig = {
+        targetType: "project",
+        toolToCall: "whizan_create_project",
+        framework: isNext ? "NEXTJS" : isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
+        outputDir: isNext ? ".next" : "dist",
+        buildCommand: aiResult.buildCommand || (report.scripts.build ? "npm run build" : undefined),
+        installCommand: aiResult.installCommand || "npm install",
+      };
+    } else {
+      report.recommendedDeploymentConfig = {
+        targetType: "service",
+        toolToCall: "whizan_create_service",
+        language: aiResult.language,
+        internalPort: aiResult.recommendedPort,
+        startCommand: aiResult.startCommand || report.recommendedDeploymentConfig?.startCommand,
+        installCommand: aiResult.installCommand || report.recommendedDeploymentConfig?.installCommand,
+        isWorker: aiResult.isWorker,
+      };
+    }
+
+    // Add prompt for required environment variables
+    if (aiResult.requiredEnvVars && aiResult.requiredEnvVars.length > 0) {
+      const envList = aiResult.requiredEnvVars
+        .map(v => `  - ${v.name}: ${v.description}${v.example ? ` (example: ${v.example})` : ""}`)
+        .join("\n");
+      report.recommendations.unshift(
+        `⚠️ [ACTION REQUIRED: MANDATORY ENVIRONMENT VARIABLES]\nThe AI repository analyzer identified mandatory environment variables that MUST be configured using 'whizan_set_env_vars' before starting deployment:\n${envList}`
+      );
+    }
+  } catch (err: any) {
+    console.warn(`[analyzeWorkspace] AI analysis warning: ${err.message}`);
+  }
+
   return report;
 }
+

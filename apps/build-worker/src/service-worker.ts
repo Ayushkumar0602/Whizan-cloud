@@ -245,10 +245,14 @@ const worker = new Worker<ServiceBuildJob>(
       };
       await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
 
-      if (service?.isPublic) {
-        await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+      if (hostPort > 0) {
+        if (service?.isPublic) {
+          await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+        } else {
+          await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+        }
       } else {
-        await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+        await log(`✓ Background worker is active and running in internal mesh network.`);
       }
 
       // 6. Zero-Downtime Blue/Green Cleanup:
