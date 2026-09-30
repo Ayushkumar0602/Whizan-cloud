@@ -25,9 +25,11 @@ export async function envRoutes(fastify: FastifyInstance) {
   // GET /api/projects/:id/env
   fastify.get("/:id/env", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
 
-    const project = await prisma.project.findFirst({ where: { id, userId } });
+    const project = await prisma.project.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
     const vars = await prisma.envVariable.findMany({ where: { projectId: id } });
@@ -44,11 +46,13 @@ export async function envRoutes(fastify: FastifyInstance) {
   // POST /api/projects/:id/env
   fastify.post("/:id/env", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const body = EnvSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
 
-    const project = await prisma.project.findFirst({ where: { id, userId } });
+    const project = await prisma.project.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
     const encryptedValue = encrypt(body.data.value);
@@ -65,11 +69,13 @@ export async function envRoutes(fastify: FastifyInstance) {
   // POST /api/projects/:id/env/bulk
   fastify.post("/:id/env/bulk", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const body = BulkEnvSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
 
-    const project = await prisma.project.findFirst({ where: { id, userId } });
+    const project = await prisma.project.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
     const isSecret = body.data.isSecret ?? true;
@@ -102,9 +108,11 @@ export async function envRoutes(fastify: FastifyInstance) {
   // DELETE /api/projects/:id/env/:key
   fastify.delete("/:id/env/:key", async (request, reply) => {
     const { id, key } = request.params as { id: string; key: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
 
-    const project = await prisma.project.findFirst({ where: { id, userId } });
+    const project = await prisma.project.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
     await prisma.envVariable.deleteMany({ where: { projectId: id, key } });

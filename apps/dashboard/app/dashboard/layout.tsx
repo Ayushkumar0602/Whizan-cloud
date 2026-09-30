@@ -106,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       heading: "Platform & Admin",
       items: [
         { href: "/dashboard/mcp",      icon: Sparkles,    label: "DevOps Agent MCP",  match: (p: string) => p.startsWith("/dashboard/mcp") },
-        { href: "/dashboard/admin",    icon: ShieldAlert, label: "Platform Monitor",  match: (p: string) => p.startsWith("/dashboard/admin") },
+        ...(user?.role === "ADMIN" ? [{ href: "/dashboard/admin", icon: ShieldAlert, label: "Platform Monitor", match: (p: string) => p.startsWith("/dashboard/admin"), badge: "ADMIN" }] : []),
         { href: "/dashboard/settings", icon: Settings,    label: "Settings",          match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
     }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
+import { signAdminPayload } from "../lib/auth-utils.js";
 
 const ExecSchema = z.object({
   targetType: z.enum(["project", "service"]),
@@ -18,7 +19,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
     const body = ExecSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
 
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const { targetType, targetId, command } = body.data;
 
     // 1. Guardrail validation
@@ -44,7 +45,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
 
     if (targetType === "project") {
       const project = await prisma.project.findFirst({
-        where: { id: targetId, userId },
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
         include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
       if (!project) return reply.code(404).send({ error: "Project not found or unauthorized." });
@@ -56,7 +57,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
       deploymentId = deploy.id;
     } else {
       const service = await prisma.backendService.findFirst({
-        where: { id: targetId, userId },
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
         include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
       if (!service) return reply.code(404).send({ error: "Service not found or unauthorized." });
@@ -86,7 +87,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
       }, 20000);
 
       sub.subscribe(replyChannel, () => {
-        redisClient.publish("admin:commands", JSON.stringify({
+        const payload = signAdminPayload({
           action: "CONTAINER_EXEC",
           targetType,
           targetId,
@@ -94,7 +95,8 @@ export async function containerRoutes(fastify: FastifyInstance) {
           slug,
           command,
           replyTo: replyChannel,
-        }));
+        });
+        redisClient.publish("admin:commands", JSON.stringify(payload));
       });
 
       sub.on("message", (channel, message) => {
@@ -119,14 +121,14 @@ export async function containerRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "targetType ('project' | 'service') and targetId are required." });
     }
 
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     let slug = "";
     let deploymentId = "";
     let dbInfo: any = {};
 
     if (targetType === "project") {
       const project = await prisma.project.findFirst({
-        where: { id: targetId, userId },
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
         include: {
           deployments: { orderBy: { createdAt: "desc" }, take: 1 },
           envVariables: { select: { key: true } },
@@ -149,7 +151,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
       };
     } else {
       const service = await prisma.backendService.findFirst({
-        where: { id: targetId, userId },
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
         include: {
           deployments: { orderBy: { createdAt: "desc" }, take: 1 },
           envVariables: { select: { key: true } },
@@ -188,14 +190,15 @@ export async function containerRoutes(fastify: FastifyInstance) {
       }, 6000);
 
       sub.subscribe(replyChannel, () => {
-        redisClient.publish("admin:commands", JSON.stringify({
+        const payload = signAdminPayload({
           action: "CONTAINER_INSPECT",
           targetType,
           targetId,
           deploymentId,
           slug,
           replyTo: replyChannel,
-        }));
+        });
+        redisClient.publish("admin:commands", JSON.stringify(payload));
       });
 
       sub.on("message", (channel, message) => {
@@ -227,13 +230,15 @@ export async function containerRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "targetType ('project' | 'service') and targetId are required." });
     }
 
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const numDays = Math.max(1, Math.min(90, parseInt(days, 10) || 30));
     const sinceDate = new Date();
     sinceDate.setDate(sinceDate.getDate() - numDays);
 
     if (targetType === "project") {
-      const project = await prisma.project.findFirst({ where: { id: targetId, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId }
+      });
       if (!project) return reply.code(404).send({ error: "Project not found or unauthorized." });
 
       const records = await prisma.projectAnalytics.findMany({
@@ -260,7 +265,9 @@ export async function containerRoutes(fastify: FastifyInstance) {
         dailyData: records,
       };
     } else {
-      const service = await prisma.backendService.findFirst({ where: { id: targetId, userId } });
+      const service = await prisma.backendService.findFirst({
+        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId }
+      });
       if (!service) return reply.code(404).send({ error: "Service not found or unauthorized." });
 
       const rawHistory = await redisClient.lrange(`metrics:service:${targetId}`, 0, 59).catch(() => []);

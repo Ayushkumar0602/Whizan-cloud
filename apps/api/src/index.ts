@@ -85,6 +85,8 @@ await app.register(fastifyJwt, {
   sign: { expiresIn: "15m" },
 });
 
+import { isUserAdmin } from "./lib/auth-utils.js";
+
 // Decorator so routes can use fastify.authenticate as a preHandler
 // Supports both JWT tokens (cookies or Bearer) and API keys (whz_live_...)
 app.decorate("authenticate", async (request: any, reply: any) => {
@@ -100,10 +102,13 @@ app.decorate("authenticate", async (request: any, reply: any) => {
     });
 
     if (apiKeyRecord) {
+      const user = apiKeyRecord.user;
+      const isAdmin = isUserAdmin(user);
       request.user = {
         userId: apiKeyRecord.userId,
-        email: apiKeyRecord.user.email,
-        subscriptionTier: (apiKeyRecord.user as any).subscriptionTier || "HOBBY",
+        email: user.email,
+        subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
       };
       // Update lastUsedAt asynchronously
       prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
@@ -114,8 +119,30 @@ app.decorate("authenticate", async (request: any, reply: any) => {
 
   try {
     await request.jwtVerify();
+    if (request.user && request.user.userId) {
+      const userRecord = await prisma.user.findUnique({
+        where: { id: request.user.userId },
+        select: { role: true, subscriptionTier: true, email: true },
+      });
+      const isAdmin = isUserAdmin({ ...userRecord, email: request.user.email });
+      request.user.role = isAdmin ? "ADMIN" : (userRecord?.role || "USER");
+      request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
+    }
   } catch {
     reply.code(401).send({ error: "Unauthorized" });
+  }
+});
+
+// Decorator for strictly privileged platform administrative actions
+app.decorate("requireAdmin", async (request: any, reply: any) => {
+  await (app as any).authenticate(request, reply);
+  if (reply.sent) return;
+
+  if (request.user?.role !== "ADMIN") {
+    return reply.code(403).send({
+      error: "Forbidden: Platform administrator privileges required.",
+      code: "ADMIN_REQUIRED",
+    });
   }
 });
 

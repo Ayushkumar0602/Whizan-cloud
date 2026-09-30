@@ -285,6 +285,18 @@ const TOOLS: Tool[] = [
       required: ["targetType", "targetId"],
     },
   },
+  {
+    name: "whizan_exec_vm_command",
+    description: "Executes an administrative or operational command on the Azure host VM (e.g. 'pm2 status', 'pm2 restart all', 'git pull origin main', 'free -m', 'df -h', 'docker ps'). Allows developers and agents to maintain the VM infrastructure directly.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "The shell command to run on the Azure VM host (e.g. 'pm2 restart all', 'git pull origin main && npm run build')" },
+        cwd: { type: "string", default: "/opt/whizan", description: "Working directory on the VM host (default: /opt/whizan)" },
+      },
+      required: ["command"],
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────

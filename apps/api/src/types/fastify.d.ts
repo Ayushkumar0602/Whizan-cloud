@@ -2,12 +2,16 @@ import "fastify";
 import "@fastify/jwt";
 
 /**
- * Extend FastifyInstance to include the `authenticate` decorator
+ * Extend FastifyInstance to include the `authenticate` and `requireAdmin` decorators
  * we add in index.ts via app.decorate().
  */
 declare module "fastify" {
   interface FastifyInstance {
     authenticate: (
+      request: FastifyRequest,
+      reply: FastifyReply
+    ) => Promise<void>;
+    requireAdmin: (
       request: FastifyRequest,
       reply: FastifyReply
     ) => Promise<void>;
@@ -17,6 +21,8 @@ declare module "fastify" {
     user: {
       userId: string;
       email: string;
+      role?: string;
+      subscriptionTier?: string;
     };
   }
 }
@@ -26,7 +32,7 @@ declare module "fastify" {
  */
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { userId: string; email: string };
-    user: { userId: string; email: string };
+    payload: { userId: string; email: string; role?: string; subscriptionTier?: string };
+    user: { userId: string; email: string; role?: string; subscriptionTier?: string };
   }
 }

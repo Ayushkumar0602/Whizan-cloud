@@ -18,7 +18,7 @@ export async function requireAuth(
 // Extend FastifyRequest with typed user payload
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { userId: string; email: string };
-    user: { userId: string; email: string };
+    payload: { userId: string; email: string; role?: string; subscriptionTier?: string };
+    user: { userId: string; email: string; role?: string; subscriptionTier?: string };
   }
 }
