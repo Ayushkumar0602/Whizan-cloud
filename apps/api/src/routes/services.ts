@@ -8,6 +8,7 @@ import { redisClient, redisSub } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
+import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
 
 const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -35,12 +36,14 @@ const BaseServiceSchema = z.object({
   rootDir: z.string().default("."),
   installCommand: z.string().default("npm install"),
   startCommand: z.string().default("npm start"),
-  internalPort: z.number().int().default(8000),
+  internalPort: z.number().int().min(0).max(65535).default(8000),
+  isWorker: z.boolean().default(false),
   isPublic: z.boolean().default(false),
   autoSleep: z.boolean().default(false),
   instanceType: z.enum(["free", "starter", "standard", "pro", "pro_plus"]).default("starter"),
   cpuLimit: z.number().min(0.1).max(8.0).optional(),
   memoryLimit: z.number().int().min(256).max(16384).optional(),
+  guardrailRejectReason: z.string().optional(),
 });
 
 const CreateServiceSchema = BaseServiceSchema.extend({
@@ -71,10 +74,31 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // POST /api/services/analyze (AI Repository Analyzer with Gemini 3.5 Flash Lite)
+  fastify.post("/analyze", async (request, reply) => {
+    const input = (request.body as any) || {};
+    try {
+      const result = await analyzeRepositoryWithAI(input);
+      return { success: true, analysis: result };
+    } catch (err: any) {
+      return reply.code(500).send({
+        success: false,
+        error: `Failed to analyze repository: ${err.message}`,
+      });
+    }
+  });
+
   // POST /api/services
   fastify.post("/", async (request, reply) => {
     const body = CreateServiceSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
+
+    if (body.data.guardrailRejectReason) {
+      return reply.code(422).send({
+        error: "Deployment refused by Whizan System Guardrail.",
+        rejectionReason: body.data.guardrailRejectReason,
+      });
+    }
 
     const { userId } = request.user;
     let finalSlug = body.data.slug;

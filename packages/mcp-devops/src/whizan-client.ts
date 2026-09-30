@@ -142,12 +142,15 @@ export class WhizanClient {
     installCommand?: string;
     startCommand?: string;
     internalPort?: number;
+    isWorker?: boolean;
     isPublic?: boolean;
     autoSleep?: boolean;
     instanceType?: string;
     envVars?: Record<string, string>;
+    guardrailRejectReason?: string;
   }): Promise<any> {
     await this.loadConfig();
+    const isWorker = Boolean(params.isWorker) || (params.internalPort !== undefined && params.internalPort <= 0);
     const res = await fetch(`${this.config.apiUrl}/api/services`, {
       method: "POST",
       headers: this.getHeaders({ "Content-Type": "application/json" }),
@@ -160,11 +163,13 @@ export class WhizanClient {
         rootDir: params.rootDir || ".",
         installCommand: params.installCommand || "npm install",
         startCommand: params.startCommand || "npm start",
-        internalPort: params.internalPort || 8000,
+        internalPort: isWorker ? 0 : (params.internalPort || 8000),
+        isWorker,
         isPublic: params.isPublic !== undefined ? params.isPublic : true,
         autoSleep: params.autoSleep !== undefined ? params.autoSleep : false,
         instanceType: params.instanceType || "starter",
         envVars: params.envVars,
+        guardrailRejectReason: params.guardrailRejectReason,
       }),
     });
 

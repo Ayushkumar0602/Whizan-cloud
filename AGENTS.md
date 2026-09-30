@@ -22,14 +22,23 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
 
 ### Strict Agent Directives:
 
-1. **Phase 1: Audit & Cross-Chat Context Discovery**:
+1. **Phase 1: Audit, AI Analysis & System Guardrails (Gemini 3.5 Flash Lite)**:
    - You MUST start with `whizan_analyze_workspace` to inspect the project type, language, entry point file, internal port, environment variables, local `.whizan.json`, and Whizan Cloud server records.
+   - **AI Repository Analyzer**: Powered by `gemini-3.5-flash-lite`, the analyzer inspects the README, package manifests, and entry files to automatically select the optimal stack, framework, build command, start command, and internal port.
+   - **AI System Guardrail Enforcement (Refusal Rule)**:
+     - Whizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications.
+     - **Non-Deployable Projects ARE STRICTLY REFUSED**: Desktop GUI applications (PyQt, PySide, Tkinter, wxPython, Electron desktop client), native mobile applications (iOS Xcode/Swift, Android native Kotlin/Java, Flutter/React Native mobile without web export), raw libraries/SDKs without a runnable server/worker, and one-shot CLI scripts that exit immediately.
+     - If `guardrailPassed: false`, **DO NOT ATTEMPT TO DEPLOY**. You must immediately notify the user with the exact `refusalReason` and explain what Whizan Cloud supports.
    - **Cross-Chat Context Rule**: When a user asks to deploy or redeploy in a fresh chat session with no previous context:
      - `whizan_analyze_workspace` inspects `.whizan.json` in the workspace root AND searches server records for a matching project or service.
      - If an `existingDeployment` is detected: **DO NOT CREATE A NEW PROJECT OR SERVICE**. Ask the user for confirmation to redeploy to the existing deployment ID (`targetId`), then proceed directly to `whizan_deploy_direct` or `whizan_redeploy`.
      - Never alter slugs or create duplicate resources for an existing codebase.
 
-2. **Compute Allocation & Subscription Tiers (Strict Policy)**:
+2. **Phase 2: Environment Variables (Mandatory Prompting)**:
+   - The AI analyzer automatically extracts required and optional environment variables from the README, code, and `.env.example`.
+   - If required variables are detected (`requiredEnvVarsToPrompt`), **you MUST ask the user to provide them** and set them using `whizan_set_env_vars` BEFORE starting deployment. Never deploy without required database URLs, API secrets, or encryption keys.
+
+3. **Compute Allocation & Subscription Tiers (Strict Policy)**:
    - **Agents MUST NOT decide compute and RAM allocations arbitrarily**.
    - User subscriptions have two tiers: **Hobby** and **Professional**.
    - **Hobby Tier**:
@@ -40,11 +49,13 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
    - **Professional Tier**:
      - Users can choose upgraded instances (`starter`, `standard`, `pro`, `pro_plus`) directly from the dashboard hosting pages.
 
-3. **Frontend vs Backend Routing**:
+4. **Frontend vs Backend Routing & Stack Independence**:
    - **Frontend / Web App (Vite, React, Astro, Next.js)**: Call `whizan_create_project`. Set `framework: "VITE"` (or `"NEXTJS"`), and `outputDir: "dist"` (or `".next"` for Next.js). Then call `whizan_deploy_direct` with `targetType: "project"`. NEVER call `whizan_create_service` for frontend apps!
-   - **Backend Microservice (Node.js, Python, Go)**: Call `whizan_create_service`. Set `internalPort` and `startCommand`. Then call `whizan_deploy_direct` with `targetType: "service"`.
-
-4. **Never Skip Environment Variables**: If the application requires database credentials, API keys, or secret tokens, you MUST set them using `whizan_set_env_vars` BEFORE starting deployment.
+   - **Backend Services & Workers (Stack Independent)**:
+     - Whizan Cloud supports **ANY** backend language: Node.js, Python (Django, FastAPI, Flask), Go, Rust, Java (Spring Boot), PHP (Laravel), Ruby on Rails, and raw Dockerfiles.
+     - For compiled/polyglot languages (Rust, Java, PHP, Ruby), Whizan automatically synthesizes high-performance multi-stage Dockerfiles or builds user Dockerfiles.
+     - Call `whizan_create_service` with detected `language` (`NODEJS`, `PYTHON`, `GO`, `DOCKERFILE`) and `startCommand`.
+     - **Background Queue Workers**: If the service is a background worker or queue consumer without an HTTP port (e.g. Celery, BullMQ, Kafka consumer), set `internalPort: 0` and `isWorker: true`. The system checks process liveness instead of probing HTTP.
 
 5. **Loopback Binding Trap**: For backends, the application must bind to `0.0.0.0`, NOT `127.0.0.1` or `localhost`. If `127.0.0.1` is detected, patch it to `0.0.0.0` before deployment.
 
@@ -56,4 +67,4 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
 7. **Phase 6: Live Health Check**:
    - Once build finishes with `READY` or `ACTIVE`, call `whizan_check_health`.
    - **Protocol rule**: Always use `http://<slug>.20.2.136.11.nip.io` (never `https://`, because the Azure VM Edge Router operates on Port 80 HTTP).
-   - Only declare success after `whizan_check_health` returns `ok: true` (HTTP 200/204).
+   - Only declare success after `whizan_check_health` returns `ok: true` (HTTP 200/204). Background workers are verified by continuous process running status.

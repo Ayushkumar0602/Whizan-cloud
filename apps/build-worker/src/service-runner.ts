@@ -2,6 +2,7 @@ import Docker from "dockerode";
 import path from "path";
 import fs from "fs/promises";
 import net from "net";
+import { spawn } from "child_process";
 
 export interface ServiceBuildJob {
   deploymentId: string;
@@ -14,6 +15,7 @@ export interface ServiceBuildJob {
   startCommand: string;
   internalPort: number;
   slug: string;
+  isWorker?: boolean;
   autoSleep?: boolean;
   instanceType?: string;
   cpuLimit?: number;
@@ -63,25 +65,10 @@ export class ServiceRunner {
     envVars: Record<string, string>,
     onLog: (line: string) => Promise<void>
   ): Promise<{ hostPort: number; containerName: string }> {
-    // 1. Determine Image based on Language
-    let image = "node:20-slim";
-    if (job.language === "PYTHON") image = "python:3.11-slim";
-    if (job.language === "GO") image = "golang:1.21-alpine";
-    if (job.language === "DOCKERFILE") {
-      throw new Error("Dockerfile builds are not yet implemented.");
-    }
+    const shortId = job.deploymentId.slice(0, 8);
+    const containerName = `service-${job.slug}-${shortId}`;
 
-    // 2. Ensure image exists
-    await onLog(`Ensuring base image ${image} is available...`);
-    const stream = await docker.pull(image);
-    await new Promise((resolve, reject) => {
-      docker.modem.followProgress(stream, (err, res) => err ? reject(err) : resolve(res));
-    });
-
-    // 3. Find a free host port for the new (green) container
-    const hostPort = await this.findFreePort();
-
-    // 4. Resolve root directory & verify if folder exists
+    // 1. Resolve root directory & verify if folder exists
     let cleanRootDir = job.rootDir && job.rootDir !== "." ? job.rootDir.replace(/^\/+|\/+$/g, "") : "";
     if (cleanRootDir) {
       const fullSubPath = path.join(buildDir, cleanRootDir);
@@ -99,100 +86,225 @@ export class ServiceRunner {
     const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
     const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
 
-    // 5. Intelligent runtime command adjustments (Python, Node, Go)
-    let effectiveInstallCommand = job.installCommand || "";
-    let effectiveStartCommand = job.startCommand || "";
+    // 2. Check for Dockerfile or Polyglot manifests (Rust, Java, PHP, Ruby, etc.)
+    const filesInWorkDir = await fs.readdir(hostWorkDir).catch(() => [] as string[]);
+    let hasDockerfile = filesInWorkDir.some(f => f.toLowerCase() === "dockerfile");
+    let isPolyglot = false;
 
-    let detectedModule: string | null = null;
-    if (job.language === "PYTHON") {
-      // Check entry files for Python web frameworks
-      const candidateFiles = ["main.py", "app.py", "server.py", "wsgi.py", "index.py"];
-      let isFlask = false;
-      let isFastApi = false;
+    // If language is DOCKERFILE or user has a Dockerfile, or stack requires synthesized container
+    if (!hasDockerfile && job.language === "DOCKERFILE") {
+      hasDockerfile = true;
+    }
 
-      for (const fileName of candidateFiles) {
-        try {
-          const filePath = path.join(hostWorkDir, fileName);
-          const content = await fs.readFile(filePath, "utf-8");
-          if (content.includes("Flask(") || content.includes("from flask import") || content.includes("import flask")) {
-            isFlask = true;
-            detectedModule = fileName.replace(/\.py$/, "");
-            break;
-          }
-          if (content.includes("FastAPI(") || content.includes("from fastapi import")) {
-            isFastApi = true;
-            detectedModule = fileName.replace(/\.py$/, "");
-            break;
-          }
-        } catch {}
-      }
-
-      // 1. Dependency installation & auto-healing
-      if (!effectiveInstallCommand || effectiveInstallCommand === "pip install -r requirements.txt") {
-        effectiveInstallCommand = "if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo 'No requirements.txt found, skipping pip install'; fi";
-      }
-
-      // Auto-heal legacy dependencies (e.g. Flask 1.x / Jinja2 / Werkzeug / itsdangerous) or missing framework
-      // Flask 1.x crashes with "cannot import name 'escape' from 'jinja2'" or "cannot import name 'json' from 'itsdangerous'"
-      // Auto-upgrading Flask, Werkzeug, and Jinja2 resolves this seamlessly
-      effectiveInstallCommand += ` && (python -c "import flask" 2>/dev/null || (python -c "import flask" 2>&1 | grep -E "ImportError|No module named" >/dev/null && echo "⚡ Auto-resolving Python framework dependencies & legacy compatibility..." && pip install -U "flask>=3.0" "werkzeug>=3.0" "jinja2>=3.0" --quiet) || true)`;
-
-      if (isFastApi) {
-        effectiveInstallCommand += ` && (python -c "import fastapi" 2>/dev/null || pip install fastapi uvicorn --quiet || true)`;
-      }
-
-      // 2. Start command adjustments
-      const isDefaultStart = !effectiveStartCommand || 
-        effectiveStartCommand === "python main.py" || 
-        effectiveStartCommand === "python3 main.py" ||
-        effectiveStartCommand === "python app.py" ||
-        effectiveStartCommand === "python3 app.py";
-
-      if (isFlask && detectedModule && isDefaultStart) {
-        effectiveStartCommand = `python -m flask --app ${detectedModule} run --host 0.0.0.0 --port ${job.internalPort}`;
-        await onLog(`💡 Flask app detected in ${detectedModule}.py. Running with Flask CLI on 0.0.0.0:${job.internalPort}.`);
-      } else if (isFastApi && detectedModule && isDefaultStart) {
-        effectiveStartCommand = `python -m uvicorn ${detectedModule}:app --host 0.0.0.0 --port ${job.internalPort}`;
-        await onLog(`💡 FastAPI app detected in ${detectedModule}.py. Running with Uvicorn on 0.0.0.0:${job.internalPort}.`);
+    if (!hasDockerfile) {
+      // Check polyglot languages
+      if (filesInWorkDir.includes("Cargo.toml")) {
+        await onLog("🦀 Rust project detected (Cargo.toml). Synthesizing multi-stage Rust Dockerfile...");
+        await this.writeRustDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+        isPolyglot = true;
+      } else if (filesInWorkDir.includes("pom.xml")) {
+        await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing Maven OpenJDK Dockerfile...");
+        await this.writeMavenDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+        isPolyglot = true;
+      } else if (filesInWorkDir.includes("build.gradle")) {
+        await onLog("☕ Java / Gradle project detected (build.gradle). Synthesizing Gradle OpenJDK Dockerfile...");
+        await this.writeGradleDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+        isPolyglot = true;
+      } else if (filesInWorkDir.includes("composer.json") || filesInWorkDir.some(f => f.endsWith(".php"))) {
+        await onLog("🐘 PHP project detected. Synthesizing PHP Dockerfile...");
+        await this.writePhpDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+        isPolyglot = true;
+      } else if (filesInWorkDir.includes("Gemfile")) {
+        await onLog("💎 Ruby project detected. Synthesizing Ruby Dockerfile...");
+        await this.writeRubyDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+        isPolyglot = true;
       }
     }
 
-    // 6. Construct the Docker run command (Install once + Start)
-    const cmd = [
-      "sh",
-      "-c",
-      `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && ${effectiveInstallCommand} && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${effectiveStartCommand}`
-    ];
+    let image = "node:20-slim";
+    let isCustomImage = false;
+
+    if (hasDockerfile || job.language === "DOCKERFILE") {
+      // Build Dockerfile
+      const builtImageTag = `service-img-${job.slug}-${shortId}`.toLowerCase();
+      await onLog(`🐳 Building Docker image '${builtImageTag}' from Dockerfile...`);
+      await this.buildDockerImage(hostWorkDir, builtImageTag, onLog);
+      image = builtImageTag;
+      isCustomImage = true;
+      await onLog(`✓ Docker image '${builtImageTag}' built successfully.`);
+    } else if (job.language === "PYTHON") {
+      image = "python:3.11-slim";
+      await this.ensureImage(image, onLog);
+    } else if (job.language === "GO") {
+      image = "golang:1.21-alpine";
+      await this.ensureImage(image, onLog);
+    } else {
+      image = "node:20-slim";
+      await this.ensureImage(image, onLog);
+    }
+
+    // 3. Find a free host port for the new container (if HTTP service)
+    const isWorker = Boolean(job.isWorker) || job.internalPort <= 0;
+    const hostPort = isWorker ? 0 : await this.findFreePort();
+
+    // 4. Intelligent runtime command adjustments (Python, Node, Go)
+    let effectiveInstallCommand = job.installCommand || "";
+    let effectiveStartCommand = job.startCommand || "";
+    let detectedModule: string | null = null;
+
+    if (!isCustomImage) {
+      if (job.language === "PYTHON") {
+        const candidateFiles = ["main.py", "app.py", "server.py", "wsgi.py", "index.py"];
+        let isFlask = false;
+        let isFastApi = false;
+        const isDjango = filesInWorkDir.includes("manage.py");
+
+        for (const fileName of candidateFiles) {
+          try {
+            const filePath = path.join(hostWorkDir, fileName);
+            const content = await fs.readFile(filePath, "utf-8");
+            if (content.includes("Flask(") || content.includes("from flask import") || content.includes("import flask")) {
+              isFlask = true;
+              detectedModule = fileName.replace(/\.py$/, "");
+              break;
+            }
+            if (content.includes("FastAPI(") || content.includes("from fastapi import")) {
+              isFastApi = true;
+              detectedModule = fileName.replace(/\.py$/, "");
+              break;
+            }
+          } catch {}
+        }
+
+        // Install C-compilers / dev headers quietly if psycopg2 or cffi are present in requirements
+        const reqContent = await fs.readFile(path.join(hostWorkDir, "requirements.txt"), "utf8").catch(() => "");
+        const needsBuildTools = /psycopg|cffi|cryptography|numpy|pillow|scipy/i.test(reqContent);
+        let preInstall = needsBuildTools
+          ? "apt-get update -qq && apt-get install -y -qq --no-install-recommends gcc python3-dev libpq-dev >/dev/null 2>&1 || true; "
+          : "";
+
+        // Poetry / Pipenv support
+        if (filesInWorkDir.includes("pyproject.toml") || filesInWorkDir.includes("poetry.lock")) {
+          effectiveInstallCommand = `${preInstall}pip install poetry --quiet && poetry config virtualenvs.create false && poetry install --no-interaction || pip install -r requirements.txt || true`;
+        } else if (!effectiveInstallCommand || effectiveInstallCommand === "pip install -r requirements.txt") {
+          effectiveInstallCommand = `${preInstall}if [ -f requirements.txt ]; then pip install -r requirements.txt; else echo 'No requirements.txt found, skipping pip install'; fi`;
+        } else {
+          effectiveInstallCommand = `${preInstall}${effectiveInstallCommand}`;
+        }
+
+        // Auto-heal legacy dependencies or missing framework
+        effectiveInstallCommand += ` && (python -c "import flask" 2>/dev/null || (python -c "import flask" 2>&1 | grep -E "ImportError|No module named" >/dev/null && echo "⚡ Auto-resolving Python framework dependencies & legacy compatibility..." && pip install -U "flask>=3.0" "werkzeug>=3.0" "jinja2>=3.0" --quiet) || true)`;
+
+        if (isFastApi) {
+          effectiveInstallCommand += ` && (python -c "import fastapi" 2>/dev/null || pip install fastapi uvicorn --quiet || true)`;
+        }
+
+        if (isDjango) {
+          effectiveInstallCommand += ` && (python -c "import django" 2>/dev/null || pip install django --quiet || true)`;
+        }
+
+        // Start command adjustments
+        const isDefaultStart = !effectiveStartCommand || 
+          effectiveStartCommand === "python main.py" || 
+          effectiveStartCommand === "python3 main.py" ||
+          effectiveStartCommand === "python app.py" ||
+          effectiveStartCommand === "python3 app.py" ||
+          effectiveStartCommand === "npm start";
+
+        if (isDjango && isDefaultStart) {
+          effectiveStartCommand = `python manage.py runserver 0.0.0.0:${job.internalPort}`;
+          await onLog(`💡 Django app detected (manage.py). Running with 'python manage.py runserver 0.0.0.0:${job.internalPort}'.`);
+        } else if (isFlask && detectedModule && isDefaultStart) {
+          effectiveStartCommand = `python -m flask --app ${detectedModule} run --host 0.0.0.0 --port ${job.internalPort}`;
+          await onLog(`💡 Flask app detected in ${detectedModule}.py. Running with Flask CLI on 0.0.0.0:${job.internalPort}.`);
+        } else if (isFastApi && detectedModule && isDefaultStart) {
+          effectiveStartCommand = `python -m uvicorn ${detectedModule}:app --host 0.0.0.0 --port ${job.internalPort}`;
+          await onLog(`💡 FastAPI app detected in ${detectedModule}.py. Running with Uvicorn on 0.0.0.0:${job.internalPort}.`);
+        }
+      } else if (job.language === "NODEJS") {
+        // Check if package.json has a build script (TypeScript, NestJS, etc.)
+        try {
+          const pkgRaw = await fs.readFile(path.join(hostWorkDir, "package.json"), "utf8");
+          const pkg = JSON.parse(pkgRaw);
+          const hasBuildScript = Boolean(pkg.scripts?.build);
+          
+          if (filesInWorkDir.includes("pnpm-lock.yaml")) {
+            effectiveInstallCommand = "npm install -g pnpm && pnpm install";
+            if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
+              effectiveInstallCommand += " && pnpm run build";
+            }
+          } else if (filesInWorkDir.includes("yarn.lock")) {
+            effectiveInstallCommand = "yarn install";
+            if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
+              effectiveInstallCommand += " && yarn build";
+            }
+          } else {
+            if (!effectiveInstallCommand) effectiveInstallCommand = "npm install";
+            if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
+              effectiveInstallCommand += " && npm run build";
+            }
+          }
+        } catch {}
+      } else if (job.language === "GO") {
+        if (!effectiveInstallCommand && filesInWorkDir.includes("go.mod")) {
+          effectiveInstallCommand = "go mod download";
+        }
+        if (!effectiveStartCommand || effectiveStartCommand === "npm start") {
+          effectiveStartCommand = "go run .";
+        }
+      }
+    }
+
+    // 5. Construct the container run command
+    let cmd: string[] | undefined;
+    if (isCustomImage) {
+      // For Dockerfiles, if user specified custom start command and it's not a dummy placeholder, execute it
+      if (
+        job.startCommand &&
+        job.startCommand.trim() !== "" &&
+        job.startCommand !== "npm start" &&
+        job.startCommand !== "python main.py"
+      ) {
+        cmd = ["sh", "-c", job.startCommand];
+      } else {
+        // Let Docker use the image's CMD / ENTRYPOINT
+        cmd = undefined;
+      }
+    } else {
+      cmd = [
+        "sh",
+        "-c",
+        `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && ${effectiveInstallCommand} && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${effectiveStartCommand}`
+      ];
+    }
 
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
-    // Inject the internal port so the app knows what to bind to
     env.push(`PORT=${job.internalPort}`);
     env.push(`HOSTNAME=0.0.0.0`);
     env.push(`HOST=0.0.0.0`);
+    env.push(`SERVER_PORT=${job.internalPort}`);
+    env.push(`UVICORN_PORT=${job.internalPort}`);
+    env.push(`FLASK_RUN_PORT=${job.internalPort}`);
+
     if (job.language === "PYTHON") {
       env.push(`PYTHONUNBUFFERED=1`);
       env.push(`FLASK_APP=${detectedModule || "main"}.py`);
       env.push(`FLASK_RUN_HOST=0.0.0.0`);
-      env.push(`FLASK_RUN_PORT=${job.internalPort}`);
     }
 
-    // Unique blue/green container name
-    const shortId = job.deploymentId.slice(0, 8);
-    const containerName = `service-${job.slug}-${shortId}`;
-
-    // Compute runtime resource allocation:
-    // When spin-down (autoSleep) is enabled -> Free Tier: 0.1 vCPU and 512MB RAM
-    // When spin-down is disabled -> Dedicated Tier with user-selected cpuLimit and memoryLimit
+    // Compute runtime resource allocation
     const isSpinDown = Boolean(job.autoSleep);
     const runtimeCpuQuota = isSpinDown ? 0.1 : (job.cpuLimit || 0.5);
     const runtimeMemoryQuotaMB = isSpinDown ? 512 : (job.memoryLimit || 512);
 
-    const runtimeNanoCpus = Math.round(runtimeCpuQuota * 1_000_000_000); // 0.1 vCPU = 100,000,000 NanoCPUs
+    const runtimeNanoCpus = Math.round(runtimeCpuQuota * 1_000_000_000);
     const runtimeMemoryBytes = runtimeMemoryQuotaMB * 1024 * 1024;
 
-    // Fast Burstable Deployment Resources (Build bursting):
-    // Allocate 1.0 vCPU and 768MB RAM during dependency installation and startup
-    // so builds and package unpacking complete in seconds without overwhelming a 2 vCPU / 4 GB VM.
     const burstNanoCpus = Math.round(DEPLOY_BURST_CPU * 1_000_000_000);
     const burstMemoryBytes = DEPLOY_BURST_MEM_MB * 1024 * 1024;
     const deployNanoCpus = Math.max(runtimeNanoCpus, burstNanoCpus);
@@ -204,16 +316,10 @@ export class ServiceRunner {
         : `⚡ Target Runtime Plan: Dedicated Tier (Always-On) — ${runtimeCpuQuota} vCPU & ${runtimeMemoryQuotaMB}MB RAM limit`
     );
 
-    if (deployNanoCpus > runtimeNanoCpus || deployMemoryBytes > runtimeMemoryBytes) {
-      await onLog(`🚀 Provisioning burst compute (${DEPLOY_BURST_CPU} vCPU & ${DEPLOY_BURST_MEM_MB}MB RAM) for rapid dependency installation & startup...`);
-    }
-
     await onLog(`Starting container ${containerName} (Blue/Green Zero-Downtime)...`);
-    
-    // We attach it to a global network so frontends can reach it
-    const networkName = "whizan-internal-network";
 
-    // Auto-create the Docker network if it doesn't exist
+    // Attach to internal mesh network
+    const networkName = "whizan-internal-network";
     try {
       const net = docker.getNetwork(networkName);
       await net.inspect();
@@ -230,13 +336,13 @@ export class ServiceRunner {
       }
     }
 
-    // Clean up any stale container with the same name if it somehow exists from a previous run
+    // Clean up any stale container with the same name
     try {
       const existing = docker.getContainer(containerName);
       await existing.remove({ force: true }).catch(() => {});
     } catch {}
 
-    // Ensure build directory and files are writable by the container process
+    // Ensure permissions
     try {
       const { execFile } = await import("child_process");
       const { promisify } = await import("util");
@@ -244,41 +350,45 @@ export class ServiceRunner {
       await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
     } catch {}
 
-    const container = await docker.createContainer({
+    // Setup port exposure and bindings (only if HTTP service)
+    const exposedPorts = isWorker ? {} : { [`${job.internalPort}/tcp`]: {} };
+    const portBindings = isWorker ? {} : { [`${job.internalPort}/tcp`]: [{ HostPort: String(hostPort) }] };
+
+    // Set binds (for standard images mount the host directory; for custom Dockerfile images let the container use its own image filesystem)
+    const binds = isCustomImage ? [] : [`${path.resolve(buildDir)}:/app`];
+
+    const containerConfig: any = {
       name: containerName,
       Image: image,
-      Cmd: cmd,
-      WorkingDir: workingDir,
+      WorkingDir: isCustomImage ? undefined : workingDir,
       Env: env,
       Labels: {
         serviceId: job.serviceId,
         deploymentId: job.deploymentId,
         slug: job.slug,
         type: "service",
+        isWorker: isWorker ? "true" : "false",
         autoSleep: isSpinDown ? "true" : "false",
         cpuLimit: String(runtimeCpuQuota),
         memoryLimit: String(runtimeMemoryQuotaMB),
       },
-      ExposedPorts: { [`${job.internalPort}/tcp`]: {} },
+      ExposedPorts: exposedPorts,
       HostConfig: {
-        Binds: [`${path.resolve(buildDir)}:/app`],
-        PortBindings: {
-          [`${job.internalPort}/tcp`]: [{ HostPort: String(hostPort) }],
-        },
+        Binds: binds,
+        PortBindings: portBindings,
         Memory: deployMemoryBytes,
         NanoCpus: deployNanoCpus,
-        PidsLimit: 128, // 128 process limit (kills fork bombs & mass process floods)
+        PidsLimit: 128,
         CapDrop: [
-          "NET_ADMIN", // No modifying network routes or interfaces
-          "SYS_ADMIN", // No mounting filesystems or kernel tampering
-          "SYS_RAWIO", // No raw IO access
-          "SYS_PTRACE", // No process tracing/hijacking
+          "NET_ADMIN",
+          "SYS_ADMIN",
+          "SYS_RAWIO",
+          "SYS_PTRACE",
         ],
-        SecurityOpt: ["no-new-privileges:true"], // Prevent setuid privilege escalation
+        SecurityOpt: ["no-new-privileges:true"],
         RestartPolicy: { Name: "unless-stopped" },
-        NetworkMode: networkName, // Attach to the internal mesh network
+        NetworkMode: networkName,
       },
-      // Explicit network aliases for mesh communication
       NetworkingConfig: {
         EndpointsConfig: {
           [networkName]: {
@@ -286,9 +396,15 @@ export class ServiceRunner {
           }
         }
       }
-    });
+    };
 
-    // Attach to container logs asynchronously to pipe output to Redis indefinitely
+    if (cmd) {
+      containerConfig.Cmd = cmd;
+    }
+
+    const container = await docker.createContainer(containerConfig);
+
+    // Stream logs
     const logStream = await container.attach({
       stream: true,
       stdout: true,
@@ -312,14 +428,23 @@ export class ServiceRunner {
     );
 
     await container.start();
-    await onLog(`Waiting for service to bind to port ${job.internalPort}...`);
+
+    if (isWorker) {
+      await onLog(`Waiting for background worker container to stabilize...`);
+    } else {
+      await onLog(`Waiting for service to bind to port ${job.internalPort}...`);
+    }
 
     try {
-      await this.waitForPort(container, hostPort, job.internalPort, 300000); // 5 min timeout
-      await onLog(`✓ Service running and healthy. Mapped internal port ${job.internalPort} -> host port ${hostPort}`);
+      await this.waitForPort(container, hostPort, job.internalPort, isWorker, 300000, onLog);
+      
+      if (isWorker) {
+        await onLog(`✓ Background worker running continuously and healthy.`);
+      } else {
+        await onLog(`✓ Service running and healthy. Mapped internal port ${job.internalPort} -> host port ${hostPort}`);
+      }
 
-      // Dynamic Runtime Clamping:
-      // If burst resources were granted during build/boot, immediately clamp down to target runtime quota
+      // Dynamic Runtime Clamping
       if (deployNanoCpus > runtimeNanoCpus || deployMemoryBytes > runtimeMemoryBytes) {
         try {
           await container.update({
@@ -339,10 +464,8 @@ export class ServiceRunner {
 
       return { hostPort, containerName };
     } catch (err: any) {
-      // 1. Give 1 second for attached streams to finish processing any in-flight logs
       await new Promise((r) => setTimeout(r, 1000));
 
-      // 2. Fetch last container logs directly from Docker engine to ensure complete visibility in terminal
       try {
         const rawLogs = await container.logs({
           stdout: true,
@@ -358,9 +481,7 @@ export class ServiceRunner {
           }
           await onLog(`📋 ---------------------------------------\n`);
         }
-      } catch (logErr) {
-        // Ignore failure fetching raw logs
-      }
+      } catch (logErr) {}
 
       await onLog(`❌ Service startup failed: ${err.message}`);
       if (err.message.includes("Timeout")) {
@@ -374,13 +495,145 @@ export class ServiceRunner {
   }
 
   /**
-   * Parse Docker multiplexed log stream buffer into clean lines
+   * Builds a Docker image using the docker CLI with live log streaming
    */
+  private async buildDockerImage(
+    workDir: string,
+    imageTag: string,
+    onLog: (line: string) => Promise<void>
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const proc = spawn("docker", ["build", "-t", imageTag, "."], {
+        cwd: workDir,
+        env: { ...process.env, DOCKER_BUILDKIT: "1" },
+      });
+
+      proc.stdout.on("data", (data) => {
+        const lines = data.toString().split("\n").filter(Boolean);
+        lines.forEach((l: string) => onLog(`[build] ${l}`).catch(() => {}));
+      });
+
+      proc.stderr.on("data", (data) => {
+        const lines = data.toString().split("\n").filter(Boolean);
+        lines.forEach((l: string) => onLog(`[build] ${l}`).catch(() => {}));
+      });
+
+      proc.on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`Docker build failed with exit code ${code}`));
+      });
+
+      proc.on("error", (err) => reject(err));
+    });
+  }
+
+  /**
+   * Synthesize multi-stage Rust Dockerfile
+   */
+  private async writeRustDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM rust:1.76-slim as builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/ /app/target/release/
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0
+EXPOSE ${port}
+CMD ["sh", "-c", "BIN=$(find /app/target/release -maxdepth 1 -type f -executable ! -name '*.d' | head -n 1); echo 'Starting Rust binary: '$BIN; exec $BIN"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize Maven OpenJDK Dockerfile
+   */
+  private async writeMavenDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM maven:3.9-eclipse-temurin-17 as builder
+WORKDIR /app
+COPY . .
+RUN mvn clean package -DskipTests
+
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=builder /app/target/*.jar app.jar
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' | head -n 1); java -jar $JAR"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize Gradle OpenJDK Dockerfile
+   */
+  private async writeGradleDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM gradle:8.5-jdk17 as builder
+WORKDIR /app
+COPY . .
+RUN gradle build --no-daemon -x test
+
+FROM eclipse-temurin:17-jre-jammy
+WORKDIR /app
+COPY --from=builder /app/build/libs/*.jar app.jar
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*plain.jar' | head -n 1); java -jar $JAR"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize PHP Dockerfile
+   */
+  private async writePhpDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM php:8.2-cli
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev unzip && rm -rf /var/lib/apt/lists/*
+COPY . .
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["php", "-S", "0.0.0.0:${port}"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize Ruby Dockerfile
+   */
+  private async writeRubyDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM ruby:3.2-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN bundle install || true
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["bundle", "exec", "rackup", "--host", "0.0.0.0", "-p", "${port}"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  private async ensureImage(image: string, onLog: (l: string) => Promise<void>): Promise<void> {
+    await onLog(`Ensuring base image ${image} is available...`);
+    const stream = await docker.pull(image);
+    await new Promise((resolve, reject) => {
+      docker.modem.followProgress(stream, (err, res) => err ? reject(err) : resolve(res));
+    });
+  }
+
   private parseDockerLogs(buf: Buffer): string[] {
     const lines: string[] = [];
     if (!Buffer.isBuffer(buf) || buf.length === 0) return lines;
 
-    // Check if buffer has Docker multiplex header (Stream type 1 or 2, followed by 3 zero bytes)
     const isMultiplexed =
       buf.length >= 8 &&
       (buf[0] === 1 || buf[0] === 2) &&
@@ -414,11 +667,44 @@ export class ServiceRunner {
     container: any,
     port: number,
     internalPort: number,
-    timeoutMs: number = 300000
+    isWorker: boolean,
+    timeoutMs: number = 300000,
+    onLog?: (line: string) => Promise<void>
   ): Promise<void> {
     const start = Date.now();
+
+    // If it's a background queue worker, perform container process liveness check
+    if (isWorker) {
+      return new Promise((resolve, reject) => {
+        let checks = 0;
+        const interval = setInterval(async () => {
+          checks++;
+          try {
+            const info = await container.inspect();
+            if (!info.State.Running || info.State.Restarting) {
+              clearInterval(interval);
+              const exitCode = info.State.ExitCode;
+              reject(new Error(`Worker container exited prematurely with exit code ${exitCode}`));
+              return;
+            }
+            // Verified running continuously for 6 seconds
+            if (checks >= 3) {
+              clearInterval(interval);
+              resolve();
+              return;
+            }
+          } catch (err) {
+            clearInterval(interval);
+            reject(err);
+          }
+        }, 2000);
+      });
+    }
+
     return new Promise((resolve, reject) => {
       let isSettled = false;
+      let loopbackWarningSent = false;
+
       const interval = setInterval(async () => {
         if (isSettled) return;
 
@@ -440,9 +726,7 @@ export class ServiceRunner {
             );
             return;
           }
-        } catch {
-          // If inspection temporarily fails, continue polling
-        }
+        } catch {}
 
         // 2. Probe HTTP endpoint with a strict per-request timeout
         try {
@@ -452,19 +736,28 @@ export class ServiceRunner {
           resolve();
           return;
         } catch {
-          // Try fallback to localhost
           try {
             await fetch(`http://localhost:${port}`, { signal: AbortSignal.timeout(1500) });
             isSettled = true;
             clearInterval(interval);
             resolve();
             return;
-          } catch {
-            // Service not yet responding to HTTP requests
-          }
+          } catch {}
         }
 
-        // 3. Check overall timeout
+        // 3. Proactive binding diagnostic check if still failing after 15 seconds
+        if (!loopbackWarningSent && Date.now() - start > 15000 && onLog) {
+          loopbackWarningSent = true;
+          try {
+            const rawLogs = await container.logs({ stdout: true, stderr: true, tail: 30, timestamps: false });
+            const logStr = (Buffer.isBuffer(rawLogs) ? rawLogs.toString("utf8") : String(rawLogs)).toLowerCase();
+            if (logStr.includes("127.0.0.1") || logStr.includes("localhost")) {
+              await onLog("⚠️ Binding diagnostic: Server appears to bind to 127.0.0.1 / localhost. Ensure your code binds to host 0.0.0.0 so the edge router can reach it.");
+            }
+          } catch {}
+        }
+
+        // 4. Check overall timeout
         if (Date.now() - start > timeoutMs) {
           isSettled = true;
           clearInterval(interval);
@@ -486,7 +779,6 @@ export class ServiceRunner {
       server.unref();
       server.on("error", (err: any) => {
         if (preferredPort && err.code === 'EADDRINUSE') {
-          // If preferred port is taken, try a random one
           const randomServer = net.createServer();
           randomServer.listen(0, () => {
             const port = (randomServer.address() as net.AddressInfo).port;
