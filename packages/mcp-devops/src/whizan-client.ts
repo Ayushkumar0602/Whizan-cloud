@@ -537,4 +537,67 @@ export class WhizanClient {
 
     return true;
   }
+
+  async execContainerCommand(params: {
+    targetType: "project" | "service";
+    targetId: string;
+    command: string;
+  }): Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number; error?: string }> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/containers/exec`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new Error(data.error || `Container exec failed with HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async inspectDeployment(params: {
+    targetType: "project" | "service";
+    targetId: string;
+  }): Promise<any> {
+    await this.loadConfig();
+    const query = new URLSearchParams({
+      targetType: params.targetType,
+      targetId: params.targetId,
+    });
+    const res = await fetch(`${this.config.apiUrl}/api/containers/inspect?${query.toString()}`, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new Error(data.error || `Inspect failed with HTTP ${res.status}`);
+    }
+    return data;
+  }
+
+  async getAnalytics(params: {
+    targetType: "project" | "service";
+    targetId: string;
+    days?: number;
+  }): Promise<any> {
+    await this.loadConfig();
+    const query = new URLSearchParams({
+      targetType: params.targetType,
+      targetId: params.targetId,
+      days: String(params.days || 30),
+    });
+    const res = await fetch(`${this.config.apiUrl}/api/containers/analytics?${query.toString()}`, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new Error(data.error || `Analytics query failed with HTTP ${res.status}`);
+    }
+    return data;
+  }
 }

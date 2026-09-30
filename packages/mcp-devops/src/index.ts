@@ -247,6 +247,44 @@ const TOOLS: Tool[] = [
       required: ["targetType", "targetId"],
     },
   },
+  {
+    name: "whizan_exec_container_command",
+    description: "Executes an informational, diagnostic, or troubleshooting command inside the running container of a Whizan project or service. GUARDRAILS ENFORCED: Destructive operations (rm, dd, mkfs, poweroff, chmod 777), package installations, and system modifications are blocked. Sensitive tokens and passwords are automatically masked.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["project", "service"], description: "Whether targeting a web project or backend service" },
+        targetId: { type: "string", description: "The Whizan ID or slug of the project or service" },
+        command: { type: "string", description: "The diagnostic command to run (e.g. 'ls -la', 'ps aux', 'df -h', 'node -v', 'pip list', 'npx prisma status', 'curl -I http://127.0.0.1:3000/health')" },
+      },
+      required: ["targetType", "targetId", "command"],
+    },
+  },
+  {
+    name: "whizan_inspect_deployment",
+    description: "Inspects the live runtime state of a deployed project or service container on the VM host: running state, container ID, image tag, mapped ports, uptime, restart counts, memory limits, and registered edge routing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["project", "service"], description: "Whether inspecting a web project or backend service" },
+        targetId: { type: "string", description: "The Whizan ID or slug of the project or service" },
+      },
+      required: ["targetType", "targetId"],
+    },
+  },
+  {
+    name: "whizan_get_analytics",
+    description: "Retrieves traffic, performance, and usage analytics for a project or service. For projects: page views, unique visitors, total bandwidth. For services: CPU/memory usage snapshot and recent history.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: { type: "string", enum: ["project", "service"], description: "Whether requesting analytics for a web project or backend service" },
+        targetId: { type: "string", description: "The Whizan ID or slug of the project or service" },
+        days: { type: "number", default: 30, description: "Number of days of historical data to retrieve (1 to 90)" },
+      },
+      required: ["targetType", "targetId"],
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────
@@ -869,6 +907,45 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 null,
                 2
               ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_exec_container_command": {
+        const { targetType, targetId, command } = (args || {}) as any;
+        const result = await client.execContainerCommand({ targetType, targetId, command });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_inspect_deployment": {
+        const { targetType, targetId } = (args || {}) as any;
+        const result = await client.inspectDeployment({ targetType, targetId });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_get_analytics": {
+        const { targetType, targetId, days } = (args || {}) as any;
+        const result = await client.getAnalytics({ targetType, targetId, days });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };

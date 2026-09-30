@@ -75,3 +75,13 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
    - Once build finishes with `READY` or `ACTIVE`, call `whizan_check_health`.
    - **Protocol rule**: Always use `http://<slug>.20.2.136.11.nip.io` (never `https://`, because the Azure VM Edge Router operates on Port 80 HTTP).
    - Only declare success after `whizan_check_health` returns `ok: true` (HTTP 200/204). Background workers are verified by continuous process running status.
+
+8. **Phase 7: Live Diagnostics, Container Exec, Inspection & Analytics (Post-Deployment Tooling)**:
+   - **Container Command Execution (`whizan_exec_container_command`)**:
+     - Agents may execute informational, diagnostic, and troubleshooting commands inside running containers (e.g. `npx prisma migrate status`, `df -h`, `ps aux`, `cat /app/package.json`, `python --version`, `curl -I http://127.0.0.1:3000/health`).
+     - **Strict Security Guardrails Enforced**: Destructive operations (`rm`, `dd`, `mkfs`, `poweroff`, `chmod 777`, `kill 1`), system package managers (`apt`, `apk`), cryptocurrency miners, and reverse shells are blocked. Sensitive credentials, passwords, and JWTs in output are automatically masked.
+   - **Deployment & Container Inspection (`whizan_inspect_deployment`)**:
+     - Inspects live runtime state: container ID, running status, memory limits, host port mapping, restart counts, image tag, and internal network mesh connectivity.
+   - **Traffic & Performance Analytics (`whizan_get_analytics`)**:
+     - For projects: Returns page views, unique visitors, bandwidth transferred, and daily trends.
+     - For services: Returns real-time CPU/memory utilization, load status, and recent performance history.

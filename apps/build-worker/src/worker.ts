@@ -751,6 +751,177 @@ redisSub.on("message", async (channel, message) => {
         return;
       }
 
+      if (payload.action === "CONTAINER_EXEC") {
+        const { targetType, targetId, deploymentId, slug, command, replyTo } = payload;
+        try {
+          const { evaluateCommandSecurity, maskSensitiveOutput } = await import("./container-security.js");
+          const guardrail = evaluateCommandSecurity(command);
+          if (!guardrail.allowed) {
+            if (replyTo) {
+              await redisPub.publish(replyTo, JSON.stringify({
+                success: false,
+                error: guardrail.rule?.reason || "Restricted command.",
+                stdout: "",
+                stderr: guardrail.rule?.reason || "Restricted command.",
+                exitCode: 1,
+              }));
+            }
+            return;
+          }
+
+          const Docker = (await import("dockerode")).default;
+          const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+          const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+          const shortId = deploymentId?.slice(0, 8);
+
+          const target = allContainers.find((c) =>
+            c.State === "running" &&
+            (
+              (shortId && c.Names?.some((n) => n.includes(shortId))) ||
+              (slug && c.Names?.some((n) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`))) ||
+              (c.Labels?.["deploymentId"] && c.Labels["deploymentId"] === deploymentId) ||
+              (c.Labels?.["serviceId"] && c.Labels["serviceId"] === targetId) ||
+              (c.Labels?.["projectId"] && c.Labels["projectId"] === targetId)
+            )
+          );
+
+          if (!target) {
+            if (replyTo) {
+              await redisPub.publish(replyTo, JSON.stringify({
+                success: false,
+                error: `No running container found for ${targetType} '${slug || targetId}'. Container may be stopped, sleeping, or still building.`,
+                stdout: "",
+                stderr: "Container not running",
+                exitCode: 1,
+              }));
+            }
+            return;
+          }
+
+          const container = docker.getContainer(target.Id);
+          const exec = await container.exec({
+            AttachStdout: true,
+            AttachStderr: true,
+            Cmd: ["sh", "-c", command],
+          });
+
+          const stream = await exec.start({ hijack: true });
+          const stdoutChunks: Buffer[] = [];
+          const stderrChunks: Buffer[] = [];
+
+          const { PassThrough } = await import("stream");
+          const stdoutStream = new PassThrough();
+          const stderrStream = new PassThrough();
+
+          stdoutStream.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+          stderrStream.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+          docker.modem.demuxStream(stream, stdoutStream, stderrStream);
+
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(() => {
+              try { stream.destroy(); } catch {}
+              resolve();
+            }, 18000);
+
+            stream.on("end", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+            stream.on("error", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          });
+
+          const inspect = await exec.inspect().catch(() => ({ ExitCode: 0 }));
+          const rawStdout = Buffer.concat(stdoutChunks).toString("utf8");
+          const rawStderr = Buffer.concat(stderrChunks).toString("utf8");
+
+          const maskedStdout = maskSensitiveOutput(rawStdout);
+          const maskedStderr = maskSensitiveOutput(rawStderr);
+
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              success: inspect.ExitCode === 0,
+              stdout: maskedStdout,
+              stderr: maskedStderr,
+              exitCode: inspect.ExitCode ?? 0,
+              containerName: target.Names?.[0]?.replace(/^\//, "") || target.Id.slice(0, 12),
+            }));
+          }
+        } catch (err: any) {
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              success: false,
+              error: err.message,
+              stdout: "",
+              stderr: err.message,
+              exitCode: 1,
+            }));
+          }
+        }
+        return;
+      }
+
+      if (payload.action === "CONTAINER_INSPECT") {
+        const { targetType, targetId, deploymentId, slug, replyTo } = payload;
+        try {
+          const Docker = (await import("dockerode")).default;
+          const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+          const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+          const shortId = deploymentId?.slice(0, 8);
+
+          const target = allContainers.find((c) =>
+            (shortId && c.Names?.some((n) => n.includes(shortId))) ||
+            (slug && c.Names?.some((n) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`))) ||
+            (c.Labels?.["deploymentId"] && c.Labels["deploymentId"] === deploymentId) ||
+            (c.Labels?.["serviceId"] && c.Labels["serviceId"] === targetId) ||
+            (c.Labels?.["projectId"] && c.Labels["projectId"] === targetId)
+          );
+
+          if (!target) {
+            if (replyTo) {
+              await redisPub.publish(replyTo, JSON.stringify({
+                found: false,
+                message: `Container not found on VM host for ${slug || targetId}.`,
+              }));
+            }
+            return;
+          }
+
+          const container = docker.getContainer(target.Id);
+          const info = await container.inspect().catch(() => null);
+
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              found: true,
+              containerId: target.Id.slice(0, 12),
+              name: target.Names?.[0]?.replace(/^\//, ""),
+              state: info?.State?.Status || target.State,
+              running: info?.State?.Running || target.State === "running",
+              startedAt: info?.State?.StartedAt,
+              finishedAt: info?.State?.FinishedAt,
+              restartCount: info?.RestartCount || 0,
+              image: target.Image,
+              ports: target.Ports,
+              networkMode: info?.HostConfig?.NetworkMode,
+              memoryLimitBytes: info?.HostConfig?.Memory,
+              nanoCpus: info?.HostConfig?.NanoCpus,
+              health: info?.State?.Health?.Status,
+            }));
+          }
+        } catch (err: any) {
+          if (replyTo) {
+            await redisPub.publish(replyTo, JSON.stringify({
+              found: false,
+              error: err.message,
+            }));
+          }
+        }
+        return;
+      }
+
       if (payload.action === "CLEAR_BUILD_CACHE") {
         try {
           console.log("[Admin] Clearing /opt/whizan-cache...");
