@@ -19,7 +19,7 @@ export class AppRunner {
   private runningApps = new Map<string, RunningApp>(); // deploymentId → RunningApp
 
   /**
-   * Starts a Next.js SSR server inside a Docker container.
+   * Starts a Next.js SSR server or containerized web app inside a Docker container.
    * Returns the host port number.
    */
   async startApp(
@@ -27,7 +27,9 @@ export class AppRunner {
     buildDir: string,
     envVars: Record<string, string>,
     serverEntry?: string,
-    rootDir?: string
+    rootDir?: string,
+    customImage?: string,
+    internalPort: number = 3000
   ): Promise<number> {
     // Stop any old container for this deployment
     await this.stopApp(deploymentId);
@@ -37,10 +39,15 @@ export class AppRunner {
 
     const port = await this.findFreePort();
     const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
-    env.push(`PORT=3000`);
+    env.push(`PORT=${internalPort}`);
     env.push(`HOSTNAME=0.0.0.0`);
+    env.push(`HOST=0.0.0.0`);
+    env.push(`NODE_ENV=production`);
 
-    const cmd = serverEntry && serverEntry.endsWith("server.js")
+    const image = customImage || SSR_IMAGE;
+    const cmd = customImage
+      ? undefined
+      : serverEntry && serverEntry.endsWith("server.js")
       ? ["node", cleanRootDir ? ".next/standalone/server.js" : serverEntry]
       : ["npm", "run", "start"];
 
@@ -60,23 +67,29 @@ export class AppRunner {
       }
     }
 
+    const hostBinds = customImage
+      ? []
+      : [`${path.resolve(buildDir)}:/app:ro`];
+
+    const exposedPortKey = `${internalPort}/tcp`;
+
     const container = await docker.createContainer({
       name: `app-${deploymentId.slice(0, 8)}-${Date.now().toString(36)}`,
-      Image: SSR_IMAGE,
+      Image: image,
       Cmd: cmd,
-      WorkingDir: workingDir,
+      WorkingDir: customImage ? undefined : workingDir,
       Env: env,
       Labels: {
         deploymentId,
         managedBy: "whizan-worker",
       },
-      ExposedPorts: { "3000/tcp": {} },
+      ExposedPorts: { [exposedPortKey]: {} },
       HostConfig: {
-        Binds: [`${path.resolve(buildDir)}:/app:ro`], // Read-only for security
+        Binds: hostBinds,
         PortBindings: {
-          "3000/tcp": [{ HostPort: String(port) }],
+          [exposedPortKey]: [{ HostPort: String(port) }],
         },
-        Memory: 256 * 1024 * 1024, // 256 MB for the running app
+        Memory: 512 * 1024 * 1024, // 512 MB for running web app
         RestartPolicy: { Name: "unless-stopped" },
         NetworkMode: "whizan-internal-network", // Join the internal service mesh
       },

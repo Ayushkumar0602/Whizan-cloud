@@ -15,7 +15,8 @@ export interface AnalysisResult {
 export async function analyzeOutput(
   buildDir: string,
   framework: string,
-  rootDir?: string
+  rootDir?: string,
+  outputDir?: string
 ): Promise<AnalysisResult> {
   const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
   const targetDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
@@ -40,19 +41,24 @@ export async function analyzeOutput(
       };
     }
 
-    // next export or static-only: produces /out directory
+    // next export or static-only: produces /out directory or custom static output
     if (exists("out")) {
       return { type: "static", staticDir: relToBuild("out") };
     }
 
     // Standard next build without standalone — treat as SSR
-    if (exists(".next/server")) {
+    if (exists(".next/server") || exists(".next")) {
       return {
         type: "ssr",
         serverEntry: relToBuild("node_modules/.bin/next"),
         hasApiRoutes: exists(".next/server/pages/api") || exists(".next/server/app/api"),
       };
     }
+  }
+
+  // ── Check explicit outputDir if provided ──────────────────────────────────
+  if (outputDir && outputDir !== ".next" && exists(outputDir)) {
+    return { type: "static", staticDir: relToBuild(outputDir) };
   }
 
   // ── Vite / Create React App ───────────────────────────────────────────────

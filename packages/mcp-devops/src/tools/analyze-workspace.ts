@@ -105,7 +105,7 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE starting build.",
       "PHASE 3 (PROVISION OR REDEPLOY):",
       "  - IF EXISTING PROJECT DETECTED: Reuse the existing targetId and skip creation. Redeploy directly using whizan_deploy_direct.",
-      "  - IF NEW FRONTEND (Vite, React, Astro, Next.js): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js). NEVER call whizan_create_service for frontends.",
+      "  - IF NEW FRONTEND / FULLSTACK (Vite, React, Astro, Next.js, or Dockerfile web app): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js, or 'CUSTOM' for Dockerfile). For Next.js dynamic routes, do NOT add 'output: export'.",
       "  - IF NEW BACKEND (Node.js, Python, Go): Call whizan_create_service. Compute is strictly locked to free tier for Hobby users. Ensure 0.0.0.0 host binding.",
       "PHASE 4 (UPLOAD): Upload workspace archive using whizan_deploy_direct. Save the returned deploymentId.",
       "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
@@ -380,14 +380,26 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       const isVite = aiResult.framework.includes("Vite");
       const isAstro = aiResult.framework.includes("Astro");
       const isNext = aiResult.framework.includes("Next");
+      const hasDockerfile = filesInRoot.some((f) => f.toLowerCase() === "dockerfile");
+
       report.recommendedDeploymentConfig = {
         targetType: "project",
         toolToCall: "whizan_create_project",
-        framework: isNext ? "NEXTJS" : isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
+        framework: hasDockerfile ? "CUSTOM" : isNext ? "NEXTJS" : isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
         outputDir: isNext ? ".next" : "dist",
         buildCommand: aiResult.buildCommand || (report.scripts.build ? "npm run build" : undefined),
         installCommand: aiResult.installCommand || "npm install",
       };
+
+      if (hasDockerfile) {
+        report.recommendations.push(
+          "🐳 [CONTAINERIZED WEB PROJECT]: A Dockerfile was detected in this web project. Whizan Cloud will automatically build the Dockerfile and deploy the container as a Web Project under /dashboard/projects."
+        );
+      } else if (isNext) {
+        report.recommendations.push(
+          "ℹ️ [NEXT.JS SSR & DYNAMIC ROUTING]: Next.js App Router dynamic routes (e.g. /scans/[id]) are supported natively by Whizan Cloud. DO NOT configure 'output: export' in next.config (static export breaks dynamic runtime routes without generateStaticParams). Whizan Cloud natively hosts Next.js standalone and SSR containers."
+        );
+      }
     } else {
       report.recommendedDeploymentConfig = {
         targetType: "service",
