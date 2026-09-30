@@ -11,7 +11,9 @@ import {
   Terminal,
   Database,
   ShieldAlert,
-  Server
+  Server,
+  UserCheck,
+  Layers,
 } from "lucide-react";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -20,6 +22,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const links = [
     { href: "/dashboard/admin", label: "Overview", icon: LayoutDashboard },
+    { href: "/dashboard/admin/iam", label: "IAM & Access", icon: UserCheck },
+    { href: "/dashboard/admin/applications", label: "Fleet Applications", icon: Layers },
     { href: "/dashboard/admin/containers", label: "Containers", icon: Container },
     { href: "/dashboard/admin/storage", label: "Storage", icon: HardDrive },
     { href: "/dashboard/admin/terminal", label: "VM Terminal", icon: Terminal },
@@ -27,7 +31,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     { href: "/dashboard/admin/logs", label: "Host Logs", icon: Server },
   ];
 
-  if (!loading && user && user.role !== "ADMIN") {
+  const adminRoles = ["ROOT_ADMIN", "ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"];
+  const isAuthorized = user && (adminRoles.includes(user.role || "") || user.email === "aj0892829122@gmail.com");
+
+  if (!loading && user && !isAuthorized) {
     return (
       <div className="page" style={{ maxWidth: 800, margin: "4rem auto", textAlign: "center" }}>
         <div style={{ padding: "3rem", background: "var(--card-bg)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 16 }}>

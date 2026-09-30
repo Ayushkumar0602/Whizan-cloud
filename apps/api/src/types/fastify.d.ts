@@ -15,6 +15,10 @@ declare module "fastify" {
       request: FastifyRequest,
       reply: FastifyReply
     ) => Promise<void>;
+    requireRootAdmin: (
+      request: FastifyRequest,
+      reply: FastifyReply
+    ) => Promise<void>;
   }
 
   interface FastifyRequest {

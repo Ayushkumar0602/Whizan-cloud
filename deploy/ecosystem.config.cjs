@@ -1,29 +1,26 @@
-// PM2 Ecosystem Config for Azure VM
-// Uses bash to source .env.production before launching each process.
-// This is the most reliable approach — no dotenv dependency needed.
+// PM2 Ecosystem Config for Azure VM / Droplet
+// Uses bash to source environment file (.env.production or .env) before launching each process.
 module.exports = {
   apps: [
     {
-      name: "whizan-worker",
-      cwd: "/opt/whizan/apps/build-worker",
+      name: "whizan-api",
+      cwd: "/opt/whizan/apps/api",
       script: "bash",
-      args: "-c 'set -a && source /opt/whizan/.env.production && set +a && npx tsx src/worker.ts'",
+      args: "-c 'if [ -f /opt/whizan/.env.production ]; then set -a && source /opt/whizan/.env.production && set +a; elif [ -f /opt/whizan/.env ]; then set -a && source /opt/whizan/.env && set +a; fi; npx tsx src/index.ts'",
       interpreter: "none",
       instances: 1,
       autorestart: true,
       watch: false,
-      max_memory_restart: "800M",
-      restart_delay: 5000,
+      max_memory_restart: "600M",
+      restart_delay: 3000,
       exp_backoff_restart_delay: 100,
-      error_file: "/var/log/whizan/worker-error.log",
-      out_file: "/var/log/whizan/worker-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
     {
       name: "whizan-router",
       cwd: "/opt/whizan/apps/edge-router",
       script: "bash",
-      args: "-c 'set -a && source /opt/whizan/.env.production && set +a && npx tsx src/index.ts'",
+      args: "-c 'if [ -f /opt/whizan/.env.production ]; then set -a && source /opt/whizan/.env.production && set +a; elif [ -f /opt/whizan/.env ]; then set -a && source /opt/whizan/.env && set +a; fi; npx tsx src/index.ts'",
       interpreter: "none",
       instances: 1,
       autorestart: true,
@@ -31,8 +28,20 @@ module.exports = {
       max_memory_restart: "256M",
       restart_delay: 3000,
       exp_backoff_restart_delay: 100,
-      error_file: "/var/log/whizan/router-error.log",
-      out_file: "/var/log/whizan/router-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+    },
+    {
+      name: "whizan-worker",
+      cwd: "/opt/whizan/apps/build-worker",
+      script: "bash",
+      args: "-c 'if [ -f /opt/whizan/.env.production ]; then set -a && source /opt/whizan/.env.production && set +a; elif [ -f /opt/whizan/.env ]; then set -a && source /opt/whizan/.env && set +a; fi; npx tsx src/worker.ts'",
+      interpreter: "none",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "800M",
+      restart_delay: 5000,
+      exp_backoff_restart_delay: 100,
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
   ],
