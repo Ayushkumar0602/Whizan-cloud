@@ -480,8 +480,21 @@ redisSub.on("message", async (channel, message) => {
       where: { id: dId },
       include: { project: true }
     });
-    // If it's already READY, it just needs its container started
+    // If it's already READY, it just needs its container started (SSR/services only)
     if (d && (d.status === "READY" || d.status === "PAUSED")) {
+      if (d.deploymentType === "STATIC") {
+        // Static deployments are served directly from disk by edge-router. They never need a container.
+        return;
+      }
+
+      // Deduplicate cold start jobs in the build queue
+      const existingJobs = await buildQueue.getJobs(["active", "waiting", "delayed"]).catch(() => []);
+      const alreadyQueued = existingJobs.some((j) => j?.data?.deploymentId === d.id);
+      if (alreadyQueued) {
+        console.log(`[Scaler] Cold-start already queued for ${d.id}, skipping duplicate.`);
+        return;
+      }
+
       console.log(`[Scaler] Triggering cold-start for ${d.id}`);
       await buildQueue.add("build", {
         deploymentId: d.id,
