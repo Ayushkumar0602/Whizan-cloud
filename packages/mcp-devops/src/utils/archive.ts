@@ -19,6 +19,8 @@ const DEFAULT_IGNORES = [
   ".yarn",
   ".pnpm-store",
   "vendor",
+  "target",
+  ".gradle",
 
   // Version Control & Metadata
   ".git",
