@@ -196,13 +196,13 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_check_health",
-    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200). Note: Use http:// (not https://) for *.nip.io domains since the Azure VM Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
+    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200), or verifies process liveness via targetId for background queue workers (internalPort: 0). Note: Use http:// (not https://) for *.nip.io domains since the Azure VM Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string", description: "The full public URL to ping (e.g. http://<slug>.20.2.136.11.nip.io/health)" },
+        url: { type: "string", description: "The full public URL to ping (e.g. http://<slug>.20.2.136.11.nip.io/health). Optional if targetId is provided." },
+        targetId: { type: "string", description: "Whizan service or project ID. Required if checking background queue workers without an HTTP listener." },
       },
-      required: ["url"],
     },
   },
   {
@@ -785,8 +785,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "whizan_check_health": {
-        const { url } = (args || {}) as any;
-        const health = await client.checkHealth(url);
+        const { url, targetId } = (args || {}) as any;
+        const target = url || targetId;
+        if (!target) {
+          throw new Error("whizan_check_health requires either 'url' (e.g. http://<slug>.20.2.136.11.nip.io) or 'targetId'.");
+        }
+        const health = await client.checkHealth(target);
         return {
           content: [{ type: "text", text: JSON.stringify(health, null, 2) }],
         };

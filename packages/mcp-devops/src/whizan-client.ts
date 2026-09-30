@@ -395,8 +395,37 @@ export class WhizanClient {
     };
   }
 
-  async checkHealth(rawUrl: string): Promise<{ ok: boolean; status: number; message: string; effectiveUrl: string }> {
-    let url = rawUrl;
+  async checkHealth(rawUrlOrId: string): Promise<{ ok: boolean; status: number; message: string; effectiveUrl: string; isWorker?: boolean }> {
+    let url = rawUrlOrId;
+
+    // If a service/project ID or slug was passed instead of a full HTTP URL
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const svc = await this.getService(url);
+      if (svc) {
+        // If it's a background queue worker with internalPort: 0
+        if (svc.internalPort === 0) {
+          const latestDeploy = svc.deployments?.[0];
+          const isAlive = latestDeploy?.status === "READY";
+          return {
+            ok: isAlive,
+            status: isAlive ? 200 : 503,
+            isWorker: true,
+            effectiveUrl: `worker://service/${svc.slug}`,
+            message: isAlive
+              ? `✓ Background queue worker '${svc.name}' is healthy and running (process liveness confirmed).`
+              : `Background queue worker '${svc.name}' is not ready (current status: ${latestDeploy?.status || "UNKNOWN"}).`,
+          };
+        }
+        url = `http://${svc.slug}.${baseDomain}`;
+      } else {
+        const proj = await this.getProject(url);
+        if (proj) {
+          url = `http://${proj.slug}.${baseDomain}`;
+        }
+      }
+    }
+
     // Azure VM Edge Router listens on Port 80 (HTTP). Port 443 (HTTPS) is not bound.
     // If the client supplies https:// for a nip.io domain or VM IP, automatically normalize to http://.
     if (url.startsWith("https://") && (url.includes(".nip.io") || url.includes("20.2.136.11"))) {
@@ -411,14 +440,14 @@ export class WhizanClient {
         effectiveUrl: url,
         message:
           res.status < 400
-            ? `Service healthy and reachable at ${url}.${rawUrl.startsWith("https://") ? " (Note: Automatically converted https:// to http:// because Edge Router operates on Port 80)." : ""}`
+            ? `Service healthy and reachable at ${url}.${rawUrlOrId.startsWith("https://") ? " (Note: Automatically converted https:// to http:// because Edge Router operates on Port 80)." : ""}`
             : `Received HTTP status ${res.status}`,
       };
     } catch (err: any) {
       // In case rawUrl was https and failed, attempt immediate http fallback
-      if (rawUrl.startsWith("https://") && url === rawUrl) {
+      if (rawUrlOrId.startsWith("https://") && url === rawUrlOrId) {
         try {
-          const fallbackUrl = rawUrl.replace(/^https:\/\//i, "http://");
+          const fallbackUrl = rawUrlOrId.replace(/^https:\/\//i, "http://");
           const fallbackRes = await fetch(fallbackUrl, { method: "GET", timeout: 8000 } as any);
           return {
             ok: fallbackRes.status < 400,
