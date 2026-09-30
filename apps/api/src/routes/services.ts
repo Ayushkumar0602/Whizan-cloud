@@ -219,39 +219,53 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const { envVars, ...serviceFields } = body.data;
+    const { envVars, isWorker, guardrailRejectReason, ...serviceFields } = body.data;
 
-    const service = await prisma.backendService.create({
-      data: {
-        ...serviceFields,
-        slug: finalSlug,
-        instanceType,
-        cpuLimit,
-        memoryLimit,
-        userId,
-      },
-    });
-
-    if (envVars && Object.keys(envVars).length > 0) {
-      try {
-        const { encrypt } = await import("../lib/crypto.js");
-        const operations = Object.entries(envVars).map(([rawKey, rawVal]) => {
-          const key = String(rawKey).trim();
-          const valStr = typeof rawVal === "object" && rawVal !== null ? JSON.stringify(rawVal) : String(rawVal ?? "");
-          const encryptedValue = encrypt(valStr);
-          return prisma.serviceEnvVariable.upsert({
-            where: { serviceId_key: { serviceId: service.id, key } },
-            update: { value: encryptedValue, isSecret: true },
-            create: { serviceId: service.id, key, value: encryptedValue, isSecret: true },
-          });
-        });
-        await prisma.$transaction(operations);
-      } catch (err: any) {
-        fastify.log.error(`Failed to batch save initial envVars for service ${service.id}: ${err.message}`);
-      }
+    let internalPort = serviceFields.internalPort ?? 8000;
+    if (isWorker) {
+      internalPort = 0;
     }
 
-    return reply.code(201).send(service);
+    try {
+      const service = await prisma.backendService.create({
+        data: {
+          ...serviceFields,
+          internalPort,
+          slug: finalSlug,
+          instanceType,
+          cpuLimit,
+          memoryLimit,
+          userId,
+        },
+      });
+
+      if (envVars && Object.keys(envVars).length > 0) {
+        try {
+          const { encrypt } = await import("../lib/crypto.js");
+          const operations = Object.entries(envVars).map(([rawKey, rawVal]) => {
+            const key = String(rawKey).trim();
+            const valStr = typeof rawVal === "object" && rawVal !== null ? JSON.stringify(rawVal) : String(rawVal ?? "");
+            const encryptedValue = encrypt(valStr);
+            return prisma.serviceEnvVariable.upsert({
+              where: { serviceId_key: { serviceId: service.id, key } },
+              update: { value: encryptedValue, isSecret: true },
+              create: { serviceId: service.id, key, value: encryptedValue, isSecret: true },
+            });
+          });
+          await prisma.$transaction(operations);
+        } catch (err: any) {
+          fastify.log.error(`Failed to batch save initial envVars for service ${service.id}: ${err.message}`);
+        }
+      }
+
+      return reply.code(201).send(service);
+    } catch (createErr: any) {
+      fastify.log.error(`[POST /api/services] Failed to create service: ${createErr.message}`);
+      return reply.code(500).send({
+        error: "Failed to create service",
+        message: createErr.message,
+      });
+    }
   });
 
   // GET /api/services/:id
@@ -280,6 +294,11 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: "Service not found" });
 
     const patchData: any = { ...body.data };
+    delete patchData.isWorker;
+    delete patchData.guardrailRejectReason;
+    if (body.data.isWorker !== undefined) {
+      if (body.data.isWorker) patchData.internalPort = 0;
+    }
 
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
@@ -314,11 +333,19 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    const updated = await prisma.backendService.update({
-      where: { id },
-      data: patchData,
-    });
-    return updated;
+    try {
+      const updated = await prisma.backendService.update({
+        where: { id },
+        data: patchData,
+      });
+      return updated;
+    } catch (updateErr: any) {
+      fastify.log.error(`[PUT /api/services/${id}] Failed to update service: ${updateErr.message}`);
+      return reply.code(500).send({
+        error: "Failed to update service",
+        message: updateErr.message,
+      });
+    }
   });
 
   // DELETE /api/services/:id
