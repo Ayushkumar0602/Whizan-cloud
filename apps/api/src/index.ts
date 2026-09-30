@@ -17,6 +17,7 @@ import { serviceRoutes } from "./routes/services.js";
 import { databaseRoutes } from "./routes/databases.js";
 import { githubRoutes } from "./routes/github.js";
 import { localOpencodeRoutes } from "./routes/local-opencode.js";
+import { containerRoutes } from "./routes/containers.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -145,6 +146,7 @@ await app.register(databaseRoutes, { prefix: "/api/databases" });
 await app.register(githubRoutes, { prefix: "/api" });
 await app.register(caddyVerifyRoutes, { prefix: "/api" });
 await app.register(localOpencodeRoutes, { prefix: "/api/local-opencode" });
+await app.register(containerRoutes, { prefix: "/api/containers" });
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 
