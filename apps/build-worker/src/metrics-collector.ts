@@ -25,7 +25,7 @@ redisPub.on("error", (err) => {
 const prevSnapshots = new Map<string, MetricSnapshot>();
 
 export function startMetricsCollector(): () => void {
-  console.log("[Metrics Collector] Started high-frequency container metrics collector (3s interval)...");
+  console.log("[Metrics Collector] Started optimized container metrics collector (10s interval, pipelined)...");
 
   const interval = setInterval(async () => {
     try {
@@ -44,13 +44,12 @@ export function startMetricsCollector(): () => void {
 
           const containerName = c.Names?.[0]?.replace(/^\//, "") || `service-${c.Id.slice(0, 12)}`;
 
-          // 1. Append to recent history in Redis
-          await redisPub.lpush(`metrics:service:${serviceId}`, JSON.stringify(metric)).catch(() => {});
-          await redisPub.ltrim(`metrics:service:${serviceId}`, 0, 59).catch(() => {});
-          await redisPub.expire(`metrics:service:${serviceId}`, 3600).catch(() => {});
-
-          // 2. Set active status key with 15s TTL so API knows container is alive
-          await redisPub.set(
+          // Pipeline all Redis operations into a single network roundtrip
+          const pipe = redisPub.pipeline();
+          pipe.lpush(`metrics:service:${serviceId}`, JSON.stringify(metric));
+          pipe.ltrim(`metrics:service:${serviceId}`, 0, 59);
+          pipe.expire(`metrics:service:${serviceId}`, 3600);
+          pipe.set(
             `service:status:${serviceId}`,
             JSON.stringify({
               status: "running",
@@ -58,18 +57,17 @@ export function startMetricsCollector(): () => void {
               updatedAt: Date.now(),
             }),
             "EX",
-            15
-          ).catch(() => {});
-
-          // 3. Publish live tick to PubSub channel for real-time SSE streaming
-          await redisPub.publish(
+            30
+          );
+          pipe.publish(
             `metrics:tick:${serviceId}`,
             JSON.stringify({
               status: "running",
               container: containerName,
               metric,
             })
-          ).catch(() => {});
+          );
+          await pipe.exec().catch(() => {});
         } catch (itemErr: any) {
           // If container stopped, remove from snapshot cache
           prevSnapshots.delete(c.Id);
@@ -80,7 +78,7 @@ export function startMetricsCollector(): () => void {
         console.warn("[Metrics Collector] Warning:", err?.message || err);
       }
     }
-  }, 3000);
+  }, 10_000);
 
   return () => {
     clearInterval(interval);
