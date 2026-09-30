@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient } from "@hostify/db";
 import { Redis } from "ioredis";
-import { signAdminPayload } from "../lib/auth-utils.js";
+import { signAdminPayload, isRootAdmin, ROOT_ADMIN_EMAIL } from "../lib/auth-utils.js";
 
 const prisma = new PrismaClient();
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
@@ -92,9 +92,9 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     };
   });
 
-  // ─── User Management (Admin Only) ──────────────────────────────────────────
+  // ─── IAM & Role Management ──────────────────────────────────────────────────
 
-  // GET /api/admin/users — List all platform users with resource statistics
+  // GET /api/admin/users — List all platform users with role, permissions, and resource statistics
   fastify.get("/users", async () => {
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
@@ -104,6 +104,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
         name: true,
         avatarUrl: true,
         role: true,
+        iamPermissions: true,
         subscriptionTier: true,
         createdAt: true,
         updatedAt: true,
@@ -117,42 +118,130 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
         },
       },
     });
-    return users;
+
+    return users.map((u) => {
+      const isRoot = isRootAdmin(u);
+      return {
+        ...u,
+        role: isRoot ? "ROOT_ADMIN" : u.role,
+        isRootAdmin: isRoot,
+      };
+    });
+  });
+
+  // POST /api/admin/iam/assign-role — Promote/demote or assign IAM admin role by email
+  fastify.post("/iam/assign-role", async (request, reply) => {
+    const caller = request.user;
+    const isCallerRoot = isRootAdmin(caller);
+
+    const { email, role, iamPermissions, subscriptionTier } = request.body as {
+      email: string;
+      role: string;
+      iamPermissions?: string;
+      subscriptionTier?: string;
+    };
+
+    if (!email) return reply.code(400).send({ error: "Email is required" });
+    const targetEmail = email.trim().toLowerCase();
+    const upperRole = role ? role.toUpperCase() : "ADMIN";
+
+    // Security Guard: Only ROOT_ADMIN can promote users to ROOT_ADMIN or ADMIN
+    if (!isCallerRoot && (upperRole === "ROOT_ADMIN" || upperRole === "ADMIN")) {
+      return reply.code(403).send({ error: "Only the Root Administrator can grant ADMIN or ROOT_ADMIN privileges." });
+    }
+
+    // Protection for root admin: Cannot demote aj0892829122@gmail.com
+    if (targetEmail === ROOT_ADMIN_EMAIL.toLowerCase() && upperRole !== "ROOT_ADMIN") {
+      return reply.code(403).send({ error: "The primary Root Administrator cannot be demoted." });
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { email: targetEmail } });
+    if (!targetUser) {
+      return reply.code(404).send({ error: `User with email ${targetEmail} does not exist. They must register an account first.` });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: targetUser.id },
+      data: {
+        role: upperRole,
+        ...(iamPermissions !== undefined ? { iamPermissions } : {}),
+        ...(subscriptionTier ? { subscriptionTier: subscriptionTier.toUpperCase() } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        iamPermissions: true,
+        subscriptionTier: true,
+      },
+    });
+
+    return reply.send({
+      success: true,
+      message: `User ${targetEmail} is now assigned role: ${upperRole}`,
+      user: {
+        ...updated,
+        isRootAdmin: isRootAdmin(updated),
+      },
+    });
   });
 
   // PATCH /api/admin/users/:id — Upgrade/downgrade subscription or change user role
   fastify.patch("/users/:id", async (request, reply) => {
+    const caller = request.user;
+    const isCallerRoot = isRootAdmin(caller);
     const { id } = request.params as { id: string };
-    const { role, subscriptionTier } = request.body as {
+    const { role, iamPermissions, subscriptionTier } = request.body as {
       role?: string;
+      iamPermissions?: string;
       subscriptionTier?: string;
     };
 
     const targetUser = await prisma.user.findUnique({ where: { id } });
     if (!targetUser) return reply.code(404).send({ error: "User not found" });
 
-    const updateData: any = {};
-    if (role && (role.toUpperCase() === "USER" || role.toUpperCase() === "ADMIN")) {
-      updateData.role = role.toUpperCase();
+    // Root Admin Protection
+    if (targetUser.email.toLowerCase() === ROOT_ADMIN_EMAIL.toLowerCase()) {
+      if (role && role.toUpperCase() !== "ROOT_ADMIN") {
+        return reply.code(403).send({ error: "The primary Root Administrator cannot be demoted." });
+      }
     }
-    if (
-      subscriptionTier &&
-      (subscriptionTier.toUpperCase() === "HOBBY" || subscriptionTier.toUpperCase() === "PROFESSIONAL")
-    ) {
+
+    const upperRole = role?.toUpperCase();
+    if (upperRole && (upperRole === "ROOT_ADMIN" || upperRole === "ADMIN") && !isCallerRoot) {
+      return reply.code(403).send({ error: "Only the Root Administrator can grant ADMIN or ROOT_ADMIN privileges." });
+    }
+
+    const updateData: any = {};
+    if (upperRole) {
+      updateData.role = upperRole;
+    }
+    if (iamPermissions !== undefined) {
+      updateData.iamPermissions = iamPermissions;
+    }
+    if (subscriptionTier) {
       updateData.subscriptionTier = subscriptionTier.toUpperCase();
     }
 
     const updated = await prisma.user.update({
       where: { id },
       data: updateData,
-      select: { id: true, email: true, name: true, role: true, subscriptionTier: true },
+      select: { id: true, email: true, name: true, role: true, iamPermissions: true, subscriptionTier: true },
     });
-    return updated;
+
+    return {
+      ...updated,
+      isRootAdmin: isRootAdmin(updated),
+    };
   });
 
   // DELETE /api/admin/users/:id — Terminate and cascade-delete a user and all their resources
   fastify.delete("/users/:id", async (request, reply) => {
+    const caller = request.user;
+    const isCallerRoot = isRootAdmin(caller);
     const { id } = request.params as { id: string };
+
     const targetUser = await prisma.user.findUnique({
       where: { id },
       include: {
@@ -162,6 +251,14 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       },
     });
     if (!targetUser) return reply.code(404).send({ error: "User not found" });
+
+    if (targetUser.email.toLowerCase() === ROOT_ADMIN_EMAIL.toLowerCase() || targetUser.role === "ROOT_ADMIN") {
+      return reply.code(403).send({ error: "The Root Administrator account cannot be deleted." });
+    }
+
+    if (!isCallerRoot && (targetUser.role === "ADMIN" || targetUser.role === "ROOT_ADMIN")) {
+      return reply.code(403).send({ error: "Only Root Administrator can delete administrative accounts." });
+    }
 
     // Clean up all resources for this user on the host VM
     for (const p of targetUser.projects) {
@@ -176,6 +273,104 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
 
     await prisma.user.delete({ where: { id } });
     return { success: true };
+  });
+
+  // ─── Fleet Application Management (Unified Apps Fleet) ──────────────────────
+
+  // GET /api/admin/applications — Unified list of ALL projects, services, and databases across all tenants
+  fastify.get("/applications", async () => {
+    const [projects, services, databases] = await Promise.all([
+      prisma.project.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, email: true, name: true } },
+          deployments: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      }),
+      prisma.backendService.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, email: true, name: true } },
+          deployments: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
+      }),
+      prisma.databaseService.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: { select: { id: true, email: true, name: true } },
+        },
+      }),
+    ]);
+
+    const formattedProjects = projects.map((p) => {
+      const latest = p.deployments[0];
+      return {
+        id: p.id,
+        type: "project" as const,
+        name: p.name,
+        slug: p.slug,
+        framework: p.framework,
+        status: latest?.status || "PENDING",
+        url: latest?.url || `http://${p.slug}.20.2.136.11.nip.io`,
+        deploymentId: latest?.id || null,
+        deploymentType: latest?.deploymentType || "STATIC",
+        containerPort: latest?.containerPort || null,
+        owner: p.user,
+        createdAt: p.createdAt,
+        updatedAt: latest?.buildFinishedAt || p.updatedAt,
+      };
+    });
+
+    const formattedServices = services.map((s) => {
+      const latest = s.deployments[0];
+      return {
+        id: s.id,
+        type: "service" as const,
+        name: s.name,
+        slug: s.slug,
+        framework: s.language,
+        status: latest?.status || "PENDING",
+        url: s.internalPort === 0 ? "worker://internal" : `http://${s.slug}.20.2.136.11.nip.io`,
+        deploymentId: latest?.id || null,
+        deploymentType: "CONTAINER",
+        containerPort: latest?.containerPort || s.internalPort,
+        instanceType: s.instanceType,
+        autoSleep: s.autoSleep,
+        owner: s.user,
+        createdAt: s.createdAt,
+        updatedAt: latest?.buildFinishedAt || s.updatedAt,
+      };
+    });
+
+    const formattedDatabases = databases.map((d) => {
+      const port = d.externalPort || d.internalPort;
+      return {
+        id: d.id,
+        type: "database" as const,
+        name: d.name,
+        slug: d.slug,
+        framework: d.type,
+        status: d.status || "RUNNING",
+        url: `postgresql://${d.username}:***@20.2.136.11:${port}/${d.databaseName}`,
+        deploymentId: null,
+        deploymentType: "DATABASE",
+        containerPort: port,
+        instanceType: d.instanceType,
+        owner: d.user,
+        createdAt: d.createdAt,
+        updatedAt: d.updatedAt,
+      };
+    });
+
+    return {
+      total: formattedProjects.length + formattedServices.length + formattedDatabases.length,
+      counts: {
+        projects: formattedProjects.length,
+        services: formattedServices.length,
+        databases: formattedDatabases.length,
+      },
+      applications: [...formattedProjects, ...formattedServices, ...formattedDatabases],
+    };
   });
 
   // ─── Container Management ──────────────────────────────────────────────────

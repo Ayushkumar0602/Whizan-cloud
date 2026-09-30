@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import crypto from "crypto";
-import { isUserAdmin } from "../lib/auth-utils.js";
+import { isUserAdmin, isRootAdmin } from "../lib/auth-utils.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -73,9 +73,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (existing) return reply.code(409).send({ error: "Email already in use" });
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const isRoot = isRootAdmin({ email });
     const isAdmin = isUserAdmin({ email });
+    const assignedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? "ADMIN" : "USER");
     const user = await prisma.user.create({
-      data: { email, passwordHash, name, role: isAdmin ? "ADMIN" : "USER" },
+      data: { email, passwordHash, name, role: assignedRole },
     });
 
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
@@ -86,7 +88,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         email: user.email,
         name: user.name,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
-        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
+        role: assignedRole,
       },
     });
   });
@@ -105,7 +107,9 @@ export async function authRoutes(fastify: FastifyInstance) {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return reply.code(401).send({ error: "Invalid credentials" });
 
+    const isRoot = isRootAdmin(user);
     const isAdmin = isUserAdmin(user);
+    const resolvedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER"));
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
     return reply.send({
       accessToken,
@@ -115,7 +119,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         name: user.name,
         avatarUrl: user.avatarUrl,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
-        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
+        role: resolvedRole,
       },
     });
   });
@@ -161,11 +165,14 @@ export async function authRoutes(fastify: FastifyInstance) {
         select: { id: true, email: true, name: true, avatarUrl: true, subscriptionTier: true, role: true, createdAt: true },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
+      const isRoot = isRootAdmin(user);
       const isAdmin = isUserAdmin(user);
+      const resolvedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER"));
       return reply.send({
         ...user,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
-        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
+        role: resolvedRole,
+        iamPermissions: (user as any).iamPermissions || "all",
       });
     }
   );
