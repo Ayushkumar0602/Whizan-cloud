@@ -29,13 +29,13 @@ export const INSTANCE_TIERS: Record<string, { cpu: number; memory: number; label
 
 const BaseServiceSchema = z.object({
   name: z.string().min(1).max(60),
-  slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  slug: z.string().min(1).max(60).regex(/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/, "Slug must be lowercase alphanumeric with internal hyphens (cannot start or end with a hyphen)"),
   githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
-  branch: z.string().default("main"),
+  branch: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._\-\/]*$/, "Invalid git branch name. Must start with alphanumeric and not contain shell metacharacters").default("main"),
   language: z.enum(["NODEJS", "PYTHON", "GO", "DOCKERFILE"]).default("NODEJS"),
-  rootDir: z.string().default("."),
-  installCommand: z.string().default("npm install"),
-  startCommand: z.string().default("npm start"),
+  rootDir: z.string().max(200).default("."),
+  installCommand: z.string().max(500).default("npm install"),
+  startCommand: z.string().max(500).default("npm start"),
   internalPort: z.number().int().min(0).max(65535).default(8000),
   isWorker: z.boolean().default(false),
   isPublic: z.boolean().default(false),
@@ -66,9 +66,11 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
   // GET /api/services
   fastify.get("/", async (request) => {
-    const { userId } = request.user;
+    const { userId, role } = request.user;
+    const query = request.query as { all?: string };
+    const whereClause = role === "ADMIN" && query?.all === "true" ? {} : { userId };
     return prisma.backendService.findMany({
-      where: { userId },
+      where: whereClause,
       include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: { createdAt: "desc" },
     });
@@ -271,9 +273,9 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // GET /api/services/:id
   fastify.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const service = await prisma.backendService.findFirst({
-      where: { id, userId },
+      where: role === "ADMIN" ? { id } : { id, userId },
       include: {
         deployments: { orderBy: { createdAt: "desc" }, take: 10 },
         envVariables: { select: { id: true, key: true, createdAt: true, isSecret: true } }, // Do not return raw values
@@ -562,8 +564,10 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // GET /api/services/:id/env
   fastify.get("/:id/env", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
-    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    const { userId, role } = request.user;
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId }
+    });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
     const vars = await prisma.serviceEnvVariable.findMany({ where: { serviceId: id } });
@@ -581,11 +585,13 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // POST /api/services/:id/env
   fastify.post("/:id/env", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const body = EnvSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
 
-    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId }
+    });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
     const { encrypt } = await import("../lib/crypto.js");
@@ -603,11 +609,13 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // POST /api/services/:id/env/bulk
   fastify.post("/:id/env/bulk", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const body = BulkEnvSchema.safeParse(request.body);
     if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
 
-    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId }
+    });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
     const { encrypt } = await import("../lib/crypto.js");
@@ -641,8 +649,10 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // DELETE /api/services/:id/env/:key
   fastify.delete("/:id/env/:key", async (request, reply) => {
     const { id, key } = request.params as { id: string; key: string };
-    const { userId } = request.user;
-    const service = await prisma.backendService.findFirst({ where: { id, userId } });
+    const { userId, role } = request.user;
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId }
+    });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
     await prisma.serviceEnvVariable.deleteMany({ where: { serviceId: id, key } });
@@ -651,13 +661,13 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
   // GET /api/services/deployments/:dId
   fastify.get("/deployments/:dId", async (request, reply) => {
-    const { dId } = request.params as { dId: string };
-    const { userId } = request.user;
+    const { dId } = request.params as { id: string; dId: string };
+    const { userId, role } = request.user;
     const deployment = await prisma.serviceDeployment.findUnique({ where: { id: dId } });
     if (!deployment) return reply.code(404).send({ error: "Deployment not found" });
 
     const service = await prisma.backendService.findUnique({ where: { id: deployment.serviceId } });
-    if (!service || service.userId !== userId) return reply.code(404).send({ error: "Not found" });
+    if (!service || (service.userId !== userId && role !== "ADMIN")) return reply.code(404).send({ error: "Not found" });
 
     return reply.send(deployment);
   });
@@ -716,7 +726,8 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       where: { id: dId },
       include: { service: true },
     });
-    if (!deployment || deployment.service.userId !== authUser.userId) {
+    const isUserAnAdmin = (authUser as any).role === "ADMIN";
+    if (!deployment || (!isUserAnAdmin && deployment.service.userId !== authUser.userId)) {
       return reply.code(404).send({ error: "Deployment not found" });
     }
 
@@ -1392,9 +1403,9 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
   // POST /api/services/mesh/ping
   const MeshPingSchema = z.object({
-    targetSlug: z.string().min(1),
-    targetPort: z.number().int().positive().default(8000),
-    path: z.string().default("/"),
+    targetSlug: z.string().min(1).max(60).regex(/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/, "Invalid target slug format"),
+    targetPort: z.number().int().min(1).max(65535).default(8000),
+    path: z.string().max(200).default("/"),
   });
 
   fastify.post("/mesh/ping", async (request, reply) => {
@@ -1404,6 +1415,18 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     }
 
     const { targetSlug, targetPort, path: rawPath } = parseResult.data;
+    const { userId, role } = request.user;
+
+    // Prevent cross-tenant probing or SSRF
+    if (role !== "ADMIN") {
+      const owned = await prisma.backendService.findFirst({
+        where: { slug: targetSlug, userId },
+      });
+      if (!owned) {
+        return reply.status(403).send({ error: `Forbidden: Service '${targetSlug}' not found in your account.` });
+      }
+    }
+
     const cleanPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
     const targetUrl = `http://${targetSlug}:${targetPort}${cleanPath}`;
     const meshNetwork = "whizan-internal-network";

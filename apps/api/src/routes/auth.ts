@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import crypto from "crypto";
+import { isUserAdmin } from "../lib/auth-utils.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -72,14 +73,21 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (existing) return reply.code(409).send({ error: "Email already in use" });
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const isAdmin = isUserAdmin({ email });
     const user = await prisma.user.create({
-      data: { email, passwordHash, name },
+      data: { email, passwordHash, name, role: isAdmin ? "ADMIN" : "USER" },
     });
 
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
     return reply.code(201).send({
       accessToken,
-      user: { id: user.id, email: user.email, name: user.name, subscriptionTier: (user as any).subscriptionTier || "HOBBY" },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
+      },
     });
   });
 
@@ -97,10 +105,18 @@ export async function authRoutes(fastify: FastifyInstance) {
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) return reply.code(401).send({ error: "Invalid credentials" });
 
+    const isAdmin = isUserAdmin(user);
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
     return reply.send({
       accessToken,
-      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, subscriptionTier: (user as any).subscriptionTier || "HOBBY" },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
+      },
     });
   });
 
@@ -142,12 +158,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       const { userId } = request.user;
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, email: true, name: true, avatarUrl: true, subscriptionTier: true, createdAt: true },
+        select: { id: true, email: true, name: true, avatarUrl: true, subscriptionTier: true, role: true, createdAt: true },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
+      const isAdmin = isUserAdmin(user);
       return reply.send({
         ...user,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+        role: isAdmin ? "ADMIN" : ((user as any).role || "USER"),
       });
     }
   );

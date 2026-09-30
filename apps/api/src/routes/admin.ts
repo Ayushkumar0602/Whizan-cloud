@@ -1,13 +1,20 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient } from "@hostify/db";
 import { Redis } from "ioredis";
+import { signAdminPayload } from "../lib/auth-utils.js";
 
 const prisma = new PrismaClient();
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const redis = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
 
+async function publishAdminCommand(payload: Record<string, any>) {
+  const signed = signAdminPayload(payload);
+  await redis.publish("admin:commands", JSON.stringify(signed));
+}
+
 export const adminRoutes = async function (fastify: FastifyInstance) {
-  fastify.addHook("preHandler", fastify.authenticate);
+  // Strict Platform Administrator Authentication & RBAC Check
+  fastify.addHook("preHandler", (fastify as any).requireAdmin);
 
   // 1. Get overall system stats + VM health from worker
   fastify.get("/stats", async (request, reply) => {
@@ -19,7 +26,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       databasesCount,
       allDeployments,
       allBackendServices,
-      allDatabases
+      allDatabases,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.project.count(),
@@ -28,7 +35,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       prisma.databaseService.count(),
       prisma.deployment.findMany({
         orderBy: { createdAt: "desc" },
-        include: { project: true },
+        include: {
+          project: {
+            select: { id: true, name: true, slug: true, framework: true, userId: true },
+          },
+        },
         take: 50,
       }),
       prisma.backendService.findMany({
@@ -39,8 +50,8 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
             take: 1,
           },
           user: {
-            select: { id: true, email: true, name: true }
-          }
+            select: { id: true, email: true, name: true },
+          },
         },
         take: 50,
       }),
@@ -48,11 +59,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
         orderBy: { createdAt: "desc" },
         include: {
           user: {
-            select: { id: true, email: true, name: true }
-          }
+            select: { id: true, email: true, name: true },
+          },
         },
         take: 50,
-      })
+      }),
     ]);
 
     // Read VM stats published by the worker every 15s
@@ -62,6 +73,12 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       if (raw) vmStats = JSON.parse(raw);
     } catch {}
 
+    // Sanitize database objects (never leak password ciphertext in stats)
+    const sanitizedDatabases = allDatabases.map((db) => {
+      const { password, readonlyPassword, ...safeDb } = db as any;
+      return safeDb;
+    });
+
     return {
       users: usersCount,
       projects: projectsCount,
@@ -70,21 +87,109 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       databases: databasesCount,
       allDeployments,
       allBackendServices,
-      allDatabases,
+      allDatabases: sanitizedDatabases,
       vmStats,
     };
   });
 
-  // 2. Stop/Pause a container
+  // ─── User Management (Admin Only) ──────────────────────────────────────────
+
+  // GET /api/admin/users — List all platform users with resource statistics
+  fastify.get("/users", async () => {
+    const users = await prisma.user.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        role: true,
+        subscriptionTier: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            projects: true,
+            backendServices: true,
+            databaseServices: true,
+            apiKeys: true,
+          },
+        },
+      },
+    });
+    return users;
+  });
+
+  // PATCH /api/admin/users/:id — Upgrade/downgrade subscription or change user role
+  fastify.patch("/users/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { role, subscriptionTier } = request.body as {
+      role?: string;
+      subscriptionTier?: string;
+    };
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) return reply.code(404).send({ error: "User not found" });
+
+    const updateData: any = {};
+    if (role && (role.toUpperCase() === "USER" || role.toUpperCase() === "ADMIN")) {
+      updateData.role = role.toUpperCase();
+    }
+    if (
+      subscriptionTier &&
+      (subscriptionTier.toUpperCase() === "HOBBY" || subscriptionTier.toUpperCase() === "PROFESSIONAL")
+    ) {
+      updateData.subscriptionTier = subscriptionTier.toUpperCase();
+    }
+
+    const updated = await prisma.user.update({
+      where: { id },
+      data: updateData,
+      select: { id: true, email: true, name: true, role: true, subscriptionTier: true },
+    });
+    return updated;
+  });
+
+  // DELETE /api/admin/users/:id — Terminate and cascade-delete a user and all their resources
+  fastify.delete("/users/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      include: {
+        projects: { select: { id: true, slug: true } },
+        backendServices: { select: { id: true, slug: true } },
+        databaseServices: { select: { id: true, slug: true } },
+      },
+    });
+    if (!targetUser) return reply.code(404).send({ error: "User not found" });
+
+    // Clean up all resources for this user on the host VM
+    for (const p of targetUser.projects) {
+      await publishAdminCommand({ action: "DELETE_PROJECT", projectId: p.id, slug: p.slug });
+    }
+    for (const s of targetUser.backendServices) {
+      await publishAdminCommand({ action: "DELETE_SERVICE", serviceId: s.id, slug: s.slug });
+    }
+    for (const d of targetUser.databaseServices) {
+      await publishAdminCommand({ action: "DELETE_CONTAINER", containerId: `whizan-db-${d.id}` });
+    }
+
+    await prisma.user.delete({ where: { id } });
+    return { success: true };
+  });
+
+  // ─── Container Management ──────────────────────────────────────────────────
+
+  // 2. Stop/Pause a project deployment container
   fastify.post("/deployments/:id/stop", async (request, reply) => {
     const { id } = request.params as { id: string };
-    
+
     const deployment = await prisma.deployment.findUnique({ where: { id } });
     if (!deployment) return reply.code(404).send({ error: "Not found" });
 
     await prisma.deployment.update({
       where: { id },
-      data: { status: "PAUSED", containerPort: null }
+      data: { status: "PAUSED", containerPort: null },
     });
 
     const project = await prisma.project.findUnique({ where: { id: deployment.projectId } });
@@ -98,10 +203,10 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
       }
     }
 
-    await redis.publish("admin:commands", JSON.stringify({
+    await publishAdminCommand({
       action: "STOP_CONTAINER",
-      deploymentId: id
-    }));
+      deploymentId: id,
+    });
 
     return { success: true };
   });
@@ -109,11 +214,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
   // 3. Delete a deployment completely
   fastify.delete("/deployments/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    
-    await redis.publish("admin:commands", JSON.stringify({
+
+    await publishAdminCommand({
       action: "DELETE_CONTAINER",
-      deploymentId: id
-    }));
+      deploymentId: id,
+    });
 
     await prisma.deployment.delete({ where: { id } }).catch(() => {});
     return { success: true };
@@ -122,11 +227,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
   // 4. Force-kill a specific Docker container by its container ID
   fastify.delete("/containers/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    
-    await redis.publish("admin:commands", JSON.stringify({
+
+    await publishAdminCommand({
       action: "KILL_CONTAINER_BY_ID",
-      containerId: id
-    }));
+      containerId: id,
+    });
 
     return { success: true };
   });
@@ -136,7 +241,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const service = await prisma.backendService.findUnique({
       where: { id },
-      include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } }
+      include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
@@ -144,12 +249,12 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     if (latest) {
       await prisma.serviceDeployment.update({
         where: { id: latest.id },
-        data: { status: "PAUSED", containerPort: null }
+        data: { status: "PAUSED", containerPort: null },
       });
-      await redis.publish("admin:commands", JSON.stringify({
+      await publishAdminCommand({
         action: "STOP_CONTAINER",
-        deploymentId: latest.id
-      }));
+        deploymentId: latest.id,
+      });
     }
     return { success: true };
   });
@@ -159,15 +264,15 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const service = await prisma.backendService.findUnique({
       where: { id },
-      include: { deployments: true }
+      include: { deployments: true },
     });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
     for (const d of service.deployments) {
-      await redis.publish("admin:commands", JSON.stringify({
+      await publishAdminCommand({
         action: "DELETE_CONTAINER",
-        deploymentId: d.id
-      }));
+        deploymentId: d.id,
+      });
     }
     await prisma.backendService.delete({ where: { id } }).catch(() => {});
     return { success: true };
@@ -180,10 +285,10 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     if (!db) return reply.code(404).send({ error: "Database not found" });
 
     await prisma.databaseService.update({ where: { id }, data: { status: "STOPPED" } });
-    await redis.publish("admin:commands", JSON.stringify({
+    await publishAdminCommand({
       action: "STOP_CONTAINER",
-      containerId: `whizan-db-${id}`
-    }));
+      containerId: `whizan-db-${id}`,
+    });
     return { success: true };
   });
 
@@ -193,19 +298,19 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     const db = await prisma.databaseService.findUnique({ where: { id } });
     if (!db) return reply.code(404).send({ error: "Database not found" });
 
-    await redis.publish("admin:commands", JSON.stringify({
+    await publishAdminCommand({
       action: "DELETE_CONTAINER",
-      containerId: `whizan-db-${id}`
-    }));
+      containerId: `whizan-db-${id}`,
+    });
     await prisma.databaseService.delete({ where: { id } }).catch(() => {});
     return { success: true };
   });
 
-  // 4b. Fetch logs from a specific container (RPC)
+  // 4f. Fetch logs from a specific container (RPC)
   fastify.get("/containers/:id/logs", async (request, reply) => {
     const { id } = request.params as { id: string };
     const replyChannel = `admin:rpc:logs:${id}:${Date.now()}`;
-    
+
     return new Promise((resolve) => {
       let timeout = setTimeout(() => {
         sub.unsubscribe(replyChannel).catch(() => {});
@@ -215,11 +320,11 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
 
       const sub = redis.duplicate();
       sub.subscribe(replyChannel, () => {
-        redis.publish("admin:commands", JSON.stringify({
+        publishAdminCommand({
           action: "GET_CONTAINER_LOGS",
           containerId: id,
-          replyTo: replyChannel
-        }));
+          replyTo: replyChannel,
+        });
       });
 
       sub.on("message", (channel, message) => {
@@ -236,34 +341,40 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
   // 5. Delete specific file/directory on VM
   fastify.post("/files/delete", async (request, reply) => {
     const { path } = request.body as { path: string };
-    
+
     if (!path) return reply.code(400).send({ error: "Path required" });
 
-    await redis.publish("admin:commands", JSON.stringify({
+    // Sanitize path against root deletions
+    const cleanPath = path.trim();
+    if (cleanPath === "/" || cleanPath === "/*" || cleanPath === "/root" || cleanPath === "/home") {
+      return reply.code(400).send({ error: "Protected system path cannot be deleted." });
+    }
+
+    await publishAdminCommand({
       action: "DELETE_FILE",
-      path
-    }));
+      path: cleanPath,
+    });
 
     return { success: true };
   });
 
   // 5b. Prune unused Docker system layers & buildkit cache
-  fastify.post("/system/prune-docker", async (request, reply) => {
-    await redis.publish("admin:commands", JSON.stringify({
-      action: "PRUNE_DOCKER"
-    }));
+  fastify.post("/system/prune-docker", async () => {
+    await publishAdminCommand({
+      action: "PRUNE_DOCKER",
+    });
     return { success: true };
   });
 
   // 5c. Clear global build and npm cache (/opt/whizan-cache)
-  fastify.post("/system/clear-cache", async (request, reply) => {
-    await redis.publish("admin:commands", JSON.stringify({
-      action: "CLEAR_BUILD_CACHE"
-    }));
+  fastify.post("/system/clear-cache", async () => {
+    await publishAdminCommand({
+      action: "CLEAR_BUILD_CACHE",
+    });
     return { success: true };
   });
 
-  // 5d. Interactive VM Terminal Command Exec (Host VM & Remote VM)
+  // 5d. Interactive VM Terminal Command Exec (Admin Only on Host VM & Remote VM)
   fastify.post("/terminal/exec", async (request, reply) => {
     const { command, cwd, remote } = request.body as {
       command: string;
@@ -286,18 +397,18 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
           stdout: "",
           stderr: "Command execution timed out after 35 seconds. Process may still be running in background.",
           exitCode: 124,
-          cwd: cwd || "/opt/whizan"
+          cwd: cwd || "/opt/whizan",
         });
       }, 36000);
 
       sub.subscribe(replyChannel, () => {
-        redis.publish("admin:commands", JSON.stringify({
+        publishAdminCommand({
           action: "VM_EXEC",
           command,
           cwd: cwd || "/opt/whizan",
           remote,
           replyTo: replyChannel,
-        }));
+        });
       });
 
       sub.on("message", (channel, message) => {
@@ -316,25 +427,25 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
   });
 
   // 6. Get logs
-  fastify.get("/logs/:service/:type", async (request, reply) => {
-    const { service, type } = request.params as { service: string, type: string };
+  fastify.get("/logs/:service/:type", async (request) => {
+    const { service, type } = request.params as { service: string; type: string };
     const logs = await redis.get(`vm:logs:${service}:${type}`);
     return { logs: logs || "No logs available" };
   });
 
   // 7. Restart services
-  fastify.post("/restart/:service", async (request, reply) => {
+  fastify.post("/restart/:service", async (request) => {
     const { service } = request.params as { service: string };
     if (service === "worker") {
-      await redis.publish("admin:commands", JSON.stringify({ action: "RESTART_WORKER" }));
+      await publishAdminCommand({ action: "RESTART_WORKER" });
     } else if (service === "router") {
-      await redis.publish("admin:commands", JSON.stringify({ action: "RESTART_ROUTER" }));
+      await publishAdminCommand({ action: "RESTART_ROUTER" });
     }
     return { success: true };
   });
 
   // 8. Database Stats
-  fastify.get("/database/stats", async (request, reply) => {
+  fastify.get("/database/stats", async () => {
     let redisStats = null;
     try {
       const info = await redis.info();
@@ -363,4 +474,4 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
 
     return { redis: redisStats, postgres: pgStats };
   });
-}
+};

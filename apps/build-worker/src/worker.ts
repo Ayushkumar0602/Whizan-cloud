@@ -503,6 +503,13 @@ redisSub.on("message", async (channel, message) => {
     try {
       const payload = JSON.parse(message);
       
+      // Cryptographic signature check: reject unverified or forged commands
+      const { verifyAdminPayload } = await import("./admin-crypto.js");
+      if (!verifyAdminPayload(payload)) {
+        console.warn(`[Security Alert] Rejected unverified command on admin:commands channel: action=${payload?.action}`);
+        return;
+      }
+      
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 

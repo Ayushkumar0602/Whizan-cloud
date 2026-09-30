@@ -23,6 +23,7 @@ model User {
   name         String?
   avatarUrl    String?   @map("avatar_url")
   subscriptionTier String @default("HOBBY") @map("subscription_tier") // HOBBY | PROFESSIONAL
+  role         String    @default("USER") // USER | ADMIN
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

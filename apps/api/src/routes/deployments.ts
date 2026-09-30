@@ -22,9 +22,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const deployments = await prisma.deployment.findMany({
@@ -49,9 +51,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id, dId } = request.params as { id: string; dId: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const deployment = await prisma.deployment.findFirst({ where: { id: dId, projectId: id } });
@@ -72,9 +76,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      let project = await prisma.project.findFirst({ where: { id, userId } });
+      let project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const body = request.body as {
@@ -242,9 +248,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id, dId } = request.params as { id: string; dId: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       await prisma.deployment.updateMany({
@@ -269,9 +277,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id, dId } = request.params as { id: string; dId: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const deployment = await prisma.deployment.findFirst({ where: { id: dId, projectId: id } });
@@ -302,9 +312,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id, dId } = request.params as { id: string; dId: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const deployment = await prisma.deployment.findFirst({ where: { id: dId, projectId: id } });
@@ -346,9 +358,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
     { preHandler: [fastify.authenticate] },
     async (request, reply) => {
       const { id, dId } = request.params as { id: string; dId: string };
-      const { userId } = request.user;
+      const { userId, role } = request.user;
 
-      const project = await prisma.project.findFirst({ where: { id, userId } });
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN" ? { id } : { id, userId },
+      });
       if (!project) return reply.code(404).send({ error: "Project not found" });
 
       const deployment = await prisma.deployment.findFirst({ where: { id: dId, projectId: id } });
@@ -431,7 +445,8 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         where: { id: dId },
         include: { project: true },
       });
-      if (!deployment || deployment.project.userId !== authUser.userId) {
+      const isUserAnAdmin = (authUser as any).role === "ADMIN";
+      if (!deployment || (!isUserAnAdmin && deployment.project.userId !== authUser.userId)) {
         return reply.code(404).send({ error: "Deployment not found" });
       }
 

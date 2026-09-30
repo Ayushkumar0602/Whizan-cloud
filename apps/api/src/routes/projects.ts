@@ -7,13 +7,13 @@ import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner
 
 const BaseProjectSchema = z.object({
   name: z.string().min(1).max(60),
-  slug: z.string().min(1).max(60).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with hyphens"),
+  slug: z.string().min(1).max(60).regex(/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/, "Slug must be lowercase alphanumeric with internal hyphens (cannot start or end with a hyphen)"),
   githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
-  branch: z.string().default("main"),
-  rootDir: z.string().default("."),
-  buildCommand: z.string().default("npm run build"),
-  installCommand: z.string().default("npm install"),
-  outputDir: z.string().default(".next"),
+  branch: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._\-\/]*$/, "Invalid git branch name. Must start with alphanumeric and not contain shell metacharacters").default("main"),
+  rootDir: z.string().max(200).default("."),
+  buildCommand: z.string().max(500).default("npm run build"),
+  installCommand: z.string().max(500).default("npm install"),
+  outputDir: z.string().max(200).default(".next"),
   framework: z.enum(["NEXTJS", "REACT", "VITE", "ASTRO", "CUSTOM"]).default("NEXTJS"),
 });
 
@@ -28,9 +28,11 @@ export async function projectRoutes(fastify: FastifyInstance) {
 
   // GET /api/projects
   fastify.get("/", async (request) => {
-    const { userId } = request.user;
+    const { userId, role } = request.user;
+    const query = request.query as { all?: string };
+    const whereClause = role === "ADMIN" && query?.all === "true" ? {} : { userId };
     return prisma.project.findMany({
-      where: { userId },
+      where: whereClause,
       include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       orderBy: { createdAt: "desc" },
     });
@@ -90,9 +92,9 @@ export async function projectRoutes(fastify: FastifyInstance) {
   // GET /api/projects/:id
   fastify.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
     const project = await prisma.project.findFirst({
-      where: { id, userId },
+      where: role === "ADMIN" ? { id } : { id, userId },
       include: { deployments: { orderBy: { createdAt: "desc" }, take: 10 } },
     });
     if (!project) return reply.code(404).send({ error: "Project not found" });

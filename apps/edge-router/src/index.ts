@@ -166,6 +166,14 @@ const server = http.createServer(async (req, res) => {
     // Treat the whole host as a custom domain key
     slug = host.replace(/:.*$/, ""); // strip port
   }
+  // Sanitize slug against malicious characters / CRLF / path traversal
+  slug = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+
+  if (!slug) {
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Bad Request: Invalid Host");
+    return;
+  }
 
   // ── Lookup deployment from Redis ──────────────────────────────────────────
   const deployment = await lookupDeployment(slug).catch(() => null);
@@ -519,6 +527,13 @@ server.on("upgrade", async (req, socket, head) => {
     slug = host.split(".")[0];
   } else {
     slug = host.replace(/:.*$/, "");
+  }
+  slug = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+
+  if (!slug) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
   }
 
   const deployment = await lookupDeployment(slug).catch(() => null);

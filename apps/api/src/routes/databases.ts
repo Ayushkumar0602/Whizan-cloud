@@ -6,6 +6,7 @@ import { Client as PgClient } from "pg";
 import { prisma } from "../lib/prisma.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
 import { redisClient, redisSub } from "../lib/redis.js";
+import { isRestrictedDatabaseUrl } from "../lib/auth-utils.js";
 
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "localhost";
 
@@ -124,10 +125,12 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── GET /api/databases — List all user databases ───────────────────────────
   fastify.get("/", async (request: any) => {
-    const userId = request.user.userId;
+    const { userId, role } = request.user;
+    const query = request.query as { all?: string };
+    const where = role === "ADMIN" && query?.all === "true" ? {} : { userId };
 
     const databases = await prisma.databaseService.findMany({
-      where: { userId },
+      where,
       orderBy: { createdAt: "desc" },
     });
 
@@ -250,11 +253,11 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
   // ── GET /api/databases/:id — Get single database ───────────────────────────
   fastify.get("/:id", async (request: any, reply) => {
-    const userId = request.user.userId;
+    const { userId, role } = request.user;
     const { id } = request.params as { id: string };
 
     const db = await prisma.databaseService.findFirst({
-      where: { id, userId },
+      where: role === "ADMIN" ? { id } : { id, userId },
     });
 
     if (!db) {
@@ -1748,6 +1751,12 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Unsupported database URL scheme. Supported: postgresql://, redis://" });
     }
 
+    if (request.user?.role !== "ADMIN" && isRestrictedDatabaseUrl(trimmedUrl)) {
+      return reply.code(403).send({
+        error: "Security Policy: Direct connection to loopback, private RFC1918 subnets, or cloud metadata endpoints (169.254.169.254) is blocked to prevent SSRF.",
+      });
+    }
+
     const start = Date.now();
 
     if (isPostgres) {
@@ -1832,6 +1841,12 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     const trimmedUrl = databaseUrl.trim();
     if (!trimmedUrl.startsWith("postgres://") && !trimmedUrl.startsWith("postgresql://")) {
       return reply.code(400).send({ error: "Table exploration currently supports PostgreSQL URLs" });
+    }
+
+    if (request.user?.role !== "ADMIN" && isRestrictedDatabaseUrl(trimmedUrl)) {
+      return reply.code(403).send({
+        error: "Security Policy: Direct connection to loopback, private RFC1918 subnets, or cloud metadata endpoints (169.254.169.254) is blocked to prevent SSRF.",
+      });
     }
 
     const client = new PgClient({
@@ -1926,6 +1941,12 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (!isPostgres && !isRedis) {
       return reply.code(400).send({ error: "Unsupported database URL scheme" });
+    }
+
+    if (request.user?.role !== "ADMIN" && isRestrictedDatabaseUrl(trimmedUrl)) {
+      return reply.code(403).send({
+        error: "Security Policy: Direct connection to loopback, private RFC1918 subnets, or cloud metadata endpoints (169.254.169.254) is blocked to prevent SSRF.",
+      });
     }
 
     const start = Date.now();

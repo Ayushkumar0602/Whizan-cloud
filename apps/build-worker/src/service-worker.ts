@@ -176,9 +176,10 @@ const worker = new Worker<ServiceBuildJob>(
           finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
         }
 
-        const cloneCmd = `git clone --depth 1 -b ${branch} ${finalRepoUrl} ${buildDir}`;
+        // Direct execve invocation: prevents shell injection via branch or repoUrl
+        const gitArgs = ["clone", "--depth", "1", "-b", branch, finalRepoUrl, buildDir];
         await new Promise<void>((resolve, reject) => {
-          const proc = spawn(cloneCmd, { shell: true });
+          const proc = spawn("git", gitArgs);
           let stderrData = "";
           proc.stdout?.on("data", (data) => {
             const lines = data.toString().split("\n").filter(Boolean);
@@ -593,8 +594,9 @@ redisSub.on("message", async (channel, message) => {
             if (process.env.GITHUB_TOKEN && !finalRepoUrl.includes("@github.com")) {
               finalRepoUrl = finalRepoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
             }
+            const gitArgs = ["clone", "--depth", "1", "-b", dep.service.branch, finalRepoUrl, buildDir];
             await new Promise<void>((resolve, reject) => {
-              const proc = spawn(`git clone --depth 1 -b ${dep.service.branch} ${finalRepoUrl} ${buildDir}`, { shell: true });
+              const proc = spawn("git", gitArgs);
               proc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`Git clone failed with code ${code}`))));
               proc.on("error", reject);
             });
