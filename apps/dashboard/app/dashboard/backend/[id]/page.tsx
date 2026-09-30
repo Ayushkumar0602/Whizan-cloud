@@ -88,12 +88,12 @@ export default function BackendServicePage() {
 
   async function handleRunAiAnalysis() {
     if (!githubRepoUrl || githubRepoUrl === "direct-upload") {
-      toast.error("Please enter a valid GitHub repository URL first to analyze with AI");
+      toast.error("Please enter a valid GitHub repository URL first");
       return;
     }
     setAnalyzingAi(true);
     try {
-      toast.info("🤖 Gemini 3.5 Flash Lite is inspecting repository...", { duration: 3000 });
+      toast.info("Inspecting repository configuration...", { duration: 2500 });
       const res = await services.analyze({
         githubRepoUrl,
         branch,
@@ -101,14 +101,14 @@ export default function BackendServicePage() {
       if (!res.success || !res.analysis) throw new Error("Analysis failed");
       const { analysis } = res;
       if (!analysis.isDeployable) {
-        toast.error(`🛑 Guardrail Refusal: ${analysis.rejectionReason}`);
+        toast.error(`Guardrail: ${analysis.rejectionReason}`);
         return;
       }
       setLanguage(analysis.language);
       if (analysis.installCommand) setInstallCommand(analysis.installCommand);
       if (analysis.startCommand) setStartCommand(analysis.startCommand);
       if (analysis.recommendedPort !== undefined) setInternalPort(analysis.recommendedPort);
-      toast.success(`✨ Gemini 3.5 Flash Lite detected ${analysis.stack} (${analysis.framework})!`);
+      toast.success(`Detected ${analysis.stack} (${analysis.framework})`);
     } catch (err: any) {
       toast.error(err.message || "Failed to analyze repository");
     } finally {
@@ -486,10 +486,10 @@ export default function BackendServicePage() {
                           onClick={handleRunAiAnalysis}
                           disabled={analyzingAi}
                           className="btn btn-secondary btn-xs"
-                          style={{ color: "#818cf8", borderColor: "rgba(99, 102, 241, 0.4)", fontSize: "0.72rem", padding: "0.2rem 0.5rem" }}
+                          style={{ fontSize: "0.72rem", padding: "0.2rem 0.5rem" }}
                         >
-                          {analyzingAi ? <Loader2 size={11} className="spin-icon" /> : <Sparkles size={11} />}
-                          <span>{analyzingAi ? "Analyzing..." : "✨ AI Inspect (Gemini 3.5)"}</span>
+                          {analyzingAi ? <Loader2 size={11} className="spin-icon" /> : <Sparkles size={11} className="text-accent" />}
+                          <span>{analyzingAi ? "Detecting..." : "Detect Settings"}</span>
                         </button>
                       )}
                     </div>

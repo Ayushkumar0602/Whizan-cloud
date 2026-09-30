@@ -81,7 +81,6 @@ export default function NewServicePage() {
           name: prev.name || repoName,
           slug: prev.slug || repoName.toLowerCase().replace(/[^a-z0-9-]/g, "-"),
         }));
-        handleRunAiAnalysis(repoParam, "main");
       }
     }
   }, []);
@@ -100,7 +99,7 @@ export default function NewServicePage() {
     setRefusalReason(null);
 
     try {
-      toast.info("🤖 Gemini 3.5 Flash Lite is inspecting repository...", { duration: 3000 });
+      toast.info("Inspecting repository configuration...", { duration: 2500 });
       const res = await services.analyze({
         githubRepoUrl: repoUrl,
         branch: branchName,
@@ -117,7 +116,7 @@ export default function NewServicePage() {
         setGuardrailRefused(true);
         setRefusalReason(analysis.rejectionReason || "This project is not supported by Whizan Cloud.");
         setAiAnalysis(analysis);
-        toast.error("🛑 Whizan System Guardrail: Repository cannot be deployed.");
+        toast.error("Deployment guardrail: Repository cannot be deployed.");
         return;
       }
 
@@ -156,9 +155,9 @@ export default function NewServicePage() {
         });
       }
 
-      toast.success(`✨ Gemini 3.5 Flash Lite detected ${analysis.stack} (${analysis.framework})!`);
+      toast.success(`Detected ${analysis.stack} (${analysis.framework})`);
     } catch (err: any) {
-      toast.error(err.message || "Failed to analyze repository with AI");
+      toast.error(err.message || "Failed to analyze repository");
     } finally {
       setAnalyzing(false);
     }
@@ -183,8 +182,6 @@ export default function NewServicePage() {
     });
 
     toast.success(`Selected repository: ${info.fullName || info.name}`);
-    // Automatically trigger Gemini AI analysis
-    handleRunAiAnalysis(cloneUrl, defaultBranch);
   };
 
   const handleMandatoryInputChange = (key: string, val: string) => {
@@ -284,97 +281,92 @@ export default function NewServicePage() {
             selectedBranch={formData.branch}
           />
 
-          {/* AI Repository Analyzer Trigger Button */}
-          <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Optional Configuration Auto-detection */}
+          <div style={{ marginTop: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", padding: "0.75rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)", background: "var(--bg-inset)" }}>
+            <div>
+              <div style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--foreground)" }}>
+                Auto-detect build &amp; start configuration
+              </div>
+              <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                Optional: inspect repository files to detect framework, start command, and port.
+              </div>
+            </div>
             <button
               type="button"
               onClick={() => handleRunAiAnalysis()}
               disabled={analyzing || !formData.githubRepoUrl}
-              className="btn btn-secondary"
-              style={{
-                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(56, 189, 248, 0.15))",
-                borderColor: "rgba(99, 102, 241, 0.35)",
-                color: "var(--foreground)",
-                fontWeight: 600,
-                fontSize: "0.85rem",
-              }}
+              className="btn btn-secondary btn-sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
             >
               {analyzing ? (
                 <>
-                  <Loader2 size={16} className="spin-icon" style={{ color: "#6366f1" }} />
-                  Gemini 3.5 Flash Lite is inspecting repository...
+                  <Loader2 size={13} className="spin-icon" />
+                  <span>Detecting...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles size={16} style={{ color: "#6366f1" }} />
-                  Run AI Repository Analysis (Gemini 3.5 Flash Lite)
+                  <Sparkles size={13} className="text-accent" />
+                  <span>Detect Settings</span>
                 </>
               )}
             </button>
-            <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
-              Inspects README, package manifests, and codebase to auto-configure stack, commands & ports.
-            </span>
           </div>
 
-          {/* System Guardrail Refusal Banner */}
+          {/* System Guardrail Refusal Alert */}
           {guardrailRefused && (
             <div
               style={{
-                marginTop: "1.25rem",
-                padding: "1rem 1.25rem",
-                borderRadius: "10px",
-                background: "rgba(239, 68, 68, 0.1)",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
-                color: "#f87171",
+                marginTop: "1rem",
+                padding: "0.85rem 1rem",
+                borderRadius: "var(--radius-sm)",
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px solid rgba(239, 68, 68, 0.25)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                <ShieldAlert size={24} style={{ color: "#ef4444", flexShrink: 0, marginTop: "2px" }} />
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.65rem" }}>
+                <ShieldAlert size={18} style={{ color: "#ef4444", flexShrink: 0, marginTop: "2px" }} />
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#fca5a5" }}>
-                    🛑 Deployment Refused by Whizan System Guardrail
+                  <div style={{ fontWeight: 600, fontSize: "0.88rem", color: "#f87171" }}>
+                    Deployment Not Supported
                   </div>
-                  <div style={{ fontSize: "0.86rem", marginTop: "0.35rem", lineHeight: 1.5, color: "#fecaca" }}>
+                  <div style={{ fontSize: "0.82rem", marginTop: "0.25rem", lineHeight: 1.45, color: "#fecaca" }}>
                     {refusalReason}
                   </div>
-                  <div style={{ fontSize: "0.78rem", marginTop: "0.6rem", color: "#f87171", opacity: 0.9 }}>
-                    Whizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications (PyQt, Tkinter, Electron), native mobile apps (iOS/Android), and one-shot CLI scripts cannot be hosted.
+                  <div style={{ fontSize: "0.75rem", marginTop: "0.4rem", color: "var(--muted)" }}>
+                    Whizan Cloud exclusively hosts web services, backend APIs, and background queue workers. Desktop applications, native mobile apps, and one-shot scripts are not supported.
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* System Guardrail Passed Banner */}
+          {/* Auto-detected Configuration Summary */}
           {aiAnalysis && !guardrailRefused && (
             <div
               style={{
-                marginTop: "1.25rem",
-                padding: "1rem 1.25rem",
-                borderRadius: "10px",
-                background: "linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(99, 102, 241, 0.08))",
-                border: "1px solid rgba(16, 185, 129, 0.25)",
+                marginTop: "1rem",
+                padding: "0.85rem 1rem",
+                borderRadius: "var(--radius-sm)",
+                background: "rgba(16, 185, 129, 0.06)",
+                border: "1px solid rgba(16, 185, 129, 0.2)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                <ShieldCheck size={22} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "0.65rem" }}>
+                <ShieldCheck size={18} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#10b981" }}>
-                      ✨ Verified Deployable by Gemini 3.5 Flash Lite
-                    </div>
-                    <div style={{ display: "flex", gap: "0.4rem" }}>
-                      <span className="plan-tag tag-green" style={{ fontSize: "0.72rem" }}>
-                        {aiAnalysis.stack} ({aiAnalysis.framework})
-                      </span>
-                      <span className="plan-tag" style={{ fontSize: "0.72rem", background: "rgba(99, 102, 241, 0.15)", color: "#818cf8" }}>
-                        {aiAnalysis.isWorker ? "Worker Process" : `Port ${aiAnalysis.recommendedPort}`}
-                      </span>
-                    </div>
+                    <span style={{ fontWeight: 600, fontSize: "0.88rem", color: "#10b981" }}>
+                      Detected: {aiAnalysis.stack} ({aiAnalysis.framework})
+                    </span>
+                    <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                      {aiAnalysis.isWorker ? "Worker Process" : `Port ${aiAnalysis.recommendedPort}`}
+                    </span>
                   </div>
-                  <div style={{ fontSize: "0.82rem", color: "var(--foreground)", marginTop: "0.4rem", lineHeight: 1.5 }}>
-                    {aiAnalysis.explanation}
-                  </div>
+                  {aiAnalysis.explanation && (
+                    <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "0.25rem", lineHeight: 1.4 }}>
+                      {aiAnalysis.explanation}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -699,35 +691,37 @@ export default function NewServicePage() {
             </div>
           </div>
 
-          {/* AI Discovered Mandatory Environment Variables Interactive Form */}
+          {/* Detected Environment Variables */}
           {mandatoryEnvs.length > 0 && (
             <div
               style={{
-                marginBottom: "1.25rem",
-                padding: "1rem 1.25rem",
-                borderRadius: "10px",
-                background: "rgba(245, 158, 11, 0.08)",
-                border: "1px solid rgba(245, 158, 11, 0.25)",
+                marginBottom: "1rem",
+                padding: "0.85rem 1rem",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                <AlertTriangle size={18} style={{ color: "#f59e0b" }} />
-                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "#f59e0b" }}>
-                  Mandatory Environment Variables Discovered by AI
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.84rem", color: "var(--foreground)" }}>
+                  Detected Environment Variables
+                </span>
+                <span style={{ fontSize: "0.7rem", color: "var(--muted)", background: "var(--card)", padding: "0.15rem 0.45rem", borderRadius: "4px", border: "1px solid var(--border)" }}>
+                  {mandatoryEnvs.length} found in repository
                 </span>
               </div>
-              <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: "1rem" }}>
-                The AI repository analyzer discovered the following required variables from the repository README or code. Fill them in below:
+              <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.85rem" }}>
+                Values entered here automatically synchronize with the environment configuration below.
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
                 {mandatoryEnvs.map(env => (
-                  <div key={env.name} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div key={env.name} style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <label className="mono" style={{ fontWeight: 600, fontSize: "0.82rem", color: "var(--foreground)" }}>
+                      <label className="mono" style={{ fontWeight: 600, fontSize: "0.8rem", color: "var(--foreground)" }}>
                         {env.name}
                       </label>
-                      <span style={{ fontSize: "0.7rem", color: "#f59e0b", background: "rgba(245, 158, 11, 0.15)", padding: "0.1rem 0.4rem", borderRadius: "4px" }}>
+                      <span style={{ fontSize: "0.68rem", color: "var(--muted)", background: "var(--card)", padding: "0.1rem 0.35rem", borderRadius: "4px" }}>
                         Required
                       </span>
                     </div>
@@ -740,7 +734,7 @@ export default function NewServicePage() {
                       type="text"
                       className="input mono"
                       style={{ fontSize: "0.8rem", padding: "0.45rem 0.75rem" }}
-                      placeholder={env.example ? `Example: ${env.example}` : `Enter ${env.name}`}
+                      placeholder={env.example ? `Example: ${env.example}` : `Enter value for ${env.name}`}
                       value={mandatoryInputs[env.name] || ""}
                       onChange={e => handleMandatoryInputChange(env.name, e.target.value)}
                     />
@@ -772,24 +766,16 @@ export default function NewServicePage() {
           </Link>
           <button
             type="submit"
-            className="btn btn-lg"
+            className="btn btn-primary btn-lg"
             disabled={loading || guardrailRefused}
-            style={{
-              background: guardrailRefused
-                ? "#ef4444"
-                : "linear-gradient(135deg, var(--accent), #38bdf8)",
-              color: "#fff",
-              opacity: guardrailRefused ? 0.8 : 1,
-              cursor: guardrailRefused ? "not-allowed" : "pointer",
-            }}
           >
             {loading ? (
               <>
-                <Loader2 size={16} className="spin-icon" /> Creating Container Service...
+                <Loader2 size={16} className="spin-icon" /> Creating Service...
               </>
             ) : guardrailRefused ? (
               <>
-                <ShieldAlert size={16} /> Blocked by System Guardrail
+                <ShieldAlert size={16} /> Blocked by Guardrail
               </>
             ) : (
               <>
