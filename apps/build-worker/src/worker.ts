@@ -240,55 +240,123 @@ const worker = new Worker<BuildJob>(
         envVars[row.key] = decrypt(row.value);
       }
 
-      // ── 4. Build inside Docker ───────────────────────────────────────────
-      if (!canResume) {
-        await log("Starting build container...");
-        const exitCode = await runBuild({
-          projectId,
-          buildDir,
-          rootDir,
-          installCommand,
-          buildCommand,
-          envVars,
-          onLog: log,
-          abortSignal: abortController.signal,
-        });
+      // ── 4. Build & Run: Check for Dockerfile vs standard Node.js builder ──
+      const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
+      const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
+      const filesInWorkDir = await fs.readdir(hostWorkDir).catch(() => [] as string[]);
+      const hasDockerfile = filesInWorkDir.some((f) => f.toLowerCase() === "dockerfile");
 
-        if (exitCode !== 0) {
-          throw new Error(`Build failed with exit code ${exitCode}`);
-        }
-        await log("✓ Build successful");
-      } else {
-        await log("✓ Build skipped (resuming existing build artifacts on disk)");
-      }
-
-      // ── 5. Analyze output ────────────────────────────────────────────────
-      await log("Analyzing build output...");
-      const analysis = await analyzeOutput(buildDir, framework, rootDir);
-      await log(`✓ Detected type: ${analysis.type}`);
-
-      // ── 6. Start SSR container if needed ────────────────────────────────
       let containerPort: number | undefined;
-      if (analysis.type === "ssr" || analysis.type === "hybrid") {
-        await log("Starting SSR container...");
+      let deploymentType: "STATIC" | "SSR" | "HYBRID" = "STATIC";
+
+      if (hasDockerfile) {
+        await log("🐳 Dockerfile detected in web project. Building custom container image...");
+        const shortId = deploymentId.slice(0, 8);
+        const imageTag = `project-img-${slug}-${shortId}`.toLowerCase();
+
+        // Detect exposed port if specified in Dockerfile
+        let detectedPort = 3000;
+        try {
+          const dockerfileContent = await fs.readFile(path.join(hostWorkDir, "Dockerfile"), "utf8");
+          const exposeMatch = dockerfileContent.match(/EXPOSE\s+(\d+)/i);
+          if (exposeMatch) detectedPort = parseInt(exposeMatch[1], 10);
+        } catch {}
+
+        const { spawn } = await import("child_process");
+        await new Promise<void>((resolve, reject) => {
+          const buildArgs: string[] = [];
+          for (const [k, v] of Object.entries(envVars)) {
+            buildArgs.push("--build-arg", `${k}=${v}`);
+          }
+          const proc = spawn("docker", ["build", "-t", imageTag, ...buildArgs, "."], {
+            cwd: hostWorkDir,
+            env: { ...process.env, DOCKER_BUILDKIT: "1" },
+          });
+          proc.stdout.on("data", (data) => {
+            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => {}));
+          });
+          proc.stderr.on("data", (data) => {
+            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => {}));
+          });
+          proc.on("close", (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`Project Dockerfile build failed with exit code ${code}`));
+          });
+          proc.on("error", (err) => reject(err));
+        });
+        await log("✓ Docker image built successfully.");
+
+        await log(`Starting container for ${slug} on port ${detectedPort}...`);
         containerPort = await appRunner.startApp(
           deploymentId,
           buildDir,
           envVars,
-          analysis.serverEntry,
-          rootDir
+          undefined,
+          rootDir,
+          imageTag,
+          detectedPort
         );
-        await log(`✓ SSR container started on port ${containerPort}`);
-      }
+        deploymentType = "SSR";
+        await log(`✓ Web container started on host port ${containerPort}`);
 
-      // ── 7. Register with edge router ─────────────────────────────────────
-      await registerDeployment(redisPub, slug, {
-        type: analysis.type,
-        staticDir: analysis.staticDir ? path.join(buildDir, analysis.staticDir) : undefined,
-        containerPort,
-        deploymentId,
-        projectId,
-      });
+        await registerDeployment(redisPub, slug, {
+          type: "ssr",
+          containerPort,
+          deploymentId,
+          projectId,
+        });
+      } else {
+        // ── Standard Node.js build inside Docker ──────────────────────────
+        if (!canResume) {
+          await log("Starting build container...");
+          const exitCode = await runBuild({
+            projectId,
+            buildDir,
+            rootDir,
+            installCommand,
+            buildCommand,
+            envVars,
+            onLog: log,
+            abortSignal: abortController.signal,
+          });
+
+          if (exitCode !== 0) {
+            throw new Error(`Build failed with exit code ${exitCode}`);
+          }
+          await log("✓ Build successful");
+        } else {
+          await log("✓ Build skipped (resuming existing build artifacts on disk)");
+        }
+
+        // ── 5. Analyze output ──────────────────────────────────────────────
+        await log("Analyzing build output...");
+        const analysis = await analyzeOutput(buildDir, framework, rootDir, job.data.outputDir);
+        await log(`✓ Detected type: ${analysis.type}`);
+
+        // ── 6. Start SSR container if needed ──────────────────────────────
+        if (analysis.type === "ssr" || analysis.type === "hybrid") {
+          await log("Starting SSR container...");
+          containerPort = await appRunner.startApp(
+            deploymentId,
+            buildDir,
+            envVars,
+            analysis.serverEntry,
+            rootDir
+          );
+          await log(`✓ SSR container started on port ${containerPort}`);
+        }
+
+        deploymentType = analysis.type.toUpperCase() as "STATIC" | "SSR" | "HYBRID";
+
+        // ── 7. Register with edge router ───────────────────────────────────
+        await registerDeployment(redisPub, slug, {
+          type: analysis.type,
+          staticDir: analysis.staticDir ? path.join(buildDir, analysis.staticDir) : undefined,
+          containerPort,
+          deploymentId,
+          projectId,
+        });
+      }
 
       // ── 8. Mark READY ────────────────────────────────────────────────────
       const url = `http://${slug}.${BASE_DOMAIN}`;
@@ -297,7 +365,7 @@ const worker = new Worker<BuildJob>(
         data: {
           status: "READY",
           buildFinishedAt: new Date(),
-          deploymentType: analysis.type.toUpperCase() as "STATIC" | "SSR" | "HYBRID",
+          deploymentType,
           url,
           containerPort,
           errorMessage: null,

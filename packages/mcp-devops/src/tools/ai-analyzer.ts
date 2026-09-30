@@ -193,7 +193,11 @@ If the repository falls under ANY of the non-deployable categories:
 If the repository IS deployable:
 - Set "isDeployable": true
 - Set "rejectionReason": null
-- Select stack, framework, targetType ("service" for backends/workers, "project" for frontends/fullstack).
+- Select stack, framework, targetType:
+  * "project" for ALL frontend & fullstack web applications (Next.js, React, Vite, Astro, Vue, Svelte, or any web app that includes a Dockerfile).
+    CRITICAL NEXT.JS RULE: For Next.js projects with dynamic routes (e.g. /scans/[id]) or Server Actions, DO NOT recommend 'output: export' in next.config. Whizan natively hosts Next.js server runtimes and standalone servers.
+    CRITICAL DOCKERFILE WEB APP RULE: If a web frontend/fullstack project provides its own Dockerfile, set targetType: "project" and language: "DOCKERFILE". Whizan will automatically build the Dockerfile and deploy it as a Web Project.
+  * "service" for dedicated backend APIs, microservices, and background queue workers (FastAPI, Flask, Django, Express, NestJS, Go, Rust, Java, Celery, BullMQ, Kafka consumers).
 - Set "language": "NODEJS" | "PYTHON" | "GO" | "DOCKERFILE".
   * If stack is Rust, Java, PHP, Ruby, .NET, or has a Dockerfile, set "language": "DOCKERFILE".
 - "isWorker": true if it is a background consumer/worker without an HTTP listener; false if it serves HTTP.
