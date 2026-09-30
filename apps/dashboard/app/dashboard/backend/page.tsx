@@ -26,6 +26,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
 
 export default function BackendHostingPage() {
   const router = useRouter();
@@ -103,12 +104,13 @@ export default function BackendHostingPage() {
           <div className="stat-sub">Scaled to zero (Free Tier)</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label"><Radio size={14} className="text-accent" /> Mesh Network</div>
-          <div className="stat-value" style={{ fontSize: "1.25rem", fontFamily: "var(--font-geist-mono), monospace" }}>
-            whizan-bridge
+          <div className="stat-label"><Radio size={14} className="text-accent" /> Cloud Ingress</div>
+          <div className="stat-value" style={{ fontSize: "1.15rem", fontFamily: "var(--font-geist-mono), monospace" }}>
+            {getBaseRouterDomain()}
           </div>
           <div className="stat-sub" style={{ color: "var(--success)" }}>
-            Sub-millisecond latency
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+            Port 80 Routing Ready
           </div>
         </div>
       </div>
@@ -182,11 +184,10 @@ export default function BackendHostingPage() {
             const isActive = latest?.status === "READY" && !!latest.containerPort;
             const isBuilding = latest?.status === "BUILDING" || latest?.status === "QUEUED";
 
-            const meshUrl = `http://${s.slug}:${s.internalPort}`;
+            const publicUrl = getServiceIngressUrl(s.slug);
 
             return (
-              <Link
-                href={`/dashboard/backend/${s.id}`}
+              <div
                 key={s.id}
                 className="service-card-modern"
               >
@@ -204,103 +205,120 @@ export default function BackendHostingPage() {
                   }}
                 />
 
-                {/* Card Header */}
-                <div className="card-header-row">
-                  <div className="card-brand-box">
-                    <Server size={18} className="text-accent" />
-                  </div>
-                  <div className="card-title-meta">
-                    <h3 className="card-title-text">{s.name}</h3>
-                    <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
-                      <div className="card-lang-tag mono" style={s.language === "DOCKERFILE" ? { background: "rgba(14, 165, 233, 0.12)", color: "#0ea5e9", borderColor: "rgba(14, 165, 233, 0.3)" } : undefined}>
-                        {s.language === "DOCKERFILE" ? "DOCKERFILE / POLYGLOT" : s.language}
-                      </div>
-                      {s.internalPort === 0 && (
-                        <div className="card-lang-tag mono" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }}>
-                          WORKER
+                <Link href={`/dashboard/backend/${s.id}`} className="service-card-body-link">
+                  {/* Card Header */}
+                  <div className="card-header-row">
+                    <div className="card-brand-box">
+                      <Server size={18} className="text-accent" />
+                    </div>
+                    <div className="card-title-meta">
+                      <h3 className="card-title-text">{s.name}</h3>
+                      <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <div className="card-lang-tag mono" style={s.language === "DOCKERFILE" ? { background: "rgba(14, 165, 233, 0.12)", color: "#0ea5e9", borderColor: "rgba(14, 165, 233, 0.3)" } : undefined}>
+                          {s.language === "DOCKERFILE" ? "DOCKERFILE" : s.language}
                         </div>
+                        {s.internalPort === 0 && (
+                          <div className="card-lang-tag mono" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }}>
+                            WORKER
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="card-status-pill">
+                      {isActive && (
+                        <span className="badge badge-ready">
+                          <span className="pulse-indicator" />
+                          RUNNING
+                        </span>
                       )}
+                      {isAsleep && (
+                        <span className="badge badge-queued">
+                          <Clock size={11} />
+                          ASLEEP
+                        </span>
+                      )}
+                      {!isActive && !isAsleep && <StatusBadge status={latest?.status || "QUEUED"} />}
                     </div>
                   </div>
+                </Link>
 
-                  <div className="card-status-pill">
-                    {isActive && (
-                      <span className="badge badge-ready">
-                        <span className="pulse-indicator" />
-                        RUNNING
-                      </span>
-                    )}
-                    {isAsleep && (
-                      <span className="badge badge-queued">
-                        <Clock size={11} />
-                        ASLEEP
-                      </span>
-                    )}
-                    {!isActive && !isAsleep && <StatusBadge status={latest?.status || "QUEUED"} />}
-                  </div>
-                </div>
-
-                {/* Private Mesh Address Pill */}
+                {/* Cloud Deployed Address Pill */}
                 <div className="mesh-address-box">
                   <div className="mesh-address-left">
-                    <Radio size={13} className="text-accent" />
-                    <span className="mesh-address-url mono">{meshUrl}</span>
+                    <Globe size={13} className="text-accent" />
+                    <span className="mesh-address-url mono">{publicUrl.replace(/^https?:\/\//, "")}</span>
                   </div>
-                  <button
-                    onClick={(e) => handleCopy(meshUrl, s.slug, e)}
-                    className="copy-chip-btn"
-                    title="Copy internal mesh address"
-                  >
-                    {copiedSlug === s.slug ? <Check size={12} style={{ color: "#10b981" }} /> : <Copy size={12} />}
-                  </button>
-                </div>
-
-                {/* Resource Allocation & Mode */}
-                <div className="resource-pill-row">
-                  {s.autoSleep ? (
-                    <span className="resource-chip chip-amber">
-                      <Moon size={11} />
-                      <span>Free Tier · 0.1 vCPU</span>
-                    </span>
-                  ) : (
-                    <span className="resource-chip chip-green">
-                      <Zap size={11} />
-                      <span>Dedicated · {s.cpuLimit || 0.5} vCPU / {s.memoryLimit || 512}MB</span>
-                    </span>
-                  )}
-
-                  {s.isPublic ? (
-                    <span className="resource-chip chip-blue">
-                      <Globe size={11} />
-                      <span>Public Ingress</span>
-                    </span>
-                  ) : (
-                    <span className="resource-chip chip-neutral">
-                      <Lock size={11} />
-                      <span>Mesh Only</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Card Footer */}
-                <div className="card-footer-row">
-                  <div className="footer-meta-item">
-                    <GitBranch size={13} />
-                    <span>{s.branch}</span>
-                  </div>
-                  <div className="footer-meta-item">
-                    <Clock size={13} />
-                    <span>
-                      {latest?.createdAt
-                        ? formatDistanceToNow(new Date(latest.createdAt), { addSuffix: true })
-                        : "Never deployed"}
-                    </span>
-                  </div>
-                  <div className="footer-open-hint">
-                    Manage ➔
+                  <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    <button
+                      onClick={(e) => handleCopy(publicUrl, s.slug, e)}
+                      className="copy-chip-btn"
+                      title="Copy deployed endpoint URL"
+                    >
+                      {copiedSlug === s.slug ? <Check size={12} style={{ color: "#10b981" }} /> : <Copy size={12} />}
+                    </button>
+                    {isActive && (
+                      <a
+                        href={publicUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="copy-chip-btn"
+                        title="Open live service in new tab"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                    )}
                   </div>
                 </div>
-              </Link>
+
+                <Link href={`/dashboard/backend/${s.id}`} className="service-card-footer-link">
+                  {/* Resource Allocation & Mode */}
+                  <div className="resource-pill-row">
+                    {s.autoSleep ? (
+                      <span className="resource-chip chip-amber">
+                        <Moon size={11} />
+                        <span>Free Tier · 0.1 vCPU</span>
+                      </span>
+                    ) : (
+                      <span className="resource-chip chip-green">
+                        <Zap size={11} />
+                        <span>Dedicated · {s.cpuLimit || 0.5} vCPU / {s.memoryLimit || 512}MB</span>
+                      </span>
+                    )}
+
+                    {s.isPublic ? (
+                      <span className="resource-chip chip-blue">
+                        <Globe size={11} />
+                        <span>Public Ingress</span>
+                      </span>
+                    ) : (
+                      <span className="resource-chip chip-neutral">
+                        <Lock size={11} />
+                        <span>Mesh Only</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Card Footer */}
+                  <div className="card-footer-row">
+                    <div className="footer-meta-item">
+                      <GitBranch size={13} />
+                      <span>{s.branch}</span>
+                    </div>
+                    <div className="footer-meta-item">
+                      <Clock size={13} />
+                      <span>
+                        {latest?.createdAt
+                          ? formatDistanceToNow(new Date(latest.createdAt), { addSuffix: true })
+                          : "Never deployed"}
+                      </span>
+                    </div>
+                    <div className="footer-open-hint">
+                      Manage ➔
+                    </div>
+                  </div>
+                </Link>
+              </div>
             );
           })}
         </div>

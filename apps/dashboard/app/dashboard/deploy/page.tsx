@@ -80,13 +80,13 @@ export default function SelectDeployTypePage() {
 
             <ul className="deploy-card-bullets">
               <li>
-                <Layers size={14} style={{ color: "#10b981" }} /> Internal mesh discovery (<code>http://slug:port</code>)
+                <Layers size={14} style={{ color: "#10b981" }} /> Public cloud edge ingress with automated routing
               </li>
               <li>
-                <Zap size={14} style={{ color: "#10b981" }} /> 0.1 vCPU Free Tier auto-sleep or Always-On compute
+                <Zap size={14} style={{ color: "#10b981" }} /> Configurable compute allocation & health probes
               </li>
               <li>
-                <Github size={14} style={{ color: "#10b981" }} /> Automatic build worker containerization
+                <Github size={14} style={{ color: "#10b981" }} /> Connect public/private GitHub repo or direct upload
               </li>
             </ul>
           </div>

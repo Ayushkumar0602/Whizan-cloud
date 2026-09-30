@@ -32,7 +32,9 @@ import { toast } from "sonner";
 import Link from "next/link";
 
 export default function McpGuidePage() {
-  const apiUrl = getApiBase();
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_URL.includes("localhost")
+    ? process.env.NEXT_PUBLIC_API_URL
+    : "https://whizan-cloud-service.onrender.com";
   const [activeTab, setActiveTab] = useState<"cursor" | "windsurf" | "vscode" | "claude">("cursor");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);

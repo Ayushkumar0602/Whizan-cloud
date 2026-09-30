@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
-import { getProjectLiveUrl } from "@/lib/domains";
+import { formatDeployedUrl } from "@/lib/domains";
 
 export default function HostingPage() {
   const [list, setList] = useState<ProjectWithLatestDeploy[]>([]);
@@ -48,7 +48,7 @@ export default function HostingPage() {
     <div className="page">
       <PageHeader
         title="Frontend Hosting"
-        subtitle="Zero-configuration deployment pipeline for Next.js, React, and Vite apps with automated SSL and edge caching."
+        subtitle="Global edge hosting pipeline for Next.js, React, and Vite applications with automatic build optimization."
         actions={
           <Link href="/dashboard/projects/new" className="btn btn-primary btn-lg" id="new-project-btn">
             <Plus size={17} /> New Project
@@ -63,7 +63,7 @@ export default function HostingPage() {
             <Globe size={14} className="text-accent" /> Total Sites
           </div>
           <div className="stat-value">{list.length}</div>
-          <div className="stat-sub">Connected GitHub repositories</div>
+          <div className="stat-sub">Connected repositories</div>
         </div>
 
         <div className="stat-card">
@@ -76,19 +76,16 @@ export default function HostingPage() {
 
         <div className="stat-card">
           <div className="stat-label">
-            <Zap size={14} className="text-accent" /> Edge Acceleration
+            <Zap size={14} className="text-accent" /> Edge Routing
           </div>
           <div className="stat-value">Active</div>
           <div className="stat-sub" style={{ color: "var(--success)" }}>
-            Wildcard SSL enabled
+            Wildcard domain ready
           </div>
         </div>
       </div>
 
-      {/* Deployment Pipeline Tracker */}
-      <div style={{ marginBottom: "2rem" }}>
-        <DeployPipeline legend />
-      </div>
+
 
       {/* Search & Filter Bar */}
       <div className="hosting-controls-bar">
@@ -132,47 +129,54 @@ export default function HostingPage() {
           {filtered.map(p => {
             const latest = p.deployments[0];
             const isReady = latest?.status === "READY";
-            const liveUrl = latest?.url || getProjectLiveUrl(p.slug, p.customDomain);
+            const liveUrl = formatDeployedUrl(latest?.url, p.slug, p.customDomain);
 
             return (
-              <Link
+              <div
                 key={p.id}
-                href={`/dashboard/projects/${p.id}`}
                 className="frontend-card"
                 id={`project-${p.id}`}
               >
-                <div className="frontend-card-top">
-                  <div className="frontend-icon-box">
-                    {p.name[0].toUpperCase()}
+                <Link href={`/dashboard/projects/${p.id}`} className="frontend-card-link">
+                  <div className="frontend-card-top">
+                    <div className="frontend-icon-box">
+                      {p.name[0].toUpperCase()}
+                    </div>
+                    <div className="frontend-title-box">
+                      <h3 className="frontend-title">{p.name}</h3>
+                      <div className="frontend-slug mono">/{p.slug}</div>
+                    </div>
+                    {latest && <StatusBadge status={latest.status} />}
                   </div>
-                  <div className="frontend-title-box">
-                    <h3 className="frontend-title">{p.name}</h3>
-                    <div className="frontend-slug mono">/{p.slug}</div>
-                  </div>
-                  {latest && <StatusBadge status={latest.status} />}
-                </div>
 
-                <div className="frontend-meta-row">
-                  <span className="meta-chip">
-                    <GitBranch size={12} /> {p.branch}
-                  </span>
-                  <span className="meta-chip">
-                    <Zap size={12} /> {p.framework}
-                  </span>
-                  <span className="meta-chip">
-                    <Clock size={12} />
-                    {formatDistanceToNow(new Date(p.updatedAt), { addSuffix: true })}
-                  </span>
-                </div>
+                  <div className="frontend-meta-row">
+                    <span className="meta-chip">
+                      <GitBranch size={12} /> {p.branch}
+                    </span>
+                    <span className="meta-chip">
+                      <Zap size={12} /> {p.framework}
+                    </span>
+                    <span className="meta-chip">
+                      <Clock size={12} />
+                      {formatDistanceToNow(new Date(p.updatedAt), { addSuffix: true })}
+                    </span>
+                  </div>
+                </Link>
 
                 {isReady && (
-                  <div className="frontend-url-ribbon">
+                  <a
+                    href={liveUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="frontend-url-ribbon"
+                    title={`Open live site: ${liveUrl}`}
+                  >
                     <Globe size={13} style={{ flexShrink: 0 }} />
                     <span className="frontend-url-text mono">{liveUrl.replace(/^https?:\/\//, "")}</span>
                     <ExternalLink size={12} style={{ flexShrink: 0 }} />
-                  </div>
+                  </a>
                 )}
-              </Link>
+              </div>
             );
           })}
         </div>
@@ -305,8 +309,15 @@ export default function HostingPage() {
           border: 1px solid var(--card-border);
         }
 
+        .frontend-card-link {
+          display: flex;
+          flex-direction: column;
+          text-decoration: none;
+          color: inherit;
+        }
+
         .frontend-url-ribbon {
-          margin-top: auto;
+          margin-top: 0.75rem;
           display: flex;
           align-items: center;
           gap: 0.5rem;
@@ -316,7 +327,14 @@ export default function HostingPage() {
           border-radius: 8px;
           font-size: 0.76rem;
           color: #10b981;
+          text-decoration: none;
           overflow: hidden;
+          transition: all 0.15s ease;
+        }
+        .frontend-url-ribbon:hover {
+          background: rgba(16, 185, 129, 0.16);
+          border-color: rgba(16, 185, 129, 0.35);
+          transform: translateY(-1px);
         }
         .frontend-url-text {
           flex: 1;

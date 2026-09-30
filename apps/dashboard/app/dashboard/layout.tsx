@@ -7,7 +7,7 @@ import { BrandMark } from "@/components/brand";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen, Database, Bot, Sparkles
+  PanelLeftClose, PanelLeftOpen, Database, Sparkles
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -73,7 +73,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  const navSections = [
+  interface NavItem {
+    href: string;
+    icon: any;
+    label: string;
+    match: (p: string) => boolean;
+    badge?: string;
+  }
+
+  interface NavSection {
+    heading: string;
+    items: NavItem[];
+  }
+
+  const navSections: NavSection[] = [
     {
       heading: "Overview",
       items: [
@@ -83,18 +96,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Compute & Apps",
       items: [
-        { href: "/dashboard/opencode",  icon: Bot,         label: "OpenCode Studio",   match: (p: string) => p.startsWith("/dashboard/opencode"), badge: "Local AI" },
-        { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend"),  badge: "Docker" },
-        { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases"), badge: "Managed" },
         { href: "/dashboard/hosting",   icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
-        { href: "/dashboard/services",  icon: Layers,      label: "Cloud Catalog",     match: (p: string) => p === "/dashboard/services" },
+        { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend") },
+        { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases") },
+        { href: "/dashboard/services",  icon: Layers,      label: "Services Catalog",  match: (p: string) => p === "/dashboard/services" },
       ]
     },
     {
       heading: "Platform & Admin",
       items: [
-        { href: "/dashboard/mcp",      icon: Sparkles,    label: "DevOps MCP",        match: (p: string) => p.startsWith("/dashboard/mcp"), badge: "AI Agent" },
-        { href: "/dashboard/admin",    icon: ShieldAlert, label: "Admin Console",     match: (p: string) => p.startsWith("/dashboard/admin") },
+        { href: "/dashboard/mcp",      icon: Sparkles,    label: "DevOps Agent MCP",  match: (p: string) => p.startsWith("/dashboard/mcp") },
+        { href: "/dashboard/admin",    icon: ShieldAlert, label: "Platform Monitor",  match: (p: string) => p.startsWith("/dashboard/admin") },
         { href: "/dashboard/settings", icon: Settings,    label: "Settings",          match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
     }
@@ -120,11 +132,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </div>
 
-        {/* Mesh Status Pill */}
+        {/* Cloud Health Pill */}
         <div className="mesh-indicator-pill">
           <div className="mesh-pulse-dot" />
-          <span className="mesh-pill-text">Mesh: whizan-internal</span>
-          <span className="mesh-pill-tag">ACTIVE</span>
+          <span className="mesh-pill-text">Whizan Cloud</span>
+          <span className="mesh-pill-tag">ONLINE</span>
         </div>
 
         {/* Quick Deploy */}
