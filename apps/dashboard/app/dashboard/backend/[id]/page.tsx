@@ -6,7 +6,8 @@ import Link from "next/link";
 import {
   ArrowLeft, Globe, GitBranch, Play, Terminal, Clock, Server, Trash2,
   Loader2, Key, ExternalLink, Activity, Cpu, Check, Zap, Moon, Copy,
-  ChevronDown, Plus, PanelLeftClose, PanelLeftOpen, FileCode2, ArrowRight, Radio, Sliders
+  ChevronDown, Plus, PanelLeftClose, PanelLeftOpen, FileCode2, ArrowRight, Radio, Sliders,
+  Sparkles, ShieldAlert, ShieldCheck
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -30,10 +31,12 @@ export default function BackendServicePage() {
   const [loading, setLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [analyzingAi, setAnalyzingAi] = useState(false);
 
   // Service configuration editable fields
   const [configOpen, setConfigOpen] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [language, setLanguage] = useState("NODEJS");
   const [rootDir, setRootDir] = useState(".");
   const [installCommand, setInstallCommand] = useState("");
   const [startCommand, setStartCommand] = useState("");
@@ -58,6 +61,7 @@ export default function BackendServicePage() {
     try {
       const s = await services.get(id);
       setService(s);
+      setLanguage(s.language || "NODEJS");
       setRootDir(s.rootDir || ".");
       setInstallCommand(s.installCommand || "");
       setStartCommand(s.startCommand || "");
@@ -82,6 +86,36 @@ export default function BackendServicePage() {
     return () => clearInterval(t);
   }, [service]);
 
+  async function handleRunAiAnalysis() {
+    if (!githubRepoUrl || githubRepoUrl === "direct-upload") {
+      toast.error("Please enter a valid GitHub repository URL first to analyze with AI");
+      return;
+    }
+    setAnalyzingAi(true);
+    try {
+      toast.info("🤖 Gemini 3.5 Flash Lite is inspecting repository...", { duration: 3000 });
+      const res = await services.analyze({
+        githubRepoUrl,
+        branch,
+      });
+      if (!res.success || !res.analysis) throw new Error("Analysis failed");
+      const { analysis } = res;
+      if (!analysis.isDeployable) {
+        toast.error(`🛑 Guardrail Refusal: ${analysis.rejectionReason}`);
+        return;
+      }
+      setLanguage(analysis.language);
+      if (analysis.installCommand) setInstallCommand(analysis.installCommand);
+      if (analysis.startCommand) setStartCommand(analysis.startCommand);
+      if (analysis.recommendedPort !== undefined) setInternalPort(analysis.recommendedPort);
+      toast.success(`✨ Gemini 3.5 Flash Lite detected ${analysis.stack} (${analysis.framework})!`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to analyze repository");
+    } finally {
+      setAnalyzingAi(false);
+    }
+  }
+
   async function handleSaveConfig(redeploy = false) {
     if (!service) return;
     setSavingConfig(true);
@@ -89,6 +123,7 @@ export default function BackendServicePage() {
       const updated = await services.update(service.id, {
         githubRepoUrl: githubRepoUrl.trim() || "direct-upload",
         rootDir: rootDir.trim() || ".",
+        language: language as any,
         installCommand: installCommand.trim(),
         startCommand: startCommand.trim(),
         internalPort: Number(internalPort) || 8000,
@@ -443,7 +478,21 @@ export default function BackendServicePage() {
               {configOpen && (
                 <div className="env-collapse-body">
                   <div className="form-group-item">
-                    <label className="form-label-sm">GitHub Repository URL (Optional)</label>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
+                      <label className="form-label-sm" style={{ margin: 0 }}>GitHub Repository URL (Optional)</label>
+                      {githubRepoUrl && githubRepoUrl !== "direct-upload" && (
+                        <button
+                          type="button"
+                          onClick={handleRunAiAnalysis}
+                          disabled={analyzingAi}
+                          className="btn btn-secondary btn-xs"
+                          style={{ color: "#818cf8", borderColor: "rgba(99, 102, 241, 0.4)", fontSize: "0.72rem", padding: "0.2rem 0.5rem" }}
+                        >
+                          {analyzingAi ? <Loader2 size={11} className="spin-icon" /> : <Sparkles size={11} />}
+                          <span>{analyzingAi ? "Analyzing..." : "✨ AI Inspect (Gemini 3.5)"}</span>
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       className="input mono"
@@ -456,6 +505,21 @@ export default function BackendServicePage() {
                         ? "Currently deployed via Direct Upload (MCP/CLI). Enter a GitHub URL to switch to Git deployment."
                         : "Git clone URL (private repos use authenticated GitHub account). Enter 'direct-upload' to switch back to MCP uploads."}
                     </span>
+                  </div>
+
+                  <div className="form-group-item" style={{ marginTop: "0.6rem" }}>
+                    <label className="form-label-sm">Runtime / Stack</label>
+                    <select
+                      className="input mono"
+                      value={language}
+                      onChange={e => setLanguage(e.target.value)}
+                      style={{ background: "var(--card)", color: "var(--foreground)" }}
+                    >
+                      <option value="NODEJS">Node.js (Express, Fastify, Nest, Koa)</option>
+                      <option value="PYTHON">Python (FastAPI, Flask, Django, Celery)</option>
+                      <option value="GO">Go (Gin, Fiber, Echo, Chi)</option>
+                      <option value="DOCKERFILE">Dockerfile / Polyglot (Rust, Java, PHP, Ruby, Custom)</option>
+                    </select>
                   </div>
 
                   <div className="form-group-item" style={{ marginTop: "0.6rem" }}>

@@ -77,8 +77,71 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   // POST /api/services/analyze (AI Repository Analyzer with Gemini 3.5 Flash Lite)
   fastify.post("/analyze", async (request, reply) => {
     const input = (request.body as any) || {};
+    let { githubRepoUrl, branch = "main", readme, fileList, packageJson, requirementsTxt, dockerfile, envExample, manifestFiles } = input;
+
+    // Automatically inspect remote GitHub repositories
+    if (githubRepoUrl && githubRepoUrl.includes("github.com")) {
+      try {
+        const cleanUrl = githubRepoUrl.replace(/\.git$/, "").replace(/\/+$/, "");
+        const match = cleanUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+        if (match) {
+          const [, owner, repo] = match;
+          const headers: Record<string, string> = { "User-Agent": "Whizan-Cloud-Service" };
+          if (process.env.GITHUB_TOKEN) {
+            headers["Authorization"] = `token ${process.env.GITHUB_TOKEN}`;
+          }
+
+          const branchesToTry = [branch, "main", "master"];
+          let foundBranch = branch;
+
+          for (const b of branchesToTry) {
+            const check = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${b}/README.md`, { headers }).catch(() => null);
+            if (check && check.ok) {
+              foundBranch = b;
+              if (!readme) readme = await check.text();
+              break;
+            }
+          }
+
+          if (!readme) {
+            const rstCheck = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${foundBranch}/README.rst`, { headers }).catch(() => null);
+            if (rstCheck && rstCheck.ok) readme = await rstCheck.text();
+          }
+
+          const [pkgRes, reqRes, dockRes, envRes, treeRes] = await Promise.all([
+            !packageJson ? fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${foundBranch}/package.json`, { headers }).catch(() => null) : null,
+            !requirementsTxt ? fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${foundBranch}/requirements.txt`, { headers }).catch(() => null) : null,
+            !dockerfile ? fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${foundBranch}/Dockerfile`, { headers }).catch(() => null) : null,
+            !envExample ? fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${foundBranch}/.env.example`, { headers }).catch(() => null) : null,
+            !fileList ? fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/${foundBranch}?recursive=1`, { headers }).catch(() => null) : null,
+          ]);
+
+          if (pkgRes && pkgRes.ok) packageJson = await pkgRes.text();
+          if (reqRes && reqRes.ok) requirementsTxt = await reqRes.text();
+          if (dockRes && dockRes.ok) dockerfile = await dockRes.text();
+          if (envRes && envRes.ok) envExample = await envRes.text();
+          if (treeRes && treeRes.ok) {
+            const treeData: any = await treeRes.json();
+            if (Array.isArray(treeData?.tree)) {
+              fileList = treeData.tree.map((t: any) => t.path);
+            }
+          }
+        }
+      } catch (ghErr: any) {
+        console.warn(`[analyze] Failed to fetch remote github files: ${ghErr.message}`);
+      }
+    }
+
     try {
-      const result = await analyzeRepositoryWithAI(input);
+      const result = await analyzeRepositoryWithAI({
+        readme,
+        fileList,
+        packageJson,
+        requirementsTxt,
+        dockerfile,
+        envExample,
+        manifestFiles,
+      });
       return { success: true, analysis: result };
     } catch (err: any) {
       return reply.code(500).send({

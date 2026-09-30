@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
-import { services, type ServiceWithLatestDeploy } from "@/lib/api";
+import { services, type ServiceWithLatestDeploy, type AiAnalysisResponse } from "@/lib/api";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus,
   Server,
@@ -19,7 +20,13 @@ import {
   Check,
   Radio,
   Zap,
-  Moon
+  Moon,
+  Sparkles,
+  ShieldAlert,
+  ShieldCheck,
+  AlertTriangle,
+  Loader2,
+  ArrowRight
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -27,11 +34,19 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 
 export default function BackendHostingPage() {
+  const router = useRouter();
   const [list, setList] = useState<ServiceWithLatestDeploy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "ASLEEP">("ALL");
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  // AI Inspector State
+  const [aiRepoUrl, setAiRepoUrl] = useState("");
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiResult, setAiResult] = useState<AiAnalysisResponse["analysis"] | null>(null);
+  const [aiRefused, setAiRefused] = useState(false);
+  const [aiRefusalReason, setAiRefusalReason] = useState<string | null>(null);
 
   useEffect(() => {
     services.list()
@@ -47,6 +62,41 @@ export default function BackendHostingPage() {
     setCopiedSlug(slug);
     toast.success("Mesh URL copied to clipboard");
     setTimeout(() => setCopiedSlug(null), 2000);
+  }
+
+  async function handleRunInspector(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    const url = aiRepoUrl.trim();
+    if (!url) {
+      toast.error("Please enter a GitHub repository URL to analyze");
+      return;
+    }
+    setAiAnalyzing(true);
+    setAiRefused(false);
+    setAiRefusalReason(null);
+    setAiResult(null);
+
+    try {
+      toast.info("🤖 Gemini 3.5 Flash Lite is inspecting repository...", { duration: 3000 });
+      const res = await services.analyze({ githubRepoUrl: url, branch: "main" });
+      if (!res.success || !res.analysis) throw new Error("Failed to analyze repository");
+
+      const { analysis } = res;
+      setAiResult(analysis);
+      if (!analysis.isDeployable) {
+        setAiRefused(true);
+        setAiRefusalReason(analysis.rejectionReason || "This project is not supported by Whizan Cloud.");
+        toast.error("🛑 Blocked by System Guardrail: Project cannot be deployed.");
+      } else {
+        setAiRefused(false);
+        setAiRefusalReason(null);
+        toast.success(`✨ Gemini 3.5 Flash Lite verified ${analysis.stack} (${analysis.framework})!`);
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to analyze repository");
+    } finally {
+      setAiAnalyzing(false);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -75,11 +125,16 @@ export default function BackendHostingPage() {
     <div className="page">
       <PageHeader
         title="Backend Services"
-        subtitle="Deploy long-running Node.js, Python, or Go APIs in isolated Docker containers with 0.1 vCPU Free Tier & private service mesh discovery."
+        subtitle="Deploy backend APIs, microservices, and background queue workers in any language (Node.js, Python, Go, Rust, Java, Dockerfile) with Gemini 3.5 Flash Lite AI analysis & 0.1 vCPU Free Tier."
         actions={
-          <Link href="/dashboard/backend/new" className="btn btn-primary btn-lg" id="new-service-btn">
-            <Plus size={17} /> New Service
-          </Link>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.76rem", color: "#818cf8", background: "rgba(99, 102, 241, 0.12)", border: "1px solid rgba(99, 102, 241, 0.25)", padding: "0.35rem 0.75rem", borderRadius: "999px", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+              <Zap size={13} style={{ color: "#818cf8" }} /> Gemini 3.5 Flash Lite Guardrails Active
+            </span>
+            <Link href="/dashboard/backend/new" className="btn btn-primary btn-lg" id="new-service-btn">
+              <Plus size={17} /> New Service
+            </Link>
+          </div>
         }
       />
 
@@ -109,6 +164,127 @@ export default function BackendHostingPage() {
             Sub-millisecond latency
           </div>
         </div>
+      </div>
+
+      {/* AI Repository Analyzer & Guardrail Inspector Banner */}
+      <div className="card ai-inspector-card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(99, 102, 241, 0.35)", background: "radial-gradient(ellipse at top left, rgba(99, 102, 241, 0.08) 0%, rgba(15, 23, 42, 0.4) 100%)", padding: "1.25rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem", marginBottom: "0.85rem" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Sparkles size={17} style={{ color: "#818cf8" }} />
+              <h3 style={{ fontSize: "1rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
+                AI Repository Analyzer &amp; System Guardrails
+              </h3>
+              <span style={{ fontSize: "0.7rem", color: "#a5b4fc", background: "rgba(99, 102, 241, 0.18)", padding: "0.15rem 0.5rem", borderRadius: "999px", border: "1px solid rgba(99, 102, 241, 0.3)", fontWeight: 600 }}>
+                gemini-3.5-flash-lite
+              </span>
+            </div>
+            <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0.25rem 0 0 0" }}>
+              Verify stack independence, auto-detect framework &amp; test system guardrails for any GitHub repo before deployment.
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleRunInspector} style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+          <input
+            type="text"
+            className="input mono"
+            placeholder="Paste GitHub URL: https://github.com/owner/repository"
+            value={aiRepoUrl}
+            onChange={e => setAiRepoUrl(e.target.value)}
+            style={{ flex: 1, minWidth: "260px", background: "rgba(15, 23, 42, 0.6)" }}
+          />
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={aiAnalyzing || !aiRepoUrl.trim()}
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", whiteSpace: "nowrap" }}
+          >
+            {aiAnalyzing ? <Loader2 size={15} className="spin-icon" /> : <Sparkles size={15} />}
+            <span>{aiAnalyzing ? "Inspecting with Gemini..." : "✨ Inspect Repository"}</span>
+          </button>
+        </form>
+
+        {/* Guardrail Refusal Result */}
+        {aiRefused && aiRefusalReason && (
+          <div style={{ marginTop: "1rem", padding: "1rem", borderRadius: "8px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.35)", display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
+            <ShieldAlert size={22} style={{ color: "#ef4444", flexShrink: 0, marginTop: "2px" }} />
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#f87171" }}>
+                  🛑 Non-Deployable Project Blocked by System Guardrail
+                </span>
+                <span style={{ fontSize: "0.68rem", background: "rgba(239, 68, 68, 0.2)", color: "#fca5a5", padding: "0.15rem 0.45rem", borderRadius: "4px", fontWeight: 600 }}>
+                  REFUSED
+                </span>
+              </div>
+              <p style={{ margin: "0.4rem 0 0.5rem 0", fontSize: "0.84rem", color: "#fecaca", lineHeight: 1.45 }}>
+                {aiRefusalReason}
+              </p>
+              <div style={{ fontSize: "0.74rem", color: "rgba(254, 202, 202, 0.8)", lineHeight: 1.4 }}>
+                <strong>Whizan Cloud Policy:</strong> We host backend APIs, web microservices, and background queue workers. Desktop GUI clients (PyQt, Tkinter, Electron client), native mobile apps, and one-shot CLI scripts are not deployable.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Guardrail Passed Result */}
+        {!aiRefused && aiResult && aiResult.isDeployable && (
+          <div style={{ marginTop: "1rem", padding: "1rem", borderRadius: "8px", background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.35)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "0.75rem" }}>
+              <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+                <ShieldCheck size={22} style={{ color: "#10b981", flexShrink: 0, marginTop: "2px" }} />
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#34d399" }}>
+                      ✅ Verified Deployable Stack: {aiResult.stack}
+                    </span>
+                    <span style={{ fontSize: "0.72rem", background: "rgba(16, 185, 129, 0.18)", color: "#6ee7b7", padding: "0.15rem 0.5rem", borderRadius: "4px", fontWeight: 600 }}>
+                      {aiResult.framework}
+                    </span>
+                    {aiResult.isWorker && (
+                      <span style={{ fontSize: "0.72rem", background: "rgba(168, 85, 247, 0.18)", color: "#c084fc", padding: "0.15rem 0.5rem", borderRadius: "4px", fontWeight: 600 }}>
+                        WORKER
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: "0.35rem 0 0.5rem 0", fontSize: "0.82rem", color: "var(--foreground)", opacity: 0.9 }}>
+                    {aiResult.explanation}
+                  </p>
+                  <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.76rem", color: "var(--muted)" }}>
+                    <span>Language: <strong className="mono" style={{ color: "var(--foreground)" }}>{aiResult.language}</strong></span>
+                    <span>Port: <strong className="mono" style={{ color: "var(--foreground)" }}>{aiResult.recommendedPort}</strong></span>
+                    <span>Start: <code className="mono" style={{ color: "#38bdf8" }}>{aiResult.startCommand}</code></span>
+                  </div>
+                </div>
+              </div>
+
+              <Link
+                href={`/dashboard/backend/new?repo=${encodeURIComponent(aiRepoUrl.trim())}`}
+                className="btn btn-primary btn-sm"
+                style={{ alignSelf: "center", gap: "0.4rem" }}
+              >
+                <span>🚀 Deploy to Whizan Cloud</span>
+                <ArrowRight size={13} />
+              </Link>
+            </div>
+
+            {aiResult.requiredEnvVars && aiResult.requiredEnvVars.length > 0 && (
+              <div style={{ marginTop: "0.85rem", paddingTop: "0.75rem", borderTop: "1px dashed rgba(16, 185, 129, 0.25)" }}>
+                <span style={{ fontSize: "0.74rem", fontWeight: 600, color: "#f59e0b", display: "block", marginBottom: "0.35rem" }}>
+                  ⚠️ Required Environment Variables Detected:
+                </span>
+                <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                  {aiResult.requiredEnvVars.map(v => (
+                    <span key={v.name} className="mono" style={{ fontSize: "0.72rem", padding: "0.15rem 0.45rem", borderRadius: "4px", background: "rgba(245, 158, 11, 0.12)", color: "#fbbf24", border: "1px solid rgba(245, 158, 11, 0.25)" }}>
+                      {v.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -209,7 +385,16 @@ export default function BackendHostingPage() {
                   </div>
                   <div className="card-title-meta">
                     <h3 className="card-title-text">{s.name}</h3>
-                    <div className="card-lang-tag mono">{s.language}</div>
+                    <div style={{ display: "flex", gap: "0.35rem", alignItems: "center", flexWrap: "wrap" }}>
+                      <div className="card-lang-tag mono" style={s.language === "DOCKERFILE" ? { background: "rgba(14, 165, 233, 0.12)", color: "#0ea5e9", borderColor: "rgba(14, 165, 233, 0.3)" } : undefined}>
+                        {s.language === "DOCKERFILE" ? "DOCKERFILE / POLYGLOT" : s.language}
+                      </div>
+                      {s.internalPort === 0 && (
+                        <div className="card-lang-tag mono" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#c084fc", borderColor: "rgba(168, 85, 247, 0.3)" }}>
+                          WORKER
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="card-status-pill">
