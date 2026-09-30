@@ -19,7 +19,12 @@ export function startAnalyticsProcessor() {
       const eventsRaw = await redisClient.lrange("analytics:buffer", 0, batchSize - 1);
       if (eventsRaw.length === 0) return;
 
-      const events: AnalyticsEvent[] = eventsRaw.map(e => JSON.parse(e));
+      const events: AnalyticsEvent[] = [];
+      for (const raw of eventsRaw) {
+        try {
+          events.push(JSON.parse(raw));
+        } catch {}
+      }
 
       // Group by Project + Date
       const aggregated = new Map<string, { pageViews: number; bytesSent: number; uniqueIps: Set<string> }>();
@@ -38,39 +43,49 @@ export function startAnalyticsProcessor() {
           stat.pageViews += 1;
         }
         
-        stat.bytesSent += event.bytesSent;
+        const rawBytes = Number(event.bytesSent);
+        const safeBytes = !isNaN(rawBytes) && rawBytes > 0 ? Math.floor(rawBytes) : 0;
+        stat.bytesSent += safeBytes;
         if (event.ip && isPageView) {
           stat.uniqueIps.add(event.ip);
         }
       }
 
-      // Upsert into Postgres
+      // Upsert into Postgres with safe boundary handling
       for (const [key, stat] of aggregated.entries()) {
         const [projectId, dateStr] = key.split("|");
         const date = new Date(dateStr);
         
         if (isNaN(date.getTime())) continue;
 
-        await prisma.projectAnalytics.upsert({
-          where: {
-            projectId_date: { projectId, date }
-          },
-          update: {
-            pageViews: { increment: stat.pageViews },
-            bandwidth: { increment: stat.bytesSent },
-            visitors: { increment: stat.uniqueIps.size }
-          },
-          create: {
-            projectId,
-            date,
-            pageViews: stat.pageViews,
-            bandwidth: stat.bytesSent,
-            visitors: stat.uniqueIps.size,
-          }
-        });
+        try {
+          // Clamp to signed 32-bit integer range to avoid Postgres 'integer out of range' (code 22003)
+          const safeIncrement = Math.max(0, Math.min(2_000_000_000, Math.floor(stat.bytesSent)));
+          const safePageViews = Math.max(0, Math.min(2_000_000_000, Math.floor(stat.pageViews)));
+
+          await prisma.projectAnalytics.upsert({
+            where: {
+              projectId_date: { projectId, date }
+            },
+            update: {
+              pageViews: { increment: safePageViews },
+              bandwidth: { increment: safeIncrement },
+              visitors: { increment: stat.uniqueIps.size }
+            },
+            create: {
+              projectId,
+              date,
+              pageViews: safePageViews,
+              bandwidth: safeIncrement,
+              visitors: stat.uniqueIps.size,
+            }
+          });
+        } catch (dbErr: any) {
+          console.error(`[Analytics] Failed to upsert stats for project ${projectId}:`, dbErr?.message || dbErr);
+        }
       }
 
-      // Remove processed events from the list
+      // Always remove processed events from the list
       await redisClient.ltrim("analytics:buffer", eventsRaw.length, -1);
       
     } catch (err) {
