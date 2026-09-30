@@ -86,7 +86,7 @@ export function useAdminStats(autoRefresh = true) {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchStats, 3_000);
+    const interval = setInterval(fetchStats, 8_000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 

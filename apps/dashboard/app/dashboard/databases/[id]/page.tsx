@@ -106,14 +106,14 @@ export default function DatabaseDetailPage() {
     loadData();
     const interval = setInterval(() => {
       loadData();
-    }, 4000);
+    }, 8000);
     return () => clearInterval(interval);
   }, [id]);
 
   useEffect(() => {
     if (activeTab === "metrics") {
       loadMetrics();
-      const interval = setInterval(loadMetrics, 2500);
+      const interval = setInterval(loadMetrics, 5000);
       return () => clearInterval(interval);
     }
   }, [id, activeTab]);

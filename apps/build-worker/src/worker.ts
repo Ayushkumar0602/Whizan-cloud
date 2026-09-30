@@ -993,24 +993,7 @@ const statsInterval = setInterval(async () => {
             }
 
             const serviceId = c.Labels?.["serviceId"];
-            if (serviceId) {
-              const metricPoint = {
-                timestamp: new Date().toISOString(),
-                cpuPercent: Number(cpuPercent.toFixed(2)),
-                memUsageMB: Number(memUsageMB.toFixed(2)),
-                memLimitMB: Number(memLimitMB.toFixed(2)),
-                memPercent: Number(memPercent.toFixed(2)),
-                rxBytes,
-                txBytes,
-                rxRateKbps: 0,
-                txRateKbps: 0,
-                pids: stats.pids_stats?.current || 0,
-                pidsLimit: stats.pids_stats?.limit || 128,
-              };
-              await redisPub.lpush(`metrics:service:${serviceId}`, JSON.stringify(metricPoint)).catch(() => {});
-              await redisPub.ltrim(`metrics:service:${serviceId}`, 0, 59).catch(() => {});
-              await redisPub.expire(`metrics:service:${serviceId}`, 3600).catch(() => {});
-            }
+            // Note: Service container metrics are handled by metrics-collector.ts to avoid duplicate Redis writes
           } catch (err) {}
         }
 
@@ -1344,10 +1327,14 @@ const statsInterval = setInterval(async () => {
       const defaultWorkerLog = `[${new Date().toISOString()}] Local build-worker active on ${os.hostname()} (${os.platform()})\n[BullMQ] Worker listening for build and deployment jobs.\n[Docker] Connected to Docker socket.\n[Status] Operational`;
       const defaultRouterLog = `[${new Date().toISOString()}] Local edge-router active on port 8080.\n[Status] Operational`;
 
-      await redisPub.set("vm:logs:worker:out", workerOut.trim() || defaultWorkerLog, "EX", 60);
-      await redisPub.set("vm:logs:worker:err", workerErr.trim() || "No worker error logs recorded.", "EX", 60);
-      await redisPub.set("vm:logs:router:out", routerOut.trim() || defaultRouterLog, "EX", 60);
-      await redisPub.set("vm:logs:router:err", routerErr.trim() || "No edge router error logs recorded.", "EX", 60);
+      if (redisPub.status === "ready") {
+        const pipe = redisPub.pipeline();
+        pipe.set("vm:logs:worker:out", workerOut.trim() || defaultWorkerLog, "EX", 120);
+        pipe.set("vm:logs:worker:err", workerErr.trim() || "No worker error logs recorded.", "EX", 120);
+        pipe.set("vm:logs:router:out", routerOut.trim() || defaultRouterLog, "EX", 120);
+        pipe.set("vm:logs:router:err", routerErr.trim() || "No edge router error logs recorded.", "EX", 120);
+        await pipe.exec().catch(() => {});
+      }
     } catch {}
 
     const stats = {
@@ -1373,14 +1360,14 @@ const statsInterval = setInterval(async () => {
     };
 
     if (redisPub.status === "ready") {
-      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 15);
+      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 45);
     }
   } catch (err: any) {
     if (!err?.message?.includes("Connection is closed")) {
       console.warn("[Stats] Notice:", err?.message || err);
     }
   }
-}, 3_000);
+}, 15_000);
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 

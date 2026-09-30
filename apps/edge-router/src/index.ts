@@ -28,11 +28,64 @@ interface DeploymentInfo {
   deploymentId: string;
 }
 
-async function lookupDeployment(slug: string): Promise<DeploymentInfo | null> {
-  const raw = await redis.get(`deployment:${slug}`);
-  if (!raw) return null;
-  return JSON.parse(raw);
+// ── In-Memory Deployment Cache (Prevents hammering Upstash on every asset request) ──
+interface CachedDeployment {
+  info: DeploymentInfo | null;
+  timestamp: number;
 }
+const deploymentCache = new Map<string, CachedDeployment>();
+const DEPLOYMENT_CACHE_TTL = 15_000; // 15 seconds
+
+async function lookupDeployment(slug: string): Promise<DeploymentInfo | null> {
+  const cached = deploymentCache.get(slug);
+  const now = Date.now();
+  if (cached && (now - cached.timestamp < DEPLOYMENT_CACHE_TTL)) {
+    return cached.info;
+  }
+  const raw = await redis.get(`deployment:${slug}`);
+  const info: DeploymentInfo | null = raw ? JSON.parse(raw) : null;
+  deploymentCache.set(slug, { info, timestamp: now });
+  return info;
+}
+
+function invalidateDeploymentCache(slug: string) {
+  deploymentCache.delete(slug);
+}
+
+// ── Throttled Access Time Tracking (Scale-to-zero idle detection) ────────────
+const lastAccessMap = new Map<string, number>();
+function trackAccess(deploymentId: string) {
+  const now = Date.now();
+  const last = lastAccessMap.get(deploymentId) || 0;
+  // Scale-to-zero threshold is 10-20 minutes, so updating Redis once every 60s is plenty
+  if (now - last > 60_000) {
+    lastAccessMap.set(deploymentId, now);
+    redis.set(`access:${deploymentId}`, now).catch(() => {});
+  }
+}
+
+// ── Buffered In-Memory Analytics (Batches writes to prevent Redis overload) ──
+let analyticsBuffer: any[] = [];
+function bufferAnalyticsEvent(event: any) {
+  // Only track HTML/page views, ignore static files (.css, .js, .png, etc.)
+  const isPageView = !event.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|map|webp|avif)$/i);
+  if (!isPageView) return;
+
+  analyticsBuffer.push(event);
+  if (analyticsBuffer.length >= 25) {
+    flushAnalytics();
+  }
+}
+
+function flushAnalytics() {
+  if (analyticsBuffer.length === 0) return;
+  const batch = analyticsBuffer.splice(0, 50);
+  const strings = batch.map((e) => JSON.stringify(e));
+  redis.rpush("analytics:buffer", ...strings).catch(() => {});
+}
+
+// Periodic flush every 30 seconds
+setInterval(flushAnalytics, 30_000);
 
 // ─── Proxy ───────────────────────────────────────────────────────────────────
 
@@ -55,10 +108,12 @@ proxy.on("error", (err, req, res) => {
     slug = host.replace(/:.*$/, "");
   }
 
+  // Invalidate cache immediately on proxy error
+  invalidateDeploymentCache(slug);
+
   // Look up deployment ID from Redis and trigger a wakeup
-  redis.get(`deployment:${slug}`).then(async raw => {
-    if (raw) {
-      const dep = JSON.parse(raw);
+  lookupDeployment(slug).then(async (dep) => {
+    if (dep) {
       console.log(`[Router] Container missing for ${slug} (proxy error). Triggering wakeup...`);
       const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 20, "NX").catch(() => null);
       if (acquiredLock) {
@@ -127,8 +182,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Track access time for scale-to-zero idle detection
-  redis.set(`access:${deployment.deploymentId}`, Date.now()).catch(() => {});
+  // Track access time for scale-to-zero idle detection (throttled to once per 60s per deployment)
+  trackAccess(deployment.deploymentId);
+  (req as any).__deploymentInfo = deployment;
 
   const { type, staticDir, containerPort } = deployment;
   const requestPath = req.url || "/";
@@ -153,7 +209,7 @@ const server = http.createServer(async (req, res) => {
         bytesSent,
         ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "0.0.0.0",
       };
-      redis.lpush("analytics:buffer", JSON.stringify(event)).catch(() => {});
+      bufferAnalyticsEvent(event);
     });
     return;
   }
@@ -227,19 +283,17 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
   proxyRes.on("data", (chunk) => { bytesSent += chunk.length; });
 
   proxyRes.on("end", () => {
-    redis.get(`deployment:${slug}`).then(raw => {
-      if (raw) {
-        const dep = JSON.parse(raw);
-        const event = {
-          projectId: dep.projectId,
-          date: new Date().toISOString().split("T")[0],
-          path: req.url || "/",
-          bytesSent,
-          ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "0.0.0.0",
-        };
-        redis.lpush("analytics:buffer", JSON.stringify(event)).catch(() => {});
-      }
-    }).catch(() => {});
+    const dep: any = (req as any).__deploymentInfo || deploymentCache.get(slug)?.info;
+    if (dep && dep.projectId) {
+      const event = {
+        projectId: dep.projectId,
+        date: new Date().toISOString().split("T")[0],
+        path: req.url || "/",
+        bytesSent,
+        ip: req.headers["x-forwarded-for"] || req.socket.remoteAddress || "0.0.0.0",
+      };
+      bufferAnalyticsEvent(event);
+    }
   });
 });
 
