@@ -114,8 +114,9 @@ proxy.on("error", (err, req, res) => {
   // Look up deployment ID from Redis and trigger a wakeup
   lookupDeployment(slug).then(async (dep) => {
     if (dep) {
+      if (dep.type === "static") return; // Static deployments are file-based and never run proxy containers
       console.log(`[Router] Container missing for ${slug} (proxy error). Triggering wakeup...`);
-      const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 20, "NX").catch(() => null);
+      const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 30, "NX").catch(() => null);
       if (acquiredLock) {
         redis.publish("wakeup", JSON.stringify({
           slug,

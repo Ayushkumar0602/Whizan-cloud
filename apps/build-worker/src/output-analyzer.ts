@@ -24,8 +24,26 @@ export async function analyzeOutput(
   const exists = (rel: string) => fs.existsSync(path.join(targetDir, rel));
   const relToBuild = (rel: string) => (cleanRootDir ? path.posix.join(cleanRootDir, rel) : rel);
 
-  // ── Next.js ──────────────────────────────────────────────────────────────
-  if (framework === "NEXTJS" || exists(".next")) {
+  // ── Explicit outputDir if specified and exists (e.g. "dist", "build", "out") ──
+  if (outputDir && outputDir !== ".next" && exists(outputDir)) {
+    return { type: "static", staticDir: relToBuild(outputDir) };
+  }
+
+  // ── Vite / Create React App / Astro (Strictly Static by default) ────────────
+  if (framework === "VITE" || framework === "REACT") {
+    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
+    if (exists("build")) return { type: "static", staticDir: relToBuild("build") };
+  }
+
+  if (framework === "ASTRO") {
+    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
+  }
+
+  // ── Next.js (Only if framework is NEXTJS or standalone/server artifacts exist) ──
+  const isExplicitNext = framework === "NEXTJS";
+  const hasNextBuildArtifacts = exists(".next/server") || exists(".next/standalone");
+
+  if (isExplicitNext || (framework === "CUSTOM" && hasNextBuildArtifacts) || (!["VITE", "REACT", "ASTRO"].includes(framework) && hasNextBuildArtifacts)) {
     // next build --output=standalone produces .next/standalone/
     if (exists(".next/standalone")) {
       const hasStaticAssets = exists(".next/static");
@@ -41,7 +59,7 @@ export async function analyzeOutput(
       };
     }
 
-    // next export or static-only: produces /out directory or custom static output
+    // next export or static-only: produces /out directory
     if (exists("out")) {
       return { type: "static", staticDir: relToBuild("out") };
     }
@@ -56,23 +74,7 @@ export async function analyzeOutput(
     }
   }
 
-  // ── Check explicit outputDir if provided ──────────────────────────────────
-  if (outputDir && outputDir !== ".next" && exists(outputDir)) {
-    return { type: "static", staticDir: relToBuild(outputDir) };
-  }
-
-  // ── Vite / Create React App ───────────────────────────────────────────────
-  if (framework === "VITE" || framework === "REACT") {
-    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
-    if (exists("build")) return { type: "static", staticDir: relToBuild("build") };
-  }
-
-  // ── Astro ────────────────────────────────────────────────────────────────
-  if (framework === "ASTRO") {
-    if (exists("dist")) return { type: "static", staticDir: relToBuild("dist") };
-  }
-
-  // ── Generic fallback ─────────────────────────────────────────────────────
+  // ── Generic fallback for static directories ───────────────────────────────
   for (const dir of ["dist", "build", "out", "public"]) {
     if (exists(dir)) return { type: "static", staticDir: relToBuild(dir) };
   }

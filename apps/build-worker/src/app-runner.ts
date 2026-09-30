@@ -90,7 +90,7 @@ export class AppRunner {
           [exposedPortKey]: [{ HostPort: String(port) }],
         },
         Memory: 512 * 1024 * 1024, // 512 MB for running web app
-        RestartPolicy: { Name: "unless-stopped" },
+        RestartPolicy: { Name: "on-failure", MaximumRetryCount: 3 },
         NetworkMode: "whizan-internal-network", // Join the internal service mesh
       },
     });
@@ -104,25 +104,33 @@ export class AppRunner {
     });
 
     // Wait for the app to be ready (health check)
-    await this.waitForReady(port);
+    await this.waitForReady(container, port);
 
     return port;
   }
 
   /**
    * Stops and removes the container for a given deployment.
+   * Cleans up both memory map and any live Docker containers.
    */
   async stopApp(deploymentId: string): Promise<void> {
-    const app = this.runningApps.get(deploymentId);
-    if (!app) return;
-
+    const shortId = deploymentId.slice(0, 8);
     try {
-      const container = docker.getContainer(app.containerId);
-      await container.stop({ t: 5 }); // 5 second grace period
-      await container.remove();
-    } catch {
-      // Container may already be gone
-    }
+      const containers = await docker.listContainers({ all: true }).catch(() => []);
+      const matches = containers.filter((c: any) =>
+        c.Labels?.["deploymentId"] === deploymentId ||
+        c.Names?.some((n: string) => n.includes(`app-${shortId}`))
+      );
+      for (const info of matches) {
+        try {
+          const container = docker.getContainer(info.Id);
+          if (info.State === "running" || info.State === "restarting") {
+            await container.stop({ t: 2 }).catch(() => {});
+          }
+          await container.remove({ force: true }).catch(() => {});
+        } catch {}
+      }
+    } catch {}
 
     this.runningApps.delete(deploymentId);
   }
@@ -143,13 +151,26 @@ export class AppRunner {
 
   /**
    * Polls the SSR container's port until it starts accepting connections.
+   * If the container crashes or exits prematurely, fails fast and extracts logs.
    */
   private async waitForReady(
+    container: Docker.Container,
     port: number,
-    timeoutMs = 30_000
+    timeoutMs = 20_000
   ): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+      // Check if container died or failed to run
+      try {
+        const inspect = await container.inspect();
+        if (!inspect.State.Running && inspect.State.ExitCode !== 0) {
+          const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 20 }).catch(() => "");
+          throw new Error(`Web container exited unexpectedly with code ${inspect.State.ExitCode}: ${logsBuffer.toString()}`);
+        }
+      } catch (err: any) {
+        if (err.message?.includes("exited unexpectedly")) throw err;
+      }
+
       const ready = await new Promise<boolean>((resolve) => {
         const socket = net.connect(port, "127.0.0.1");
         socket.on("connect", () => { socket.destroy(); resolve(true); });
@@ -158,6 +179,6 @@ export class AppRunner {
       if (ready) return;
       await new Promise((r) => setTimeout(r, 500));
     }
-    throw new Error(`App on port ${port} did not become ready within ${timeoutMs}ms`);
+    throw new Error(`Web application on port ${port} did not become ready within ${timeoutMs / 1000}s`);
   }
 }
