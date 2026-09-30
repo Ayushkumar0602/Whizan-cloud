@@ -29,10 +29,60 @@ export class AppRunner {
     serverEntry?: string,
     rootDir?: string,
     customImage?: string,
-    internalPort: number = 3000
+    internalPort: number = 3000,
+    slug?: string
   ): Promise<number> {
-    // Stop any old container for this deployment
-    await this.stopApp(deploymentId);
+    const shortId = deploymentId.slice(0, 8);
+    const containerName = slug ? `app-${slug}` : `app-${shortId}`;
+    const exposedPortKey = `${internalPort}/tcp`;
+
+    // 1. Check if a container with this deterministic name already exists in Docker
+    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+    const existing = allContainers.find((c) =>
+      c.Names?.some((n) => n === `/${containerName}` || n === containerName) ||
+      c.Labels?.["deploymentId"] === deploymentId ||
+      (slug && c.Labels?.["slug"] === slug)
+    );
+
+    if (existing) {
+      const container = docker.getContainer(existing.Id);
+      const inspect = await container.inspect().catch(() => null);
+
+      if (inspect) {
+        const existingHostPort =
+          inspect.NetworkSettings?.Ports?.[exposedPortKey]?.[0]?.HostPort ||
+          inspect.HostConfig?.PortBindings?.[exposedPortKey]?.[0]?.HostPort;
+
+        // If already running and healthy, reuse instantly
+        if (inspect.State?.Running && existingHostPort) {
+          const port = parseInt(existingHostPort, 10);
+          console.log(`[AppRunner] Reusing already running healthy container ${containerName} on port ${port}`);
+          this.runningApps.set(deploymentId, { containerId: existing.Id, port, deploymentId });
+          return port;
+        }
+
+        // Fast-path cold wake: if container is just stopped (from scale-to-zero), start it in ~100ms
+        if (!inspect.State?.Running && !inspect.State?.Restarting && existingHostPort) {
+          const port = parseInt(existingHostPort, 10);
+          console.log(`[AppRunner] Fast-waking stopped container ${containerName} on port ${port}...`);
+          try {
+            await container.start();
+            await this.waitForReady(container, port);
+            this.runningApps.set(deploymentId, { containerId: existing.Id, port, deploymentId });
+            return port;
+          } catch (startErr: any) {
+            console.warn(`[AppRunner] Fast wake failed for ${containerName} (${startErr.message}), recreating...`);
+          }
+        }
+
+        // If corrupted, dead, or couldn't restart cleanly, force remove before recreation
+        await container.stop({ t: 2 }).catch(() => {});
+        await container.remove({ force: true }).catch(() => {});
+      }
+    }
+
+    // 2. Stop any remaining stale containers for this deployment
+    await this.stopApp(deploymentId, slug);
 
     const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
     const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
@@ -71,16 +121,15 @@ export class AppRunner {
       ? []
       : [`${path.resolve(buildDir)}:/app:ro`];
 
-    const exposedPortKey = `${internalPort}/tcp`;
-
     const container = await docker.createContainer({
-      name: `app-${deploymentId.slice(0, 8)}-${Date.now().toString(36)}`,
+      name: containerName,
       Image: image,
       Cmd: cmd,
       WorkingDir: customImage ? undefined : workingDir,
       Env: env,
       Labels: {
         deploymentId,
+        slug: slug || "",
         managedBy: "whizan-worker",
       },
       ExposedPorts: { [exposedPortKey]: {} },
@@ -113,13 +162,15 @@ export class AppRunner {
    * Stops and removes the container for a given deployment.
    * Cleans up both memory map and any live Docker containers.
    */
-  async stopApp(deploymentId: string): Promise<void> {
+  async stopApp(deploymentId: string, slug?: string): Promise<void> {
     const shortId = deploymentId.slice(0, 8);
+    const containerName = slug ? `app-${slug}` : `app-${shortId}`;
     try {
       const containers = await docker.listContainers({ all: true }).catch(() => []);
       const matches = containers.filter((c: any) =>
         c.Labels?.["deploymentId"] === deploymentId ||
-        c.Names?.some((n: string) => n.includes(`app-${shortId}`))
+        (slug && c.Labels?.["slug"] === slug) ||
+        c.Names?.some((n: string) => n === `/${containerName}` || n === containerName || n.includes(`app-${shortId}`))
       );
       for (const info of matches) {
         try {
