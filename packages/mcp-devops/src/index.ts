@@ -7,12 +7,34 @@ import {
   ListToolsRequestSchema,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { WhizanClient } from "./whizan-client.js";
+import { WhizanClient, WhizanApiError } from "./whizan-client.js";
 import { packDirectory } from "./utils/archive.js";
 import { analyzeWorkspace } from "./tools/analyze-workspace.js";
 import { generatePatch } from "./tools/generate-patch.js";
+import fs from "fs/promises";
+import path from "path";
 
 const client = new WhizanClient();
+
+async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, any>) {
+  try {
+    const root = path.resolve(workspaceDir || ".");
+    const configPath = path.join(root, ".whizan.json");
+    let existing: Record<string, any> = {};
+    try {
+      const raw = await fs.readFile(configPath, "utf8");
+      existing = JSON.parse(raw);
+    } catch {}
+    const updated = {
+      ...existing,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    await fs.writeFile(configPath, JSON.stringify(updated, null, 2), "utf8");
+  } catch (err: any) {
+    console.error("[Whizan DevOps MCP] Failed to save .whizan.json:", err.message);
+  }
+}
 
 const server = new Server(
   {
@@ -51,7 +73,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_analyze_workspace",
-    description: "PHASE 1 (MANDATORY): Always run this first before any deployment. Audits local directory to identify project type (backend, frontend, monorepo), runtime/language, listening ports, 127.0.0.1 binding traps, CORS readiness, and environment variable requirements.",
+    description: "PHASE 1 (MANDATORY): Always run this first before any deployment. Audits local directory to identify project type (backend, frontend, monorepo), runtime/language, listening ports, 127.0.0.1 binding traps, CORS readiness, and environment variable requirements. Checks for existing deployments in local context (.whizan.json) and on Whizan Cloud so agents can redeploy without creating duplicates.",
     inputSchema: {
       type: "object",
       properties: {
@@ -83,7 +105,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_create_service",
-    description: "PHASE 3 (FOR BACKENDS): Registers a new backend microservice on Whizan Cloud (Node.js, Python, Go). Language, internalPort, and startCommand must match the Phase 1 audit. Environment variables can be passed here or via whizan_set_env_vars.",
+    description: "PHASE 3 (FOR BACKENDS): Registers a new backend microservice on Whizan Cloud (Node.js, Python, Go). COMPUTE POLICY: Compute and RAM are governed strictly by the user's subscription tier. On Hobby plan, compute is strictly locked to free tier (0.1 vCPU, 512MB RAM, autoSleep=true) and agents must NOT allocate higher compute. Only Professional plan users can choose custom tiers (standard, pro, pro_plus).",
     inputSchema: {
       type: "object",
       properties: {
@@ -95,8 +117,8 @@ const TOOLS: Tool[] = [
         startCommand: { type: "string", default: "npm start" },
         internalPort: { type: "number", default: 8000 },
         isPublic: { type: "boolean", default: true },
-        autoSleep: { type: "boolean", default: false, description: "Whether to enable scale-to-zero" },
-        instanceType: { type: "string", default: "starter", enum: ["free", "starter", "standard", "pro", "pro_plus"] },
+        autoSleep: { type: "boolean", default: true, description: "Whether to enable scale-to-zero (forced on Hobby plan)" },
+        instanceType: { type: "string", default: "free", enum: ["free", "starter", "standard", "pro", "pro_plus"], description: "Instance tier (strictly 'free' for Hobby plan)" },
         envVars: { type: "object", description: "Key-value dictionary of environment variables to encrypt and inject" },
       },
       required: ["name", "slug"],
@@ -135,13 +157,13 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_provision_database",
-    description: "Provisions a managed database instance on Whizan Cloud (PostgreSQL with PgBouncer, Redis, or MySQL) and returns internal/external connection strings.",
+    description: "Provisions a managed database instance on Whizan Cloud (PostgreSQL with PgBouncer, Redis, or MySQL). COMPUTE POLICY: On Hobby plan, databases are strictly provisioned on starter tier (0.5 vCPU, 512MB RAM). Only Professional plan users can specify standard or pro tiers.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Name of the database" },
         type: { type: "string", enum: ["POSTGRESQL", "REDIS", "MYSQL"], default: "POSTGRESQL" },
-        instanceType: { type: "string", enum: ["starter", "standard", "pro"], default: "starter" },
+        instanceType: { type: "string", enum: ["starter", "standard", "pro"], default: "starter", description: "Instance tier (strictly 'starter' for Hobby plan)" },
         enablePooler: { type: "boolean", default: true },
       },
       required: ["name"],
@@ -192,6 +214,7 @@ const TOOLS: Tool[] = [
         targetId: { type: "string", description: "The Whizan ID of the service or project" },
         githubRepoUrl: { type: "string", description: "Optional: update to a new GitHub repository URL before deploying" },
         branch: { type: "string", description: "Optional: Git branch to build (default: main)" },
+        workspaceDir: { type: "string", description: "Optional: path to local directory to update .whizan.json deployment tracking" },
       },
       required: ["targetType", "targetId"],
     },
@@ -254,7 +277,149 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_analyze_workspace": {
         const { workspaceDir } = (args || {}) as any;
-        const report = await analyzeWorkspace(workspaceDir || ".");
+        const targetDir = workspaceDir || ".";
+        const report = await analyzeWorkspace(targetDir);
+
+        // 1. Fetch developer profile & subscription tier
+        let authProfile: any = null;
+        try {
+          authProfile = await client.getAuthStatus();
+        } catch {}
+
+        const subscriptionTier = authProfile?.user?.subscriptionTier || "HOBBY";
+        const isProfessional = subscriptionTier === "PROFESSIONAL";
+
+        const computePolicy = isProfessional
+          ? "PROFESSIONAL TIER: Custom instance sizing and scaling enabled from hosting pages."
+          : "HOBBY TIER: Strict free compute limits enforced (Backends: 0.1 vCPU, 512MB RAM, autoSleep=true; Databases: starter 0.5 vCPU, 512MB RAM). Agents MUST NOT select custom or upgraded compute specs.";
+
+        report.recommendations.unshift(`[COMPUTE ALLOCATION POLICY]: ${computePolicy}`);
+
+        // 2. Cross-chat context discovery: Local .whizan.json
+        let localConfig: any = report.localWhizanConfig || null;
+        if (!localConfig) {
+          try {
+            const raw = await fs.readFile(path.join(path.resolve(targetDir), ".whizan.json"), "utf8");
+            localConfig = JSON.parse(raw);
+            report.localWhizanConfig = localConfig;
+          } catch {}
+        }
+
+        // 3. Query server records for existing projects and services
+        let serverProjects: any[] = [];
+        let serverServices: any[] = [];
+        if (authProfile?.authenticated) {
+          try {
+            const [projs, servs] = await Promise.all([
+              client.listProjects().catch(() => []),
+              client.listServices().catch(() => []),
+            ]);
+            serverProjects = projs || [];
+            serverServices = servs || [];
+          } catch {}
+        }
+
+        // 4. Match local repository with server deployments
+        let matchedTarget: any = null;
+        let matchSource: "local_config" | "server_match" = "local_config";
+        let targetType: "project" | "service" = "project";
+
+        // Step A: Check localConfig targetId
+        if (localConfig?.targetId && localConfig?.targetType) {
+          if (localConfig.targetType === "project") {
+            const p = serverProjects.find((x) => x.id === localConfig.targetId);
+            if (p) {
+              matchedTarget = p;
+              targetType = "project";
+              matchSource = "local_config";
+            }
+          } else if (localConfig.targetType === "service") {
+            const s = serverServices.find((x) => x.id === localConfig.targetId);
+            if (s) {
+              matchedTarget = s;
+              targetType = "service";
+              matchSource = "local_config";
+            }
+          }
+        }
+
+        // Step B: Check server projects/services by slug, package name, or folder name
+        if (!matchedTarget && (serverProjects.length > 0 || serverServices.length > 0)) {
+          const folderName = path.basename(path.resolve(targetDir)).toLowerCase();
+          let pkgName: string | undefined;
+          try {
+            const pkgRaw = await fs.readFile(path.join(path.resolve(targetDir), "package.json"), "utf8");
+            const pkg = JSON.parse(pkgRaw);
+            pkgName = pkg.name?.toLowerCase()?.replace(/^@[^/]+\//, "");
+          } catch {}
+
+          const matchCandidate = (item: any) => {
+            const itemSlug = item.slug?.toLowerCase();
+            const itemName = item.name?.toLowerCase();
+            return (
+              (localConfig?.slug && (itemSlug === localConfig.slug.toLowerCase() || itemName === localConfig.slug.toLowerCase())) ||
+              (pkgName && (itemSlug === pkgName || itemName === pkgName)) ||
+              (folderName && (itemSlug === folderName || itemName === folderName))
+            );
+          };
+
+          if (report.projectType === "frontend" || report.framework === "Next.js") {
+            matchedTarget = serverProjects.find(matchCandidate);
+            if (matchedTarget) {
+              targetType = "project";
+              matchSource = "server_match";
+            }
+          } else if (report.projectType === "backend") {
+            matchedTarget = serverServices.find(matchCandidate);
+            if (matchedTarget) {
+              targetType = "service";
+              matchSource = "server_match";
+            }
+          } else {
+            matchedTarget = serverProjects.find(matchCandidate);
+            if (matchedTarget) {
+              targetType = "project";
+              matchSource = "server_match";
+            } else {
+              matchedTarget = serverServices.find(matchCandidate);
+              if (matchedTarget) {
+                targetType = "service";
+                matchSource = "server_match";
+              }
+            }
+          }
+        }
+
+        // Step C: If match found, present redeployment guidance and synchronize .whizan.json
+        if (matchedTarget) {
+          const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+          const liveUrl = matchedTarget.slug ? `http://${matchedTarget.slug}.${baseDomain}` : undefined;
+
+          report.existingDeployment = {
+            found: true,
+            source: matchSource,
+            targetType,
+            targetId: matchedTarget.id,
+            name: matchedTarget.name,
+            slug: matchedTarget.slug,
+            liveUrl,
+            status: matchedTarget.status,
+            actionRecommendation: `Found existing ${targetType} '${matchedTarget.name}' (${matchedTarget.id}) on Whizan Cloud (${matchSource === "local_config" ? "from local .whizan.json" : "matched server project record"}). DO NOT re-create the ${targetType}. Ask user confirmation to redeploy to this existing deployment, then call whizan_deploy_direct with targetType: "${targetType}" and targetId: "${matchedTarget.id}". Previous containers, packages, and build artifacts will be cleanly decommissioned with zero redundancy.`
+          };
+
+          report.recommendations.unshift(
+            `[EXISTING DEPLOYMENT DETECTED]: Found matching ${targetType} '${matchedTarget.name}' (ID: ${matchedTarget.id}) on Whizan Cloud! DO NOT call whizan_create_${targetType}. Ask user permission to redeploy to ID '${matchedTarget.id}' and proceed directly with whizan_deploy_direct.`
+          );
+
+          await saveLocalWhizanConfig(targetDir, {
+            targetId: matchedTarget.id,
+            targetType,
+            name: matchedTarget.name,
+            slug: matchedTarget.slug,
+            liveUrl,
+          });
+        }
+
         return {
           content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
         };
@@ -268,9 +433,72 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "whizan_create_service": {
-        const service = await client.createService((args || {}) as any);
+        const serviceArgs = (args || {}) as any;
+        
+        // Enforce Hobby subscription tier compute limits
+        let authProfile: any = null;
+        try {
+          authProfile = await client.getAuthStatus();
+        } catch {}
+        const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+        if (!isProfessional) {
+          serviceArgs.instanceType = "free";
+          serviceArgs.autoSleep = true;
+          delete serviceArgs.cpuLimit;
+          delete serviceArgs.memoryLimit;
+        }
+
+        let service: any;
+        try {
+          service = await client.createService(serviceArgs);
+        } catch (err: any) {
+          if (err instanceof WhizanApiError && err.statusCode === 409) {
+            const existingService = err.data?.existingService;
+            if (existingService) {
+              const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+              const liveUrl = `http://${existingService.slug}.${baseDomain}`;
+              await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
+                targetId: existingService.id,
+                targetType: "service",
+                name: existingService.name,
+                slug: existingService.slug,
+                liveUrl,
+              });
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      {
+                        success: false,
+                        conflict: true,
+                        message: `Service with slug '${existingService.slug}' already exists in your Whizan account (ID: ${existingService.id}).`,
+                        existingService,
+                        liveUrl,
+                        instructions: `Do NOT call whizan_create_service again. You can redeploy directly to this existing service. Ask user permission and call whizan_deploy_direct with targetType: "service" and targetId: "${existingService.id}".`,
+                      },
+                      null,
+                      2
+                    ),
+                  },
+                ],
+              };
+            }
+          }
+          throw err;
+        }
+
         const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
         const expectedLiveUrl = `http://${service.slug}.${baseDomain}`;
+        
+        await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
+          targetId: service.id,
+          targetType: "service",
+          name: service.name,
+          slug: service.slug,
+          liveUrl: expectedLiveUrl,
+        });
+
         return {
           content: [
             {
@@ -294,9 +522,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "whizan_create_project": {
-        const project = await client.createProject((args || {}) as any);
+        const projectArgs = (args || {}) as any;
+        let project: any;
+        try {
+          project = await client.createProject(projectArgs);
+        } catch (err: any) {
+          if (err instanceof WhizanApiError && err.statusCode === 409) {
+            const existingProject = err.data?.existingProject;
+            if (existingProject) {
+              const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+              const liveUrl = `http://${existingProject.slug}.${baseDomain}`;
+              await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
+                targetId: existingProject.id,
+                targetType: "project",
+                name: existingProject.name,
+                slug: existingProject.slug,
+                liveUrl,
+              });
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify(
+                      {
+                        success: false,
+                        conflict: true,
+                        message: `Project with slug '${existingProject.slug}' already exists in your Whizan account (ID: ${existingProject.id}).`,
+                        existingProject,
+                        liveUrl,
+                        instructions: `Do NOT call whizan_create_project again. You can redeploy directly to this existing project. Ask user permission and call whizan_deploy_direct with targetType: "project" and targetId: "${existingProject.id}".`,
+                      },
+                      null,
+                      2
+                    ),
+                  },
+                ],
+              };
+            }
+          }
+          throw err;
+        }
+
         const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
         const expectedLiveUrl = `http://${project.slug}.${baseDomain}`;
+
+        await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
+          targetId: project.id,
+          targetType: "project",
+          name: project.name,
+          slug: project.slug,
+          liveUrl: expectedLiveUrl,
+        });
+
         return {
           content: [
             {
@@ -341,7 +618,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "whizan_deploy_direct": {
         const { targetType, targetId, workspaceDir } = (args || {}) as any;
-        const archiveBuffer = await packDirectory(workspaceDir || ".", targetType);
+        const targetDirectory = workspaceDir || ".";
+        const archiveBuffer = await packDirectory(targetDirectory, targetType);
         
         let deploymentResult: any;
         if (targetType === "service") {
@@ -354,6 +632,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const slug = deploymentResult?.service?.slug || deploymentResult?.project?.slug || targetId;
         const expectedLiveUrl = `http://${slug}.${baseDomain}`;
 
+        // Save deployment context in local .whizan.json
+        await saveLocalWhizanConfig(targetDirectory, {
+          targetId,
+          targetType,
+          slug,
+          name: deploymentResult?.service?.name || deploymentResult?.project?.name,
+          lastDeploymentId: deploymentResult.id,
+          liveUrl: expectedLiveUrl,
+          lastDeployedAt: new Date().toISOString(),
+        });
+
         return {
           content: [
             {
@@ -361,13 +650,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   success: true,
-                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on Azure VM.`,
+                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on Azure VM. Old packages and previous container resources will be automatically decommissioned upon build completion with zero redundancy.`,
                   deploymentId: deploymentResult.id,
                   status: deploymentResult.status,
                   expectedLiveUrl,
                   nextSteps: [
                     `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
-                    `2. Once build status reaches ACTIVE, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
+                    `2. Once build status reaches ACTIVE/READY, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
                     `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl} (use http://, not https://).`
                   ],
                   deployment: deploymentResult,
@@ -381,7 +670,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "whizan_provision_database": {
-        const db = await client.provisionDatabase((args || {}) as any);
+        const dbArgs = (args || {}) as any;
+        // Enforce Hobby subscription tier limits
+        let authProfile: any = null;
+        try {
+          authProfile = await client.getAuthStatus();
+        } catch {}
+        const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+        if (!isProfessional) {
+          dbArgs.instanceType = "starter";
+        }
+        const db = await client.provisionDatabase(dbArgs);
         return {
           content: [{ type: "text", text: JSON.stringify(db, null, 2) }],
         };
@@ -433,10 +732,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "whizan_redeploy": {
-        const { targetType, targetId, githubRepoUrl, branch } = (args || {}) as any;
+        const { targetType, targetId, githubRepoUrl, branch, workspaceDir } = (args || {}) as any;
         const deployment = await client.redeploy(targetType, targetId, { githubRepoUrl, branch });
         const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const expectedLiveUrl = `http://${deployment?.service?.slug || deployment?.project?.slug || targetId}.${baseDomain}`;
+        const slug = deployment?.service?.slug || deployment?.project?.slug || targetId;
+        const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+        if (workspaceDir) {
+          await saveLocalWhizanConfig(workspaceDir, {
+            targetId,
+            targetType,
+            slug,
+            lastDeploymentId: deployment.id,
+            liveUrl: expectedLiveUrl,
+            lastDeployedAt: new Date().toISOString(),
+          });
+        }
         return {
           content: [
             {
@@ -444,7 +754,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   success: true,
-                  message: `Redeployment enqueued for ${targetType} '${targetId}'.`,
+                  message: `Redeployment enqueued for ${targetType} '${targetId}'. Old packages, previous build outputs, and containers will be automatically decommissioned upon cutover.`,
                   deploymentId: deployment.id,
                   status: deployment.status,
                   expectedLiveUrl,

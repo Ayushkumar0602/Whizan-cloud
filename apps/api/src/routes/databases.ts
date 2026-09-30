@@ -193,15 +193,29 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     const rawPassword = crypto.randomBytes(18).toString("base64url");
     const encryptedPassword = encrypt(rawPassword);
 
-    // Resource limits
+    // Resource limits & Subscription Tier enforcement
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true },
+    });
+    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
+
+    // Non-professional users are strictly locked to starter tier
+    let effectiveInstanceType = instanceType;
+    if (!isProfessional && (effectiveInstanceType === "standard" || effectiveInstanceType === "pro")) {
+      effectiveInstanceType = "starter";
+    }
+
     let cpuLimit = 0.5;
     let memoryLimit = 512;
-    if (instanceType === "standard") {
-      cpuLimit = 1.0;
-      memoryLimit = 1024;
-    } else if (instanceType === "pro") {
-      cpuLimit = 2.0;
-      memoryLimit = 2048;
+    if (isProfessional) {
+      if (effectiveInstanceType === "standard") {
+        cpuLimit = 1.0;
+        memoryLimit = 1024;
+      } else if (effectiveInstanceType === "pro") {
+        cpuLimit = 2.0;
+        memoryLimit = 2048;
+      }
     }
 
     const internalPort = type === "REDIS" ? 6379 : type === "MYSQL" ? 3306 : 5432;
@@ -219,7 +233,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         password: encryptedPassword,
         internalPort,
         volumePath: "", // populated by worker on provision
-        instanceType,
+        instanceType: effectiveInstanceType,
         cpuLimit,
         memoryLimit,
       },

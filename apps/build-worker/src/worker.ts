@@ -319,8 +319,12 @@ const worker = new Worker<BuildJob>(
           const containers = await docker.listContainers({ all: true }).catch(() => []);
 
           for (const old of oldDeployments) {
-            // Stop old containers
-            const matches = containers.filter((c) => c.Mounts?.some((m) => m.Source?.includes(old.id)));
+            // Stop old containers matching mount source, labels, or name prefix
+            const matches = containers.filter((c) =>
+              c.Mounts?.some((m) => m.Source?.includes(old.id)) ||
+              c.Labels?.["deploymentId"] === old.id ||
+              c.Names?.some((n) => n.includes(`app-${old.id.slice(0, 8)}`))
+            );
             for (const info of matches) {
               try {
                 const container = docker.getContainer(info.Id);
@@ -328,8 +332,18 @@ const worker = new Worker<BuildJob>(
                 await container.remove({ force: true });
               } catch {}
             }
-            // Delete old build files
+            // Delete old build files (node_modules, packages, build outputs)
             await fs.rm(path.join(BUILD_BASE_DIR, old.id), { recursive: true, force: true }).catch(() => {});
+            // Clear old upload chunk keys in Redis if any lingered
+            const oldChunksCount = await redisPub.get(`upload:${old.id}:chunks`);
+            if (oldChunksCount) {
+              const count = parseInt(oldChunksCount, 10);
+              for (let i = 0; i < count; i++) {
+                await redisPub.del(`upload:${old.id}:chunk:${i}`).catch(() => {});
+              }
+              await redisPub.del(`upload:${old.id}:chunks`).catch(() => {});
+            }
+            await redisPub.del(`upload:${old.id}`).catch(() => {});
             // Clear old logs
             await redisPub.del(`build-logs:${old.id}`);
             // Remove from DB to enforce 1-build rule

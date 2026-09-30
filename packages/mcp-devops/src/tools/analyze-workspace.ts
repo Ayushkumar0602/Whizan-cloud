@@ -1,6 +1,29 @@
 import fs from "fs/promises";
 import path from "path";
 
+export interface LocalWhizanConfig {
+  targetId?: string;
+  targetType?: "project" | "service";
+  name?: string;
+  slug?: string;
+  liveUrl?: string;
+  lastDeploymentId?: string;
+  lastDeployedAt?: string;
+  updatedAt?: string;
+}
+
+export interface ExistingDeploymentMatch {
+  found: boolean;
+  source: "local_config" | "server_match";
+  targetType: "project" | "service";
+  targetId: string;
+  name: string;
+  slug: string;
+  liveUrl?: string;
+  status?: string;
+  actionRecommendation: string;
+}
+
 export interface AnalysisReport {
   projectType: "backend" | "frontend" | "fullstack" | "monorepo" | "unknown";
   detectedRuntimes: string[];
@@ -27,6 +50,8 @@ export interface AnalysisReport {
   ignoredSecretsFound: string[];
   recommendations: string[];
   mandatoryDeploymentRules: string[];
+  localWhizanConfig?: LocalWhizanConfig;
+  existingDeployment?: ExistingDeploymentMatch;
   recommendedDeploymentConfig?: {
     targetType: "service" | "project";
     toolToCall: "whizan_create_service" | "whizan_create_project";
@@ -66,11 +91,12 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     ignoredSecretsFound: [],
     recommendations: [],
     mandatoryDeploymentRules: [
-      "PHASE 1 (AUDIT): Review detected projectType, framework, and port config. NEVER deploy blind.",
+      "PHASE 1 (AUDIT): Review detected projectType, framework, existingDeployment, and port config. NEVER deploy blind.",
       "PHASE 2 (ENVIRONMENT): Register ALL required environment variables using whizan_set_env_vars BEFORE starting build.",
-      "PHASE 3 (PROVISION):",
-      "  - IF FRONTEND (Vite, React, Astro, Next.js): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js). NEVER call whizan_create_service for frontends.",
-      "  - IF BACKEND (Node.js, Python, Go): Call whizan_create_service. Set internalPort to the listening port and ensure 0.0.0.0 host binding.",
+      "PHASE 3 (PROVISION OR REDEPLOY):",
+      "  - IF EXISTING PROJECT DETECTED: Reuse the existing targetId and skip creation. Redeploy directly using whizan_deploy_direct.",
+      "  - IF NEW FRONTEND (Vite, React, Astro, Next.js): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js). NEVER call whizan_create_service for frontends.",
+      "  - IF NEW BACKEND (Node.js, Python, Go): Call whizan_create_service. Compute is strictly locked to free tier for Hobby users. Ensure 0.0.0.0 host binding.",
       "PHASE 4 (UPLOAD): Upload workspace archive using whizan_deploy_direct. Save the returned deploymentId.",
       "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
       "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). Note: Use http:// (not https://) for *.nip.io domains on Azure VM."
@@ -78,6 +104,14 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
   };
 
   const filesInRoot: string[] = await fs.readdir(root).catch(() => [] as string[]);
+
+  // 0. Check for local Whizan project linkage
+  if (filesInRoot.includes(".whizan.json")) {
+    try {
+      const raw = await fs.readFile(path.join(root, ".whizan.json"), "utf8");
+      report.localWhizanConfig = JSON.parse(raw);
+    } catch {}
+  }
 
   // 1. Check package.json (Node.js)
   if (filesInRoot.includes("package.json")) {

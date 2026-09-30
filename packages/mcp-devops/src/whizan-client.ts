@@ -4,6 +4,18 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 
+export class WhizanApiError extends Error {
+  statusCode: number;
+  data: any;
+
+  constructor(message: string, statusCode: number, data: any) {
+    super(message);
+    this.name = "WhizanApiError";
+    this.statusCode = statusCode;
+    this.data = data;
+  }
+}
+
 export interface WhizanConfig {
   apiUrl: string;
   apiKey?: string;
@@ -70,6 +82,58 @@ export class WhizanClient {
     }
   }
 
+  async listProjects(): Promise<any[]> {
+    await this.loadConfig();
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/projects`, {
+        headers: this.getHeaders(),
+      });
+      if (!res.ok) return [];
+      return (await res.json()) as any[];
+    } catch {
+      return [];
+    }
+  }
+
+  async listServices(): Promise<any[]> {
+    await this.loadConfig();
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/services`, {
+        headers: this.getHeaders(),
+      });
+      if (!res.ok) return [];
+      return (await res.json()) as any[];
+    } catch {
+      return [];
+    }
+  }
+
+  async getProject(id: string): Promise<any | null> {
+    await this.loadConfig();
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/projects/${id}`, {
+        headers: this.getHeaders(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  async getService(id: string): Promise<any | null> {
+    await this.loadConfig();
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/services/${id}`, {
+        headers: this.getHeaders(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
   async createService(params: {
     name: string;
     slug: string;
@@ -105,8 +169,8 @@ export class WhizanClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(`Failed to create backend service: ${JSON.stringify(err)}`);
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || `Failed to create backend service (HTTP ${res.status})`, res.status, err);
     }
 
     const service: any = await res.json();
@@ -153,8 +217,8 @@ export class WhizanClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-      throw new Error(`Failed to create project: ${JSON.stringify(err)}`);
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || `Failed to create project (HTTP ${res.status})`, res.status, err);
     }
 
     const project: any = await res.json();

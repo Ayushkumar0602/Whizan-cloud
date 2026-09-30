@@ -61,10 +61,15 @@ export class AppRunner {
     }
 
     const container = await docker.createContainer({
+      name: `app-${deploymentId.slice(0, 8)}-${Date.now().toString(36)}`,
       Image: SSR_IMAGE,
       Cmd: cmd,
       WorkingDir: workingDir,
       Env: env,
+      Labels: {
+        deploymentId,
+        managedBy: "whizan-worker",
+      },
       ExposedPorts: { "3000/tcp": {} },
       HostConfig: {
         Binds: [`${path.resolve(buildDir)}:/app:ro`], // Read-only for security

@@ -294,11 +294,22 @@ const worker = new Worker<ServiceBuildJob>(
         for (const oldD of oldDeployments) {
           const oldDir = path.join(BUILD_BASE_DIR, oldD.id);
           await fs.rm(oldDir, { recursive: true, force: true }).catch(() => {});
+          
+          // Clear old upload chunk keys in Redis if any lingered
+          const oldChunksCount = await redisPub.get(`upload:${oldD.id}:chunks`);
+          if (oldChunksCount) {
+            const count = parseInt(oldChunksCount, 10);
+            for (let i = 0; i < count; i++) {
+              await redisPub.del(`upload:${oldD.id}:chunk:${i}`).catch(() => {});
+            }
+            await redisPub.del(`upload:${oldD.id}:chunks`).catch(() => {});
+          }
+          await redisPub.del(`upload:${oldD.id}`).catch(() => {});
+
           await redisPub.del(`build-logs:${oldD.id}`).catch(() => {});
           await redisPub.del(`access:${oldD.id}`).catch(() => {});
-          await prisma.serviceDeployment.update({
+          await prisma.serviceDeployment.delete({
             where: { id: oldD.id },
-            data: { containerPort: null },
           }).catch(() => {});
         }
 
