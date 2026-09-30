@@ -1,27 +1,26 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { projects, services, type ProjectWithLatestDeploy, type ServiceWithLatestDeploy } from "@/lib/api";
-import { CLOUD_SERVICES } from "@/lib/services";
+import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
 import { useAuth } from "@/lib/auth";
 import Link from "next/link";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import {
   ArrowRight,
   Plus,
   Activity,
-  HardDrive,
-  Cpu,
-  CreditCard,
-  BookOpen,
   GitPullRequest,
   Server,
   Globe,
-  Radio,
   ExternalLink,
   Clock,
-  Sparkles,
-  Layers
+  Layers,
+  ShieldCheck,
+  Zap,
+  Radio,
+  Terminal,
+  Database
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -33,6 +32,7 @@ export default function ConsolePage() {
   const [loading, setLoading] = useState(true);
 
   const firstName = (user?.name || user?.email || "Developer").split(" ")[0];
+  const baseDomain = getBaseRouterDomain();
 
   useEffect(() => {
     Promise.all([
@@ -55,92 +55,171 @@ export default function ConsolePage() {
     s => s.deployments[0]?.status === "READY" && !!s.deployments[0]?.containerPort
   ).length;
 
+  const liveFrontends = frontendList.filter(
+    p => p.deployments[0]?.status === "READY"
+  ).length;
+
   return (
     <div className="page">
-      {/* Welcome Hero Banner */}
+      {/* Premium Welcome Header */}
       <div className="console-hero">
         <div className="hero-content">
           <div className="hero-badge">
-            <Sparkles size={13} className="text-accent" />
-            <span>Whizan Cloud Mesh Platform</span>
+            <span className="live-dot-pulse" />
+            <span>Whizan Cloud Platform</span>
           </div>
           <h1 className="hero-title">
             Welcome back, <span className="hero-name-gradient">{firstName}</span>
           </h1>
           <p className="hero-subtitle">
-            Orchestrate your Next.js frontends, Dockerized backend services, and private service mesh discovery in real time.
+            Deploy frontend applications, containerized backend services, and manage edge routing from a unified developer console.
           </p>
         </div>
 
         <div className="hero-actions">
-          <Link href="/dashboard/backend/new" className="btn btn-primary btn-lg">
-            <Server size={17} /> Deploy Backend
+          <Link href="/dashboard/projects/new" className="btn btn-primary btn-lg" id="deploy-frontend-btn">
+            <Globe size={16} /> Deploy Frontend
           </Link>
-          <Link href="/dashboard/projects/new" className="btn btn-secondary btn-lg">
-            <Globe size={17} /> Deploy Frontend
+          <Link href="/dashboard/backend/new" className="btn btn-secondary btn-lg" id="deploy-backend-btn">
+            <Server size={16} /> Deploy Service
           </Link>
         </div>
       </div>
 
-      {/* KPI Stats Grid */}
+      {/* High-Signal Telemetry Cards */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-label">
-            <Activity size={14} className="text-accent" /> Total Cloud Bandwidth
+            <Globe size={14} className="text-accent" /> Frontend Apps
           </div>
-          <div className="stat-value">0.82 GB</div>
+          <div className="stat-value">{frontendList.length}</div>
           <div className="stat-sub" style={{ color: "var(--success)" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-            Edge routing optimal
+            {liveFrontends} live on Edge CDN
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-label">
-            <GitPullRequest size={14} className="text-accent" /> Deployments
+            <Server size={14} className="text-accent" /> Backend Services
+          </div>
+          <div className="stat-value">{backendList.length}</div>
+          <div className="stat-sub">
+            {activeBackends} active / {backendList.length - activeBackends} asleep
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-label">
+            <GitPullRequest size={14} className="text-accent" /> Total Deployments
           </div>
           <div className="stat-value">{totalDeployments}</div>
           <div className="stat-sub">
-            Across {frontendList.length} sites & {backendList.length} services
+            Automatic builds & cutovers
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-label">
-            <Server size={14} className="text-accent" /> Live Containers
+            <Radio size={14} className="text-accent" /> Cloud Ingress
           </div>
-          <div className="stat-value">
-            {activeBackends} <span style={{ fontSize: "1rem", color: "var(--muted)", fontWeight: 500 }}>/ {backendList.length}</span>
-          </div>
-          <div className="stat-sub">
-            {backendList.some(s => s.autoSleep) ? "Auto-Sleep enabled" : "Always-On dedicated"}
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">
-            <Radio size={14} className="text-accent" /> Private Mesh DNS
-          </div>
-          <div className="stat-value" style={{ fontSize: "1.4rem", fontFamily: "var(--font-geist-mono), monospace" }}>
-            whizan-mesh
+          <div className="stat-value" style={{ fontSize: "1.25rem", fontFamily: "var(--font-geist-mono), monospace" }}>
+            {baseDomain}
           </div>
           <div className="stat-sub" style={{ color: "var(--success)" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-            Internal bridge healthy
+            Operational • Port 80
           </div>
         </div>
       </div>
 
-      {/* Two Column Section */}
+      {/* Main Console Split Layout */}
       <div className="console-split-layout">
-        {/* Left Column: Recent Services & Sites */}
+        {/* Left Column: Active Frontends & Services */}
         <div className="console-main-col">
-          {/* Backend Services Snippet */}
+          {/* Frontend Applications Snippet */}
           <div className="section-card">
             <div className="section-card-header">
               <div>
+                <h2 className="section-card-title">Frontend Applications</h2>
+                <p className="section-card-desc">Production web applications with live edge domain routing</p>
+              </div>
+              <Link href="/dashboard/hosting" className="view-all-link">
+                View all ({frontendList.length}) <ArrowRight size={13} />
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="skeleton" style={{ height: 140 }} />
+            ) : frontendList.length === 0 ? (
+              <div className="empty-inner">
+                <Globe size={28} className="text-muted" />
+                <div style={{ fontWeight: 600, marginTop: "0.5rem" }}>No frontend applications deployed</div>
+                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                  Connect your repository to deploy Next.js, Vite, or React apps in seconds.
+                </p>
+                <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
+                  <Plus size={14} /> Deploy Frontend App
+                </Link>
+              </div>
+            ) : (
+              <div className="items-list">
+                {frontendList.slice(0, 4).map(p => {
+                  const latest = p.deployments[0];
+                  const liveUrl = formatDeployedUrl(latest?.url, p.slug, p.customDomain);
+                  const isReady = latest?.status === "READY";
+
+                  return (
+                    <div key={p.id} className="item-row">
+                      <Link href={`/dashboard/projects/${p.id}`} className="item-details-link">
+                        <div className="item-icon-box">
+                          <Globe size={18} style={{ color: "#38bdf8" }} />
+                        </div>
+                        <div className="item-details">
+                          <div className="item-name-row">
+                            <span className="item-name">{p.name}</span>
+                            <span className="item-mesh-alias mono">/{p.slug}</span>
+                          </div>
+                          <div className="item-sub-row">
+                            <span>{p.framework}</span>
+                            <span>•</span>
+                            <span>branch: {p.branch}</span>
+                            <span>•</span>
+                            <span className="item-time">
+                              {formatDistanceToNow(new Date(p.updatedAt), { addSuffix: true })}
+                            </span>
+                          </div>
+                        </div>
+                      </Link>
+
+                      <div className="item-status-col">
+                        {latest ? <StatusBadge status={latest.status} /> : <span className="badge badge-queued">No deploys</span>}
+                        {isReady && (
+                          <a
+                            href={liveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="live-external-btn"
+                            title={`Open live site: ${liveUrl}`}
+                          >
+                            <span>Live</span>
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Backend Services Snippet */}
+          <div className="section-card" style={{ marginTop: "1.5rem" }}>
+            <div className="section-card-header">
+              <div>
                 <h2 className="section-card-title">Backend Services</h2>
-                <p className="section-card-desc">Long-running Docker containers with internal mesh endpoints</p>
+                <p className="section-card-desc">Containerized APIs, microservices, and background queue workers</p>
               </div>
               <Link href="/dashboard/backend" className="view-all-link">
                 View all ({backendList.length}) <ArrowRight size={13} />
@@ -154,10 +233,10 @@ export default function ConsolePage() {
                 <Server size={28} className="text-muted" />
                 <div style={{ fontWeight: 600, marginTop: "0.5rem" }}>No backend services deployed</div>
                 <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                  Deploy your Node.js, Python, or Go APIs in seconds.
+                  Deploy your Node.js, Python, or Go services with automated health checks.
                 </p>
                 <Link href="/dashboard/backend/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
-                  <Plus size={14} /> Create Backend Service
+                  <Plus size={14} /> Deploy Backend Service
                 </Link>
               </div>
             ) : (
@@ -166,25 +245,31 @@ export default function ConsolePage() {
                   const latest = s.deployments[0];
                   const isActive = latest?.status === "READY" && !!latest.containerPort;
                   const isAsleep = latest?.status === "READY" && !latest.containerPort;
+                  const liveUrl = getServiceIngressUrl(s.slug);
 
                   return (
-                    <Link key={s.id} href={`/dashboard/backend/${s.id}`} className="item-row">
-                      <div className="item-icon-box">
-                        <Server size={18} className="text-accent" />
-                      </div>
-                      <div className="item-details">
-                        <div className="item-name-row">
-                          <span className="item-name">{s.name}</span>
-                          <span className="item-mesh-alias mono">
-                            http://{s.slug}:{s.internalPort}
-                          </span>
+                    <div key={s.id} className="item-row">
+                      <Link href={`/dashboard/backend/${s.id}`} className="item-details-link">
+                        <div className="item-icon-box">
+                          <Server size={18} className="text-accent" />
                         </div>
-                        <div className="item-sub-row">
-                          <span className="mono">{s.language}</span>
-                          <span>•</span>
-                          <span>branch: {s.branch}</span>
+                        <div className="item-details">
+                          <div className="item-name-row">
+                            <span className="item-name">{s.name}</span>
+                            <span className="item-mesh-alias mono">/{s.slug}</span>
+                          </div>
+                          <div className="item-sub-row">
+                            <span className="mono">{s.language}</span>
+                            <span>•</span>
+                            <span>branch: {s.branch}</span>
+                            <span>•</span>
+                            <span className="item-time">
+                              {latest?.createdAt ? formatDistanceToNow(new Date(latest.createdAt), { addSuffix: true }) : "recent"}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      </Link>
+
                       <div className="item-status-col">
                         {isActive && (
                           <span className="badge badge-ready">
@@ -199,69 +284,21 @@ export default function ConsolePage() {
                           </span>
                         )}
                         {!isActive && !isAsleep && <StatusBadge status={latest?.status || "QUEUED"} />}
-                        <span className="item-time">
-                          {latest?.createdAt ? formatDistanceToNow(new Date(latest.createdAt), { addSuffix: true }) : "recent"}
-                        </span>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
-          {/* Frontend Sites Snippet */}
-          <div className="section-card" style={{ marginTop: "1.5rem" }}>
-            <div className="section-card-header">
-              <div>
-                <h2 className="section-card-title">Frontend Applications</h2>
-                <p className="section-card-desc">Production Next.js, React, and Vite web apps</p>
-              </div>
-              <Link href="/dashboard/hosting" className="view-all-link">
-                View all ({frontendList.length}) <ArrowRight size={13} />
-              </Link>
-            </div>
-
-            {loading ? (
-              <div className="skeleton" style={{ height: 140 }} />
-            ) : frontendList.length === 0 ? (
-              <div className="empty-inner">
-                <Globe size={28} className="text-muted" />
-                <div style={{ fontWeight: 600, marginTop: "0.5rem" }}>No frontend apps deployed</div>
-                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                  Connect your GitHub repo to deploy in one click.
-                </p>
-                <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
-                  <Plus size={14} /> Deploy Frontend App
-                </Link>
-              </div>
-            ) : (
-              <div className="items-list">
-                {frontendList.slice(0, 4).map(p => {
-                  const latest = p.deployments[0];
-                  return (
-                    <Link key={p.id} href={`/dashboard/projects/${p.id}`} className="item-row">
-                      <div className="item-icon-box">
-                        <Globe size={18} style={{ color: "#38bdf8" }} />
+                        {isActive && (
+                          <a
+                            href={liveUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="live-external-btn"
+                            title={`Open live endpoint: ${liveUrl}`}
+                          >
+                            <span>Live</span>
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
                       </div>
-                      <div className="item-details">
-                        <div className="item-name-row">
-                          <span className="item-name">{p.name}</span>
-                          <span className="item-mesh-alias mono">/{p.slug}</span>
-                        </div>
-                        <div className="item-sub-row">
-                          <span>{p.framework}</span>
-                          <span>•</span>
-                          <span>{p.branch}</span>
-                        </div>
-                      </div>
-                      <div className="item-status-col">
-                        {latest ? <StatusBadge status={latest.status} /> : <span className="badge badge-queued">No deploys</span>}
-                        <span className="item-time">
-                          {formatDistanceToNow(new Date(p.updatedAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                    </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -269,74 +306,83 @@ export default function ConsolePage() {
           </div>
         </div>
 
-        {/* Right Column: Quick Launchers & Cloud Services */}
+        {/* Right Column: Platform Navigation & Endpoints */}
         <div className="console-side-col">
           <div className="section-card">
             <h3 className="section-card-title" style={{ marginBottom: "1rem" }}>
               Quick Actions
             </h3>
             <div className="quick-actions-stack">
+              <Link href="/dashboard/projects/new" className="quick-card">
+                <div className="quick-card-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
+                  <Globe size={18} />
+                </div>
+                <div>
+                  <div className="quick-card-title">New Frontend Application</div>
+                  <div className="quick-card-sub">Next.js, Vite, React on Edge CDN</div>
+                </div>
+              </Link>
+
               <Link href="/dashboard/backend/new" className="quick-card">
                 <div className="quick-card-icon" style={{ background: "rgba(99, 102, 241, 0.12)", color: "#818cf8" }}>
                   <Server size={18} />
                 </div>
                 <div>
-                  <div className="quick-card-title">Deploy Docker Container</div>
-                  <div className="quick-card-sub">Node, Python, Go with Auto-Sleep</div>
+                  <div className="quick-card-title">New Backend Service</div>
+                  <div className="quick-card-sub">Docker, Node.js, Python, or Go</div>
                 </div>
               </Link>
 
-              <Link href="/dashboard/deploy" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
-                  <GitPullRequest size={18} />
-                </div>
-                <div>
-                  <div className="quick-card-title">Deploy From GitHub</div>
-                  <div className="quick-card-sub">Automatic build and live edge SSL</div>
-                </div>
-              </Link>
-
-              <Link href="/dashboard/services" className="quick-card">
+              <Link href="/dashboard/databases" className="quick-card">
                 <div className="quick-card-icon" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#34d399" }}>
-                  <Layers size={18} />
+                  <Database size={18} />
                 </div>
                 <div>
-                  <div className="quick-card-title">Service Discovery Catalog</div>
-                  <div className="quick-card-sub">Explore internal mesh endpoints</div>
+                  <div className="quick-card-title">Managed Databases</div>
+                  <div className="quick-card-sub">PostgreSQL & Redis clusters</div>
                 </div>
               </Link>
 
-              <Link href="/dashboard/admin" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(245, 158, 11, 0.12)", color: "#fbbf24" }}>
-                  <Cpu size={18} />
+              <Link href="/dashboard/mcp" className="quick-card">
+                <div className="quick-card-icon" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#c084fc" }}>
+                  <Terminal size={18} />
                 </div>
                 <div>
-                  <div className="quick-card-title">VM Resource Monitor</div>
-                  <div className="quick-card-sub">Inspect CPU, RAM, Docker & Redis</div>
+                  <div className="quick-card-title">DevOps Agent MCP</div>
+                  <div className="quick-card-sub">Autonomous deployment tooling</div>
                 </div>
               </Link>
             </div>
           </div>
 
+          {/* Cloud Ingress & Edge Router Status */}
           <div className="section-card" style={{ marginTop: "1.5rem" }}>
-            <h3 className="section-card-title" style={{ marginBottom: "0.5rem" }}>
-              Compute Topology
-            </h3>
-            <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "1rem", lineHeight: 1.45 }}>
-              Isolated Docker containers communicate over the secure internal bridge network.
-            </p>
-            <div className="mesh-mini-preview">
-              <div className="mesh-mini-node">
-                <Globe size={14} />
-                <span>Frontend (:8080)</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
+              <h3 className="section-card-title" style={{ margin: 0 }}>
+                Cloud Ingress
+              </h3>
+              <span className="badge badge-ready">
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                Operational
+              </span>
+            </div>
+
+            <div className="ingress-info-stack">
+              <div className="ingress-info-row">
+                <span className="ingress-key">Edge Ingress IP</span>
+                <span className="ingress-val mono">20.2.136.11</span>
               </div>
-              <div className="mesh-mini-connector">
-                <span className="mesh-mini-arrow">➔</span>
-                <span className="mesh-mini-ping">DNS Discovery</span>
+              <div className="ingress-info-row">
+                <span className="ingress-key">Wildcard Gateway</span>
+                <span className="ingress-val mono">*.{baseDomain}</span>
               </div>
-              <div className="mesh-mini-node">
-                <Server size={14} />
-                <span>Backend (:8000)</span>
+              <div className="ingress-info-row">
+                <span className="ingress-key">Traffic Protocol</span>
+                <span className="ingress-val">HTTP / Port 80</span>
+              </div>
+              <div className="ingress-info-row">
+                <span className="ingress-key">Zero-Downtime Cutover</span>
+                <span className="ingress-val" style={{ color: "#10b981" }}>Enabled</span>
               </div>
             </div>
           </div>
@@ -346,8 +392,8 @@ export default function ConsolePage() {
       <style>{`
         /* Hero Banner */
         .console-hero {
-          background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(56, 189, 248, 0.06) 50%, rgba(16, 185, 129, 0.05) 100%);
-          border: 1px solid rgba(99, 102, 241, 0.2);
+          background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(56, 189, 248, 0.05) 50%, rgba(16, 185, 129, 0.04) 100%);
+          border: 1px solid var(--card-border);
           border-radius: var(--radius-lg);
           padding: 2.25rem;
           margin-bottom: 2rem;
@@ -366,7 +412,7 @@ export default function ConsolePage() {
           left: -20%;
           width: 60%;
           height: 200%;
-          background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+          background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
           pointer-events: none;
         }
 
@@ -377,15 +423,22 @@ export default function ConsolePage() {
         .hero-badge {
           display: inline-flex;
           align-items: center;
-          gap: 0.4rem;
-          padding: 0.25rem 0.65rem;
-          background: rgba(99, 102, 241, 0.12);
-          border: 1px solid rgba(99, 102, 241, 0.25);
+          gap: 0.5rem;
+          padding: 0.25rem 0.75rem;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
           border-radius: 9999px;
-          font-size: 0.74rem;
+          font-size: 0.75rem;
           font-weight: 600;
           color: var(--accent);
           margin-bottom: 0.85rem;
+        }
+        .live-dot-pulse {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 6px #10b981;
         }
         .hero-title {
           font-size: 2.1rem;
@@ -448,120 +501,145 @@ export default function ConsolePage() {
           color: var(--muted);
           margin-top: 0.2rem;
         }
+
         .view-all-link {
           display: inline-flex;
           align-items: center;
           gap: 0.35rem;
           font-size: 0.8125rem;
-          font-weight: 600;
           color: var(--accent);
-          text-decoration: none;
-          transition: color 0.15s ease;
+          font-weight: 550;
+          transition: opacity 0.15s ease;
+          white-space: nowrap;
         }
         .view-all-link:hover {
-          color: var(--accent-hover);
-        }
-
-        .empty-inner {
-          padding: 2.5rem 1.5rem;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          border: 1px dashed var(--card-border);
-          border-radius: 10px;
-          background: var(--bg-inset);
+          opacity: 0.8;
         }
 
         .items-list {
           display: flex;
           flex-direction: column;
-          border: 1px solid var(--card-border);
-          border-radius: 10px;
-          overflow: hidden;
-          background: var(--card);
+          gap: 0.65rem;
         }
+
         .item-row {
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 1rem;
-          padding: 1rem 1.25rem;
-          border-bottom: 1px solid var(--card-border);
-          text-decoration: none;
-          color: inherit;
-          transition: background 0.15s ease;
-        }
-        .item-row:last-child {
-          border-bottom: none;
+          padding: 0.85rem 1rem;
+          background: var(--bg-inset);
+          border: 1px solid var(--card-border);
+          border-radius: 10px;
+          transition: all 0.15s ease;
         }
         .item-row:hover {
+          border-color: var(--card-border-hover);
           background: var(--card-hover);
         }
+
+        .item-details-link {
+          display: flex;
+          align-items: center;
+          gap: 0.85rem;
+          flex: 1;
+          min-width: 0;
+          text-decoration: none;
+          color: inherit;
+        }
+
         .item-icon-box {
           width: 38px;
           height: 38px;
           border-radius: 8px;
-          background: var(--bg-inset);
+          background: rgba(255, 255, 255, 0.04);
           border: 1px solid var(--card-border);
           display: flex;
           align-items: center;
           justify-content: center;
           flex-shrink: 0;
         }
+
         .item-details {
           flex: 1;
           min-width: 0;
         }
+
         .item-name-row {
           display: flex;
           align-items: center;
           gap: 0.5rem;
         }
         .item-name {
-          font-size: 0.92rem;
           font-weight: 650;
+          font-size: 0.925rem;
           color: var(--foreground);
         }
         .item-mesh-alias {
           font-size: 0.75rem;
           color: var(--muted);
-          background: var(--bg-inset);
-          padding: 0.1rem 0.4rem;
+          background: rgba(255, 255, 255, 0.04);
+          padding: 0.15rem 0.4rem;
           border-radius: 4px;
-          border: 1px solid var(--card-border);
         }
+
         .item-sub-row {
-          font-size: 0.75rem;
-          color: var(--muted);
           display: flex;
           align-items: center;
           gap: 0.45rem;
-          margin-top: 0.25rem;
-        }
-        .item-status-col {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 0.35rem;
-          flex-shrink: 0;
-        }
-        .item-time {
-          font-size: 0.72rem;
+          font-size: 0.78rem;
           color: var(--muted);
+          margin-top: 0.2rem;
         }
 
-        /* Quick Action Stack */
+        .item-status-col {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          flex-shrink: 0;
+        }
+
+        .live-external-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.3rem;
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.25);
+          color: #10b981;
+          font-size: 0.72rem;
+          font-weight: 600;
+          text-decoration: none;
+          transition: all 0.15s ease;
+        }
+        .live-external-btn:hover {
+          background: rgba(16, 185, 129, 0.2);
+          border-color: rgba(16, 185, 129, 0.4);
+          transform: translateY(-1px);
+        }
+
+        .empty-inner {
+          padding: 2.5rem 1rem;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+
+        /* Quick cards */
         .quick-actions-stack {
           display: flex;
           flex-direction: column;
           gap: 0.75rem;
         }
+
         .quick-card {
           display: flex;
           align-items: center;
           gap: 0.85rem;
-          padding: 0.85rem 1rem;
+          padding: 0.85rem;
           border-radius: 10px;
           background: var(--bg-inset);
           border: 1px solid var(--card-border);
@@ -570,9 +648,9 @@ export default function ConsolePage() {
           transition: all 0.15s ease;
         }
         .quick-card:hover {
-          background: var(--card-hover);
           border-color: var(--card-border-hover);
-          transform: translateY(-1px);
+          background: var(--card-hover);
+          transform: translateX(2px);
         }
         .quick-card-icon {
           width: 36px;
@@ -584,88 +662,48 @@ export default function ConsolePage() {
           flex-shrink: 0;
         }
         .quick-card-title {
-          font-size: 0.86rem;
-          font-weight: 600;
+          font-size: 0.88rem;
+          font-weight: 650;
           color: var(--foreground);
         }
         .quick-card-sub {
-          font-size: 0.74rem;
+          font-size: 0.75rem;
           color: var(--muted);
           margin-top: 0.15rem;
         }
 
-        /* Mesh Mini Preview */
-        .mesh-mini-preview {
-          background: var(--bg-inset);
-          border: 1px solid var(--card-border);
-          border-radius: 8px;
-          padding: 1rem;
+        /* Ingress details */
+        .ingress-info-stack {
           display: flex;
           flex-direction: column;
           gap: 0.65rem;
         }
-        .mesh-mini-node {
+        .ingress-info-row {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: var(--foreground);
-          background: var(--card);
-          padding: 0.5rem 0.75rem;
-          border-radius: 6px;
-          border: 1px solid var(--card-border);
+          justify-content: space-between;
+          padding: 0.5rem 0;
+          border-bottom: 1px solid var(--card-border);
+          font-size: 0.8125rem;
         }
-        .mesh-mini-connector {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding-left: 1.25rem;
-          font-size: 0.72rem;
+        .ingress-info-row:last-child {
+          border-bottom: none;
+        }
+        .ingress-key {
           color: var(--muted);
-          font-family: var(--font-geist-mono), monospace;
         }
-        .mesh-mini-arrow {
-          color: var(--accent);
-        }
-        .mesh-mini-ping {
-          color: #10b981;
+        .ingress-val {
+          font-weight: 550;
+          color: var(--foreground);
         }
 
-        /* Responsive Breakpoints */
         @media (max-width: 1024px) {
-          .console-hero {
-            flex-direction: column;
-            align-items: stretch;
-            gap: 1.25rem;
-            padding: 1.75rem;
-          }
-          .hero-actions {
-            width: 100%;
-          }
-          .hero-actions .btn {
-            flex: 1;
-          }
           .console-split-layout {
             grid-template-columns: 1fr;
-            gap: 1.5rem;
           }
-        }
-
-        @media (max-width: 640px) {
-          .hero-title {
-            font-size: 1.6rem;
-          }
-          .hero-actions {
-            flex-direction: column;
-          }
-          .item-row {
-            padding: 0.85rem 1rem;
-          }
-          .item-name-row {
+          .console-hero {
             flex-direction: column;
             align-items: flex-start;
-            gap: 0.2rem;
           }
         }
       `}</style>

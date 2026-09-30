@@ -28,18 +28,18 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const apiUrl = getApiBase();
+  const productionApiUrl = "https://whizan-cloud-service.onrender.com";
   const edgeDomain = getBaseRouterDomain();
-  const dashboardUrl = typeof window !== "undefined" ? window.location.origin : "https://whizan-cloud-service-dashboard.vercel.app";
-  const isLocal = apiUrl.includes("localhost") || apiUrl.includes("127.0.0.1");
+  const dashboardUrl = typeof window !== "undefined" && !window.location.hostname.includes("localhost")
+    ? window.location.origin
+    : "https://whizan-cloud-service-dashboard.vercel.app";
 
   const endpoints = [
-    { label: "API Control Plane", value: apiUrl, desc: isLocal ? "Local Fastify REST Control Plane (:8000)" : "Fastify REST & SSE Control Plane on Render" },
-    { label: "Dashboard Console", value: dashboardUrl, desc: isLocal ? "Local Next.js Dashboard (:3000)" : "Production Dashboard on Vercel" },
-    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: isLocal ? "Local Edge Router (:8080)" : "Reverse proxy on Azure VM (20.2.136.11)" },
-    { label: "Docker Mesh Bridge", value: "whizan-internal-network", desc: "Internal service mesh with DNS aliases" },
-    { label: "PostgreSQL Database", value: isLocal ? "localhost:5432 / hostify" : "aws-0-ap-northeast-1.pooler.supabase.com:5432", desc: isLocal ? "Local PostgreSQL Docker Container" : "Supabase cloud persistence layer" },
-    { label: "Redis & BullMQ", value: isLocal ? "localhost:6379" : "Upstash Redis (TLS)", desc: isLocal ? "Local Redis Docker Container" : "Upstash Redis queue & pub/sub broker" },
+    { label: "API Control Plane", value: productionApiUrl, desc: "REST & SSE Control Plane" },
+    { label: "Dashboard Console", value: dashboardUrl, desc: "Production Management Console" },
+    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: "Azure VM Edge Router (20.2.136.11)" },
+    { label: "PostgreSQL Database Pooler", value: "aws-0-ap-northeast-1.pooler.supabase.com:6543", desc: "Enterprise PgBouncer Connection Pooler" },
+    { label: "Distributed Redis Cache", value: "Upstash Redis (TLS)", desc: "Low-latency Cache & Queue Broker" },
   ];
 
   function copyValue(val: string, key: string) {
@@ -133,7 +133,7 @@ export default function SettingsPage() {
           command: "npx",
           args: ["-y", "@whizan/mcp-devops"],
           env: {
-            WHIZAN_API_URL: apiUrl,
+            WHIZAN_API_URL: productionApiUrl,
             WHIZAN_API_KEY: newKey?.key || "whz_live_YOUR_KEY_HERE",
           },
         },

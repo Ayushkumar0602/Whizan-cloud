@@ -3,79 +3,66 @@ export type CloudService = {
   name: string;
   tagline: string;
   description: string;
-  href?: string;
+  href: string;
   available: boolean;
-  eta?: string;
-  icon?: string;
+  category: "Compute" | "Storage" | "DevOps";
+  specs: string;
 };
 
 export const CLOUD_SERVICES: CloudService[] = [
   {
-    id: "backend-hosting",
-    name: "Backend Container Services",
-    tagline: "Isolated Docker Runtimes with Auto-Sleep",
-    description:
-      "Deploy Node.js, Python, and Go microservices with Cloud Native 0.1 vCPU scale-to-zero free tier and internal service mesh discovery.",
-    href: "/dashboard/backend",
-    available: true,
-  },
-  {
     id: "frontend-hosting",
     name: "Frontend Edge Hosting",
-    tagline: "Ship Next.js & React sites in minutes",
+    tagline: "High-performance web app hosting",
     description:
-      "Connect a GitHub repo, build on high-speed workers, and serve traffic across edge proxies with automated SSL certificates.",
+      "Instant deployments for Next.js, React, Vite, and Astro with automated SSL and edge routing.",
     href: "/dashboard/hosting",
     available: true,
+    category: "Compute",
+    specs: "Edge CDN • Global SSL • Zero-Downtime",
   },
   {
-    id: "private-mesh",
-    name: "Private Service Mesh & DNS",
-    tagline: "Sub-millisecond container discovery",
+    id: "backend-hosting",
+    name: "Backend Container Services",
+    tagline: "Scalable microservices & workers",
     description:
-      "Zero-configuration internal Docker bridge network allowing frontends to query backend services via http://service-alias:port without public internet traversal.",
+      "Deploy Node.js, Python, Go, and Docker applications with continuous health monitoring.",
     href: "/dashboard/backend",
     available: true,
+    category: "Compute",
+    specs: "Dedicated / Free Tier • Health Probes",
   },
   {
     id: "managed-postgres",
     name: "PostgreSQL Database",
-    tagline: "Dedicated relational storage",
+    tagline: "Enterprise relational database",
     description:
-      "Fully managed Postgres instances with automatic connection pooling, read replicas, and SSL connectivity.",
-    href: "/dashboard/admin/database",
+      "Dedicated PostgreSQL with PgBouncer connection pooling, table schema visualizer, and query console.",
+    href: "/dashboard/databases",
     available: true,
+    category: "Storage",
+    specs: "PgBouncer • TLS 1.3 • Web Explorer",
   },
   {
     id: "managed-redis",
     name: "In-Memory Redis Cache",
-    tagline: "Sub-millisecond caching & Pub/Sub",
+    tagline: "Sub-millisecond data store",
     description:
-      "Low-latency Redis key-value cache and BullMQ job queue storage running directly on the cloud host.",
-    href: "/dashboard/admin/database",
+      "Low-latency key-value storage and queue broker for background jobs, distributed locking, and caching.",
+    href: "/dashboard/databases",
     available: true,
-  }
-];
-
-export const DEPLOY_GUIDE = [
-  {
-    n: "01",
-    title: "Connect Repository",
-    body: "Link your GitHub repository URL and production branch. No zip uploads or manual configurations needed.",
+    category: "Storage",
+    specs: "TLS Encryption • BullMQ Compatible",
   },
   {
-    n: "02",
-    title: "Configure Compute & Mesh",
-    body: "Choose between dynamic scale-to-zero (0.1 vCPU Free Tier) or dedicated multi-core capacity.",
-  },
-  {
-    n: "03",
-    title: "Automated Build Pipeline",
-    body: "Isolated worker clones the repo, installs dependencies, executes the build, and starts health checks.",
-  },
-  {
-    n: "04",
-    title: "Internal Mesh Discovery",
-    body: "Frontends and backends instantly connect over the private Docker network bridge using standard DNS names.",
+    id: "devops-mcp",
+    name: "DevOps Agent MCP",
+    tagline: "AI IDE infrastructure integration",
+    description:
+      "Model Context Protocol server enabling Cursor, Windsurf, and Claude to deploy and manage resources autonomously.",
+    href: "/dashboard/mcp",
+    available: true,
+    category: "DevOps",
+    specs: "Stdio Protocol • Cross-IDE Support",
   },
 ];

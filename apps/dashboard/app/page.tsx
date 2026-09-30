@@ -2,173 +2,520 @@
 
 import Link from "next/link";
 import { BrandMark } from "@/components/brand";
-import { CLOUD_SERVICES, DEPLOY_GUIDE } from "@/lib/services";
+import { CLOUD_SERVICES } from "@/lib/services";
 import { useAuth } from "@/lib/auth";
-import { ArrowRight, CheckCircle2, Eye, GitBranch, Rocket } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  Globe,
+  Server,
+  Database,
+  Terminal,
+  ShieldCheck,
+  Zap,
+  Activity,
+  Cpu,
+  Lock,
+  Layers
+} from "lucide-react";
 
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const ctaHref = !loading && user ? "/dashboard" : "/register";
-  const ctaLabel = !loading && user ? "Open console" : "Start deploying";
+  const ctaLabel = !loading && user ? "Go to Console" : "Start Deploying Free";
+
+  const getServiceIcon = (id: string) => {
+    switch (id) {
+      case "frontend-hosting":
+        return <Globe size={22} style={{ color: "#38bdf8" }} />;
+      case "backend-hosting":
+        return <Server size={22} className="text-accent" />;
+      case "managed-postgres":
+        return <Database size={22} style={{ color: "#818cf8" }} />;
+      case "managed-redis":
+        return <Zap size={22} style={{ color: "#f59e0b" }} />;
+      case "devops-mcp":
+        return <Terminal size={22} style={{ color: "#a855f7" }} />;
+      default:
+        return <Layers size={22} className="text-accent" />;
+    }
+  };
 
   return (
-    <div className="land">
-      <header className="land-nav">
+    <div className="landing-shell">
+      {/* Top Navigation */}
+      <header className="landing-nav">
         <BrandMark />
-        <nav className="land-links">
+        <nav className="landing-nav-links">
           <a href="#services">Services</a>
-          <a href="#how">How it works</a>
+          <a href="#capabilities">Platform</a>
+          <Link href="/dashboard/mcp" className="nav-text-link">MCP Server</Link>
           {user ? (
-            <Link href="/dashboard" className="btn btn-primary">Console</Link>
+            <Link href="/dashboard" className="btn btn-primary btn-sm">
+              Console <ArrowRight size={14} />
+            </Link>
           ) : (
-            <>
-              <Link href="/login" className="btn btn-secondary">Sign in</Link>
-              <Link href="/register" className="btn btn-primary">Get started</Link>
-            </>
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <Link href="/login" className="btn btn-secondary btn-sm">Sign in</Link>
+              <Link href="/register" className="btn btn-primary btn-sm">Get started</Link>
+            </div>
           )}
         </nav>
       </header>
 
-      <section className="land-hero">
-        <p className="land-eyebrow">Whizan Cloud Services</p>
-        <h1>Cloud that tells you what it’s doing.</h1>
-        <p className="land-lead">
-          Frontend Hosting is live today. Connect a repo, follow every step from queue to live URL,
-          and add more Whizan services as they launch — without learning a new console each time.
+      {/* Hero Section */}
+      <section className="landing-hero">
+        <div className="hero-pill-badge">
+          <span className="hero-pulse-dot" />
+          <span>Production Cloud Platform</span>
+        </div>
+
+        <h1 className="hero-headline">
+          The Cloud Platform Built for <span className="headline-gradient">Speed & Precision</span>
+        </h1>
+
+        <p className="hero-lead-text">
+          Deploy Next.js & Vite frontends, containerized Docker backends, and managed databases with zero DevOps friction. Real-time observability, automated edge SSL, and sub-millisecond routing.
         </p>
-        <div className="land-ctas">
-          <Link href={ctaHref} className="btn btn-primary" id="hero-cta">
+
+        <div className="hero-cta-row">
+          <Link href={ctaHref} className="btn btn-primary btn-lg" id="hero-cta-btn">
             {ctaLabel} <ArrowRight size={16} />
           </Link>
-          <Link href="/login" className="btn btn-secondary">I already have an account</Link>
+          <Link href="/dashboard/hosting" className="btn btn-secondary btn-lg">
+            Explore Deployments
+          </Link>
         </div>
-        <div className="land-pills">
-          <span><Eye size={14} /> Every deploy step is visible</span>
-          <span><GitBranch size={14} /> GitHub in, URL out</span>
-          <span><Rocket size={14} /> One console for future services</span>
+
+        <div className="hero-feature-pills">
+          <span className="feature-pill"><Globe size={13} /> Global Edge CDN</span>
+          <span className="feature-pill"><ShieldCheck size={13} /> Automatic Wildcard SSL</span>
+          <span className="feature-pill"><Cpu size={13} /> Instant Container Deploys</span>
+          <span className="feature-pill"><Terminal size={13} /> AI Agent MCP Ready</span>
         </div>
       </section>
 
-      <section id="services" className="land-section">
-        <div className="land-section-head">
-          <h2>The catalog</h2>
-          <p>Start with hosting. The rest of the cloud stack is on the way.</p>
+      {/* Cloud Suite Grid */}
+      <section id="services" className="landing-section">
+        <div className="section-header-block">
+          <div className="section-eyebrow">Cloud Infrastructure</div>
+          <h2 className="section-title">Everything your application needs to scale</h2>
+          <p className="section-desc">Unified control plane across edge runtimes, isolated containers, and relational databases.</p>
         </div>
-        <div className="service-grid">
+
+        <div className="services-grid">
           {CLOUD_SERVICES.map(svc => (
-            <div
-              key={svc.id}
-              className={`service-card ${svc.available ? "" : "service-card-soon"}`}
-            >
-              <div className="service-kicker">{svc.available ? "Available" : svc.eta}</div>
-              <div className="service-title">{svc.name}</div>
-              <p className="service-desc">{svc.description}</p>
-              {svc.available ? (
-                <Link href={ctaHref} className="btn btn-primary" style={{ width: "fit-content" }}>
-                  Use Frontend Hosting <ArrowRight size={14} />
+            <div key={svc.id} className="card card-hoverable service-showcase-card">
+              <div className="service-card-top">
+                <div className="service-icon-box">
+                  {getServiceIcon(svc.id)}
+                </div>
+                <span className="badge badge-ready">
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                  Live
+                </span>
+              </div>
+
+              <h3 className="showcase-title">{svc.name}</h3>
+              <div className="showcase-tagline">{svc.tagline}</div>
+              <p className="showcase-desc">{svc.description}</p>
+
+              <div className="showcase-specs mono">{svc.specs}</div>
+
+              <div style={{ marginTop: "auto", paddingTop: "1rem" }}>
+                <Link href={ctaHref} className="btn btn-secondary btn-sm" style={{ width: "100%" }}>
+                  <span>Deploy {svc.name.split(" ")[0]}</span>
+                  <ArrowRight size={13} />
                 </Link>
-              ) : (
-                <span className="badge badge-queued">Coming soon</span>
-              )}
+              </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="how" className="land-section">
-        <div className="land-section-head">
-          <h2>You always know the next click</h2>
-          <p>No hidden builds. The console walks you through deploy start to live.</p>
+      {/* Platform Capabilities */}
+      <section id="capabilities" className="landing-section">
+        <div className="section-header-block">
+          <div className="section-eyebrow">Developer Experience</div>
+          <h2 className="section-title">Designed for engineering teams</h2>
+          <p className="section-desc">Move from git push to production in seconds with zero server maintenance.</p>
         </div>
-        <div className="guide-grid">
-          {DEPLOY_GUIDE.map(step => (
-            <article key={step.n} className="guide-card">
-              <div className="guide-n">{step.n}</div>
-              <h3>{step.title}</h3>
-              <p>{step.body}</p>
-            </article>
-          ))}
-        </div>
-      </section>
 
-      <section className="land-section">
-        <div className="land-promise">
-          <CheckCircle2 size={18} color="var(--accent-2)" />
-          <div>
-            <strong>Frontend Hosting, without the mystery.</strong>
-            <p>Queue, clone, install, build, publish, live — each state has a label, a hint, and logs.</p>
+        <div className="capabilities-grid">
+          <div className="card capability-card">
+            <div className="capability-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
+              <Zap size={22} />
+            </div>
+            <h3 className="capability-title">Zero-Downtime Cutovers</h3>
+            <p className="capability-desc">
+              New builds spin up in isolated containers, undergo automated HTTP health probes, and transition live traffic with zero dropped requests.
+            </p>
           </div>
-          <Link href={ctaHref} className="btn btn-primary">{ctaLabel}</Link>
+
+          <div className="card capability-card">
+            <div className="capability-icon" style={{ background: "rgba(99, 102, 241, 0.12)", color: "#818cf8" }}>
+              <Terminal size={22} />
+            </div>
+            <h3 className="capability-title">DevOps Agent MCP</h3>
+            <p className="capability-desc">
+              Connect your favorite AI IDE — Cursor, Windsurf, Claude — to autonomously audit, configure, and ship services via model context protocols.
+            </p>
+          </div>
+
+          <div className="card capability-card">
+            <div className="capability-icon" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#34d399" }}>
+              <ShieldCheck size={22} />
+            </div>
+            <h3 className="capability-title">Automated SSL & Security</h3>
+            <p className="capability-desc">
+              Wildcard TLS encryption, hardened container isolation, and AES-256 encrypted environment variables standard across every project.
+            </p>
+          </div>
+
+          <div className="card capability-card">
+            <div className="capability-icon" style={{ background: "rgba(245, 158, 11, 0.12)", color: "#fbbf24" }}>
+              <Activity size={22} />
+            </div>
+            <h3 className="capability-title">Real-Time Telemetry</h3>
+            <p className="capability-desc">
+              Live streaming build terminals, container memory/CPU metrics, and web query runners keep you in total control of your cloud runtime.
+            </p>
+          </div>
         </div>
       </section>
 
-      <footer className="land-foot">
+      {/* CTA Callout */}
+      <section className="landing-section" style={{ paddingBottom: "4.5rem" }}>
+        <div className="cta-banner-card">
+          <div className="cta-banner-content">
+            <h2 className="cta-banner-title">Start deploying on Whizan Cloud today</h2>
+            <p className="cta-banner-desc">
+              Connect your GitHub repository and experience seamless, lightning-fast edge hosting and backend microservices.
+            </p>
+          </div>
+          <div className="cta-banner-actions">
+            <Link href={ctaHref} className="btn btn-primary btn-lg">
+              {ctaLabel} <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="landing-footer">
         <BrandMark />
-        <span>© {new Date().getFullYear()} Whizan Cloud Services</span>
+        <div className="footer-links-row">
+          <Link href="/dashboard" className="footer-link">Console</Link>
+          <Link href="/dashboard/hosting" className="footer-link">Frontend</Link>
+          <Link href="/dashboard/backend" className="footer-link">Backend</Link>
+          <Link href="/dashboard/databases" className="footer-link">Databases</Link>
+          <Link href="/dashboard/mcp" className="footer-link">MCP</Link>
+        </div>
+        <div className="footer-copy">
+          © {new Date().getFullYear()} Whizan Cloud Services. All rights reserved.
+        </div>
       </footer>
 
       <style>{`
-        .land {
+        .landing-shell {
           min-height: 100vh;
           background:
-            radial-gradient(900px 420px at 80% -10%, rgba(61,139,255,0.18), transparent 55%),
-            radial-gradient(700px 380px at -10% 20%, rgba(34,200,163,0.1), transparent 50%),
+            radial-gradient(1100px 500px at 50% -10%, rgba(99, 102, 241, 0.15), transparent 60%),
+            radial-gradient(800px 400px at 100% 20%, rgba(56, 189, 248, 0.08), transparent 50%),
             var(--background);
+          color: var(--foreground);
         }
-        .land-nav {
-          display: flex; align-items: center; justify-content: space-between;
-          max-width: 1120px; margin: 0 auto; padding: 1.25rem 1.5rem;
+
+        .landing-nav {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 1.25rem 2rem;
         }
-        .land-links { display: flex; align-items: center; gap: 1.1rem; }
-        .land-links a:not(.btn) {
-          color: var(--muted); text-decoration: none; font-size: 0.9rem;
+
+        .landing-nav-links {
+          display: flex;
+          align-items: center;
+          gap: 1.5rem;
         }
-        .land-links a:not(.btn):hover { color: var(--foreground); }
-        .land-hero { max-width: 820px; margin: 0 auto; padding: 4.5rem 1.5rem 3rem; }
-        .land-eyebrow {
-          color: var(--accent-2); font-size: 0.75rem; letter-spacing: 0.12em;
-          text-transform: uppercase; font-weight: 700; margin-bottom: 0.9rem;
+        .landing-nav-links a:not(.btn) {
+          color: var(--muted);
+          text-decoration: none;
+          font-size: 0.88rem;
+          font-weight: 500;
+          transition: color 0.15s ease;
         }
-        .land-hero h1 {
-          font-size: clamp(2.2rem, 5vw, 3.4rem); letter-spacing: -0.045em;
-          line-height: 1.08; font-weight: 750; margin-bottom: 1rem;
+        .landing-nav-links a:not(.btn):hover {
+          color: var(--foreground);
         }
-        .land-lead { font-size: 1.05rem; color: var(--muted); line-height: 1.6; max-width: 40rem; }
-        .land-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; margin: 1.75rem 0 1.25rem; }
-        .land-pills { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-        .land-pills span {
-          display: inline-flex; align-items: center; gap: 0.4rem;
-          font-size: 0.8rem; color: var(--muted);
-          border: 1px solid var(--card-border); background: rgba(16,21,29,0.7);
-          border-radius: 999px; padding: 0.35rem 0.75rem;
+
+        /* Hero */
+        .landing-hero {
+          max-width: 880px;
+          margin: 0 auto;
+          padding: 5rem 1.5rem 3.5rem;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
         }
-        .land-section { max-width: 1120px; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
-        .land-section-head { margin-bottom: 1.25rem; }
-        .land-section-head h2 { font-size: 1.45rem; letter-spacing: -0.03em; }
-        .land-section-head p { color: var(--muted); margin-top: 0.35rem; }
-        .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.85rem; }
-        .guide-card {
-          background: var(--card); border: 1px solid var(--card-border);
-          border-radius: 14px; padding: 1.15rem;
+
+        .hero-pill-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.3rem 0.85rem;
+          border-radius: 9999px;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.25);
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--accent);
+          margin-bottom: 1.25rem;
         }
-        .guide-n { color: var(--accent); font-weight: 700; font-size: 0.8rem; margin-bottom: 0.5rem; }
-        .guide-card h3 { font-size: 1rem; margin-bottom: 0.35rem; }
-        .guide-card p { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
-        .land-promise {
-          display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
-          background: var(--card); border: 1px solid var(--card-border);
-          border-radius: 16px; padding: 1.25rem 1.4rem;
+        .hero-pulse-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 6px #10b981;
         }
-        .land-promise { justify-content: space-between; }
-        .land-promise p { color: var(--muted); font-size: 0.85rem; margin-top: 0.2rem; }
-        .land-foot {
-          max-width: 1120px; margin: 0 auto; padding: 1.5rem;
-          display: flex; justify-content: space-between; align-items: center;
-          color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--card-border);
+
+        .hero-headline {
+          font-size: clamp(2.4rem, 5.5vw, 4rem);
+          font-weight: 850;
+          letter-spacing: -0.04em;
+          line-height: 1.08;
+          color: var(--foreground);
+          margin-bottom: 1.25rem;
         }
-        @media (max-width: 720px) {
-          .land-links a:not(.btn) { display: none; }
-          .land-hero { padding-top: 2.5rem; }
+        .headline-gradient {
+          background: var(--accent-gradient);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .hero-lead-text {
+          font-size: 1.1rem;
+          color: var(--muted);
+          line-height: 1.6;
+          max-width: 44rem;
+          margin-bottom: 2rem;
+        }
+
+        .hero-cta-row {
+          display: flex;
+          gap: 0.85rem;
+          margin-bottom: 2.25rem;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .hero-feature-pills {
+          display: flex;
+          gap: 0.65rem;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+        .feature-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          font-size: 0.8rem;
+          color: var(--muted);
+          background: var(--card);
+          border: 1px solid var(--card-border);
+          border-radius: 9999px;
+          padding: 0.35rem 0.85rem;
+          backdrop-filter: blur(12px);
+        }
+
+        /* Section Layouts */
+        .landing-section {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 3rem 1.5rem;
+        }
+
+        .section-header-block {
+          text-align: center;
+          max-width: 680px;
+          margin: 0 auto 2.5rem;
+        }
+        .section-eyebrow {
+          font-size: 0.75rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--accent);
+          margin-bottom: 0.5rem;
+        }
+        .section-title {
+          font-size: 2rem;
+          font-weight: 750;
+          letter-spacing: -0.03em;
+          color: var(--foreground);
+          margin-bottom: 0.5rem;
+        }
+        .section-desc {
+          font-size: 0.95rem;
+          color: var(--muted);
+          line-height: 1.55;
+        }
+
+        /* Services Showcase */
+        .services-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 1.25rem;
+        }
+        .service-showcase-card {
+          display: flex;
+          flex-direction: column;
+          padding: 1.5rem;
+          border-radius: var(--radius);
+        }
+        .service-card-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 1.25rem;
+        }
+        .service-icon-box {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          background: var(--bg-inset);
+          border: 1px solid var(--card-border);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .showcase-title {
+          font-size: 1.15rem;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+          margin-bottom: 0.25rem;
+        }
+        .showcase-tagline {
+          font-size: 0.8rem;
+          color: var(--accent);
+          font-weight: 550;
+          margin-bottom: 0.65rem;
+        }
+        .showcase-desc {
+          font-size: 0.84rem;
+          color: var(--muted);
+          line-height: 1.5;
+          margin-bottom: 1rem;
+        }
+        .showcase-specs {
+          font-size: 0.72rem;
+          color: var(--muted);
+          background: var(--bg-inset);
+          padding: 0.25rem 0.5rem;
+          border-radius: 6px;
+          border: 1px solid var(--card-border);
+          margin-bottom: 0.75rem;
+          display: inline-block;
+        }
+
+        /* Capabilities */
+        .capabilities-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+          gap: 1.25rem;
+        }
+        .capability-card {
+          padding: 1.75rem;
+          border-radius: var(--radius);
+        }
+        .capability-icon {
+          width: 46px;
+          height: 46px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 1.25rem;
+        }
+        .capability-title {
+          font-size: 1.05rem;
+          font-weight: 700;
+          letter-spacing: -0.02em;
+          margin-bottom: 0.5rem;
+        }
+        .capability-desc {
+          font-size: 0.85rem;
+          color: var(--muted);
+          line-height: 1.55;
+        }
+
+        /* CTA Banner */
+        .cta-banner-card {
+          background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(56, 189, 248, 0.08) 100%);
+          border: 1px solid rgba(99, 102, 241, 0.25);
+          border-radius: var(--radius-lg);
+          padding: 2.75rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 2rem;
+          box-shadow: var(--shadow);
+        }
+        .cta-banner-title {
+          font-size: 1.75rem;
+          font-weight: 800;
+          letter-spacing: -0.03em;
+          margin-bottom: 0.5rem;
+        }
+        .cta-banner-desc {
+          font-size: 0.95rem;
+          color: var(--muted);
+          max-width: 36rem;
+          line-height: 1.5;
+        }
+
+        /* Footer */
+        .landing-footer {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 2rem 1.5rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-top: 1px solid var(--card-border);
+          gap: 1.5rem;
+          flex-wrap: wrap;
+        }
+        .footer-links-row {
+          display: flex;
+          gap: 1.25rem;
+        }
+        .footer-link {
+          color: var(--muted);
+          font-size: 0.825rem;
+          text-decoration: none;
+          transition: color 0.15s ease;
+        }
+        .footer-link:hover {
+          color: var(--foreground);
+        }
+        .footer-copy {
+          color: var(--muted-fg);
+          font-size: 0.78rem;
+        }
+
+        @media (max-width: 860px) {
+          .landing-nav-links a:not(.btn) {
+            display: none;
+          }
+          .cta-banner-card {
+            flex-direction: column;
+            align-items: flex-start;
+          }
         }
       `}</style>
     </div>

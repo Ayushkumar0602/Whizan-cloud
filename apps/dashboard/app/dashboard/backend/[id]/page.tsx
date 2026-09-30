@@ -15,7 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ServiceLogs } from "@/components/service-logs";
 import { ServiceShell } from "@/components/service-shell";
 import { ServiceMetrics } from "@/components/service-metrics";
-import { getServiceIngressUrl } from "@/lib/domains";
+import { formatDeployedUrl, getServiceIngressUrl } from "@/lib/domains";
 
 const INSTANCE_PLANS = [
   { id: "starter",  name: "Starter",  cpu: 0.5, memory: 512,  desc: "0.5 vCPU • 512MB" },
@@ -314,7 +314,7 @@ export default function BackendServicePage() {
         {latestDeploy?.status === "READY" && (
           <div className="ingress-ribbon">
             <div className="ingress-info">
-              <div className="ingress-label">{service.isPublic ? "Public Gateway Ingress" : "Local Edge Ingress (whizan-router)"}</div>
+              <div className="ingress-label">Production Cloud Ingress</div>
               <a href={ingressUrl} target="_blank" rel="noreferrer" className="ingress-link mono">
                 {ingressUrl} <ExternalLink size={13} />
               </a>

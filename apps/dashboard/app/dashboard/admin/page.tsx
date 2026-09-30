@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useAdminStats } from "../../../hooks/useAdminStats";
 import { StatusBadge } from "@/components/status-badge";
+import { formatDeployedUrl } from "@/lib/domains";
 import { toast } from "sonner";
 
 function formatUptime(seconds: number) {
@@ -191,7 +192,7 @@ export default function AdminOverviewPage() {
         badgeLabel: "Frontend App",
         subType: d.deploymentType || d.project?.framework || "STATIC",
         status: d.status,
-        url: d.url ? (d.url.startsWith("http") ? d.url : `https://${d.url}`) : null,
+        url: d.status === "READY" ? formatDeployedUrl(d.url, d.project?.slug || d.slug || d.id) : null,
         detailHref: `/dashboard/projects/${d.project?.id || d.projectId}`,
         port: d.containerPort,
         branch: d.branch,
@@ -214,7 +215,7 @@ export default function AdminOverviewPage() {
         badgeLabel: "Backend Service",
         subType: s.language,
         status: status,
-        url: latest?.containerPort ? `http://${s.slug}.20.2.136.11.nip.io` : null,
+        url: latest?.status === "READY" ? formatDeployedUrl(latest.url, s.slug) : null,
         detailHref: `/dashboard/backend/${s.id}`,
         port: s.internalPort,
         branch: s.branch,
