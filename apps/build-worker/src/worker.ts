@@ -294,7 +294,8 @@ const worker = new Worker<BuildJob>(
           undefined,
           rootDir,
           imageTag,
-          detectedPort
+          detectedPort,
+          slug
         );
         deploymentType = "SSR";
         await log(`✓ Web container started on host port ${containerPort}`);
@@ -341,7 +342,10 @@ const worker = new Worker<BuildJob>(
             buildDir,
             envVars,
             analysis.serverEntry,
-            rootDir
+            rootDir,
+            undefined,
+            3000,
+            slug
           );
           await log(`✓ SSR container started on port ${containerPort}`);
         }
@@ -485,6 +489,50 @@ redisSub.on("message", async (channel, message) => {
       if (d.deploymentType === "STATIC") {
         // Static deployments are served directly from disk by edge-router. They never need a container.
         return;
+      }
+
+      // ── Ultra-Fast Sub-Second Cold Wake Path ──
+      // If the container already exists in Docker (just stopped to save resources), wake it up in ~100ms
+      try {
+        const Docker = (await import("dockerode")).default;
+        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+        const shortId = d.id.slice(0, 8);
+        const containerName = `app-${d.project.slug}`;
+        const match = allContainers.find((c) =>
+          c.Names?.some((n) => n === `/${containerName}` || n === containerName) ||
+          c.Labels?.["deploymentId"] === d.id ||
+          (d.project.slug && c.Labels?.["slug"] === d.project.slug) ||
+          c.Names?.some((n) => n.includes(`app-${shortId}`))
+        );
+
+        if (match) {
+          const container = docker.getContainer(match.Id);
+          const inspect = await container.inspect().catch(() => null);
+          const exposedKey = Object.keys(inspect?.HostConfig?.PortBindings || {})[0] || "3000/tcp";
+          const mappedPortStr = inspect?.HostConfig?.PortBindings?.[exposedKey]?.[0]?.HostPort;
+
+          if (inspect && mappedPortStr && !inspect.State?.Restarting) {
+            const mappedPort = parseInt(mappedPortStr, 10);
+            if (!inspect.State?.Running) {
+              await container.start();
+            }
+            await registerDeployment(redisPub, d.project.slug, {
+              type: (d.deploymentType?.toLowerCase() || "ssr") as any,
+              containerPort: mappedPort,
+              deploymentId: d.id,
+              projectId: d.projectId,
+            });
+            await prisma.deployment.update({
+              where: { id: d.id },
+              data: { containerPort: mappedPort, status: "READY" }
+            }).catch(() => {});
+            console.log(`[Scaler] Ultra-fast sub-second cold wake for ${d.project.slug} on port ${mappedPort}!`);
+            return;
+          }
+        }
+      } catch (fastWakeErr: any) {
+        console.warn(`[Scaler] Fast wake fell back to resume queue:`, fastWakeErr.message);
       }
 
       // Deduplicate cold start jobs in the build queue
@@ -1024,11 +1072,18 @@ const scalerInterval = setInterval(async () => {
         const docker = new Docker({ socketPath: "/var/run/docker.sock" });
         const containers = await docker.listContainers({ all: true }).catch(() => []);
         
-        const matches = containers.filter((c) => c.Mounts?.some((m) => m.Source?.includes(d.id)));
+        const matches = containers.filter((c) =>
+          c.Labels?.["deploymentId"] === d.id ||
+          (d.project.slug && c.Labels?.["slug"] === d.project.slug) ||
+          c.Names?.some((n) => n === `/app-${d.project.slug}` || n.includes(`app-${d.id.slice(0, 8)}`)) ||
+          c.Mounts?.some((m) => m.Source?.includes(d.id))
+        );
         for (const info of matches) {
           const container = docker.getContainer(info.Id);
-          if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
-          await container.remove({ force: true }).catch(() => {});
+          if (info.State === "running") {
+            await container.stop({ t: 2 }).catch(() => {});
+            console.log(`[Scaler] Preserved stopped container ${info.Names?.[0] || info.Id} for rapid sub-second wakeups.`);
+          }
         }
 
         // Remove containerPort from Edge Router to trigger wakeup on next request
