@@ -145,7 +145,7 @@ const server = http.createServer(async (req, res) => {
     const startBytes = res.socket?.bytesWritten || 0;
     serve(req as any, res as any, finalhandler(req, res) as any);
     res.on("finish", () => {
-      const bytesSent = (res.socket?.bytesWritten || 0) - startBytes;
+      const bytesSent = Math.max(0, (res.socket?.bytesWritten || 0) - startBytes);
       const event = {
         projectId: (deployment as any).projectId,
         date: new Date().toISOString().split("T")[0],
