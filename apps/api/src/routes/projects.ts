@@ -45,6 +45,13 @@ export async function projectRoutes(fastify: FastifyInstance) {
     let finalSlug = body.data.slug;
     let slugTaken = await prisma.project.findUnique({ where: { slug: finalSlug } });
     if (slugTaken) {
+      if (slugTaken.userId === userId) {
+        return reply.code(409).send({
+          error: `Project with slug '${finalSlug}' already exists in your account.`,
+          existingProject: slugTaken,
+          instructions: `To deploy to this existing project, call whizan_deploy_direct with targetType: 'project' and targetId: '${slugTaken.id}'.`,
+        });
+      }
       finalSlug = `${finalSlug}-${userId.replace(/-/g, '').substring(0, 5)}`;
       let secondCheck = await prisma.project.findUnique({ where: { slug: finalSlug } });
       if (secondCheck) {

@@ -99,7 +99,11 @@ app.decorate("authenticate", async (request: any, reply: any) => {
     });
 
     if (apiKeyRecord) {
-      request.user = { userId: apiKeyRecord.userId, email: apiKeyRecord.user.email };
+      request.user = {
+        userId: apiKeyRecord.userId,
+        email: apiKeyRecord.user.email,
+        subscriptionTier: (apiKeyRecord.user as any).subscriptionTier || "HOBBY",
+      };
       // Update lastUsedAt asynchronously
       prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
       return;

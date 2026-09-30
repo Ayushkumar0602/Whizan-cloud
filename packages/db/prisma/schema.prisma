@@ -22,6 +22,7 @@ model User {
   githubToken  String?   @map("github_token")     // encrypted
   name         String?
   avatarUrl    String?   @map("avatar_url")
+  subscriptionTier String @default("HOBBY") @map("subscription_tier") // HOBBY | PROFESSIONAL
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

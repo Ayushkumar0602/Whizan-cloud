@@ -79,7 +79,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
     return reply.code(201).send({
       accessToken,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: { id: user.id, email: user.email, name: user.name, subscriptionTier: (user as any).subscriptionTier || "HOBBY" },
     });
   });
 
@@ -100,7 +100,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
     return reply.send({
       accessToken,
-      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl },
+      user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, subscriptionTier: (user as any).subscriptionTier || "HOBBY" },
     });
   });
 
@@ -142,10 +142,39 @@ export async function authRoutes(fastify: FastifyInstance) {
       const { userId } = request.user;
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, email: true, name: true, avatarUrl: true, createdAt: true },
+        select: { id: true, email: true, name: true, avatarUrl: true, subscriptionTier: true, createdAt: true },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
-      return reply.send(user);
+      return reply.send({
+        ...user,
+        subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+      });
+    }
+  );
+
+  // PATCH /api/auth/subscription
+  fastify.patch(
+    "/subscription",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const body = request.body as { subscriptionTier?: string };
+      const rawTier = (body?.subscriptionTier || "").toUpperCase();
+      if (rawTier !== "HOBBY" && rawTier !== "PROFESSIONAL") {
+        return reply.code(400).send({ error: "Invalid subscription tier. Must be 'HOBBY' or 'PROFESSIONAL'" });
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { subscriptionTier: rawTier },
+        select: { id: true, email: true, name: true, subscriptionTier: true },
+      });
+
+      return reply.send({
+        success: true,
+        subscriptionTier: updated.subscriptionTier,
+        message: `Compute policy updated to ${rawTier === "HOBBY" ? "Hobby Plan (Free Tier locked)" : "Professional Plan (Custom compute unlocked)"}`,
+      });
     }
   );
 

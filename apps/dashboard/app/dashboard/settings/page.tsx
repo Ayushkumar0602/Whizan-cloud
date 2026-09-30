@@ -1,7 +1,7 @@
 "use client";
 import { useAuth } from "@/lib/auth";
 import { useState, useEffect } from "react";
-import { getApiBase, apiKeysApi, type ApiKeyItem, type CreatedApiKey } from "@/lib/api";
+import { getApiBase, apiKeysApi, auth, type ApiKeyItem, type CreatedApiKey } from "@/lib/api";
 import { getBaseRouterDomain } from "@/lib/domains";
 import { PageHeader } from "@/components/page-header";
 import {
@@ -47,6 +47,31 @@ export default function SettingsPage() {
     setCopiedKey(key);
     toast.success("Endpoint copied to clipboard");
     setTimeout(() => setCopiedKey(null), 2000);
+  }
+
+  // ─── Subscription & Compute Policy State ─────────────────────────────────
+  const [currentTier, setCurrentTier] = useState<"HOBBY" | "PROFESSIONAL">("HOBBY");
+  const [updatingTier, setUpdatingTier] = useState(false);
+
+  useEffect(() => {
+    if (user?.subscriptionTier) {
+      const normalized = (user.subscriptionTier as string).toUpperCase();
+      setCurrentTier(normalized === "PROFESSIONAL" ? "PROFESSIONAL" : "HOBBY");
+    }
+  }, [user]);
+
+  async function handleTierChange(tier: "HOBBY" | "PROFESSIONAL") {
+    if (tier === currentTier) return;
+    setUpdatingTier(true);
+    try {
+      await auth.updateSubscription(tier);
+      setCurrentTier(tier);
+      toast.success(`Subscription switched to ${tier === "HOBBY" ? "Hobby Plan" : "Professional Plan"}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update subscription tier");
+    } finally {
+      setUpdatingTier(false);
+    }
   }
 
   // ─── API Keys & MCP State ──────────────────────────────────────────────────
@@ -150,6 +175,89 @@ export default function SettingsPage() {
                   Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : "2026"}
                 </span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Subscription & Compute Policy Card */}
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Sparkles size={18} style={{ color: "#a855f7" }} />
+                <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+                  Subscription & Compute Policy
+                </h2>
+              </div>
+              <p className="card-sub" style={{ marginTop: "0.25rem" }}>
+                Enforces strict compute limits for AI agents and developer deployments.
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.04)", padding: "4px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <button
+                type="button"
+                onClick={() => handleTierChange("HOBBY")}
+                disabled={updatingTier}
+                className={`btn btn-sm ${currentTier === "HOBBY" ? "btn-primary" : "btn-ghost"}`}
+                style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem", borderRadius: "6px" }}
+              >
+                Hobby Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTierChange("PROFESSIONAL")}
+                disabled={updatingTier}
+                className={`btn btn-sm ${currentTier === "PROFESSIONAL" ? "btn-primary" : "btn-ghost"}`}
+                style={{ fontSize: "0.82rem", padding: "0.35rem 0.75rem", borderRadius: "6px" }}
+              >
+                Professional Plan
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
+            <div
+              style={{
+                padding: "1rem",
+                borderRadius: "8px",
+                border: currentTier === "HOBBY" ? "1px solid rgba(56, 189, 248, 0.4)" : "1px solid rgba(255,255,255,0.06)",
+                background: currentTier === "HOBBY" ? "rgba(56, 189, 248, 0.05)" : "rgba(255,255,255,0.02)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "HOBBY" ? "#38bdf8" : "#fff" }}>
+                  Hobby Tier (Free Compute)
+                </span>
+                {currentTier === "HOBBY" && <span className="badge badge-blue">Active</span>}
+              </div>
+              <ul style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
+                <li><strong>Backend Microservices:</strong> Strictly locked to Free Tier (0.1 vCPU, 512MB RAM, Auto-Sleep after 15m).</li>
+                <li><strong>Databases:</strong> Starter Tier with PgBouncer connection pooler (512MB RAM).</li>
+                <li><strong>Frontend Web Apps:</strong> Edge CDN & Static Hosting.</li>
+                <li><strong>AI Agent Safeguard:</strong> Agents CANNOT arbitrarily allocate compute or RAM.</li>
+              </ul>
+            </div>
+
+            <div
+              style={{
+                padding: "1rem",
+                borderRadius: "8px",
+                border: currentTier === "PROFESSIONAL" ? "1px solid rgba(168, 85, 247, 0.4)" : "1px solid rgba(255,255,255,0.06)",
+                background: currentTier === "PROFESSIONAL" ? "rgba(168, 85, 247, 0.05)" : "rgba(255,255,255,0.02)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "PROFESSIONAL" ? "#c084fc" : "#fff" }}>
+                  Professional Tier (Custom Compute)
+                </span>
+                {currentTier === "PROFESSIONAL" && <span className="badge badge-purple">Active</span>}
+              </div>
+              <ul style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
+                <li><strong>Custom Compute:</strong> Choose between Starter, Standard, Pro (up to 4 vCPUs / 4GB RAM).</li>
+                <li><strong>Always-On:</strong> Dedicated containers with zero cold-starts and no auto-sleep.</li>
+                <li><strong>High Performance Databases:</strong> Dedicated multi-core Postgres & Redis.</li>
+                <li><strong>Granular Control:</strong> Selectable directly from hosting pages.</li>
+              </ul>
             </div>
           </div>
         </div>

@@ -109,6 +109,12 @@ export const auth = {
   logout: () => request("/api/auth/logout", { method: "POST" }),
 
   me: () => request<User>("/api/auth/me"),
+
+  updateSubscription: (subscriptionTier: "HOBBY" | "PROFESSIONAL") =>
+    request<{ success: boolean; subscriptionTier: string; message: string }>("/api/auth/subscription", {
+      method: "PATCH",
+      body: JSON.stringify({ subscriptionTier }),
+    }),
 };
 
 export interface GitHubRepo {
@@ -246,6 +252,7 @@ export type User = {
   name?: string;
   avatarUrl?: string;
   role?: string;
+  subscriptionTier?: "HOBBY" | "PROFESSIONAL" | string;
   createdAt: string;
 };
 

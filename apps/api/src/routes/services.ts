@@ -80,6 +80,15 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     let finalSlug = body.data.slug;
     let slugTaken = await prisma.backendService.findUnique({ where: { slug: finalSlug } });
     
+    // Check if user already owns this service slug
+    if (slugTaken && slugTaken.userId === userId) {
+      return reply.code(409).send({
+        error: `Service with slug '${finalSlug}' already exists in your account.`,
+        existingService: slugTaken,
+        instructions: `To deploy to this existing service, call whizan_deploy_direct with targetType: 'service' and targetId: '${slugTaken.id}'.`,
+      });
+    }
+
     // Also ensure slug doesn't conflict with frontend projects
     let projectSlugTaken = await prisma.project.findUnique({ where: { slug: finalSlug } });
     
@@ -91,20 +100,36 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    let instanceType = body.data.instanceType || "starter";
+    // Subscription Tier Enforcement:
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true },
+    });
+    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
+
+    let instanceType = body.data.instanceType || (isProfessional ? "starter" : "free");
     let cpuLimit = body.data.cpuLimit;
     let memoryLimit = body.data.memoryLimit;
+    let autoSleep = body.data.autoSleep ?? (!isProfessional);
 
-    // Free Tier enforcement:
-    // If autoSleep (spin-down) is enabled, it strictly locks to 0.1 vCPU and 512MB RAM
-    if (body.data.autoSleep) {
+    if (!isProfessional) {
+      // Strict Hobby Tier enforcement:
+      // Agents and users on Hobby Plan are locked to free tier: 0.1 vCPU, 512MB RAM, autoSleep = true
       instanceType = "free";
       cpuLimit = 0.1;
       memoryLimit = 512;
+      autoSleep = true;
     } else {
-      const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
-      if (!cpuLimit) cpuLimit = tier.cpu;
-      if (!memoryLimit) memoryLimit = tier.memory;
+      // Professional users can customize compute
+      if (autoSleep) {
+        instanceType = "free";
+        cpuLimit = 0.1;
+        memoryLimit = 512;
+      } else {
+        const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
+        if (!cpuLimit) cpuLimit = tier.cpu;
+        if (!memoryLimit) memoryLimit = tier.memory;
+      }
     }
 
     const { envVars, ...serviceFields } = body.data;
@@ -169,23 +194,37 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
     const patchData: any = { ...body.data };
 
-    // When spin-down (autoSleep) is enabled, enforce 0.1 vCPU and 512MB RAM
-    if (patchData.autoSleep === true) {
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { subscriptionTier: true },
+    });
+    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
+
+    // Hobby plan is strictly locked to free tier
+    if (!isProfessional) {
       patchData.instanceType = "free";
       patchData.cpuLimit = 0.1;
       patchData.memoryLimit = 512;
-    } else if (patchData.autoSleep === false && existing.autoSleep === true) {
-      // Switching from Free Tier to Dedicated Always-On
-      if (!patchData.instanceType || patchData.instanceType === "free") {
-        patchData.instanceType = "starter";
+      patchData.autoSleep = true;
+    } else {
+      // When spin-down (autoSleep) is enabled, enforce 0.1 vCPU and 512MB RAM
+      if (patchData.autoSleep === true) {
+        patchData.instanceType = "free";
+        patchData.cpuLimit = 0.1;
+        patchData.memoryLimit = 512;
+      } else if (patchData.autoSleep === false && existing.autoSleep === true) {
+        // Switching from Free Tier to Dedicated Always-On
+        if (!patchData.instanceType || patchData.instanceType === "free") {
+          patchData.instanceType = "starter";
+        }
+        const tier = INSTANCE_TIERS[patchData.instanceType] || INSTANCE_TIERS.starter;
+        patchData.cpuLimit = patchData.cpuLimit || tier.cpu;
+        patchData.memoryLimit = patchData.memoryLimit || tier.memory;
+      } else if (patchData.instanceType && INSTANCE_TIERS[patchData.instanceType]) {
+        const tier = INSTANCE_TIERS[patchData.instanceType];
+        patchData.cpuLimit = patchData.cpuLimit || tier.cpu;
+        patchData.memoryLimit = patchData.memoryLimit || tier.memory;
       }
-      const tier = INSTANCE_TIERS[patchData.instanceType] || INSTANCE_TIERS.starter;
-      patchData.cpuLimit = patchData.cpuLimit || tier.cpu;
-      patchData.memoryLimit = patchData.memoryLimit || tier.memory;
-    } else if (patchData.instanceType && INSTANCE_TIERS[patchData.instanceType]) {
-      const tier = INSTANCE_TIERS[patchData.instanceType];
-      patchData.cpuLimit = patchData.cpuLimit || tier.cpu;
-      patchData.memoryLimit = patchData.memoryLimit || tier.memory;
     }
 
     const updated = await prisma.backendService.update({
