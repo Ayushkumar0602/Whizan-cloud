@@ -38,6 +38,7 @@ export interface LoadedBundle {
   serviceId: string;
   version: number;
   handler: (request: Request, context: FunctionContext) => Promise<Response> | Response;
+  namedExports?: Record<string, any>;
   loadedAt: number;
   lastAccessedAt: number;
   bundleSizeBytes: number;

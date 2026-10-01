@@ -41,6 +41,7 @@ export class FunctionSandbox {
       serviceId,
       version,
       handler,
+      namedExports: module,
       loadedAt: Date.now(),
       lastAccessedAt: Date.now(),
       bundleSizeBytes: stat.size,
@@ -167,7 +168,18 @@ export class FunctionSandbox {
     try {
       // 4. Execute with race against timeout
       const executionPromise = (async () => {
-        return await bundle.handler(webRequest, context);
+        const cleanPath = (req.routePath || "/").replace(/^\/+/, "").split("/")[0] || "";
+        let selectedHandler = bundle.handler;
+
+        if (cleanPath && bundle.namedExports) {
+          if (typeof bundle.namedExports[cleanPath] === "function") {
+            selectedHandler = bundle.namedExports[cleanPath];
+          } else if (typeof bundle.namedExports[cleanPath]?.handler === "function") {
+            selectedHandler = bundle.namedExports[cleanPath].handler;
+          }
+        }
+
+        return await selectedHandler(webRequest, context);
       })();
 
       const timeoutPromise = new Promise<never>((_, reject) => {
