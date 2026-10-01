@@ -912,8 +912,14 @@ export interface FunctionApiKeyItem {
 
 export interface FunctionEndpointItem {
   id: string;
-  path: string;
-  method: string;
+  serviceId?: string;
+  name: string;
+  routePath: string;
+  httpMethods: string[];
+  handlerName: string;
+  isPublic: boolean;
+  cacheTtlSec?: number;
+  createdAt?: string;
 }
 
 export interface FunctionEnvItem {
@@ -960,6 +966,34 @@ export interface FunctionTestResult {
   durationMs: number;
   memoryUsageMb: number;
   logs?: Array<{ level: string; message: string; timestamp: number }>;
+}
+
+export interface FunctionMetrics {
+  serviceId: string;
+  slug: string;
+  totalInvocations: number;
+  avgDurationMs: number;
+  p50DurationMs: number;
+  p95DurationMs: number;
+  p99DurationMs: number;
+  successCount: number;
+  clientErrorCount: number;
+  serverErrorCount: number;
+  errorRate: number;
+  statusCodes: Record<string, number>;
+  endpointBreakdown: Array<{
+    endpoint: string;
+    invocations: number;
+    avgDurationMs: number;
+    errors: number;
+    errorRate: number;
+  }>;
+  hourlySeries: Array<{
+    hour: string;
+    invocations: number;
+    avgLatencyMs: number;
+    errors: number;
+  }>;
 }
 
 export const functionsApi = {
@@ -1022,6 +1056,60 @@ export const functionsApi = {
       body: JSON.stringify({ code }),
     }),
 
+  // Endpoints / Functions inside service
+  listEndpoints: (id: string) => request<FunctionEndpointItem[]>(`/api/functions/${id}/endpoints`),
+  createEndpoint: (
+    id: string,
+    data: {
+      name: string;
+      routePath: string;
+      httpMethods?: string[];
+      handlerName?: string;
+      isPublic?: boolean;
+      cacheTtlSec?: number;
+    }
+  ) =>
+    request<FunctionEndpointItem>(`/api/functions/${id}/endpoints`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateEndpoint: (
+    id: string,
+    endpointId: string,
+    data: Partial<{
+      name: string;
+      routePath: string;
+      httpMethods: string[];
+      handlerName: string;
+      isPublic: boolean;
+      cacheTtlSec: number;
+    }>
+  ) =>
+    request<FunctionEndpointItem>(`/api/functions/${id}/endpoints/${endpointId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteEndpoint: (id: string, endpointId: string) =>
+    request<{ success: boolean; message: string }>(`/api/functions/${id}/endpoints/${endpointId}`, {
+      method: "DELETE",
+    }),
+
+  // Central Shared Env Variables
+  listEnv: (id: string) =>
+    request<Array<{ id: string; key: string; value: string; isSecret: boolean; createdAt: string }>>(
+      `/api/functions/${id}/env`
+    ),
+  setEnv: (id: string, key: string, value: string, isSecret = true) =>
+    request<{ success: boolean; key: string }>(`/api/functions/${id}/env`, {
+      method: "POST",
+      body: JSON.stringify({ key, value, isSecret }),
+    }),
+  deleteEnv: (id: string, key: string) =>
+    request<{ success: boolean; message: string }>(`/api/functions/${id}/env/${key}`, {
+      method: "DELETE",
+    }),
+
+  // API Keys
   createApiKey: (
     id: string,
     data: {
@@ -1041,6 +1129,7 @@ export const functionsApi = {
       method: "DELETE",
     }),
 
+  // Interactive Test
   test: (
     id: string,
     params: {
@@ -1054,6 +1143,9 @@ export const functionsApi = {
       method: "POST",
       body: JSON.stringify(params),
     }),
+
+  // Monitoring Metrics
+  getMetrics: (id: string) => request<FunctionMetrics>(`/api/functions/${id}/metrics`),
 
   getLogsStreamUrl: (id: string) => `${getApiBase()}/api/functions/${id}/logs`,
 };
