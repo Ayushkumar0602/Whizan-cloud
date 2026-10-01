@@ -335,17 +335,17 @@ export async function webhook(req: Request, context: any) {
   const handleRunBenchmark = async () => {
     setBenchmarkRunning(true);
     try {
-      const result = await functionsApi.test(functionId, {
+      const result: any = await functionsApi.test(functionId, {
         method: "GET",
         path: "/",
       });
       setBenchmarkResult({
-        latencyMs: result.durationMs,
-        memoryMb: result.memoryUsageMb,
-        status: result.status,
+        latencyMs: result.durationMs || 0,
+        memoryMb: result.memoryUsageMb || result.memoryMb || 0.1,
+        status: result.status || result.statusCode || 200,
         timestamp: new Date().toLocaleTimeString(),
       });
-      toast.success(`Live Edge benchmark complete: ${result.durationMs}ms latency!`);
+      toast.success(`Live Edge benchmark complete: ${result.durationMs || 0}ms latency!`);
       loadMetrics();
     } catch (err: any) {
       toast.error("Benchmark failed: " + err.message);
@@ -374,7 +374,7 @@ export async function webhook(req: Request, context: any) {
     }
 
     try {
-      const result = await functionsApi.test(functionId, {
+      const result: any = await functionsApi.test(functionId, {
         method: testMethod,
         path: testPath.startsWith("/") ? testPath : `/${testPath}`,
         headers: headersObj,
@@ -391,13 +391,14 @@ export async function webhook(req: Request, context: any) {
   // API Key creation
   const handleCreateKey = async () => {
     try {
-      const res = await functionsApi.createApiKey(functionId, {
+      const res: any = await functionsApi.createApiKey(functionId, {
         name: newKeyName,
         rateLimitRpm: newKeyRpm,
         scopes: ["EXECUTE"],
       });
-      if (res.apiKey?.key) {
-        setGeneratedKey(res.apiKey.key);
+      const generatedRawKey = res?.apiKey?.key || res?.key;
+      if (generatedRawKey) {
+        setGeneratedKey(generatedRawKey);
       }
       toast.success("API Key generated!");
       fetchService();
@@ -1170,7 +1171,9 @@ export async function webhook(req: Request, context: any) {
                   }}
                 >
                   <pre style={{ margin: 0 }}>
-                    {typeof testResult.data === "object" ? JSON.stringify(testResult.data, null, 2) : String(testResult.data)}
+                    {typeof testResult.data === "object"
+                      ? JSON.stringify(testResult.data, null, 2)
+                      : String(testResult.data !== undefined ? testResult.data : (testResult as any).body || "")}
                   </pre>
                 </div>
               </div>

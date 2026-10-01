@@ -474,8 +474,8 @@ export async function functionRoutes(fastify: FastifyInstance) {
     return fn;
   });
 
-  // PATCH /api/functions/:id - Update function configuration
-  fastify.patch("/:id", async (request, reply) => {
+  // PUT /api/functions/:id & PATCH /api/functions/:id - Update function configuration
+  const handleUpdateFunction = async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
     const body = UpdateFunctionSchema.parse(request.body);
@@ -511,8 +511,11 @@ export async function functionRoutes(fastify: FastifyInstance) {
       await redisClient.set(`fn:service:${updated.slug}`, JSON.stringify(newMeta));
     }
 
-    return updated;
-  });
+    return { success: true, service: updated, ...updated };
+  };
+
+  fastify.put("/:id", handleUpdateFunction);
+  fastify.patch("/:id", handleUpdateFunction);
 
   // DELETE /api/functions/:id - Cascade delete Function Service
   fastify.delete("/:id", async (request, reply) => {
@@ -671,11 +674,45 @@ export async function functionRoutes(fastify: FastifyInstance) {
 
     const res = await callRuntime("/invoke", testPayload, (fn.timeoutMs || 10000) + 5000);
 
-    return res;
+    let parsedData: any = res?.body;
+    try {
+      parsedData = typeof res?.body === "string" ? JSON.parse(res.body) : res?.body;
+    } catch {
+      parsedData = res?.body;
+    }
+
+    const formattedResult = {
+      status: res?.statusCode || 200,
+      statusCode: res?.statusCode || 200,
+      headers: res?.headers || {},
+      data: parsedData,
+      body: res?.body,
+      durationMs: res?.durationMs || 0,
+      memoryUsageMb: res?.memoryMb || 0,
+      memoryMb: res?.memoryMb || 0,
+      isBase64: res?.isBase64 || false,
+    };
+
+    // Buffer test invocation into Redis for live metrics
+    redisClient.rpush(
+      "fn:invocations:buffer",
+      JSON.stringify({
+        serviceId: fn.id,
+        endpoint: input.path || "/",
+        httpMethod: input.method || "POST",
+        statusCode: formattedResult.status,
+        durationMs: formattedResult.durationMs,
+        memoryMb: formattedResult.memoryUsageMb,
+        clientIp: request.ip || "127.0.0.1",
+        timestamp: new Date().toISOString(),
+      })
+    ).catch(() => {});
+
+    return formattedResult;
   });
 
-  // GET /api/functions/:id/keys - List API Keys
-  fastify.get("/:id/keys", async (request, reply) => {
+  // GET /api/functions/:id/keys & /api-keys
+  const handleListApiKeys = async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
 
@@ -700,10 +737,12 @@ export async function functionRoutes(fastify: FastifyInstance) {
       },
       orderBy: { createdAt: "desc" },
     });
-  });
+  };
+  fastify.get("/:id/keys", handleListApiKeys);
+  fastify.get("/:id/api-keys", handleListApiKeys);
 
-  // POST /api/functions/:id/keys - Generate a new API Key
-  fastify.post("/:id/keys", async (request, reply) => {
+  // POST /api/functions/:id/keys & /api-keys
+  const handleCreateApiKey = async (request: any, reply: any) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
     const body = CreateApiKeySchema.parse(request.body);
@@ -744,17 +783,27 @@ export async function functionRoutes(fastify: FastifyInstance) {
       28800
     );
 
-    return reply.code(201).send({
+    const keyResult = {
       id: apiKey.id,
       name: apiKey.name,
       key: fullKey, // Return plaintext ONCE
       keyPrefix: apiKey.keyPrefix,
+      scopes: apiKey.scopes,
+      rateLimitRpm: apiKey.rateLimitRpm,
       createdAt: apiKey.createdAt,
-    });
-  });
+    };
 
-  // DELETE /api/functions/:id/keys/:keyId - Revoke API Key
-  fastify.delete("/:id/keys/:keyId", async (request, reply) => {
+    return reply.code(201).send({
+      success: true,
+      apiKey: keyResult,
+      ...keyResult,
+    });
+  };
+  fastify.post("/:id/keys", handleCreateApiKey);
+  fastify.post("/:id/api-keys", handleCreateApiKey);
+
+  // DELETE /api/functions/:id/keys/:keyId & /api-keys/:keyId
+  const handleDeleteApiKey = async (request: any, reply: any) => {
     const { id, keyId } = request.params as { id: string; keyId: string };
     const { userId, role } = request.user;
 
@@ -773,7 +822,9 @@ export async function functionRoutes(fastify: FastifyInstance) {
     await prisma.functionApiKey.delete({ where: { id: keyId } });
 
     return { success: true, message: `API Key '${key.name}' revoked.` };
-  });
+  };
+  fastify.delete("/:id/keys/:keyId", handleDeleteApiKey);
+  fastify.delete("/:id/api-keys/:keyId", handleDeleteApiKey);
 
   // GET /api/functions/:id/logs - Real-time SSE Log Stream
   fastify.get("/:id/logs", async (request, reply) => {
@@ -863,6 +914,16 @@ export async function functionRoutes(fastify: FastifyInstance) {
 
     const rawPath = String(body.routePath || "/").trim();
     const routePath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+
+    const existingEp = await prisma.functionEndpoint.findFirst({
+      where: { serviceId: id, routePath },
+    });
+    if (existingEp) {
+      return reply.code(409).send({
+        error: "ENDPOINT_CONFLICT",
+        message: `An endpoint with routePath '${routePath}' already exists in this service.`,
+      });
+    }
 
     const endpoint = await prisma.functionEndpoint.create({
       data: {
