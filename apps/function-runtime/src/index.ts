@@ -1,5 +1,6 @@
 import "dotenv/config";
 import http from "http";
+import fs from "fs";
 import { Redis } from "ioredis";
 import { FunctionLogger } from "./logger.js";
 import { FunctionSandbox } from "./sandbox.js";
@@ -78,7 +79,30 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      if (!bundlePath) {
+      // If bundlePath is missing or doesn't exist on disk, attempt on-the-fly bundling from Redis source!
+      if (!bundlePath || !fs.existsSync(bundlePath)) {
+        const rawCode = await redis.get(`fn:source:${invocation.serviceId}:v${version}`);
+        if (rawCode) {
+          console.log(`[FunctionRuntime] On-the-fly bundling for ${invocation.slug} (v${version})...`);
+          try {
+            const bundled = await bundler.bundleCode(invocation.serviceId, version, { rawCode });
+            bundlePath = bundled.bundlePath;
+            // Update Redis service meta with new bundlePath
+            const currentMeta = await redis.get(`fn:service:${invocation.slug}`).catch(() => null);
+            if (currentMeta) {
+              try {
+                const parsed = JSON.parse(currentMeta);
+                parsed.bundlePath = bundlePath;
+                await redis.set(`fn:service:${invocation.slug}`, JSON.stringify(parsed));
+              } catch {}
+            }
+          } catch (compileErr: any) {
+            console.error(`[FunctionRuntime] On-the-fly bundling failed:`, compileErr.message);
+          }
+        }
+      }
+
+      if (!bundlePath || !fs.existsSync(bundlePath)) {
         return sendJson(404, {
           error: "BUNDLE_NOT_FOUND",
           message: `No active deployment bundle found for function service '${invocation.slug}'. Please deploy your code first.`,
@@ -111,6 +135,11 @@ const server = http.createServer(async (req, res) => {
       const result = await bundler.bundleCode(serviceId, version, { rawCode, entryFilePath });
       // Evict old cache
       pool.evict(serviceId, version);
+
+      // Cache raw code in Redis for on-the-fly compilation resilience
+      if (rawCode) {
+        await redis.set(`fn:source:${serviceId}:v${version}`, rawCode).catch(() => {});
+      }
 
       return sendJson(200, result);
     } catch (err: any) {

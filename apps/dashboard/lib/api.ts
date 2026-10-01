@@ -1015,7 +1015,14 @@ export const functionsApi = {
     initialCode?: string;
     envVars?: Record<string, string>;
   }) =>
-    request<{ functionService: FunctionServiceItem; initialApiKey?: { id: string; key: string; prefix: string; name: string } }>(
+    request<{
+      functionService: FunctionServiceItem;
+      service?: FunctionServiceItem;
+      initialApiKey?: { id: string; key: string; prefix?: string; name: string };
+      apiKey?: { id: string; key: string; keyPrefix?: string; name: string };
+      deployment?: any;
+      invocationUrl?: string;
+    }>(
       "/api/functions",
       {
         method: "POST",

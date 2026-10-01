@@ -23,6 +23,14 @@ import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
 
+process.on("unhandledRejection", (reason: any) => {
+  console.error("[Process] Unhandled Rejection (isolated):", reason?.message || reason);
+});
+
+process.on("uncaughtException", (err: any) => {
+  console.error("[Process] Uncaught Exception (isolated):", err?.message || err);
+});
+
 startAnalyticsProcessor();
 
 // ─── Startup Cleanup Routine ──────────────────────────────────────────────────

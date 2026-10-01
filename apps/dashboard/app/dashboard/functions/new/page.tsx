@@ -176,7 +176,7 @@ export default function NewEdgeFunctionPage() {
 
     setLoading(true);
     try {
-      const res = await functionsApi.create({
+      const res: any = await functionsApi.create({
         name: name.trim(),
         slug: slug.trim(),
         runtime: "EDGE_TYPESCRIPT",
@@ -186,19 +186,28 @@ export default function NewEdgeFunctionPage() {
         initialCode: code,
       });
 
-      const { functionService, initialApiKey } = res;
+      const fnService = res?.functionService || res?.service;
+      const keyInfo = res?.initialApiKey || res?.apiKey;
 
-      if (!isPublic && initialApiKey?.key) {
+      if (!fnService) {
+        throw new Error("Function created but service object was not returned");
+      }
+
+      if (!isPublic && keyInfo?.key) {
         // Show API key alert before routing
-        setCreatedApiKey(initialApiKey.key);
-        setCreatedSlug(functionService.slug);
-        setCreatedId(functionService.id);
+        setCreatedApiKey(keyInfo.key);
+        setCreatedSlug(fnService.slug);
+        setCreatedId(fnService.id);
       } else {
-        toast.success(`Edge Function '${functionService.name}' deployed!`);
-        router.push(`/dashboard/functions/${functionService.id}`);
+        toast.success(`Edge Function '${fnService.name}' deployed!`);
+        router.push(`/dashboard/functions/${fnService.id}`);
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to create Edge Function");
+      if (err.message?.includes("already taken") || err.message?.includes("SLUG_CONFLICT")) {
+        toast.error(`The slug '${slug}' is already taken. Please choose a different subdomain slug.`);
+      } else {
+        toast.error(err.message || "Failed to create Edge Function");
+      }
     } finally {
       setLoading(false);
     }
