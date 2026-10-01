@@ -383,6 +383,7 @@ model FunctionApiKey {
   name         String    @default("Production Key")
   keyHash      String    @unique @map("key_hash") // SHA-256 hash of plaintext key
   keyPrefix    String    @map("key_prefix")       // e.g. "whz_fn_live_a1b2..."
+  keyCipher    String?   @map("key_cipher")       // AES-256-GCM encrypted key for authorized retrieval
   scopes       String[]  @default(["EXECUTE"])    // EXECUTE | READ_LOGS | ADMIN
   rateLimitRpm Int       @default(600) @map("rate_limit_rpm") // Requests per minute
   ipWhitelist  String[]  @default([]) @map("ip_whitelist")

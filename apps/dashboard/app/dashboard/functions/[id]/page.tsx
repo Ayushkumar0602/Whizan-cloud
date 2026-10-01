@@ -141,6 +141,8 @@ export default function FunctionDetailPage() {
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, boolean>>({});
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
   // ── Settings state ────────────────────────────────────────────────────────
   const [settingsForm, setSettingsForm] = useState({
@@ -238,36 +240,67 @@ export async function webhook(req: Request, context: any) {
     }
   }, [activeTab]);
 
-  // Handle Live Logs SSE stream
+  // Handle Live Logs SSE stream with instant history fetch & reconnect resilience
   useEffect(() => {
     if (activeTab === "logs" && service) {
       setLogStreamStatus("connecting");
+
+      // 1. Instantly pull recent historical logs from Redis so terminal is never empty
+      functionsApi
+        .getLogsHistory(service.id)
+        .then((res) => {
+          if (res?.logs && Array.isArray(res.logs) && res.logs.length > 0) {
+            setLogs(res.logs);
+          }
+        })
+        .catch(() => {});
+
+      // 2. Open live SSE stream
       const streamUrl = functionsApi.getLogsStreamUrl(service.id);
-      const es = new EventSource(streamUrl);
-      eventSourceRef.current = es;
+      let es: EventSource | null = null;
+      let reconnectTimer: any = null;
 
-      es.onopen = () => {
-        setLogStreamStatus("connected");
-      };
-
-      es.onerror = () => {
-        setLogStreamStatus("error");
-      };
-
-      es.onmessage = (event) => {
+      const connectSSE = () => {
         try {
-          const parsed = JSON.parse(event.data);
-          setLogs((prev) => [...prev.slice(-300), parsed]);
+          es = new EventSource(streamUrl);
+          eventSourceRef.current = es;
+
+          es.onopen = () => {
+            setLogStreamStatus("connected");
+          };
+
+          es.onerror = () => {
+            setLogStreamStatus("error");
+            es?.close();
+            // Automatically attempt reconnect after 3 seconds
+            reconnectTimer = setTimeout(() => {
+              if (activeTab === "logs") {
+                connectSSE();
+              }
+            }, 3000);
+          };
+
+          es.onmessage = (event) => {
+            try {
+              const parsed = JSON.parse(event.data);
+              setLogs((prev) => [...prev.slice(-400), parsed]);
+            } catch {
+              setLogs((prev) => [
+                ...prev.slice(-400),
+                { timestamp: new Date().toISOString(), level: "INFO", message: event.data },
+              ]);
+            }
+          };
         } catch {
-          setLogs((prev) => [
-            ...prev.slice(-300),
-            { timestamp: new Date().toISOString(), level: "INFO", message: event.data },
-          ]);
+          setLogStreamStatus("error");
         }
       };
 
+      connectSSE();
+
       return () => {
-        es.close();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        es?.close();
       };
     }
   }, [activeTab, service]);
@@ -275,12 +308,18 @@ export async function webhook(req: Request, context: any) {
   const handlePingLogs = async () => {
     setPingingLogs(true);
     try {
-      await fetch(`${functionsApi.getLogsStreamUrl(functionId).replace(/\/logs$/, "/logs/ping")}`, {
-        method: "POST",
-      });
+      await functionsApi.pingLogs(functionId);
       toast.success("Stream test ping emitted!");
     } catch {
-      toast.error("Failed to ping log stream");
+      // Direct fetch fallback
+      try {
+        await fetch(`${functionsApi.getLogsStreamUrl(functionId).replace(/\/logs$/, "/logs/ping")}`, {
+          method: "POST",
+        });
+        toast.success("Stream test ping emitted!");
+      } catch (err: any) {
+        toast.error("Failed to ping log stream");
+      }
     } finally {
       setPingingLogs(false);
     }
@@ -1572,6 +1611,28 @@ export async function webhook(req: Request, context: any) {
 
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
               <button
+                onClick={async () => {
+                  try {
+                    const res = await functionsApi.getLogsHistory(functionId);
+                    if (res?.logs) setLogs(res.logs);
+                    toast.success("Logs refreshed");
+                  } catch {
+                    toast.error("Failed to refresh logs");
+                  }
+                }}
+                className="btn btn-outline"
+                style={{
+                  padding: "0.25rem 0.55rem",
+                  fontSize: "0.75rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                }}
+                title="Refresh logs from history"
+              >
+                <RefreshCw size={12} /> Refresh
+              </button>
+              <button
                 onClick={handlePingLogs}
                 disabled={pingingLogs}
                 className="btn btn-outline"
@@ -1686,7 +1747,7 @@ export async function webhook(req: Request, context: any) {
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", textAlign: "left", color: "var(--muted)" }}>
                     <th style={{ padding: "0.75rem 0.5rem" }}>Key Name</th>
-                    <th style={{ padding: "0.75rem 0.5rem" }}>Prefix</th>
+                    <th style={{ padding: "0.75rem 0.5rem" }}>API Key</th>
                     <th style={{ padding: "0.75rem 0.5rem" }}>Rate Limit</th>
                     <th style={{ padding: "0.75rem 0.5rem" }}>Last Used</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>Actions</th>
@@ -1697,14 +1758,40 @@ export async function webhook(req: Request, context: any) {
                     <tr key={k.id} style={{ borderBottom: "1px solid var(--border)" }}>
                       <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>{k.name}</td>
                       <td style={{ padding: "0.75rem 0.5rem", fontFamily: "monospace" }}>
-                        <code>{k.keyPrefix}...</code>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.45rem", background: "var(--bg-inset)", padding: "0.25rem 0.6rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+                          <code style={{ fontSize: "0.8rem", color: "var(--foreground)" }}>
+                            {revealedKeys[k.id] ? (k.key || k.keyPrefix) : `${(k.key || k.keyPrefix).slice(0, 16)}••••••••••••`}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => setRevealedKeys(prev => ({ ...prev, [k.id]: !prev[k.id] }))}
+                            style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", display: "flex", alignItems: "center", padding: "2px" }}
+                            title={revealedKeys[k.id] ? "Hide key" : "Reveal full API key"}
+                          >
+                            {revealedKeys[k.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const textToCopy = k.key || k.keyPrefix;
+                              navigator.clipboard.writeText(textToCopy);
+                              setCopiedKeyId(k.id);
+                              toast.success("API key copied to clipboard");
+                              setTimeout(() => setCopiedKeyId(null), 2000);
+                            }}
+                            style={{ background: "none", border: "none", color: copiedKeyId === k.id ? "#10b981" : "var(--accent)", cursor: "pointer", display: "flex", alignItems: "center", padding: "2px" }}
+                            title="Copy full API key"
+                          >
+                            {copiedKeyId === k.id ? <Check size={13} /> : <Copy size={13} />}
+                          </button>
+                        </div>
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem" }}>{k.rateLimitRpm} RPM</td>
                       <td style={{ padding: "0.75rem 0.5rem", color: "var(--muted)" }}>
                         {k.lastUsedAt ? formatDistanceToNow(new Date(k.lastUsedAt)) + " ago" : "Never"}
                       </td>
                       <td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>
-                        <button onClick={() => handleDeleteKey(k.id)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: "0.25rem" }}>
+                        <button onClick={() => handleDeleteKey(k.id)} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: "0.25rem" }} title="Revoke Key">
                           <Trash2 size={15} />
                         </button>
                       </td>

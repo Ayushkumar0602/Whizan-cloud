@@ -238,7 +238,11 @@ export default function BackendHostingPage() {
                           ASLEEP
                         </span>
                       )}
-                      {!isActive && !isAsleep && <StatusBadge status={latest?.status || "QUEUED"} />}
+                      {!latest ? (
+                        <span className="badge badge-queued">NO DEPLOYS</span>
+                      ) : (
+                        !isActive && !isAsleep && <StatusBadge status={latest.status} />
+                      )}
                     </div>
                   </div>
                 </Link>

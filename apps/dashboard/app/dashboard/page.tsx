@@ -303,7 +303,11 @@ export default function ConsolePage() {
                             ASLEEP (0.1 vCPU)
                           </span>
                         )}
-                        {!isActive && !isAsleep && <StatusBadge status={latest?.status || "QUEUED"} />}
+                        {!latest ? (
+                          <span className="badge badge-queued">No deploys</span>
+                        ) : (
+                          !isActive && !isAsleep && <StatusBadge status={latest.status} />
+                        )}
 
                         {isActive && (
                           <a
