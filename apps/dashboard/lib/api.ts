@@ -1163,6 +1163,10 @@ export const functionsApi = {
   // Monitoring Metrics
   getMetrics: (id: string) => request<FunctionMetrics>(`/api/functions/${id}/metrics`),
 
+  // Deployed Source Code
+  getCode: (id: string) =>
+    request<{ code: string; version: number; status: string }>(`/api/functions/${id}/code`),
+
   getLogsStreamUrl: (id: string) => `${getApiBase()}/api/functions/${id}/logs`,
   getLogsHistory: (id: string) =>
     request<{ logs: Array<{ timestamp: string; level: string; message: string }> }>(

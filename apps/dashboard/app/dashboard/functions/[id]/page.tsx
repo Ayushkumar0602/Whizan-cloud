@@ -163,48 +163,20 @@ export default function FunctionDetailPage() {
         isPublic: data.isPublic,
       });
 
-      // Fetch endpoints and env vars
-      const [eps, envs] = await Promise.all([
+      // Fetch endpoints, env vars, and current deployed code from backend
+      const [eps, envs, codeRes] = await Promise.all([
         functionsApi.listEndpoints(functionId).catch(() => []),
         functionsApi.listEnv(functionId).catch(() => []),
+        functionsApi.getCode(functionId).catch(() => null),
       ]);
       setEndpoints(eps);
       setEnvVars(envs);
 
-      if (!code) {
+      if (codeRes?.code) {
+        setCode(codeRes.code);
+      } else if (!code) {
         setCode(
-          `// Whizan Functions Service: ${data.slug}
-// All functions in this service share central environment variables: process.env / context.env
-
-// Function 1: Default HTTP Handler
-export default async function handler(req: Request, context: any) {
-  const url = new URL(req.url);
-  return Response.json({
-    service: "${data.slug}",
-    path: url.pathname,
-    method: req.method,
-    envCount: Object.keys(context.env).length,
-    timestamp: new Date().toISOString()
-  });
-}
-
-// Function 2: Named Handler (invoked at /charge)
-export async function charge(req: Request, context: any) {
-  return Response.json({
-    action: "payment_processed",
-    currency: "USD",
-    authorized: true
-  });
-}
-
-// Function 3: Webhook Handler (invoked at /webhook)
-export async function webhook(req: Request, context: any) {
-  return Response.json({
-    received: true,
-    signatureVerified: true
-  });
-}
-`
+          `// Whizan Functions Service: ${data.slug}\nexport default async function handler(req: Request, context: any) {\n  const url = new URL(req.url);\n  return Response.json({\n    service: "${data.slug}",\n    path: url.pathname,\n    method: req.method,\n    timestamp: new Date().toISOString()\n  });\n}\n`
         );
       }
     } catch (err: any) {
@@ -336,11 +308,10 @@ export async function webhook(req: Request, context: any) {
     if (!code.trim()) return toast.error("Code cannot be empty");
     setDeploying(true);
     try {
-      const res = await functionsApi.deploy(functionId, code);
-      toast.success(
-        `Version v${res.deployment.version} deployed to Edge in ${res.stats?.durationMs || 120}ms!`
-      );
-      fetchService();
+      const res: any = await functionsApi.deploy(functionId, code);
+      const ver = res?.version || res?.deployment?.version || 1;
+      toast.success(`Version v${ver} compiled & deployed to Edge!`);
+      await fetchService();
     } catch (err: any) {
       toast.error(err.message || "Deployment failed");
     } finally {
@@ -903,13 +874,32 @@ export async function webhook(req: Request, context: any) {
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowEndpointModal(true)}
-                className="btn btn-primary"
-                style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
-              >
-                <Plus size={15} /> Add Function to Service
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const eps = await functionsApi.listEndpoints(functionId);
+                      setEndpoints(eps);
+                      toast.success(`Discovered ${eps.length} functions from deployed code!`);
+                    } catch {
+                      toast.error("Failed to sync endpoints");
+                    }
+                  }}
+                  className="btn btn-outline"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+                  title="Rescan deployed source code to discover all exported functions"
+                >
+                  <RefreshCw size={14} /> Scan & Sync Functions
+                </button>
+                <button
+                  onClick={() => setShowEndpointModal(true)}
+                  className="btn btn-primary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+                >
+                  <Plus size={15} /> Add Function to Service
+                </button>
+              </div>
             </div>
 
             <div style={{ overflowX: "auto" }}>
@@ -1143,15 +1133,36 @@ export async function webhook(req: Request, context: any) {
                 </p>
               </div>
 
-              <button
-                onClick={handleDeployCode}
-                disabled={deploying}
-                className="btn btn-primary"
-                style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", boxShadow: "0 0 15px var(--accent-glow)" }}
-              >
-                <Sparkles size={15} />
-                {deploying ? "Compiling & Deploying..." : "Deploy to Edge"}
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await functionsApi.getCode(functionId);
+                      if (res?.code) {
+                        setCode(res.code);
+                        toast.success("Loaded latest deployed code from server");
+                      }
+                    } catch {
+                      toast.error("Failed to load deployed code");
+                    }
+                  }}
+                  className="btn btn-outline"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+                  title="Reload currently active deployed code from server"
+                >
+                  <RefreshCw size={14} /> Revert to Deployed
+                </button>
+                <button
+                  onClick={handleDeployCode}
+                  disabled={deploying}
+                  className="btn btn-primary"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", boxShadow: "0 0 15px var(--accent-glow)" }}
+                >
+                  <Sparkles size={15} />
+                  {deploying ? "Compiling & Deploying..." : "Deploy to Edge"}
+                </button>
+              </div>
             </div>
 
             <div style={{ borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--border)", background: "#080b11" }}>
