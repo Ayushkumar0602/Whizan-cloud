@@ -213,6 +213,45 @@ const DeployCodeSchema = z.object({
 });
 
 /**
+ * Automatically parses exported functions and handlers from deployed code.
+ * Supports ESM named exports, CommonJS exports.name, and router declarations.
+ */
+export function detectExportedEndpoints(source: string): string[] {
+  if (!source || typeof source !== "string") return [];
+  const endpoints = new Set<string>();
+
+  // 1. CommonJS: exports.foo = ... or module.exports.foo = ...
+  const cjsMatches = source.matchAll(/(?:exports|module\.exports)\.([a-zA-Z0-9_$]+)\s*=/g);
+  for (const m of cjsMatches) {
+    if (m[1] && m[1] !== "default") endpoints.add(m[1]);
+  }
+
+  // 2. ESM: export (async)? function foo
+  const esmFuncMatches = source.matchAll(/export\s+(?:async\s+)?function\s+([a-zA-Z0-9_$]+)/g);
+  for (const m of esmFuncMatches) {
+    if (m[1] && m[1] !== "default") endpoints.add(m[1]);
+  }
+
+  // 3. ESM: export const foo = ...
+  const esmConstMatches = source.matchAll(/export\s+const\s+([a-zA-Z0-9_$]+)\s*=/g);
+  for (const m of esmConstMatches) {
+    if (m[1] && m[1] !== "default") endpoints.add(m[1]);
+  }
+
+  // 4. Express / Hono app routes: app.get('/foo', ...) or router.post('/bar', ...)
+  const expressMatches = source.matchAll(/(?:app|router)\.(get|post|put|delete|patch)\(\s*['"`]([^'"`]+)['"`]/g);
+  for (const m of expressMatches) {
+    const rawPath = m[2];
+    if (rawPath && rawPath !== "/") {
+      const cleanName = rawPath.replace(/^\/+/, "").replace(/[^a-zA-Z0-9_$]/g, "_");
+      if (cleanName) endpoints.add(cleanName);
+    }
+  }
+
+  return Array.from(endpoints);
+}
+
+/**
  * Re-hydrates Redis routing keys and API key caches on boot or VM restart.
  */
 export async function rehydrateEdgeFunctions(): Promise<void> {
@@ -361,7 +400,8 @@ export async function functionRoutes(fastify: FastifyInstance) {
   fastify.get("/", async (request) => {
     const { userId, role } = request.user;
     const query = request.query as { all?: string };
-    const whereClause = role === "ADMIN" && query?.all === "true" ? {} : { userId };
+    const isUserAdmin = role === "ADMIN" || role === "ROOT_ADMIN";
+    const whereClause = isUserAdmin && query?.all === "true" ? {} : { userId };
 
     const functions = await prisma.functionService.findMany({
       where: whereClause,
@@ -525,7 +565,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
       console.warn(`[FunctionService] Initial bundling deferred or failed:`, e.message);
     }
 
-    // 3. Always create active Deployment record in READY status
+    // 3. Always create active Deployment record in READY status with sourceCode saved
     const deployment = await prisma.functionDeployment.create({
       data: {
         serviceId: functionService.id,
@@ -533,9 +573,28 @@ export async function functionRoutes(fastify: FastifyInstance) {
         bundlePath,
         bundleHash,
         bundleSizeBytes,
+        sourceCode: starterCode,
         status: "READY",
       },
     });
+
+    // Auto-discover and register any exported endpoints from starter code
+    const initialEndpoints = detectExportedEndpoints(starterCode);
+    for (const epName of initialEndpoints) {
+      const routePath = `/${epName}`;
+      await prisma.functionEndpoint.upsert({
+        where: { serviceId_routePath: { serviceId: functionService.id, routePath } },
+        update: { handlerName: epName, name: epName },
+        create: {
+          serviceId: functionService.id,
+          name: epName,
+          routePath,
+          handlerName: epName,
+          httpMethods: ["GET", "POST", "PUT", "DELETE"],
+          isPublic: functionService.isPublic,
+        },
+      }).catch(() => {});
+    }
 
     // 4. Register route in Redis
     await redisClient.set(
@@ -580,9 +639,10 @@ export async function functionRoutes(fastify: FastifyInstance) {
   fastify.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
+    const isUserAdmin = role === "ADMIN" || role === "ROOT_ADMIN";
 
     const fn = await prisma.functionService.findFirst({
-      where: role === "ADMIN" ? { id } : { id, userId },
+      where: isUserAdmin ? { id } : { id, userId },
       include: {
         deployments: { orderBy: { version: "desc" } },
         endpoints: true,
@@ -751,7 +811,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
       console.warn(`[POST /:id/deploy] Runtime bundling deferred (${err.message}). Using Redis source fallback.`);
     }
 
-    // 3. Create Deployment record - ALWAYS SUCCEEDS!
+    // 3. Create Deployment record with sourceCode - ALWAYS SUCCEEDS!
     const deployment = await prisma.functionDeployment.create({
       data: {
         serviceId: fn.id,
@@ -759,9 +819,28 @@ export async function functionRoutes(fastify: FastifyInstance) {
         bundlePath,
         bundleHash,
         bundleSizeBytes,
+        sourceCode: body.code,
         status: "READY",
       },
     });
+
+    // Auto-discover and register exported endpoints from deployed source
+    const detectedEndpoints = detectExportedEndpoints(body.code);
+    for (const epName of detectedEndpoints) {
+      const routePath = `/${epName}`;
+      await prisma.functionEndpoint.upsert({
+        where: { serviceId_routePath: { serviceId: fn.id, routePath } },
+        update: { handlerName: epName, name: epName },
+        create: {
+          serviceId: fn.id,
+          name: epName,
+          routePath,
+          handlerName: epName,
+          httpMethods: ["GET", "POST", "PUT", "DELETE"],
+          isPublic: fn.isPublic,
+        },
+      }).catch(() => {});
+    }
 
     // 4. Decrypt env vars for Redis caching
     const decryptedEnv: Record<string, string> = {};
@@ -791,6 +870,66 @@ export async function functionRoutes(fastify: FastifyInstance) {
     await redisClient.publish("fn:reload", JSON.stringify({ serviceId: fn.id, version: nextVersion }));
 
     return reply.code(201).send(deployment);
+  });
+
+  // GET /api/functions/:id/code - Retrieve current active deployed source code
+  fastify.get("/:id/code", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { userId, role } = request.user;
+    const isUserAdmin = role === "ADMIN" || role === "ROOT_ADMIN";
+
+    const fn = await prisma.functionService.findFirst({
+      where: isUserAdmin ? { id } : { id, userId },
+      include: {
+        deployments: { orderBy: { version: "desc" }, take: 5 },
+      },
+    });
+
+    if (!fn) {
+      return reply.code(404).send({ error: "Function not found" });
+    }
+
+    const latest = fn.deployments[0];
+    const version = latest?.version || 1;
+
+    // 1. Check database sourceCode field on any recent deployment
+    for (const dep of fn.deployments) {
+      if (dep.sourceCode) {
+        return { code: dep.sourceCode, version: dep.version, status: dep.status };
+      }
+    }
+
+    // 2. Check Redis source cache
+    const redisCode = await redisClient.get(`fn:source:${id}:v${version}`);
+    if (redisCode) {
+      if (latest) {
+        await prisma.functionDeployment.update({
+          where: { id: latest.id },
+          data: { sourceCode: redisCode },
+        }).catch(() => {});
+      }
+      return { code: redisCode, version, status: latest?.status || "READY" };
+    }
+
+    // 3. Check VM / local filesystem if bundlePath exists
+    if (latest?.bundlePath) {
+      const dir = path.dirname(latest.bundlePath);
+      for (const f of ["source.ts", "index.js", "source.js", "bundle.mjs"]) {
+        const p = path.join(dir, f);
+        if (fs.existsSync(p)) {
+          try {
+            const diskCode = fs.readFileSync(p, "utf8");
+            return { code: diskCode, version, status: latest.status };
+          } catch {}
+        }
+      }
+    }
+
+    return {
+      code: `// Whizan Edge Function: ${fn.slug}\nexport default async function handler(req: Request) {\n  return Response.json({ message: "Hello from ${fn.slug}!" });\n}\n`,
+      version,
+      status: latest?.status || "NO_DEPLOYMENTS",
+    };
   });
 
   // POST /api/functions/:id/test - In-dashboard test console invocation
@@ -1202,21 +1341,63 @@ export async function functionRoutes(fastify: FastifyInstance) {
   fastify.get("/:id/endpoints", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
+    const isUserAdmin = role === "ADMIN" || role === "ROOT_ADMIN";
 
     const fn = await prisma.functionService.findFirst({
-      where: role === "ADMIN" ? { id } : { id, userId },
-      select: { id: true, memoryLimit: true, timeoutMs: true },
+      where: isUserAdmin ? { id } : { id, userId },
+      include: {
+        deployments: { orderBy: { version: "desc" }, take: 1 },
+      },
     });
     if (!fn) return reply.code(404).send({ error: "Function Service not found" });
 
-    const [endpoints, allMetaRaw] = await Promise.all([
-      prisma.functionEndpoint.findMany({
-        where: { serviceId: id },
-        orderBy: { createdAt: "asc" },
-      }),
-      redisClient.hgetall(`fn:endpoint:meta:${id}`).catch(() => ({} as Record<string, string>)),
-    ]);
+    let endpoints = await prisma.functionEndpoint.findMany({
+      where: { serviceId: id },
+      orderBy: { createdAt: "asc" },
+    });
 
+    // Auto-discover endpoints from active deployed code if missing (self-healing)
+    const latestDep = fn.deployments[0];
+    let sourceCode: string | null = latestDep?.sourceCode || null;
+    if (!sourceCode && latestDep) {
+      sourceCode = await redisClient.get(`fn:source:${id}:v${latestDep.version}`);
+    }
+
+    if (sourceCode) {
+      const detected = detectExportedEndpoints(sourceCode);
+      const existingHandlers = new Set(endpoints.map((e) => e.handlerName));
+      let addedAny = false;
+
+      for (const epName of detected) {
+        if (!existingHandlers.has(epName)) {
+          const routePath = `/${epName}`;
+          try {
+            await prisma.functionEndpoint.upsert({
+              where: { serviceId_routePath: { serviceId: id, routePath } },
+              update: { handlerName: epName, name: epName },
+              create: {
+                serviceId: id,
+                name: epName,
+                routePath,
+                handlerName: epName,
+                httpMethods: ["GET", "POST", "PUT", "DELETE"],
+                isPublic: fn.isPublic,
+              },
+            });
+            addedAny = true;
+          } catch {}
+        }
+      }
+
+      if (addedAny) {
+        endpoints = await prisma.functionEndpoint.findMany({
+          where: { serviceId: id },
+          orderBy: { createdAt: "asc" },
+        });
+      }
+    }
+
+    const allMetaRaw = await redisClient.hgetall(`fn:endpoint:meta:${id}`).catch(() => ({} as Record<string, string>));
     const defaultTimeoutSec = Math.round(fn.timeoutMs / 1000);
 
     return endpoints.map((ep) => {

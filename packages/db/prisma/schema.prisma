@@ -430,6 +430,7 @@ model FunctionDeployment {
   status          DeploymentStatus @default(READY)
   trafficWeight   Int              @default(100) @map("traffic_weight")
   errorMessage    String?          @map("error_message")
+  sourceCode      String?          @map("source_code") @db.Text
   createdAt       DateTime         @default(now()) @map("created_at")
 
   service         FunctionService  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
