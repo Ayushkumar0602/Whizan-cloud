@@ -15,6 +15,23 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
 const FUNCTION_RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
 const API_PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
+const API_URL = process.env.API_URL || "https://whizan-cloud-service.onrender.com";
+
+async function queryControlPlaneApi(endpoint: string, options?: any) {
+  // 1. Try local VM port 8000 if running
+  try {
+    const localRes = await fetch(`http://127.0.0.1:${API_PORT}${endpoint}`, options).catch(() => null);
+    if (localRes && localRes.ok) return localRes;
+  } catch {}
+
+  // 2. Resilient fallback to Render Control Plane API
+  try {
+    const remoteRes = await fetch(`${API_URL}${endpoint}`, options).catch(() => null);
+    if (remoteRes && remoteRes.ok) return remoteRes;
+  } catch {}
+
+  return null;
+}
 
 // ─── Redis ───────────────────────────────────────────────────────────────────
 
@@ -211,7 +228,7 @@ const server = http.createServer(async (req, res) => {
 
     // Try API resolve fallback for function before failing with 404
     try {
-      const apiRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/resolve/${slug}`).catch(() => null);
+      const apiRes = await queryControlPlaneApi(`/api/functions/internal/resolve/${slug}`);
       if (apiRes && apiRes.ok) {
         await handleFunctionRequest(slug, req, res, req.url || "/");
         return;
@@ -336,7 +353,7 @@ async function handleFunctionRequest(
   // Fallback to internal API if cache missed (e.g. after VM reboot or Redis flush)
   if (!fnMeta) {
     try {
-      const apiRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/resolve/${slug}`).catch(() => null);
+      const apiRes = await queryControlPlaneApi(`/api/functions/internal/resolve/${slug}`);
       if (apiRes && apiRes.ok) {
         fnMeta = await apiRes.json();
       }
@@ -397,11 +414,11 @@ async function handleFunctionRequest(
     // Fallback to internal API verification on cache miss
     if (!keyMeta) {
       try {
-        const verifyRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/verify-key`, {
+        const verifyRes = await queryControlPlaneApi(`/api/functions/internal/verify-key`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ keyHash, serviceId: fnMeta.serviceId }),
-        }).catch(() => null);
+        });
         if (verifyRes && verifyRes.ok) {
           keyMeta = await verifyRes.json();
         }
