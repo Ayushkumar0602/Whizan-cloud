@@ -186,6 +186,13 @@ function getStaticServer(staticDir: string) {
 // ─── Main HTTP Server ─────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
+  // ── Top-level Router Health & Ping ───────────────────────────────────────
+  if (req.url === "/health" || req.url === "/ping" || req.url === "/_internal/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", service: "edge-router", timestamp: new Date().toISOString() }));
+    return;
+  }
+
   // ── Internal Runtime Bridge (Secure VM bridge for Control Plane / API) ────
   if (req.url?.startsWith("/_internal/runtime/")) {
     const internalSecret = req.headers["x-whizan-internal"];

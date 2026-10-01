@@ -164,6 +164,102 @@ const server = http.createServer(async (req, res) => {
   return sendJson(404, { error: "Endpoint not found" });
 });
 
+// ── Redis RPC Bridge (Resilient cross-cloud invocation & bundling) ───────────
+const redisSub = redis.duplicate();
+redisSub.on("error", (err: any) => console.error("[FunctionRuntime Redis Sub] Error:", err.message));
+
+redisSub.subscribe("fn:rpc:bundle", "fn:rpc:invoke", "fn:reload", (err) => {
+  if (err) console.error("[FunctionRuntime] Failed to subscribe to RPC channels:", err.message);
+  else console.log("[FunctionRuntime] Subscribed to Redis RPC channels: fn:rpc:bundle, fn:rpc:invoke, fn:reload");
+});
+
+redisSub.on("message", async (channel: string, message: string) => {
+  try {
+    const payload = JSON.parse(message);
+
+    if (channel === "fn:reload") {
+      const { serviceId, version, rawCode } = payload;
+      if (serviceId) {
+        pool.evict(serviceId, version);
+        if (rawCode && version) {
+          bundler.bundleCode(serviceId, version, { rawCode }).catch(() => {});
+        }
+      }
+      return;
+    }
+
+    if (channel === "fn:rpc:bundle") {
+      const { requestId, serviceId, version, rawCode, entryFilePath } = payload;
+      if (!requestId || !serviceId || !version) return;
+      try {
+        const result = await bundler.bundleCode(serviceId, version, { rawCode, entryFilePath });
+        pool.evict(serviceId, version);
+        if (rawCode) {
+          await redis.set(`fn:source:${serviceId}:v${version}`, rawCode).catch(() => {});
+        }
+        await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({ success: true, result }));
+      } catch (err: any) {
+        await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({ success: false, error: err.message }));
+      }
+      return;
+    }
+
+    if (channel === "fn:rpc:invoke") {
+      const { requestId, invocation } = payload;
+      if (!requestId || !invocation?.serviceId || !invocation?.slug) return;
+      try {
+        let bundlePath = invocation.bundlePath;
+        const version = invocation.version || 1;
+
+        if (!bundlePath) {
+          const rawMeta = await redis.get(`fn:service:${invocation.slug}`);
+          if (rawMeta) {
+            try {
+              const parsed = JSON.parse(rawMeta);
+              bundlePath = parsed.bundlePath;
+            } catch {}
+          }
+        }
+
+        if (!bundlePath || !fs.existsSync(bundlePath)) {
+          const rawCode = await redis.get(`fn:source:${invocation.serviceId}:v${version}`);
+          if (rawCode) {
+            console.log(`[FunctionRuntime Redis RPC] On-the-fly bundling for ${invocation.slug} (v${version})...`);
+            const bundled = await bundler.bundleCode(invocation.serviceId, version, { rawCode });
+            bundlePath = bundled.bundlePath;
+            const currentMeta = await redis.get(`fn:service:${invocation.slug}`).catch(() => null);
+            if (currentMeta) {
+              try {
+                const parsed = JSON.parse(currentMeta);
+                parsed.bundlePath = bundlePath;
+                await redis.set(`fn:service:${invocation.slug}`, JSON.stringify(parsed));
+              } catch {}
+            }
+          }
+        }
+
+        if (!bundlePath || !fs.existsSync(bundlePath)) {
+          await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({
+            success: false,
+            statusCode: 404,
+            error: "BUNDLE_NOT_FOUND",
+            message: `No active deployment bundle found for '${invocation.slug}'. Please deploy your code first.`
+          }));
+          return;
+        }
+
+        const bundle = await pool.getOrLoadBundle(invocation.serviceId, version, bundlePath);
+        const result = await sandbox.execute(bundle, invocation);
+        await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({ success: true, result }));
+      } catch (err: any) {
+        await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({ success: false, error: err.message }));
+      }
+    }
+  } catch (parseErr: any) {
+    console.error("[FunctionRuntime] Redis RPC processing error:", parseErr.message);
+  }
+});
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`[Whizan Function Runtime] Listening on http://0.0.0.0:${PORT}`);
 });
@@ -171,11 +267,13 @@ server.listen(PORT, "0.0.0.0", () => {
 process.on("SIGTERM", () => {
   console.log("[Whizan Function Runtime] Shutting down gracefully...");
   pool.destroy();
+  redisSub.disconnect();
   server.close(() => process.exit(0));
 });
 
 process.on("SIGINT", () => {
   console.log("[Whizan Function Runtime] Interrupted. Closing...");
   pool.destroy();
+  redisSub.disconnect();
   server.close(() => process.exit(0));
 });

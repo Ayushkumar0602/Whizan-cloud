@@ -107,12 +107,22 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // Prevent double-deploy
+      // Prevent double-deploy with stale auto-timeout
       const inProgress = await prisma.deployment.findFirst({
         where: { projectId: id, status: { in: ["QUEUED", "BUILDING"] } },
+        orderBy: { createdAt: "desc" },
       });
       if (inProgress) {
-        return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+        const isStale = Date.now() - new Date(inProgress.createdAt).getTime() > 180_000; // 3 minutes
+        const force = (request.query as any)?.force === "true" || request.headers["x-force-deploy"] === "true";
+        if (isStale || force) {
+          await prisma.deployment.update({
+            where: { id: inProgress.id },
+            data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: "Deployment timed out or was superseded" },
+          }).catch(() => {});
+        } else {
+          return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
+        }
       }
 
       const deployment = await prisma.deployment.create({

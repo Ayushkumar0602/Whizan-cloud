@@ -1164,6 +1164,14 @@ export const functionsApi = {
   getMetrics: (id: string) => request<FunctionMetrics>(`/api/functions/${id}/metrics`),
 
   getLogsStreamUrl: (id: string) => `${getApiBase()}/api/functions/${id}/logs`,
+  getLogsHistory: (id: string) =>
+    request<{ logs: Array<{ timestamp: string; level: string; message: string }> }>(
+      `/api/functions/${id}/logs?format=json`
+    ),
+  pingLogs: (id: string) =>
+    request<{ success: boolean; message: string }>(`/api/functions/${id}/logs/ping`, {
+      method: "POST",
+    }),
 };
 
 
