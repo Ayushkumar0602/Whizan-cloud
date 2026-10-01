@@ -16,4 +16,13 @@ export type {
   DatabaseService,
   DatabaseType,
   DatabaseStatus,
+  FunctionService,
+  FunctionApiKey,
+  FunctionEndpoint,
+  FunctionDeployment,
+  FunctionTrigger,
+  FunctionEnvVariable,
+  FunctionInvocation,
+  FunctionRuntime,
+  TriggerType,
 } from "@prisma/client";

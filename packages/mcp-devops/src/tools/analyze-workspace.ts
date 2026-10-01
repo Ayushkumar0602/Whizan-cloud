@@ -3,7 +3,7 @@ import path from "path";
 
 export interface LocalWhizanConfig {
   targetId?: string;
-  targetType?: "project" | "service";
+  targetType?: "project" | "service" | "function";
   name?: string;
   slug?: string;
   liveUrl?: string;
@@ -15,7 +15,7 @@ export interface LocalWhizanConfig {
 export interface ExistingDeploymentMatch {
   found: boolean;
   source: "local_config" | "server_match";
-  targetType: "project" | "service";
+  targetType: "project" | "service" | "function";
   targetId: string;
   name: string;
   slug: string;
@@ -27,7 +27,7 @@ export interface ExistingDeploymentMatch {
 import { analyzeWorkspaceWithAI, type AiAnalysisResult, type EnvVarSpec } from "./ai-analyzer.js";
 
 export interface AnalysisReport {
-  projectType: "backend" | "frontend" | "fullstack" | "monorepo" | "unknown";
+  projectType: "backend" | "frontend" | "fullstack" | "function" | "monorepo" | "unknown";
   detectedRuntimes: string[];
   framework?: string;
   hasPackageJson: boolean;

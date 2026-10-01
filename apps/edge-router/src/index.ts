@@ -6,12 +6,15 @@ import finalhandler from "finalhandler";
 import Redis from "ioredis";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
 const ROUTER_PORT = Number(process.env.ROUTER_PORT) || 8080;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+const FUNCTION_RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
+const API_PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
 
 // ─── Redis ───────────────────────────────────────────────────────────────────
 
@@ -176,10 +179,45 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Edge Functions Routing (.fn.<domain> or /fn/<slug>) ───────────────────
+  if (host.includes(".fn.") || (req.url && req.url.startsWith("/fn/"))) {
+    let fnSlug = slug;
+    let targetPath = req.url || "/";
+
+    if (host.includes(".fn.")) {
+      fnSlug = host.split(".fn.")[0].toLowerCase().replace(/[^a-z0-9-]/g, "");
+    } else if (req.url && req.url.startsWith("/fn/")) {
+      const parts = req.url.split("/");
+      fnSlug = parts[2]?.toLowerCase().replace(/[^a-z0-9-]/g, "") || "";
+      targetPath = "/" + parts.slice(3).join("/");
+    }
+
+    if (fnSlug) {
+      await handleFunctionRequest(fnSlug, req, res, targetPath);
+      return;
+    }
+  }
+
   // ── Lookup deployment from Redis ──────────────────────────────────────────
   const deployment = await lookupDeployment(slug).catch(() => null);
 
   if (!deployment) {
+    // Check if this slug is an Edge Function without .fn. prefix
+    const isFn = await redis.exists(`fn:service:${slug}`).catch(() => 0);
+    if (isFn) {
+      await handleFunctionRequest(slug, req, res, req.url || "/");
+      return;
+    }
+
+    // Try API resolve fallback for function before failing with 404
+    try {
+      const apiRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/resolve/${slug}`).catch(() => null);
+      if (apiRes && apiRes.ok) {
+        await handleFunctionRequest(slug, req, res, req.url || "/");
+        return;
+      }
+    } catch {}
+
     res.writeHead(404, { "Content-Type": "text/html" });
     res.end(`
       <html><body style="font-family:sans-serif;text-align:center;padding:4rem">
@@ -276,6 +314,251 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(503);
   res.end("Service Unavailable");
 });
+
+// ─── Edge Function Handler ───────────────────────────────────────────────────
+
+async function handleFunctionRequest(
+  slug: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  targetPath = "/"
+) {
+  // 1. Resolve Function Metadata from Redis or API fallback
+  let rawMeta = await redis.get(`fn:service:${slug}`).catch(() => null);
+  let fnMeta: any = null;
+
+  if (rawMeta) {
+    try {
+      fnMeta = JSON.parse(rawMeta);
+    } catch {}
+  }
+
+  // Fallback to internal API if cache missed (e.g. after VM reboot or Redis flush)
+  if (!fnMeta) {
+    try {
+      const apiRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/resolve/${slug}`).catch(() => null);
+      if (apiRes && apiRes.ok) {
+        fnMeta = await apiRes.json();
+      }
+    } catch (e: any) {
+      console.warn(`[Router] Internal resolve failed for fn ${slug}:`, e.message);
+    }
+  }
+
+  if (!fnMeta) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "NOT_FOUND", message: `No Edge Function found for slug '${slug}'` }));
+    return;
+  }
+
+  // 2. Handle CORS Preflight & Headers
+  const corsAllowed = fnMeta.corsOrigins?.includes("*") || fnMeta.corsOrigins?.includes(req.headers.origin);
+  const originHeader = corsAllowed ? (req.headers.origin || "*") : (fnMeta.corsOrigins?.[0] || "*");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": originHeader,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
+      "Access-Control-Max-Age": "86400",
+    });
+    res.end();
+    return;
+  }
+
+  // 3. Authentication & Rate Limiting
+  if (!fnMeta.isPublic) {
+    const keyHeader = req.headers["x-api-key"] as string | undefined;
+    const authHeader = req.headers["authorization"] as string | undefined;
+    const rawUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    const queryKey = rawUrl.searchParams.get("apiKey") || rawUrl.searchParams.get("api_key");
+    const rawKey = keyHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null) || queryKey;
+
+    if (!rawKey) {
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": originHeader,
+      });
+      res.end(JSON.stringify({
+        error: "UNAUTHORIZED",
+        message: "Missing required Function API Key. Provide 'x-api-key: whz_fn_live_...' or 'Authorization: Bearer whz_fn_live_...' header.",
+      }));
+      return;
+    }
+
+    const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+    let keyMetaRaw = await redis.get(`fn:key:${keyHash}`).catch(() => null);
+    let keyMeta: any = null;
+
+    if (keyMetaRaw) {
+      try { keyMeta = JSON.parse(keyMetaRaw); } catch {}
+    }
+
+    // Fallback to internal API verification on cache miss
+    if (!keyMeta) {
+      try {
+        const verifyRes = await fetch(`http://127.0.0.1:${API_PORT}/api/functions/internal/verify-key`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keyHash, serviceId: fnMeta.serviceId }),
+        }).catch(() => null);
+        if (verifyRes && verifyRes.ok) {
+          keyMeta = await verifyRes.json();
+        }
+      } catch (e: any) {
+        console.warn(`[Router] API Key fallback verification failed:`, e.message);
+      }
+    }
+
+    if (!keyMeta || keyMeta.serviceId !== fnMeta.serviceId) {
+      res.writeHead(401, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": originHeader,
+      });
+      res.end(JSON.stringify({ error: "UNAUTHORIZED", message: "Invalid or expired Function API Key." }));
+      return;
+    }
+
+    // Rate Limiting: Atomic Token Bucket in Redis
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const rateKey = `fn:rate:${keyHash}:${minuteBucket}`;
+    const currentCount = await redis.incr(rateKey).catch(() => 1);
+    if (currentCount === 1) {
+      redis.expire(rateKey, 70).catch(() => {});
+    }
+
+    const limit = keyMeta.rateLimitRpm || 600;
+    if (currentCount > limit) {
+      res.writeHead(429, {
+        "Content-Type": "application/json",
+        "Retry-After": "60",
+        "Access-Control-Allow-Origin": originHeader,
+      });
+      res.end(JSON.stringify({ error: "TOO_MANY_REQUESTS", message: `Rate limit of ${limit} req/min exceeded.` }));
+      return;
+    }
+
+    // IP Whitelist
+    if (keyMeta.ipWhitelist && keyMeta.ipWhitelist.length > 0) {
+      const clientIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "";
+      const isAllowed = keyMeta.ipWhitelist.some((ip: string) => clientIp.includes(ip));
+      if (!isAllowed) {
+        res.writeHead(403, {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": originHeader,
+        });
+        res.end(JSON.stringify({ error: "FORBIDDEN", message: "Client IP not permitted by API Key policy." }));
+        return;
+      }
+    }
+  }
+
+  // 4. Read Request Body
+  let bodyBuffer: Buffer | null = null;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    try {
+      bodyBuffer = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        let totalBytes = 0;
+        req.on("data", (chunk) => {
+          totalBytes += chunk.length;
+          if (totalBytes > 10 * 1024 * 1024) { // 10MB limit
+            reject(new Error("PAYLOAD_TOO_LARGE"));
+          }
+          chunks.push(chunk);
+        });
+        req.on("end", () => resolve(Buffer.concat(chunks)));
+        req.on("error", reject);
+      });
+    } catch (err: any) {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "PAYLOAD_TOO_LARGE", message: "Max payload size is 10MB." }));
+      return;
+    }
+  }
+
+  let parsedBody: any = null;
+  if (bodyBuffer && bodyBuffer.length > 0) {
+    const cType = (req.headers["content-type"] || "").toLowerCase();
+    if (cType.includes("application/json")) {
+      try { parsedBody = JSON.parse(bodyBuffer.toString("utf8")); } catch { parsedBody = bodyBuffer.toString("utf8"); }
+    } else {
+      parsedBody = bodyBuffer.toString("utf8");
+    }
+  }
+
+  // 5. Forward to Function Runtime Engine
+  const parsedUrl = new URL(targetPath, `http://${req.headers.host || "localhost"}`);
+  const queryObj: Record<string, string> = {};
+  parsedUrl.searchParams.forEach((v, k) => { queryObj[k] = v; });
+
+  const clientIp = (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || "127.0.0.1";
+
+  const invocationPayload = {
+    serviceId: fnMeta.serviceId,
+    slug: fnMeta.slug,
+    version: fnMeta.version,
+    bundlePath: fnMeta.bundlePath,
+    routePath: parsedUrl.pathname,
+    method: req.method,
+    headers: req.headers,
+    query: queryObj,
+    body: parsedBody,
+    clientIp,
+    timeoutMs: fnMeta.timeoutMs,
+    memoryLimit: fnMeta.memoryLimit,
+    envVars: fnMeta.decryptedEnv || {},
+  };
+
+  try {
+    const runtimeRes = await fetch(`http://127.0.0.1:${FUNCTION_RUNTIME_PORT}/invoke`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(invocationPayload),
+    });
+
+    const result: any = await runtimeRes.json();
+
+    const responseHeaders: Record<string, any> = {
+      ...(result.headers || {}),
+      "Access-Control-Allow-Origin": originHeader,
+      "X-Whizan-Runtime": "Edge-V8",
+      "X-Whizan-Duration-Ms": String(result.durationMs ?? 0),
+      "X-Whizan-Memory-Mb": String(result.memoryMb ?? 0),
+    };
+
+    res.writeHead(result.statusCode || 200, responseHeaders);
+
+    if (result.isBase64 && result.body) {
+      res.end(Buffer.from(result.body, "base64"));
+    } else {
+      res.end(result.body || "");
+    }
+
+    // Asynchronously buffer invocation telemetry
+    const telemetryEvent = {
+      serviceId: fnMeta.serviceId,
+      endpoint: parsedUrl.pathname,
+      httpMethod: req.method || "GET",
+      statusCode: result.statusCode || 200,
+      durationMs: result.durationMs || 0,
+      memoryMb: result.memoryMb || 0,
+      clientIp,
+      timestamp: new Date().toISOString(),
+    };
+    redis.rpush("fn:invocations:buffer", JSON.stringify(telemetryEvent)).catch(() => {});
+  } catch (err: any) {
+    console.error(`[Router] Error proxying to Function Runtime:`, err.message);
+    res.writeHead(502, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": originHeader,
+    });
+    res.end(JSON.stringify({
+      error: "BAD_GATEWAY",
+      message: "Function Runtime Engine unavailable. Please ensure whizan-functions is running.",
+    }));
+  }
+}
 
 // ── Analytics Tracking ────────────────────────────────────────────────────────
 proxy.on("proxyRes", (proxyRes, req, res) => {
