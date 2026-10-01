@@ -7,12 +7,30 @@ import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
 
-const FUNCTIONS_BASE_DIR =
-  process.env.FUNCTIONS_BASE_DIR ||
-  (process.env.NODE_ENV === "production" ? "/opt/whizan/functions" : path.resolve(process.cwd(), "../../functions-storage"));
+import os from "os";
 
-if (!fs.existsSync(FUNCTIONS_BASE_DIR)) {
-  fs.mkdirSync(FUNCTIONS_BASE_DIR, { recursive: true });
+// Resilient base directory resolution (safe for Render, Linux VM, and local dev)
+let FUNCTIONS_BASE_DIR: string = process.env.FUNCTIONS_BASE_DIR || "";
+if (!FUNCTIONS_BASE_DIR) {
+  if (process.platform === "linux" && fs.existsSync("/opt/whizan")) {
+    FUNCTIONS_BASE_DIR = "/opt/whizan/functions";
+  } else {
+    FUNCTIONS_BASE_DIR = path.join(os.tmpdir(), "whizan-functions");
+  }
+}
+
+try {
+  if (!fs.existsSync(FUNCTIONS_BASE_DIR)) {
+    fs.mkdirSync(FUNCTIONS_BASE_DIR, { recursive: true });
+  }
+} catch {
+  // If /opt or custom path is not writable (e.g. on Render container), fallback to os.tmpdir()
+  FUNCTIONS_BASE_DIR = path.join(os.tmpdir(), "whizan-functions");
+  try {
+    if (!fs.existsSync(FUNCTIONS_BASE_DIR)) {
+      fs.mkdirSync(FUNCTIONS_BASE_DIR, { recursive: true });
+    }
+  } catch {}
 }
 
 const RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
