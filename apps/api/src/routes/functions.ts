@@ -58,7 +58,10 @@ async function callRuntime(path: string, body: any, timeoutMs = 15000): Promise<
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-whizan-internal": process.env.JWT_SECRET || "",
+        "x-whizan-internal":
+          process.env.INTERNAL_SECRET ||
+          process.env.JWT_SECRET ||
+          "whizan-internal-runtime-mesh-key-9b8c7d6e",
       },
       body: JSON.stringify(body),
       signal: controller.signal,
