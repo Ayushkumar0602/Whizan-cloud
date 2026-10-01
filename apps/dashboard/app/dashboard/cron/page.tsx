@@ -1,16 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Clock,
   Plus,
   Search,
-  Filter,
   Terminal,
   Activity,
   Play,
   CheckCircle2,
-  XCircle,
   AlertTriangle,
   RotateCcw,
   Trash2,
@@ -19,28 +17,21 @@ import {
   Code,
   Globe,
   RefreshCw,
-  ExternalLink,
   ChevronRight,
   ShieldAlert,
   Cpu,
   Layers,
   Sparkles,
-  ArrowRight,
-  Eye,
   Check,
   Copy,
   Download,
   Pause,
   Calendar,
-  SlidersHorizontal,
   Radio,
-  FileText,
-  ListFilter,
   LayoutGrid,
   Table as TableIcon,
-  Timer,
-  ChevronDown,
   Settings2,
+  ExternalLink,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { toast } from "sonner";
@@ -58,7 +49,7 @@ import {
 
 const PRESET_SCHEDULES = [
   { label: "Every Minute", value: "* * * * *", desc: "Runs at start of every minute" },
-  { label: "Every 5 Minutes", value: "*/5 * * * *", desc: "Runs every 5 minutes (:00, :05, :10...)" },
+  { label: "Every 5 Minutes", value: "*/5 * * * *", desc: "Runs at :00, :05, :10, :15..." },
   { label: "Every 15 Minutes", value: "*/15 * * * *", desc: "Runs at :00, :15, :30, :45" },
   { label: "Hourly", value: "0 * * * *", desc: "Runs at minute 0 of every hour" },
   { label: "Daily Midnight", value: "0 0 * * *", desc: "Runs once every night at 00:00" },
@@ -93,6 +84,31 @@ function getNextRuns(schedule: string, timezone = "UTC", count = 5): Date[] {
     return dates;
   } catch {
     return [];
+  }
+}
+
+function getAccurateNextRun(job: CronJobItem): { date: Date | null; formatted: string; distance: string } {
+  if (!job.enabled) {
+    return { date: null, formatted: "Suspended", distance: "Paused" };
+  }
+  try {
+    const interval = cronParser.parseExpression(job.schedule, { tz: job.timezone || "UTC" });
+    const next = interval.next().toDate();
+    return {
+      date: next,
+      formatted: format(next, "MMM d, HH:mm"),
+      distance: `in ${formatDistanceToNow(next)}`,
+    };
+  } catch {
+    if (job.nextRunAt) {
+      const d = new Date(job.nextRunAt);
+      return {
+        date: d,
+        formatted: format(d, "MMM d, HH:mm"),
+        distance: formatDistanceToNow(d, { addSuffix: true }),
+      };
+    }
+    return { date: null, formatted: "Scheduled", distance: "Upcoming" };
   }
 }
 
@@ -140,7 +156,6 @@ export default function CronDashboardPage() {
     maxRetries: 3,
     retryDelaySeconds: 10,
     enabled: true,
-    // Target inputs
     serviceId: "",
     command: "python manage.py purge_sessions",
     workDir: "/app",
@@ -215,12 +230,10 @@ export default function CronDashboardPage() {
     fetchUserResources();
   }, []);
 
-  // Live calculated next 5 runs for form preview
   const liveFormNextRuns = useMemo(() => {
     return getNextRuns(formData.schedule, formData.timezone, 5);
   }, [formData.schedule, formData.timezone]);
 
-  // Handle 1-Click Trigger
   const handleTrigger = async (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setTriggeringId(job.id);
@@ -238,12 +251,10 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Toggle Active State
   const handleToggleEnabled = async (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const newStatus = !job.enabled;
     try {
-      // Optimistic update
       setList((prev) =>
         prev.map((item) => (item.id === job.id ? { ...item, enabled: newStatus } : item))
       );
@@ -259,7 +270,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Delete Job
   const handleDelete = async (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!confirm(`Are you sure you want to delete cron job '${job.name}'? This will cancel all upcoming scheduled executions.`)) return;
@@ -275,7 +285,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Duplicate / Clone Job
   const handleClone = (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setEditingJobId(null);
@@ -308,7 +317,6 @@ export default function CronDashboardPage() {
     setModalOpen(true);
   };
 
-  // Open Edit Modal
   const handleOpenEdit = (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setEditingJobId(job.id);
@@ -341,7 +349,6 @@ export default function CronDashboardPage() {
     setModalOpen(true);
   };
 
-  // Open Create Modal
   const handleOpenCreate = () => {
     setEditingJobId(null);
     let defaultServiceId = "";
@@ -361,7 +368,6 @@ export default function CronDashboardPage() {
     setModalOpen(true);
   };
 
-  // Save Job (Create or Update)
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -477,7 +483,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Load executions for drawer
   const loadExecutions = async (jobId: string, page = 1) => {
     setLoadingHistory(true);
     try {
@@ -495,7 +500,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Load Dead Letters for drawer
   const loadDeadLetters = async (jobId: string) => {
     setLoadingDlq(true);
     try {
@@ -508,7 +512,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Open History Drawer
   const openDrawer = (job: CronJobItem, initialTab: typeof drawerTab = "terminal") => {
     setSelectedJob(job);
     setDrawerTab(initialTab);
@@ -518,7 +521,6 @@ export default function CronDashboardPage() {
     loadDeadLetters(job.id);
   };
 
-  // Replay Dead Letter
   const handleReplayDlq = async (dlq: CronDeadLetterItem) => {
     if (!selectedJob) return;
     setReplayingDlqId(dlq.id);
@@ -535,7 +537,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Discard Dead Letter
   const handleDiscardDlq = async (dlq: CronDeadLetterItem) => {
     if (!selectedJob) return;
     try {
@@ -547,7 +548,6 @@ export default function CronDashboardPage() {
     }
   };
 
-  // Copy Logs to Clipboard
   const handleCopyLogs = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(true);
@@ -555,7 +555,6 @@ export default function CronDashboardPage() {
     setTimeout(() => setCopiedText(false), 2000);
   };
 
-  // Download Logs as File
   const handleDownloadLogs = (exec: CronExecutionItem) => {
     const content = exec.stdout || exec.errorMessage || "No logs available";
     const blob = new Blob([content], { type: "text/plain" });
@@ -567,7 +566,6 @@ export default function CronDashboardPage() {
     URL.revokeObjectURL(url);
   };
 
-  // Live SSE Stream Handler for Running Executions
   useEffect(() => {
     if (
       drawerOpen &&
@@ -610,7 +608,6 @@ export default function CronDashboardPage() {
     }
   }, [drawerOpen, selectedJob, selectedExecution]);
 
-  // Filtered & Sorted List
   const filteredList = useMemo(() => {
     return list
       .filter((job) => {
@@ -638,7 +635,6 @@ export default function CronDashboardPage() {
           const timeB = b.lastRunAt ? new Date(b.lastRunAt).getTime() : 0;
           return timeB - timeA;
         }
-        // Default: nextRun
         if (!a.nextRunAt && !b.nextRunAt) return 0;
         if (!a.nextRunAt) return 1;
         if (!b.nextRunAt) return -1;
@@ -646,7 +642,6 @@ export default function CronDashboardPage() {
       });
   }, [list, searchQuery, filterTarget, filterStatus, sortBy]);
 
-  // Overall statistics
   const stats = useMemo(() => {
     const total = list.length;
     const active = list.filter((j) => j.enabled).length;
@@ -664,155 +659,285 @@ export default function CronDashboardPage() {
     return { total, active, totalRuns, successRate, dlqCount };
   }, [list]);
 
+  // Target Color Mapping
+  const getTargetStyling = (type: string) => {
+    switch (type) {
+      case "FUNCTION":
+        return {
+          color: "#f59e0b",
+          gradient: "linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%)",
+          bgBadge: "rgba(245, 158, 11, 0.12)",
+          borderBadge: "rgba(245, 158, 11, 0.3)",
+          textBadge: "#fbbf24",
+          icon: Zap,
+        };
+      case "CONTAINER_EXEC":
+        return {
+          color: "#06b6d4",
+          gradient: "linear-gradient(90deg, #06b6d4 0%, #38bdf8 100%)",
+          bgBadge: "rgba(6, 182, 212, 0.12)",
+          borderBadge: "rgba(6, 182, 212, 0.3)",
+          textBadge: "#38bdf8",
+          icon: Server,
+        };
+      case "SERVICE":
+        return {
+          color: "#6366f1",
+          gradient: "linear-gradient(90deg, #6366f1 0%, #818cf8 100%)",
+          bgBadge: "rgba(99, 102, 241, 0.12)",
+          borderBadge: "rgba(99, 102, 241, 0.3)",
+          textBadge: "#818cf8",
+          icon: Activity,
+        };
+      case "PROJECT":
+        return {
+          color: "#38bdf8",
+          gradient: "linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)",
+          bgBadge: "rgba(56, 189, 248, 0.12)",
+          borderBadge: "rgba(56, 189, 248, 0.3)",
+          textBadge: "#38bdf8",
+          icon: Globe,
+        };
+      default:
+        return {
+          color: "#10b981",
+          gradient: "linear-gradient(90deg, #10b981 0%, #34d399 100%)",
+          bgBadge: "rgba(16, 185, 129, 0.12)",
+          borderBadge: "rgba(16, 185, 129, 0.3)",
+          textBadge: "#34d399",
+          icon: Radio,
+        };
+    }
+  };
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="page" style={{ maxWidth: 1320, margin: "0 auto", padding: "2rem 1.5rem" }}>
       {/* ─── HEADER ──────────────────────────────────────────────────────────── */}
       <PageHeader
         title="Cron & Scheduled Compute"
         subtitle="Zero-Idle CPU architecture (< 0.01%), multi-target pipeline dispatch, and enterprise disaster recovery."
         actions={
-          <div className="flex items-center gap-2">
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <button
-              onClick={fetchJobs}
-              className="p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-white/70 hover:text-white border border-white/10 transition-all cursor-pointer"
+              onClick={() => {
+                setLoading(true);
+                fetchJobs();
+              }}
+              className="btn btn-secondary"
               title="Refresh Task List"
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
             </button>
             <button
               onClick={handleOpenCreate}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-sm font-medium shadow-lg shadow-blue-500/20 transition-all cursor-pointer"
+              className="btn btn-primary btn-lg"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                boxShadow: "0 0 20px var(--accent-glow)",
+              }}
             >
-              <Plus className="w-4 h-4" />
-              <span>New Cron Task</span>
+              <Plus size={16} /> New Cron Task
             </button>
           </div>
         }
       />
 
-      {/* ─── HIGH-IMPACT RESOURCE KPI CARDS ──────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Active Tasks & Event Loop */}
-        <div className="p-4 rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-md space-y-1 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between text-xs text-white/50 font-medium">
-            <span>ACTIVE TASKS</span>
-            <Clock className="w-4 h-4 text-blue-400" />
+      {/* ─── RESOURCE KPI CARDS ──────────────────────────────────────────────── */}
+      <div className="stats-grid" style={{ marginBottom: "2rem" }}>
+        <div className="stat-card">
+          <div className="stat-label">
+            <Clock size={15} style={{ color: "var(--accent)" }} /> Active Tasks
           </div>
-          <div className="text-2xl font-bold text-white tracking-tight flex items-baseline gap-1.5">
-            {stats.active}
-            <span className="text-sm font-normal text-white/40">/ {stats.total} total</span>
+          <div className="stat-value" style={{ display: "flex", alignItems: "baseline", gap: "0.5rem" }}>
+            <span>{stats.active}</span>
+            <span style={{ fontSize: "0.9rem", color: "var(--muted)", fontWeight: 500 }}>
+              / {stats.total} total
+            </span>
           </div>
-          <div className="text-xs text-emerald-400 flex items-center gap-1.5 pt-0.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Zero-Idle Event Loop Online</span>
+          <div className="stat-sub" style={{ color: "#10b981", fontWeight: 600 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", display: "inline-block", marginRight: 4 }} className="animate-pulse" />
+            Zero-Idle Event Loop Online
           </div>
         </div>
 
-        {/* Dynamic OS Timer CPU Overhead */}
-        <div className="p-4 rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-white/50 font-medium">
-            <span>IDLE CPU OVERHEAD</span>
-            <Cpu className="w-4 h-4 text-emerald-400" />
+        <div className="stat-card">
+          <div className="stat-label">
+            <Cpu size={15} style={{ color: "#10b981" }} /> Idle CPU Overhead
           </div>
-          <div className="text-2xl font-bold text-emerald-400 tracking-tight">&lt; 0.01%</div>
-          <div className="text-xs text-white/50">Dynamic OS sleep vs 86,400 polls</div>
+          <div className="stat-value" style={{ color: "#10b981" }}>
+            &lt; 0.01%
+          </div>
+          <div className="stat-sub">Dynamic OS sleep vs 86,400 polls</div>
         </div>
 
-        {/* 64KB Circular Ring Buffer */}
-        <div className="p-4 rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-white/50 font-medium">
-            <span>LOG MEMORY CAP</span>
-            <Layers className="w-4 h-4 text-purple-400" />
+        <div className="stat-card">
+          <div className="stat-label">
+            <Layers size={15} style={{ color: "#a855f7" }} /> Log Memory Cap
           </div>
-          <div className="text-2xl font-bold text-white tracking-tight">64 KB</div>
-          <div className="text-xs text-purple-300">Circular Byte Ring Buffer (0 OOM)</div>
+          <div className="stat-value" style={{ color: "var(--foreground)" }}>
+            64 KB
+          </div>
+          <div className="stat-sub" style={{ color: "#c084fc" }}>
+            Circular Byte Ring Buffer (0 OOM)
+          </div>
         </div>
 
-        {/* Disaster Recovery & Health */}
-        <div className="p-4 rounded-xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-md space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-white/50 font-medium">
-            <span>REBOOT RECOVERY</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+        <div className="stat-card">
+          <div className="stat-label">
+            <ShieldAlert size={15} style={{ color: "#f59e0b" }} /> Reboot Recovery
           </div>
-          <div className="text-2xl font-bold text-white tracking-tight flex items-baseline gap-2">
-            <span>Self-Healing</span>
-            <span className="text-xs text-emerald-400 font-medium">{stats.successRate}% Success</span>
+          <div className="stat-value" style={{ color: "var(--foreground)", fontSize: "1.45rem" }}>
+            Self-Healing
           </div>
-          <div className="text-xs text-amber-300">Atomic Redis & DB Rehydration</div>
+          <div className="stat-sub" style={{ color: "#10b981", fontWeight: 600 }}>
+            {stats.successRate}% Success • Atomic Sync
+          </div>
         </div>
       </div>
 
-      {/* ─── FILTER, SEARCH, SORT & VIEW CONTROLS ────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
-          {/* Search Bar */}
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+      {/* ─── SEARCH & FILTER CONTROLS BAR ────────────────────────────────────── */}
+      <div
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          padding: "1.25rem",
+          marginBottom: "2rem",
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
+            flexWrap: "wrap",
+          }}
+        >
+          {/* Search Box */}
+          <div style={{ position: "relative", flex: "1 1 280px", maxWidth: 440 }}>
+            <Search
+              size={16}
+              style={{
+                position: "absolute",
+                left: "1rem",
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--muted-fg)",
+              }}
+            />
             <input
               type="text"
               placeholder="Search by name, expression, command..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white/[0.03] border border-white/10 rounded-lg text-sm text-white placeholder-white/40 focus:outline-none focus:border-blue-500 transition-colors"
+              style={{
+                width: "100%",
+                padding: "0.65rem 1rem 0.65rem 2.6rem",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--foreground)",
+                fontSize: "0.88rem",
+              }}
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end flex-wrap">
-            {/* Status Filter */}
-            <div className="flex items-center bg-white/[0.02] border border-white/10 rounded-lg p-0.5 text-xs">
-              {["ALL", "ACTIVE", "PAUSED", "FAILING"].map((status) => (
+          {/* Right Controls: Status, Sort, Layout */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            {/* Status Pills */}
+            <div style={{ display: "flex", gap: "0.4rem", background: "var(--bg-inset)", padding: "0.25rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+              {(["ALL", "ACTIVE", "PAUSED", "FAILING"] as const).map((status) => (
                 <button
                   key={status}
                   onClick={() => setFilterStatus(status)}
-                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer font-medium ${
-                    filterStatus === status
-                      ? "bg-blue-600/30 text-blue-300 font-semibold"
-                      : "text-white/60 hover:text-white"
-                  }`}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "4px",
+                    fontSize: "0.78rem",
+                    fontWeight: 600,
+                    border: "none",
+                    cursor: "pointer",
+                    background: filterStatus === status ? "var(--accent)" : "transparent",
+                    color: filterStatus === status ? "#fff" : "var(--muted)",
+                    transition: "all 0.15s ease",
+                  }}
                 >
                   {status}
                 </button>
               ))}
             </div>
 
-            {/* Sort Selector */}
+            {/* Sort Dropdown */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="px-2.5 py-1.5 bg-white/[0.03] border border-white/10 rounded-lg text-xs text-white/80 focus:outline-none focus:border-blue-500 cursor-pointer"
+              style={{
+                padding: "0.45rem 0.85rem",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                color: "var(--foreground)",
+                fontSize: "0.8rem",
+                cursor: "pointer",
+              }}
             >
-              <option value="nextRun" className="bg-[#0e121b]">Sort: Next Run</option>
-              <option value="lastRun" className="bg-[#0e121b]">Sort: Last Run</option>
-              <option value="name" className="bg-[#0e121b]">Sort: Name</option>
-              <option value="created" className="bg-[#0e121b]">Sort: Newest</option>
+              <option value="nextRun">Sort: Next Run</option>
+              <option value="lastRun">Sort: Last Run</option>
+              <option value="name">Sort: Name</option>
+              <option value="created">Sort: Newest</option>
             </select>
 
-            {/* View Mode Toggle */}
-            <div className="flex items-center bg-white/[0.02] border border-white/10 rounded-lg p-0.5">
+            {/* View Mode Switcher */}
+            <div style={{ display: "flex", background: "var(--bg-inset)", padding: "0.25rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
               <button
                 onClick={() => setViewMode("grid")}
-                className={`p-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === "grid" ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                }`}
-                title="Grid Cards View"
+                style={{
+                  padding: "0.35rem 0.6rem",
+                  borderRadius: "4px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: viewMode === "grid" ? "var(--card)" : "transparent",
+                  color: viewMode === "grid" ? "var(--foreground)" : "var(--muted)",
+                }}
+                title="Grid View"
               >
-                <LayoutGrid className="w-3.5 h-3.5" />
+                <LayoutGrid size={15} />
               </button>
               <button
                 onClick={() => setViewMode("table")}
-                className={`p-1.5 rounded-md transition-all cursor-pointer ${
-                  viewMode === "table" ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                }`}
+                style={{
+                  padding: "0.35rem 0.6rem",
+                  borderRadius: "4px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: viewMode === "table" ? "var(--card)" : "transparent",
+                  color: viewMode === "table" ? "var(--foreground)" : "var(--muted)",
+                }}
                 title="Table View"
               >
-                <TableIcon className="w-3.5 h-3.5" />
+                <TableIcon size={15} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Target Type Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+        {/* Target Pipeline Filters */}
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            marginTop: "1rem",
+            paddingTop: "1rem",
+            borderTop: "1px solid var(--border)",
+            overflowX: "auto",
+            alignItems: "center",
+          }}
+        >
           {[
             { id: "ALL", label: "All Pipelines", icon: Layers },
             { id: "CONTAINER_EXEC", label: "Container Exec", icon: Server },
@@ -827,13 +952,24 @@ export default function CronDashboardPage() {
               <button
                 key={t.id}
                 onClick={() => setFilterTarget(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap cursor-pointer ${
-                  isSelected
-                    ? "bg-blue-600/20 border border-blue-500/50 text-blue-300"
-                    : "bg-white/[0.02] border border-white/5 text-white/60 hover:text-white hover:bg-white/[0.05]"
-                }`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.45rem",
+                  padding: "0.4rem 0.85rem",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "0.78rem",
+                  fontWeight: 600,
+                  border: "1px solid",
+                  borderColor: isSelected ? "var(--accent)" : "var(--border)",
+                  background: isSelected ? "var(--accent-glow)" : "transparent",
+                  color: isSelected ? "var(--accent)" : "var(--muted)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                  whiteSpace: "nowrap",
+                }}
               >
-                <Icon className="w-3 h-3" />
+                <Icon size={13} />
                 <span>{t.label}</span>
               </button>
             );
@@ -843,79 +979,176 @@ export default function CronDashboardPage() {
 
       {/* ─── TASK LIST / CARDS ──────────────────────────────────────────────── */}
       {loading ? (
-        <div className="p-16 text-center text-white/40 text-sm animate-pulse flex flex-col items-center gap-3">
-          <RefreshCw className="w-6 h-6 animate-spin text-blue-400" />
-          <span>Synchronizing scheduled tasks with Redis macro-scheduler...</span>
+        <div style={{ padding: "5rem 0", textAlign: "center", color: "var(--muted)" }}>
+          <RefreshCw size={28} className="animate-spin" style={{ margin: "0 auto 1rem", opacity: 0.6 }} />
+          <p style={{ fontSize: "0.95rem" }}>Synchronizing cron tasks with Redis macro-scheduler...</p>
         </div>
       ) : filteredList.length === 0 ? (
-        <div className="p-16 text-center rounded-2xl border border-white/10 bg-white/[0.01] backdrop-blur-sm space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400">
-            <Clock className="w-6 h-6" />
+        <div
+          style={{
+            background: "var(--card)",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius)",
+            padding: "4rem 2rem",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "50%",
+              background: "var(--accent-glow)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 1.25rem",
+              color: "var(--accent)",
+            }}
+          >
+            <Clock size={26} />
           </div>
-          <div className="space-y-1">
-            <div className="text-base font-semibold text-white">No scheduled cron tasks match your criteria</div>
-            <p className="text-xs text-white/50 max-w-md mx-auto">
-              Create a scheduled task to trigger Docker commands, Edge Function microservices, or webhook notifications automatically.
-            </p>
-          </div>
+          <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+            {searchQuery ? "No matching scheduled tasks found" : "Create your first Scheduled Task"}
+          </h3>
+          <p
+            style={{
+              color: "var(--muted)",
+              maxWidth: 480,
+              margin: "0 auto 1.75rem",
+              fontSize: "0.9rem",
+              lineHeight: 1.5,
+            }}
+          >
+            Schedule Docker container CLI commands, Edge Function invocations, or backend syncs with zero idle CPU overhead.
+          </p>
           <button
             onClick={handleOpenCreate}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md shadow-blue-500/20 transition-all cursor-pointer inline-flex items-center gap-2"
+            className="btn btn-primary"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create Scheduled Task</span>
+            <Sparkles size={16} /> Schedule Task Now
           </button>
         </div>
       ) : viewMode === "grid" ? (
-        /* GRID CARDS VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        /* ─── GRID CARDS VIEW ─────────────────────────────────────────────── */
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(370px, 1fr))",
+            gap: "1.25rem",
+          }}
+        >
           {filteredList.map((job) => {
             const isTriggering = triggeringId === job.id;
             const deadLetterCount = job._count?.deadLetters || 0;
+            const targetStyle = getTargetStyling(job.targetType);
+            const TargetIcon = targetStyle.icon;
+            const nextRun = getAccurateNextRun(job);
+
+            // Nicely format command / endpoint
+            let displayCommand = "";
+            let displaySub = "";
+            const tc = job.targetConfig || {};
+
+            if (job.targetType === "CONTAINER_EXEC") {
+              displayCommand = `$ ${Array.isArray(tc.command) ? tc.command.join(" ") : tc.command || "command"}`;
+              const foundSvc = userServices.find((s) => s.id === tc.serviceId || s.subdomain === tc.serviceId);
+              displaySub = foundSvc ? foundSvc.name : tc.serviceId || "Docker Service";
+            } else if (job.targetType === "FUNCTION") {
+              displayCommand = `${tc.method || "POST"} ${tc.endpointPath || "/"}`;
+              const foundFn = userFunctions.find((f) => f.id === tc.serviceId || f.slug === tc.serviceId || f.subdomainSlug === tc.serviceId);
+              displaySub = foundFn ? foundFn.name : (tc.serviceId ? `fn:${tc.serviceId.slice(0, 10)}...` : "Edge Function");
+            } else if (job.targetType === "SERVICE") {
+              displayCommand = `${tc.method || "POST"} ${tc.routePath || "/"}`;
+              displaySub = `service:${tc.serviceId}${tc.port ? `:${tc.port}` : ""}`;
+            } else if (job.targetType === "PROJECT") {
+              displayCommand = `${tc.method || "GET"} ${tc.routePath || "/"}`;
+              displaySub = `project:${tc.projectId}`;
+            } else {
+              displayCommand = `${tc.method || "POST"} ${tc.url || ""}`;
+              displaySub = "External Webhook";
+            }
 
             return (
               <div
                 key={job.id}
                 onClick={() => openDrawer(job, "terminal")}
-                className="group relative p-5 rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.03] to-white/[0.01] hover:border-blue-500/40 hover:bg-white/[0.04] transition-all cursor-pointer flex flex-col justify-between gap-4 shadow-sm"
+                style={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius)",
+                  padding: "1.5rem",
+                  cursor: "pointer",
+                  transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  position: "relative",
+                  overflow: "hidden",
+                  boxShadow: "var(--shadow)",
+                }}
+                className="card-hoverable"
               >
-                <div className="space-y-3">
-                  {/* Top Badges & Status */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 flex-wrap">
+                {/* Target Gradient Top Highlight Line */}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: "3px",
+                    background: targetStyle.gradient,
+                  }}
+                />
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {/* Top Badges Row */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                       {/* Target Badge */}
-                      <span className="px-2 py-0.5 rounded text-[11px] font-mono uppercase bg-white/10 text-white/80 border border-white/10 flex items-center gap-1">
-                        {job.targetType === "CONTAINER_EXEC" && <Server className="w-3 h-3 text-cyan-400" />}
-                        {job.targetType === "FUNCTION" && <Zap className="w-3 h-3 text-yellow-400" />}
-                        {job.targetType === "SERVICE" && <Activity className="w-3 h-3 text-indigo-400" />}
-                        {job.targetType === "PROJECT" && <Globe className="w-3 h-3 text-blue-400" />}
-                        {job.targetType === "WEBHOOK" && <Radio className="w-3 h-3 text-emerald-400" />}
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "0.35rem",
+                          padding: "0.25rem 0.55rem",
+                          borderRadius: "6px",
+                          fontSize: "0.72rem",
+                          fontWeight: 700,
+                          background: targetStyle.bgBadge,
+                          border: `1px solid ${targetStyle.borderBadge}`,
+                          color: targetStyle.textBadge,
+                          letterSpacing: "0.03em",
+                        }}
+                      >
+                        <TargetIcon size={12} />
                         <span>{job.targetType.replace("_", " ")}</span>
                       </span>
 
                       {/* State Badge */}
                       <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold flex items-center gap-1 ${
+                        className={`badge ${
                           !job.enabled
-                            ? "bg-gray-500/10 text-gray-400 border border-gray-500/20"
+                            ? "badge-paused"
                             : job.lastStatus === "SUCCESS"
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            ? "badge-ready"
                             : job.lastStatus === "FAILED"
-                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                            : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                            ? "badge-failed"
+                            : "badge-building"
                         }`}
                       >
-                        {!job.enabled ? (
-                          <>
-                            <Pause className="w-2.5 h-2.5" />
-                            <span>PAUSED</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                            <span>{job.lastStatus || "ACTIVE"}</span>
-                          </>
-                        )}
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: !job.enabled ? "#94a3b8" : job.lastStatus === "SUCCESS" ? "#10b981" : job.lastStatus === "FAILED" ? "#f43f5e" : "#818cf8",
+                            display: "inline-block",
+                          }}
+                          className={job.enabled ? "animate-pulse" : ""}
+                        />
+                        <span>{!job.enabled ? "PAUSED" : job.lastStatus || "ACTIVE"}</span>
                       </span>
 
                       {/* DLQ Alert Badge */}
@@ -925,136 +1158,178 @@ export default function CronDashboardPage() {
                             e.stopPropagation();
                             openDrawer(job, "dlq");
                           }}
-                          className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 hover:bg-rose-500/30"
-                          title="Failed runs awaiting resolution"
+                          className="badge badge-failed"
+                          title="Unresolved failures awaiting review"
+                          style={{ cursor: "pointer" }}
                         >
-                          <AlertTriangle className="w-3 h-3 text-rose-400" />
-                          <span>{deadLetterCount} DLQ</span>
+                          <AlertTriangle size={11} /> {deadLetterCount} DLQ
                         </span>
                       )}
                     </div>
 
-                    {/* Schedule Badge */}
-                    <div className="font-mono text-xs px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-300 font-medium">
+                    {/* Monospace Schedule Badge */}
+                    <div
+                      style={{
+                        padding: "0.25rem 0.6rem",
+                        borderRadius: "6px",
+                        fontSize: "0.76rem",
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        fontWeight: 600,
+                        background: "var(--bg-inset)",
+                        border: "1px solid var(--border)",
+                        color: "var(--accent)",
+                      }}
+                    >
                       {job.schedule}
                     </div>
                   </div>
 
-                  {/* Title & Description */}
-                  <div>
-                    <h3 className="font-semibold text-white text-base group-hover:text-blue-300 transition-colors line-clamp-1">
+                  {/* Task Name & Description */}
+                  <div style={{ marginBottom: "1rem" }}>
+                    <h3
+                      style={{
+                        fontSize: "1.05rem",
+                        fontWeight: 700,
+                        color: "var(--foreground)",
+                        letterSpacing: "-0.015em",
+                        marginBottom: "0.25rem",
+                      }}
+                    >
                       {job.name}
                     </h3>
-                    {job.description ? (
-                      <p className="text-xs text-white/50 line-clamp-2 mt-0.5">{job.description}</p>
-                    ) : (
-                      <p className="text-xs text-white/30 italic mt-0.5">{getHumanReadableSchedule(job.schedule)}</p>
-                    )}
+                    <p style={{ fontSize: "0.82rem", color: "var(--muted)", lineHeight: 1.45 }}>
+                      {job.description || getHumanReadableSchedule(job.schedule)}
+                    </p>
                   </div>
 
-                  {/* Target Command / Route Snippet */}
-                  <div className="p-2 rounded-lg bg-black/40 border border-white/5 text-[11px] font-mono text-white/70 overflow-x-auto whitespace-nowrap">
-                    {job.targetType === "CONTAINER_EXEC" && (
-                      <span>
-                        <span className="text-white/40">$ </span>
-                        {Array.isArray(job.targetConfig?.command)
-                          ? job.targetConfig?.command.join(" ")
-                          : job.targetConfig?.command || "No command"}
-                      </span>
-                    )}
-                    {job.targetType === "FUNCTION" && (
-                      <span>
-                        <span className="text-amber-400">{job.targetConfig?.method || "POST"} </span>
-                        {job.targetConfig?.serviceId}
-                        <span className="text-white/40">{job.targetConfig?.endpointPath || "/"}</span>
-                      </span>
-                    )}
-                    {job.targetType === "SERVICE" && (
-                      <span>
-                        <span className="text-indigo-400">{job.targetConfig?.method || "POST"} </span>
-                        {job.targetConfig?.serviceId}
-                        <span className="text-white/40">{job.targetConfig?.routePath || "/"}</span>
-                      </span>
-                    )}
-                    {job.targetType === "PROJECT" && (
-                      <span>
-                        <span className="text-blue-400">{job.targetConfig?.method || "GET"} </span>
-                        {job.targetConfig?.projectId}
-                        <span className="text-white/40">{job.targetConfig?.routePath || "/"}</span>
-                      </span>
-                    )}
-                    {job.targetType === "WEBHOOK" && (
-                      <span>
-                        <span className="text-emerald-400">{job.targetConfig?.method || "POST"} </span>
-                        {job.targetConfig?.url}
-                      </span>
-                    )}
+                  {/* High-Contrast Command Box */}
+                  <div
+                    style={{
+                      background: "rgba(0, 0, 0, 0.45)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      borderRadius: "8px",
+                      padding: "0.75rem 0.9rem",
+                      marginBottom: "1.25rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "0.78rem",
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        color: targetStyle.textBadge,
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {displayCommand}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "0.72rem",
+                        color: "var(--muted-fg)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Target: {displaySub}
+                    </div>
                   </div>
                 </div>
 
-                {/* Footer Timestamps & Action Buttons */}
-                <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2 flex-wrap">
-                  <div className="text-xs text-white/50 space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-white/40">Next:</span>
-                      {job.nextRunAt && job.enabled ? (
-                        <span className="text-white/80 font-medium">
-                          {format(new Date(job.nextRunAt), "MMM d, HH:mm")} (
-                          {formatDistanceToNow(new Date(job.nextRunAt), { addSuffix: true })})
-                        </span>
-                      ) : (
-                        <span className="text-white/30 italic">Suspended</span>
-                      )}
+                {/* Footer Next Run & Action Suite */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    paddingTop: "1rem",
+                    borderTop: "1px solid var(--border)",
+                    gap: "0.5rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                    <div style={{ fontSize: "0.78rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      <Clock size={12} style={{ color: job.enabled ? "#10b981" : "var(--muted)" }} />
+                      <span>Next:</span>
+                      <strong style={{ color: "var(--foreground)", fontWeight: 600 }}>{nextRun.formatted}</strong>
                     </div>
-                    {job.lastRunAt && (
-                      <div className="text-[11px] text-white/40">
-                        Last run {formatDistanceToNow(new Date(job.lastRunAt), { addSuffix: true })}
-                      </div>
-                    )}
+                    <div style={{ fontSize: "0.72rem", color: "var(--muted-fg)" }}>
+                      {nextRun.distance}
+                    </div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {/* Actions Suite */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }} onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={(e) => handleTrigger(job, e)}
                       disabled={isTriggering}
-                      className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 rounded-lg text-xs font-medium transition-all cursor-pointer disabled:opacity-50"
-                      title="Trigger immediately"
+                      className="btn btn-sm btn-primary"
+                      title="Run immediately"
+                      style={{ padding: "0.35rem 0.75rem", fontSize: "0.75rem" }}
                     >
-                      <Play className={`w-3 h-3 ${isTriggering ? "animate-spin" : ""}`} />
+                      <Play size={12} className={isTriggering ? "animate-spin" : ""} />
                       <span>{isTriggering ? "Running..." : "Run"}</span>
                     </button>
 
                     <button
                       onClick={(e) => handleToggleEnabled(job, e)}
-                      className="px-2.5 py-1.5 bg-white/[0.03] hover:bg-white/[0.08] text-white/70 border border-white/10 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                      className="btn btn-sm btn-secondary"
                       title={job.enabled ? "Pause task" : "Resume task"}
+                      style={{ padding: "0.35rem 0.65rem", fontSize: "0.75rem" }}
                     >
                       {job.enabled ? "Pause" : "Resume"}
                     </button>
 
                     <button
                       onClick={(e) => handleOpenEdit(job, e)}
-                      className="p-1.5 text-white/50 hover:text-white hover:bg-white/[0.08] rounded-lg border border-white/5 transition-all cursor-pointer"
+                      style={{
+                        padding: "0.4rem",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                      }}
                       title="Edit Configuration"
                     >
-                      <Settings2 className="w-3.5 h-3.5" />
+                      <Settings2 size={13} />
                     </button>
 
                     <button
                       onClick={(e) => handleClone(job, e)}
-                      className="p-1.5 text-white/50 hover:text-white hover:bg-white/[0.08] rounded-lg border border-white/5 transition-all cursor-pointer"
+                      style={{
+                        padding: "0.4rem",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        color: "var(--muted)",
+                        cursor: "pointer",
+                      }}
                       title="Duplicate Task"
                     >
-                      <Copy className="w-3.5 h-3.5" />
+                      <Copy size={13} />
                     </button>
 
                     <button
                       onClick={(e) => handleDelete(job, e)}
-                      className="p-1.5 text-white/40 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all cursor-pointer"
+                      style={{
+                        padding: "0.4rem",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        color: "var(--danger)",
+                        cursor: "pointer",
+                      }}
                       title="Delete Task"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 size={13} />
                     </button>
                   </div>
                 </div>
@@ -1063,101 +1338,92 @@ export default function CronDashboardPage() {
           })}
         </div>
       ) : (
-        /* DENSE TABLE VIEW */
-        <div className="rounded-xl border border-white/10 bg-white/[0.01] overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-white/[0.03] border-b border-white/10 text-white/50 font-medium">
+        /* ─── DENSE TABLE VIEW ─────────────────────────────────────────────── */
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", boxShadow: "var(--shadow)" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.85rem" }}>
+              <thead style={{ background: "var(--bg-inset)", borderBottom: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.75rem", textTransform: "uppercase" }}>
                 <tr>
-                  <th className="p-3">Task Name</th>
-                  <th className="p-3">Target Pipeline</th>
-                  <th className="p-3">Schedule</th>
-                  <th className="p-3">Next Execution</th>
-                  <th className="p-3">Last Status</th>
-                  <th className="p-3 text-right">Actions</th>
+                  <th style={{ padding: "0.85rem 1rem" }}>Task Name</th>
+                  <th style={{ padding: "0.85rem 1rem" }}>Pipeline</th>
+                  <th style={{ padding: "0.85rem 1rem" }}>Schedule</th>
+                  <th style={{ padding: "0.85rem 1rem" }}>Next Run</th>
+                  <th style={{ padding: "0.85rem 1rem" }}>Status</th>
+                  <th style={{ padding: "0.85rem 1rem", textAlign: "right" }}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5 text-white/80 font-mono">
+              <tbody>
                 {filteredList.map((job) => {
                   const isTriggering = triggeringId === job.id;
+                  const nextRun = getAccurateNextRun(job);
                   return (
                     <tr
                       key={job.id}
                       onClick={() => openDrawer(job, "terminal")}
-                      className="hover:bg-white/[0.03] transition-colors cursor-pointer"
+                      style={{ borderBottom: "1px solid var(--border)", cursor: "pointer", transition: "background 0.15s ease" }}
+                      className="hover:bg-white/[0.02]"
                     >
-                      <td className="p-3 font-sans font-medium text-white">
-                        <div className="flex items-center gap-2">
+                      <td style={{ padding: "0.85rem 1rem", fontWeight: 600, color: "var(--foreground)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           <span
-                            className={`w-2 h-2 rounded-full ${
-                              !job.enabled
-                                ? "bg-gray-500"
-                                : job.lastStatus === "SUCCESS"
-                                ? "bg-emerald-400"
-                                : job.lastStatus === "FAILED"
-                                ? "bg-rose-500"
-                                : "bg-blue-400"
-                            }`}
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: !job.enabled ? "#94a3b8" : job.lastStatus === "SUCCESS" ? "#10b981" : job.lastStatus === "FAILED" ? "#f43f5e" : "#818cf8",
+                            }}
                           />
                           <span>{job.name}</span>
                         </div>
                       </td>
-                      <td className="p-3">
-                        <span className="px-2 py-0.5 rounded text-[11px] bg-white/10 border border-white/10 text-white/80">
+                      <td style={{ padding: "0.85rem 1rem" }}>
+                        <span className="badge" style={{ background: "var(--bg-inset)", border: "1px solid var(--border)" }}>
                           {job.targetType}
                         </span>
                       </td>
-                      <td className="p-3 text-blue-400">
+                      <td style={{ padding: "0.85rem 1rem", fontFamily: "var(--font-geist-mono), monospace", color: "var(--accent)" }}>
                         {job.schedule} ({job.timezone})
                       </td>
-                      <td className="p-3 text-white/70">
-                        {job.nextRunAt && job.enabled ? (
-                          format(new Date(job.nextRunAt), "MMM d, HH:mm:ss")
-                        ) : (
-                          <span className="text-white/30 italic">Suspended</span>
-                        )}
+                      <td style={{ padding: "0.85rem 1rem", color: "var(--foreground)" }}>
+                        {nextRun.formatted} ({nextRun.distance})
                       </td>
-                      <td className="p-3">
+                      <td style={{ padding: "0.85rem 1rem" }}>
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            job.lastStatus === "SUCCESS"
-                              ? "text-emerald-400 bg-emerald-500/10"
-                              : job.lastStatus === "FAILED"
-                              ? "text-rose-400 bg-rose-500/10"
-                              : "text-blue-400 bg-blue-500/10"
+                          className={`badge ${
+                            !job.enabled ? "badge-paused" : job.lastStatus === "SUCCESS" ? "badge-ready" : "badge-failed"
                           }`}
                         >
-                          {job.lastStatus || "READY"}
+                          {!job.enabled ? "PAUSED" : job.lastStatus || "ACTIVE"}
                         </span>
                       </td>
-                      <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5 font-sans">
+                      <td style={{ padding: "0.85rem 1rem", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
                           <button
                             onClick={(e) => handleTrigger(job, e)}
                             disabled={isTriggering}
-                            className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded text-xs transition-all cursor-pointer disabled:opacity-50"
+                            className="btn btn-sm btn-primary"
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem" }}
                           >
-                            {isTriggering ? "Running..." : "Run"}
+                            Run
                           </button>
                           <button
                             onClick={(e) => handleToggleEnabled(job, e)}
-                            className="px-2 py-1 bg-white/[0.04] hover:bg-white/[0.08] text-white/70 rounded text-xs transition-all cursor-pointer"
+                            className="btn btn-sm btn-secondary"
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem" }}
                           >
                             {job.enabled ? "Pause" : "Resume"}
                           </button>
                           <button
                             onClick={(e) => handleOpenEdit(job, e)}
-                            className="p-1 text-white/50 hover:text-white rounded"
-                            title="Edit"
+                            style={{ padding: "0.25rem 0.45rem", borderRadius: "4px", border: "1px solid var(--border)", background: "transparent", color: "var(--muted)", cursor: "pointer" }}
                           >
-                            <Settings2 className="w-3.5 h-3.5" />
+                            <Settings2 size={13} />
                           </button>
                           <button
                             onClick={(e) => handleDelete(job, e)}
-                            className="p-1 text-white/40 hover:text-rose-400 rounded"
-                            title="Delete"
+                            style={{ padding: "0.25rem 0.45rem", borderRadius: "4px", border: "1px solid var(--border)", background: "transparent", color: "var(--danger)", cursor: "pointer" }}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>
@@ -1172,29 +1438,42 @@ export default function CronDashboardPage() {
 
       {/* ─── CREATE & EDIT TASK MODAL ────────────────────────────────────────── */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-          <div className="bg-[#0b0e14] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-150">
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0, 0, 0, 0.75)", backdropFilter: "blur(8px)", padding: "1rem" }}>
+          <div
+            style={{
+              background: "#0c1017",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              width: "100%",
+              maxWidth: 680,
+              maxHeight: "92vh",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+            }}
+          >
             {/* Modal Header */}
-            <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+            <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-inset)" }}>
               <div>
-                <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-400" />
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Clock size={18} style={{ color: "var(--accent)" }} />
                   <span>{editingJobId ? "Edit Scheduled Cron Task" : "Create Scheduled Cron Task"}</span>
                 </h3>
-                <p className="text-xs text-white/50 mt-0.5">
-                  Event-driven dynamic OS sleep loop (&lt; 0.01% idle CPU) with microsecond dispatch.
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+                  Zero-Idle event loop (&lt; 0.01% CPU) with microsecond dispatch.
                 </p>
               </div>
               <button
                 onClick={() => setModalOpen(false)}
-                className="text-white/40 hover:text-white p-1 text-lg leading-none cursor-pointer"
+                style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: "1.25rem", cursor: "pointer", padding: "0.25rem" }}
               >
                 ✕
               </button>
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex border-b border-white/10 px-5 bg-white/[0.01]">
+            <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", padding: "0 1.5rem" }}>
               {[
                 { id: "general", label: "1. Schedule & Basics" },
                 { id: "target", label: "2. Target Pipeline" },
@@ -1203,53 +1482,67 @@ export default function CronDashboardPage() {
                 <button
                   key={t.id}
                   onClick={() => setActiveTabForm(t.id as any)}
-                  className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
-                    activeTabForm === t.id
-                      ? "border-blue-500 text-blue-400"
-                      : "border-transparent text-white/50 hover:text-white"
-                  }`}
+                  style={{
+                    padding: "0.85rem 1rem",
+                    fontSize: "0.82rem",
+                    fontWeight: 650,
+                    border: "none",
+                    borderBottom: activeTabForm === t.id ? "2px solid var(--accent)" : "2px solid transparent",
+                    background: "transparent",
+                    color: activeTabForm === t.id ? "var(--accent)" : "var(--muted)",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
                 >
                   {t.label}
                 </button>
               ))}
             </div>
 
-            {/* Modal Form Body */}
-            <form onSubmit={handleSaveSubmit} className="flex-1 overflow-y-auto p-5 space-y-5 text-sm">
-              {/* TAB 1: GENERAL & SCHEDULE */}
+            {/* Modal Body Form */}
+            <form onSubmit={handleSaveSubmit} style={{ flex: 1, overflowY: "auto", padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+              {/* TAB 1: SCHEDULE & BASICS */}
               {activeTabForm === "general" && (
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/80">Task Name</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                      Task Name
+                    </label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. Nightly Database Vacuum & Session Cleanup"
+                      placeholder="e.g. Nightly Database Vacuum & Session Purge"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-blue-500 text-sm"
+                      className="input"
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/80">Description (Optional)</label>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                      Description (Optional)
+                    </label>
                     <input
                       type="text"
                       placeholder="Brief note on what this cron does"
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      className="w-full px-3.5 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-blue-500 text-sm"
+                      className="input"
                     />
                   </div>
 
                   {/* Schedule Presets */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-white/80">Cron Frequency Presets</label>
-                      <span className="text-[11px] text-blue-400 font-mono">Standard 5-part cron</span>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)" }}>
+                        Cron Frequency Presets
+                      </label>
+                      <span style={{ fontSize: "0.75rem", color: "var(--accent)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                        Standard 5-part cron
+                      </span>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem" }}>
                       {PRESET_SCHEDULES.map((p) => {
                         const isSelected = formData.schedule === p.value;
                         return (
@@ -1257,40 +1550,53 @@ export default function CronDashboardPage() {
                             key={p.value}
                             type="button"
                             onClick={() => setFormData({ ...formData, schedule: p.value })}
-                            className={`p-2.5 text-left rounded-xl border transition-all cursor-pointer ${
-                              isSelected
-                                ? "bg-blue-600/20 border-blue-500/60 text-blue-300"
-                                : "bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]"
-                            }`}
+                            style={{
+                              padding: "0.6rem 0.75rem",
+                              borderRadius: "8px",
+                              textAlign: "left",
+                              border: "1px solid",
+                              borderColor: isSelected ? "var(--accent)" : "var(--border)",
+                              background: isSelected ? "var(--accent-glow)" : "var(--bg-inset)",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
                           >
-                            <div className="font-semibold text-white text-xs">{p.label}</div>
-                            <div className="text-[10px] text-white/40 font-mono mt-0.5">{p.value}</div>
+                            <div style={{ fontSize: "0.78rem", fontWeight: 600, color: isSelected ? "var(--accent)" : "var(--foreground)" }}>
+                              {p.label}
+                            </div>
+                            <div style={{ fontSize: "0.7rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace", marginTop: "0.15rem" }}>
+                              {p.value}
+                            </div>
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Custom Cron Input & Timezone */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-white/80">Custom Expression</label>
+                  {/* Expression Input & Timezone */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                        Cron Expression
+                      </label>
                       <input
                         type="text"
                         required
                         value={formData.schedule}
                         onChange={(e) => setFormData({ ...formData, schedule: e.target.value })}
+                        className="input mono"
                         placeholder="0 0 * * *"
-                        className="w-full font-mono px-3.5 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white placeholder-white/30 focus:outline-none focus:border-blue-500 text-sm"
                       />
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-white/80">Timezone (IANA)</label>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                        Timezone
+                      </label>
                       <select
                         value={formData.timezone}
                         onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-                        className="w-full px-3.5 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
+                        className="input"
                       >
                         {POPULAR_TIMEZONES.map((tz) => (
                           <option key={tz} value={tz} className="bg-[#0e121b]">
@@ -1301,27 +1607,32 @@ export default function CronDashboardPage() {
                     </div>
                   </div>
 
-                  {/* Live Calculated Next 5 Runs Preview */}
-                  <div className="p-3.5 rounded-xl bg-blue-500/5 border border-blue-500/15 space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs text-blue-300 font-semibold">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>Next 5 Calculated Executions ({formData.timezone})</span>
+                  {/* Next 5 Runs Calculation Preview */}
+                  <div
+                    style={{
+                      background: "rgba(99, 102, 241, 0.06)",
+                      border: "1px solid rgba(99, 102, 241, 0.2)",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.4rem",
+                    }}
+                  >
+                    <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--accent)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <Calendar size={13} /> Next 5 Executions Preview ({formData.timezone})
                     </div>
                     {liveFormNextRuns.length > 0 ? (
-                      <div className="space-y-1 font-mono text-xs text-white/70">
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontFamily: "var(--font-geist-mono), monospace", fontSize: "0.75rem", color: "var(--foreground)" }}>
                         {liveFormNextRuns.map((date, idx) => (
-                          <div key={idx} className="flex items-center justify-between text-[11px]">
-                            <span>
-                              #{idx + 1}: {format(date, "EEEE, MMM d, yyyy • HH:mm:ss")}
-                            </span>
-                            <span className="text-white/40">
-                              ({formatDistanceToNow(date, { addSuffix: true })})
-                            </span>
+                          <div key={idx} style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span>#{idx + 1}: {format(date, "EEEE, MMM d, yyyy • HH:mm:ss")}</span>
+                            <span style={{ color: "var(--muted)" }}>({formatDistanceToNow(date, { addSuffix: true })})</span>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-rose-400">Invalid cron expression or timezone.</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--danger)" }}>Invalid cron expression.</div>
                     )}
                   </div>
                 </div>
@@ -1329,10 +1640,12 @@ export default function CronDashboardPage() {
 
               {/* TAB 2: TARGET PIPELINE */}
               {activeTabForm === "target" && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium text-white/80">Select Target Execution Pipeline</label>
-                    <div className="grid grid-cols-2 gap-2">
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.5rem" }}>
+                      Execution Pipeline
+                    </label>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
                       {[
                         { type: "CONTAINER_EXEC", label: "Container Exec CLI", desc: "Run bash/python inside container", icon: Server },
                         { type: "FUNCTION", label: "Edge Function", desc: "Sub-5ms V8 isolate invocation", icon: Zap },
@@ -1346,123 +1659,115 @@ export default function CronDashboardPage() {
                             key={t.type}
                             type="button"
                             onClick={() => setFormData({ ...formData, targetType: t.type as any })}
-                            className={`p-3 text-left rounded-xl border transition-all cursor-pointer ${
-                              isSelected
-                                ? "bg-blue-600/20 border-blue-500/60 text-blue-300"
-                                : "bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]"
-                            }`}
+                            style={{
+                              padding: "0.75rem",
+                              borderRadius: "8px",
+                              textAlign: "left",
+                              border: "1px solid",
+                              borderColor: isSelected ? "var(--accent)" : "var(--border)",
+                              background: isSelected ? "var(--accent-glow)" : "var(--bg-inset)",
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
                           >
-                            <div className="flex items-center gap-1.5 font-semibold text-white text-xs">
-                              <Icon className="w-3.5 h-3.5" />
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.82rem", fontWeight: 600, color: isSelected ? "var(--accent)" : "var(--foreground)" }}>
+                              <Icon size={14} />
                               <span>{t.label}</span>
                             </div>
-                            <div className="text-[10px] text-white/40 mt-1">{t.desc}</div>
+                            <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+                              {t.desc}
+                            </div>
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  {/* Target Dynamic Form Fields */}
                   {formData.targetType === "CONTAINER_EXEC" && (
-                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Target Docker Service</label>
-                        {userServices.length > 0 ? (
+                    <div style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "8px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                          Target Container Service
+                        </label>
+                        {userServices.length > 0 && (
                           <select
                             value={formData.serviceId}
                             onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs"
+                            className="input"
+                            style={{ marginBottom: "0.4rem" }}
                           >
-                            <option value="">Select a backend service...</option>
+                            <option value="">Select an active backend service...</option>
                             {userServices.map((s) => (
                               <option key={s.id} value={s.id || s.subdomain} className="bg-[#0e121b]">
-                                {s.name} ({s.subdomain || s.id})
+                                {s.name} ({s.subdomain || s.id.slice(0, 8)})
                               </option>
                             ))}
                           </select>
-                        ) : null}
+                        )}
                         <input
                           type="text"
-                          placeholder="Or enter custom service ID / container name"
+                          placeholder="Or enter custom service ID"
                           value={formData.serviceId}
                           onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                          className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono mt-1"
+                          className="input mono"
                         />
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">CLI Command</label>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                          Command
+                        </label>
                         <input
                           type="text"
                           required
                           placeholder="python manage.py purge_sessions"
                           value={formData.command}
                           onChange={(e) => setFormData({ ...formData, command: e.target.value })}
-                          className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
+                          className="input mono"
                         />
-                        <p className="text-[10px] text-white/40">Executed directly via Docker socket (/var/run/docker.sock).</p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-white/80">Working Directory</label>
-                          <input
-                            type="text"
-                            placeholder="/app"
-                            value={formData.workDir}
-                            onChange={(e) => setFormData({ ...formData, workDir: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-white/80">Run as User</label>
-                          <input
-                            type="text"
-                            placeholder="root or node"
-                            value={formData.user}
-                            onChange={(e) => setFormData({ ...formData, user: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                          />
-                        </div>
                       </div>
                     </div>
                   )}
 
                   {formData.targetType === "FUNCTION" && (
-                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Edge Function Service</label>
-                        {userFunctions.length > 0 ? (
+                    <div style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "8px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                          Edge Function Service
+                        </label>
+                        {userFunctions.length > 0 && (
                           <select
                             value={formData.serviceId}
                             onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs"
+                            className="input"
+                            style={{ marginBottom: "0.4rem" }}
                           >
                             <option value="">Select an Edge Function service...</option>
                             {userFunctions.map((fn) => (
                               <option key={fn.id} value={fn.id} className="bg-[#0e121b]">
-                                {fn.name} ({fn.subdomainSlug || fn.id})
+                                {fn.name} ({fn.subdomainSlug || fn.id.slice(0, 8)})
                               </option>
                             ))}
                           </select>
-                        ) : null}
+                        )}
                         <input
                           type="text"
-                          placeholder="Or enter Edge Function Service UUID"
+                          placeholder="Or enter Edge Function UUID"
                           value={formData.serviceId}
                           onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                          className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono mt-1"
+                          className="input mono"
                         />
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-1 col-span-1">
-                          <label className="text-xs font-medium text-white/80">HTTP Method</label>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "0.5rem" }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                            Method
+                          </label>
                           <select
                             value={formData.method}
                             onChange={(e) => setFormData({ ...formData, method: e.target.value as any })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs"
+                            className="input"
                           >
                             <option value="POST">POST</option>
                             <option value="GET">GET</option>
@@ -1470,72 +1775,16 @@ export default function CronDashboardPage() {
                             <option value="DELETE">DELETE</option>
                           </select>
                         </div>
-                        <div className="space-y-1 col-span-2">
-                          <label className="text-xs font-medium text-white/80">Endpoint Route</label>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                            Route Path
+                          </label>
                           <input
                             type="text"
                             placeholder="/cleanup"
                             value={formData.endpointPath}
                             onChange={(e) => setFormData({ ...formData, endpointPath: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">JSON Payload</label>
-                        <textarea
-                          rows={3}
-                          value={formData.payloadJson}
-                          onChange={(e) => setFormData({ ...formData, payloadJson: e.target.value })}
-                          className="w-full p-2.5 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {formData.targetType === "SERVICE" && (
-                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Backend Service</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. whizan-api or service UUID"
-                          value={formData.serviceId}
-                          onChange={(e) => setFormData({ ...formData, serviceId: e.target.value })}
-                          className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-white/80">Method</label>
-                          <select
-                            value={formData.method}
-                            onChange={(e) => setFormData({ ...formData, method: e.target.value as any })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs"
-                          >
-                            <option value="POST">POST</option>
-                            <option value="GET">GET</option>
-                            <option value="PUT">PUT</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-white/80">Internal Port</label>
-                          <input
-                            type="number"
-                            value={formData.port}
-                            onChange={(e) => setFormData({ ...formData, port: Number(e.target.value) })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-white/80">Route Path</label>
-                          <input
-                            type="text"
-                            value={formData.endpointPath}
-                            onChange={(e) => setFormData({ ...formData, endpointPath: e.target.value })}
-                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
+                            className="input mono"
                           />
                         </div>
                       </div>
@@ -1543,36 +1792,18 @@ export default function CronDashboardPage() {
                   )}
 
                   {formData.targetType === "WEBHOOK" && (
-                    <div className="p-4 bg-white/[0.02] border border-white/5 rounded-xl space-y-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Webhook URL</label>
+                    <div style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "8px", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                          Webhook HTTPS URL
+                        </label>
                         <input
                           type="url"
                           required
                           placeholder="https://api.example.com/tasks"
                           value={formData.webhookUrl}
                           onChange={(e) => setFormData({ ...formData, webhookUrl: e.target.value })}
-                          className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Custom Headers (JSON)</label>
-                        <textarea
-                          rows={2}
-                          value={formData.customHeaders}
-                          onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
-                          className="w-full p-2.5 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-white/80">Request Body (JSON)</label>
-                        <textarea
-                          rows={3}
-                          value={formData.payloadJson}
-                          onChange={(e) => setFormData({ ...formData, payloadJson: e.target.value })}
-                          className="w-full p-2.5 bg-black/40 border border-white/10 rounded-lg text-white text-xs font-mono focus:outline-none focus:border-blue-500"
+                          className="input mono"
                         />
                       </div>
                     </div>
@@ -1582,226 +1813,161 @@ export default function CronDashboardPage() {
 
               {/* TAB 3: RESILIENCE & POLICIES */}
               {activeTabForm === "policies" && (
-                <div className="space-y-4">
-                  {/* Misfire Policy */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/80">Misfire Reboot Policy</label>
-                    <p className="text-[11px] text-white/40">Action taken if Azure VM was powered off and missed intervals.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {[
-                        { id: "SKIP", label: "SKIP (Recommended)", desc: "Discard missed runs to avoid thundering herd" },
-                        { id: "FIRE_LATEST_ONCE", label: "FIRE_LATEST_ONCE", desc: "Execute 1 catchup run immediately on boot" },
-                        { id: "CATCH_UP_ALL", label: "CATCH_UP_ALL", desc: "Replay all missed ticks sequentially" },
-                      ].map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => setFormData({ ...formData, misfirePolicy: p.id as any })}
-                          className={`p-2.5 text-left rounded-xl border transition-all cursor-pointer ${
-                            formData.misfirePolicy === p.id
-                              ? "bg-blue-600/20 border-blue-500 text-blue-300"
-                              : "bg-white/[0.02] border-white/5 text-white/60 hover:bg-white/[0.05]"
-                          }`}
-                        >
-                          <div className="font-semibold text-white text-xs">{p.label}</div>
-                          <div className="text-[10px] text-white/40 mt-1">{p.desc}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Concurrency Policy */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-white/80">Concurrency Control</label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                      Misfire Reboot Policy
+                    </label>
                     <select
-                      value={formData.concurrencyPolicy}
-                      onChange={(e) => setFormData({ ...formData, concurrencyPolicy: e.target.value as any })}
-                      className="w-full px-3.5 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white text-xs focus:outline-none focus:border-blue-500 cursor-pointer"
+                      value={formData.misfirePolicy}
+                      onChange={(e) => setFormData({ ...formData, misfirePolicy: e.target.value as any })}
+                      className="input"
                     >
-                      <option value="FORBID" className="bg-[#0e121b]">FORBID (Skip new run if previous is still active)</option>
-                      <option value="ALLOW" className="bg-[#0e121b]">ALLOW (Permit parallel executions)</option>
-                      <option value="REPLACE" className="bg-[#0e121b]">REPLACE (Abort running process & start new)</option>
-                      <option value="QUEUE_SERIALIZE" className="bg-[#0e121b]">QUEUE_SERIALIZE (Queue sequentially)</option>
+                      <option value="SKIP" className="bg-[#0e121b]">SKIP (Recommended - Discard backlog on boot)</option>
+                      <option value="FIRE_LATEST_ONCE" className="bg-[#0e121b]">FIRE_LATEST_ONCE (1 Catchup execution)</option>
+                      <option value="CATCH_UP_ALL" className="bg-[#0e121b]">CATCH_UP_ALL (Sequentially replay all)</option>
                     </select>
                   </div>
 
-                  {/* Timeout & Retries */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-white/80">Timeout (Seconds)</label>
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.4rem" }}>
+                      Concurrency Control
+                    </label>
+                    <select
+                      value={formData.concurrencyPolicy}
+                      onChange={(e) => setFormData({ ...formData, concurrencyPolicy: e.target.value as any })}
+                      className="input"
+                    >
+                      <option value="FORBID" className="bg-[#0e121b]">FORBID (Skip new run if active)</option>
+                      <option value="ALLOW" className="bg-[#0e121b]">ALLOW (Permit parallel execution)</option>
+                      <option value="REPLACE" className="bg-[#0e121b]">REPLACE (Abort running process & start new)</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                        Timeout (Sec)
+                      </label>
                       <input
                         type="number"
                         min={1}
                         max={3600}
                         value={formData.timeoutSeconds}
                         onChange={(e) => setFormData({ ...formData, timeoutSeconds: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white text-xs font-mono"
+                        className="input mono"
                       />
                     </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-white/80">Max Retries</label>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                        Max Retries
+                      </label>
                       <input
                         type="number"
                         min={0}
                         max={10}
                         value={formData.maxRetries}
                         onChange={(e) => setFormData({ ...formData, maxRetries: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white text-xs font-mono"
+                        className="input mono"
                       />
                     </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-white/80">Retry Delay (Sec)</label>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+                        Retry Delay
+                      </label>
                       <input
                         type="number"
                         min={1}
                         max={300}
                         value={formData.retryDelaySeconds}
                         onChange={(e) => setFormData({ ...formData, retryDelaySeconds: Number(e.target.value) })}
-                        className="w-full px-3 py-2 bg-white/[0.03] border border-white/10 rounded-xl text-white text-xs font-mono"
+                        className="input mono"
                       />
                     </div>
-                  </div>
-
-                  {/* Initial State */}
-                  <div className="flex items-center gap-3 pt-2">
-                    <input
-                      type="checkbox"
-                      id="enabledToggle"
-                      checked={formData.enabled}
-                      onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                      className="w-4 h-4 rounded text-blue-600 cursor-pointer"
-                    />
-                    <label htmlFor="enabledToggle" className="text-xs font-medium text-white/80 cursor-pointer">
-                      Task Active immediately upon saving
-                    </label>
                   </div>
                 </div>
               )}
 
               {/* Modal Footer Actions */}
-              <div className="flex justify-between items-center pt-4 border-t border-white/10">
-                <div className="flex items-center gap-2">
-                  {activeTabForm !== "general" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveTabForm(activeTabForm === "policies" ? "target" : "general")
-                      }
-                      className="px-3 py-1.5 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 rounded-lg text-xs font-medium transition-all cursor-pointer"
-                    >
-                      Back
-                    </button>
-                  )}
-                  {activeTabForm !== "policies" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setActiveTabForm(activeTabForm === "general" ? "target" : "policies")
-                      }
-                      className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 rounded-lg text-xs font-medium transition-all cursor-pointer"
-                    >
-                      Next Step →
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setModalOpen(false)}
-                    className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white/70 rounded-lg text-xs font-medium transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-5 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-blue-500/20 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {saving ? "Scheduling..." : editingJobId ? "Save Changes" : "Create Task"}
-                  </button>
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "1rem", borderTop: "1px solid var(--border)", marginTop: "auto" }}>
+                <button
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn btn-primary"
+                  style={{ minWidth: 120 }}
+                >
+                  {saving ? "Saving..." : editingJobId ? "Save Changes" : "Schedule Task"}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ─── OBSERVABILITY & MANAGEMENT DRAWER ─────────────────────────────────── */}
+      {/* ─── OBSERVABILITY DRAWER ──────────────────────────────────────────────── */}
       {drawerOpen && selectedJob && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs">
-          <div className="w-full max-w-3xl bg-[#0a0d13] border-l border-white/10 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", justifyContent: "flex-end", background: "rgba(0, 0, 0, 0.65)", backdropFilter: "blur(4px)" }}>
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 780,
+              background: "#0c1017",
+              borderLeft: "1px solid var(--border)",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "var(--shadow-hover)",
+            }}
+          >
             {/* Drawer Header */}
-            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-              <div className="space-y-1 min-w-0 pr-4">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-400 shrink-0" />
-                  <span className="font-semibold text-white text-sm truncate">{selectedJob.name}</span>
+            <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-inset)" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Clock size={16} style={{ color: "var(--accent)" }} />
+                  <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--foreground)" }}>{selectedJob.name}</span>
                   <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-semibold shrink-0 ${
-                      !selectedJob.enabled
-                        ? "bg-gray-500/20 text-gray-400"
-                        : selectedJob.lastStatus === "SUCCESS"
-                        ? "bg-emerald-500/20 text-emerald-400"
-                        : selectedJob.lastStatus === "FAILED"
-                        ? "bg-rose-500/20 text-rose-400"
-                        : "bg-blue-500/20 text-blue-400"
+                    className={`badge ${
+                      !selectedJob.enabled ? "badge-paused" : selectedJob.lastStatus === "SUCCESS" ? "badge-ready" : "badge-failed"
                     }`}
                   >
                     {!selectedJob.enabled ? "PAUSED" : selectedJob.lastStatus || "ACTIVE"}
                   </span>
                 </div>
-                <div className="text-[11px] text-white/40 font-mono flex items-center gap-2">
-                  <span className="text-blue-400">{selectedJob.schedule}</span>
-                  <span>•</span>
-                  <span>{selectedJob.timezone}</span>
-                  <span>•</span>
-                  <span>{selectedJob.targetType}</span>
+                <div style={{ fontSize: "0.76rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace", marginTop: "0.25rem" }}>
+                  {selectedJob.schedule} • {selectedJob.timezone} • {selectedJob.targetType}
                 </div>
               </div>
 
-              {/* Drawer Top Action Bar */}
-              <div className="flex items-center gap-2 shrink-0">
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <button
                   onClick={(e) => handleTrigger(selectedJob, e)}
                   disabled={triggeringId === selectedJob.id}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-md shadow-blue-500/20 disabled:opacity-50"
+                  className="btn btn-sm btn-primary"
                 >
-                  <Play className={`w-3 h-3 ${triggeringId === selectedJob.id ? "animate-spin" : ""}`} />
+                  <Play size={12} className={triggeringId === selectedJob.id ? "animate-spin" : ""} />
                   <span>{triggeringId === selectedJob.id ? "Running..." : "Run Now"}</span>
                 </button>
-
-                <button
-                  onClick={(e) => handleToggleEnabled(selectedJob, e)}
-                  className="px-2.5 py-1.5 bg-white/[0.04] hover:bg-white/[0.08] text-white/70 border border-white/10 rounded-lg text-xs font-medium cursor-pointer"
-                >
-                  {selectedJob.enabled ? "Pause" : "Resume"}
-                </button>
-
-                <button
-                  onClick={(e) => handleOpenEdit(selectedJob, e)}
-                  className="p-1.5 text-white/50 hover:text-white hover:bg-white/[0.08] rounded-lg border border-white/10 cursor-pointer"
-                  title="Edit Settings"
-                >
-                  <Settings2 className="w-3.5 h-3.5" />
-                </button>
-
                 <button
                   onClick={() => setDrawerOpen(false)}
-                  className="text-white/40 hover:text-white p-1.5 text-sm cursor-pointer ml-1"
+                  style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: "1.25rem", cursor: "pointer", padding: "0.25rem" }}
                 >
                   ✕
                 </button>
               </div>
             </div>
 
-            {/* Drawer Navigation Tabs */}
-            <div className="flex border-b border-white/10 bg-white/[0.01] px-4 overflow-x-auto text-xs">
+            {/* Drawer Tabs */}
+            <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "rgba(0,0,0,0.2)", padding: "0 1.5rem", overflowX: "auto" }}>
               {[
                 { id: "terminal", label: "Terminal Logs", icon: Terminal },
-                { id: "history", label: `Execution History (${historyTotal})`, icon: Clock },
+                { id: "history", label: `Run History (${historyTotal})`, icon: Clock },
                 { id: "config", label: "Target Deep Dive", icon: Code },
                 { id: "schedule", label: "Upcoming Runs", icon: Calendar },
                 { id: "dlq", label: `Dead Letter Queue (${deadLetters.length})`, icon: ShieldAlert },
@@ -1812,358 +1978,271 @@ export default function CronDashboardPage() {
                   <button
                     key={t.id}
                     onClick={() => setDrawerTab(t.id as any)}
-                    className={`flex items-center gap-1.5 py-2.5 px-3 font-semibold border-b-2 transition-all whitespace-nowrap cursor-pointer ${
-                      isSelected
-                        ? "border-blue-500 text-blue-400 bg-blue-500/[0.03]"
-                        : "border-transparent text-white/50 hover:text-white"
-                    }`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "0.4rem",
+                      padding: "0.75rem 0.9rem",
+                      fontSize: "0.8rem",
+                      fontWeight: 650,
+                      border: "none",
+                      borderBottom: isSelected ? "2px solid var(--accent)" : "2px solid transparent",
+                      background: "transparent",
+                      color: isSelected ? "var(--accent)" : "var(--muted)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    <Icon size={13} />
                     <span>{t.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Drawer Content */}
-            <div className="flex-1 overflow-hidden flex flex-col">
-              {/* TAB 1: LIVE TERMINAL LOGS */}
+            {/* Drawer Body */}
+            <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
               {drawerTab === "terminal" && (
-                <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                  {/* Left: Execution Run Selector */}
-                  <div className="w-full md:w-60 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto p-2 space-y-1 bg-white/[0.01]">
-                    <div className="text-[10px] font-bold text-white/40 px-2 py-1 uppercase tracking-wider flex items-center justify-between">
-                      <span>Recent Runs</span>
-                      <button
-                        onClick={() => selectedJob && loadExecutions(selectedJob.id, 1)}
-                        className="text-white/40 hover:text-white"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                      </button>
+                <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+                  {/* Runs List */}
+                  <div style={{ width: 220, borderRight: "1px solid var(--border)", overflowY: "auto", padding: "0.75rem", background: "var(--bg-inset)" }}>
+                    <div style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", marginBottom: "0.5rem" }}>
+                      Recent Executions
                     </div>
-
                     {loadingHistory ? (
-                      <div className="p-4 text-center text-xs text-white/40 animate-pulse">Loading runs...</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)", textAlign: "center", padding: "1rem" }}>Loading...</div>
                     ) : executions.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-white/40">No runs recorded yet.</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--muted)", textAlign: "center", padding: "1rem" }}>No runs recorded yet.</div>
                     ) : (
-                      executions.map((exec) => {
-                        const isSelected = selectedExecution?.id === exec.id;
-                        return (
-                          <div
-                            key={exec.id}
-                            onClick={() => setSelectedExecution(exec)}
-                            className={`p-2 rounded-xl text-xs transition-all cursor-pointer space-y-1 ${
-                              isSelected
-                                ? "bg-blue-600/20 border border-blue-500/40 text-white"
-                                : "hover:bg-white/[0.04] text-white/70 border border-transparent"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span
-                                className={`font-semibold text-[11px] ${
-                                  exec.status === "SUCCESS"
-                                    ? "text-emerald-400"
-                                    : exec.status === "FAILED"
-                                    ? "text-rose-400"
-                                    : "text-amber-400"
-                                }`}
-                              >
-                                {exec.status}
-                              </span>
-                              <span className="text-[10px] text-white/40 font-mono">
-                                {exec.durationMs ? `${Math.round(exec.durationMs)}ms` : "..."}
-                              </span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        {executions.map((exec) => {
+                          const isSelected = selectedExecution?.id === exec.id;
+                          return (
+                            <div
+                              key={exec.id}
+                              onClick={() => setSelectedExecution(exec)}
+                              style={{
+                                padding: "0.5rem 0.65rem",
+                                borderRadius: "6px",
+                                border: "1px solid",
+                                borderColor: isSelected ? "var(--accent)" : "var(--border)",
+                                background: isSelected ? "var(--accent-glow)" : "var(--card)",
+                                cursor: "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.15rem" }}>
+                                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: exec.status === "SUCCESS" ? "#10b981" : "#f43f5e" }}>
+                                  {exec.status}
+                                </span>
+                                <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                                  {exec.durationMs ? `${Math.round(exec.durationMs)}ms` : "..."}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: "0.68rem", color: "var(--muted-fg)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                                {format(new Date(exec.startedAt), "HH:mm:ss")} • {exec.triggerType}
+                              </div>
                             </div>
-                            <div className="text-[10px] text-white/40 font-mono flex items-center justify-between">
-                              <span>{format(new Date(exec.startedAt), "HH:mm:ss")}</span>
-                              <span>{exec.triggerType}</span>
-                            </div>
-                          </div>
-                        );
-                      })
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
 
-                  {/* Right: Terminal Output */}
-                  <div className="flex-1 flex flex-col bg-black/80 overflow-hidden font-mono text-xs">
-                    {/* Terminal Top Control Bar */}
-                    <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between text-[11px] text-white/40 bg-white/[0.02]">
-                      <div className="flex items-center gap-2">
-                        <Terminal className="w-3.5 h-3.5 text-blue-400" />
-                        <span>TERMINAL LOG (CAPPED 64KB RING BUFFER)</span>
-                        {isStreaming && (
-                          <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] animate-pulse">
-                            LIVE SSE STREAM
-                          </span>
-                        )}
+                  {/* Terminal Log Console */}
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#05080e", overflow: "hidden" }}>
+                    {/* Console Header */}
+                    <div style={{ padding: "0.5rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.02)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff5f56" }} />
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffbd2e" }} />
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#27c93f" }} />
+                        <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace", marginLeft: "0.5rem" }}>
+                          CAPPED 64KB CIRCULAR BUFFER
+                        </span>
                       </div>
 
                       {selectedExecution && (
-                        <div className="flex items-center gap-2">
-                          <span>
-                            Exit:{" "}
-                            <span
-                              className={
-                                selectedExecution.exitCode === 0 ? "text-emerald-400" : "text-rose-400"
-                              }
-                            >
-                              {selectedExecution.exitCode ?? 0}
-                            </span>
-                          </span>
-
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                           <button
-                            onClick={() =>
-                              handleCopyLogs(
-                                selectedExecution.stdout || selectedExecution.errorMessage || ""
-                              )
-                            }
-                            className="p-1 text-white/40 hover:text-white"
+                            onClick={() => handleCopyLogs(selectedExecution.stdout || selectedExecution.errorMessage || "")}
+                            className="btn btn-ghost"
+                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.72rem" }}
                             title="Copy logs"
                           >
-                            {copiedText ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            <Copy size={12} />
                           </button>
-
                           <button
                             onClick={() => handleDownloadLogs(selectedExecution)}
-                            className="p-1 text-white/40 hover:text-white"
+                            className="btn btn-ghost"
+                            style={{ padding: "0.25rem 0.5rem", fontSize: "0.72rem" }}
                             title="Download log file"
                           >
-                            <Download className="w-3 h-3" />
+                            <Download size={12} />
                           </button>
                         </div>
                       )}
                     </div>
 
-                    {/* Terminal Stream / Content */}
-                    <div className="flex-1 p-4 overflow-y-auto space-y-1 text-white/80 selection:bg-blue-500/30">
+                    {/* Console Output */}
+                    <div style={{ flex: 1, padding: "1rem", overflowY: "auto", fontFamily: "var(--font-geist-mono), monospace", fontSize: "0.75rem", lineHeight: 1.6 }}>
                       {isStreaming && streamingLogs.length > 0 ? (
-                        <pre className="whitespace-pre-wrap leading-relaxed text-[11px] text-cyan-300">
-                          {streamingLogs.join("\n")}
-                        </pre>
+                        <pre style={{ color: "#38bdf8", whiteSpace: "pre-wrap" }}>{streamingLogs.join("\n")}</pre>
                       ) : selectedExecution ? (
                         selectedExecution.stdout ? (
-                          <pre className="whitespace-pre-wrap leading-relaxed text-[11px] text-emerald-300/90">
-                            {selectedExecution.stdout}
-                          </pre>
+                          <pre style={{ color: "#34d399", whiteSpace: "pre-wrap" }}>{selectedExecution.stdout}</pre>
                         ) : selectedExecution.errorMessage ? (
-                          <pre className="whitespace-pre-wrap leading-relaxed text-[11px] text-rose-400">
-                            {selectedExecution.errorMessage}
-                          </pre>
+                          <pre style={{ color: "#f43f5e", whiteSpace: "pre-wrap" }}>{selectedExecution.errorMessage}</pre>
                         ) : (
-                          <div className="text-white/30 italic">No output logged for this execution.</div>
+                          <div style={{ color: "var(--muted)", fontStyle: "italic" }}>No log output recorded for this run.</div>
                         )
                       ) : (
-                        <div className="text-white/30 italic">Select an execution run to inspect output.</div>
+                        <div style={{ color: "var(--muted)", fontStyle: "italic" }}>Select an execution run to view output.</div>
                       )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* TAB 2: EXECUTION HISTORY TIMELINE */}
               {drawerTab === "history" && (
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-white/50">
-                    <span>Recorded Executions ({historyTotal})</span>
-                    <button
-                      onClick={() => selectedJob && loadExecutions(selectedJob.id, historyPage)}
-                      className="flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                <div style={{ flex: 1, padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {executions.map((exec) => (
+                    <div
+                      key={exec.id}
+                      onClick={() => {
+                        setSelectedExecution(exec);
+                        setDrawerTab("terminal");
+                      }}
+                      style={{
+                        padding: "0.85rem 1rem",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        background: "var(--card)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        cursor: "pointer",
+                      }}
                     >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Refresh</span>
-                    </button>
-                  </div>
-
-                  {executions.length === 0 ? (
-                    <div className="p-8 text-center text-white/40 text-xs">No execution history found.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {executions.map((exec) => (
-                        <div
-                          key={exec.id}
-                          onClick={() => {
-                            setSelectedExecution(exec);
-                            setDrawerTab("terminal");
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: exec.status === "SUCCESS" ? "#10b981" : "#f43f5e",
                           }}
-                          className="p-3 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all cursor-pointer flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`w-2 h-2 rounded-full ${
-                                exec.status === "SUCCESS"
-                                  ? "bg-emerald-400"
-                                  : exec.status === "FAILED"
-                                  ? "bg-rose-500"
-                                  : "bg-amber-400"
-                              }`}
-                            />
-                            <div>
-                              <div className="font-semibold text-white flex items-center gap-2">
-                                <span>{exec.status}</span>
-                                <span className="text-[10px] font-mono text-white/40 bg-white/5 px-1.5 py-0.5 rounded">
-                                  {exec.triggerType}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-white/40 font-mono mt-0.5">
-                                {format(new Date(exec.startedAt), "yyyy-MM-dd HH:mm:ss")}
-                              </div>
-                            </div>
+                        />
+                        <div>
+                          <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--foreground)" }}>
+                            {exec.status} • {exec.triggerType}
                           </div>
-
-                          <div className="flex items-center gap-3 font-mono text-right">
-                            <div className="text-[11px] text-white/60">
-                              <div>{exec.durationMs ? `${Math.round(exec.durationMs)} ms` : "..."}</div>
-                              <div className="text-[10px] text-white/40">Exit: {exec.exitCode ?? 0}</div>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-white/20" />
+                          <div style={{ fontSize: "0.72rem", color: "var(--muted)", fontFamily: "var(--font-geist-mono), monospace" }}>
+                            {format(new Date(exec.startedAt), "yyyy-MM-dd HH:mm:ss")}
                           </div>
                         </div>
-                      ))}
+                      </div>
+                      <div style={{ textAlign: "right", fontFamily: "var(--font-geist-mono), monospace", fontSize: "0.75rem", color: "var(--muted)" }}>
+                        <div>{exec.durationMs ? `${Math.round(exec.durationMs)} ms` : "..."}</div>
+                        <div>Exit: {exec.exitCode ?? 0}</div>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
-              {/* TAB 3: TARGET DEEP DIVE */}
               {drawerTab === "config" && (
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs font-mono">
-                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
-                    <div className="font-semibold text-white text-sm font-sans flex items-center justify-between">
-                      <span>Target Configuration</span>
+                <div style={{ flex: 1, padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "1rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--foreground)" }}>Target Configuration JSON</span>
                       <button
-                        onClick={() =>
-                          handleCopyLogs(JSON.stringify(selectedJob.targetConfig, null, 2))
-                        }
-                        className="flex items-center gap-1 text-blue-400 hover:text-blue-300 text-xs font-mono"
+                        onClick={() => handleCopyLogs(JSON.stringify(selectedJob.targetConfig, null, 2))}
+                        className="btn btn-sm btn-secondary"
                       >
-                        <Copy className="w-3 h-3" />
-                        <span>Copy JSON</span>
+                        Copy JSON
                       </button>
                     </div>
-
-                    <pre className="p-3 rounded-lg bg-black/60 border border-white/5 text-blue-300 text-xs overflow-x-auto">
+                    <pre style={{ background: "var(--bg-inset)", padding: "0.75rem", borderRadius: "6px", fontSize: "0.75rem", color: "var(--accent)", fontFamily: "var(--font-geist-mono), monospace", overflowX: "auto" }}>
                       {JSON.stringify(selectedJob.targetConfig, null, 2)}
                     </pre>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3 font-sans">
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                      <div className="text-white/40 text-[11px]">Misfire Policy</div>
-                      <div className="font-semibold text-white text-xs">{selectedJob.misfirePolicy}</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                      <div className="text-white/40 text-[11px]">Concurrency Policy</div>
-                      <div className="font-semibold text-white text-xs">{selectedJob.concurrencyPolicy}</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                      <div className="text-white/40 text-[11px]">Execution Timeout</div>
-                      <div className="font-semibold text-white text-xs">{selectedJob.timeoutSeconds}s</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                      <div className="text-white/40 text-[11px]">Automatic Retries</div>
-                      <div className="font-semibold text-white text-xs">
-                        {selectedJob.maxRetries} attempts ({selectedJob.retryDelaySeconds}s delay)
-                      </div>
-                    </div>
-                  </div>
                 </div>
               )}
 
-              {/* TAB 4: UPCOMING RUNS CALENDAR */}
               {drawerTab === "schedule" && (
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  <div className="text-xs text-white/50">
-                    Next 10 Scheduled Executions ({selectedJob.timezone})
+                <div style={{ flex: 1, padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.5rem" }}>
+                    Next 10 Scheduled Runs ({selectedJob.timezone})
                   </div>
-                  <div className="space-y-2 font-mono text-xs">
-                    {getNextRuns(selectedJob.schedule, selectedJob.timezone, 10).map((date, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl border border-white/5 bg-white/[0.02] flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-blue-400 font-semibold">#{idx + 1}</span>
-                          <span className="text-white">{format(date, "EEEE, MMMM d, yyyy • HH:mm:ss")}</span>
-                        </div>
-                        <span className="text-white/40 text-[11px]">
-                          {formatDistanceToNow(date, { addSuffix: true })}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  {getNextRuns(selectedJob.schedule, selectedJob.timezone, 10).map((date, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: "0.75rem 1rem",
+                        borderRadius: "8px",
+                        border: "1px solid var(--border)",
+                        background: "var(--card)",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "0.78rem",
+                        fontFamily: "var(--font-geist-mono), monospace",
+                      }}
+                    >
+                      <span style={{ color: "var(--accent)", fontWeight: 600 }}>#{idx + 1} • {format(date, "EEEE, MMMM d, yyyy • HH:mm:ss")}</span>
+                      <span style={{ color: "var(--muted)" }}>{formatDistanceToNow(date, { addSuffix: true })}</span>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {/* TAB 5: DEAD LETTER QUEUE (DLQ) */}
               {drawerTab === "dlq" && (
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-white/50">
-                    <span>Failed Executions Exceeding Retries ({deadLetters.length})</span>
-                    <button
-                      onClick={() => selectedJob && loadDeadLetters(selectedJob.id)}
-                      className="text-blue-400 hover:text-blue-300"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                    </button>
-                  </div>
-
-                  {loadingDlq ? (
-                    <div className="p-8 text-center text-white/40 text-xs animate-pulse">Loading DLQ...</div>
-                  ) : deadLetters.length === 0 ? (
-                    <div className="p-8 text-center rounded-xl border border-white/5 bg-white/[0.01] space-y-2">
-                      <CheckCircle2 className="w-8 h-8 mx-auto text-emerald-400" />
-                      <div className="text-sm font-semibold text-white">Dead Letter Queue Empty</div>
-                      <p className="text-xs text-white/40">No unresolved execution failures detected.</p>
+                <div style={{ flex: 1, padding: "1.25rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  {deadLetters.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--muted)" }}>
+                      <CheckCircle2 size={32} style={{ color: "#10b981", margin: "0 auto 0.5rem" }} />
+                      <div style={{ fontSize: "0.95rem", fontWeight: 600, color: "var(--foreground)" }}>Dead Letter Queue Empty</div>
+                      <p style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>No execution failures have exceeded max retries.</p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {deadLetters.map((dlq) => {
-                        const isReplaying = replayingDlqId === dlq.id;
-                        return (
-                          <div
-                            key={dlq.id}
-                            className="p-4 rounded-xl border border-rose-500/20 bg-rose-500/5 space-y-3 text-xs"
+                    deadLetters.map((dlq) => (
+                      <div
+                        key={dlq.id}
+                        style={{
+                          padding: "1rem",
+                          borderRadius: "8px",
+                          border: "1px solid rgba(244, 63, 94, 0.3)",
+                          background: "rgba(244, 63, 94, 0.05)",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "0.5rem",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem" }}>
+                          <strong style={{ color: "var(--danger)" }}>{dlq.status}</strong>
+                          <span style={{ color: "var(--muted)" }}>{format(new Date(dlq.createdAt), "yyyy-MM-dd HH:mm:ss")}</span>
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.4)", padding: "0.5rem", borderRadius: "6px", fontFamily: "var(--font-geist-mono), monospace", fontSize: "0.72rem", color: "var(--foreground)" }}>
+                          {dlq.failureReason}
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+                          <button
+                            onClick={() => handleDiscardDlq(dlq)}
+                            className="btn btn-sm btn-secondary"
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-rose-300 flex items-center gap-1.5">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                <span>{dlq.status}</span>
-                              </span>
-                              <span className="text-white/40 font-mono text-[11px]">
-                                {format(new Date(dlq.createdAt), "yyyy-MM-dd HH:mm:ss")}
-                              </span>
-                            </div>
-
-                            <p className="text-white/80 font-mono text-[11px] bg-black/40 p-2.5 rounded-lg border border-white/5">
-                              {dlq.failureReason}
-                            </p>
-
-                            <div className="flex items-center justify-between pt-1">
-                              <span className="text-[11px] text-white/40">
-                                Retries recorded: {dlq.retryCount}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleDiscardDlq(dlq)}
-                                  className="px-2.5 py-1 bg-white/[0.05] hover:bg-white/[0.1] text-white/60 rounded text-xs transition-all cursor-pointer"
-                                >
-                                  Discard
-                                </button>
-                                <button
-                                  onClick={() => handleReplayDlq(dlq)}
-                                  disabled={isReplaying}
-                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
-                                >
-                                  <RotateCcw className={`w-3 h-3 ${isReplaying ? "animate-spin" : ""}`} />
-                                  <span>{isReplaying ? "Replaying..." : "Replay Run"}</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            Discard
+                          </button>
+                          <button
+                            onClick={() => handleReplayDlq(dlq)}
+                            disabled={replayingDlqId === dlq.id}
+                            className="btn btn-sm btn-primary"
+                          >
+                            <RotateCcw size={12} className={replayingDlqId === dlq.id ? "animate-spin" : ""} />
+                            <span>{replayingDlqId === dlq.id ? "Replaying..." : "Replay"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               )}
