@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { parseExpression } from "cron-parser";
+import cronParser from "cron-parser";
 import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 
@@ -10,21 +10,21 @@ const INTERNAL_MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_
 const TargetConfigSchema = z.discriminatedUnion("targetType", [
   z.object({
     targetType: z.literal("FUNCTION"),
-    serviceId: z.string().uuid(),
+    serviceId: z.string().min(1),
     endpointPath: z.string().default("/"),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
     payload: z.any().optional(),
   }),
   z.object({
     targetType: z.literal("PROJECT"),
-    projectId: z.string().uuid(),
+    projectId: z.string().min(1),
     routePath: z.string().default("/"),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
     payload: z.any().optional(),
   }),
   z.object({
     targetType: z.literal("SERVICE"),
-    serviceId: z.string().uuid(),
+    serviceId: z.string().min(1),
     routePath: z.string().default("/"),
     port: z.number().int().positive().optional(),
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
@@ -32,7 +32,7 @@ const TargetConfigSchema = z.discriminatedUnion("targetType", [
   }),
   z.object({
     targetType: z.literal("CONTAINER_EXEC"),
-    serviceId: z.string().uuid(),
+    serviceId: z.string().min(1),
     command: z.union([z.string(), z.array(z.string())]),
     workDir: z.string().optional(),
     user: z.string().optional(),
@@ -51,7 +51,7 @@ const CreateCronJobSchema = z.object({
   description: z.string().max(1000).optional(),
   schedule: z.string().min(1).refine((val) => {
     try {
-      parseExpression(val);
+      cronParser.parseExpression(val);
       return true;
     } catch {
       return false;
@@ -81,7 +81,7 @@ const UpdateCronJobSchema = z.object({
   schedule: z.string().min(1).optional().refine((val) => {
     if (!val) return true;
     try {
-      parseExpression(val);
+      cronParser.parseExpression(val);
       return true;
     } catch {
       return false;
@@ -107,14 +107,14 @@ const UpdateCronJobSchema = z.object({
 });
 
 function calculateNextRun(schedule: string, timezone = "UTC"): Date {
-  const interval = parseExpression(schedule, { tz: timezone });
+  const interval = cronParser.parseExpression(schedule, { tz: timezone });
   return interval.next().toDate();
 }
 
 export async function cronRoutes(app: FastifyInstance) {
   // ─── 1. LIST CRON JOBS ───────────────────────────────────────────────────────
   app.get("/", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const cronJobs = await prisma.cronJob.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -144,7 +144,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 2. CREATE CRON JOB ──────────────────────────────────────────────────────
   app.post("/", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const parsed = CreateCronJobSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Validation error", details: parsed.error.format() });
@@ -192,7 +192,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 3. GET SINGLE CRON JOB DETAILS ──────────────────────────────────────────
   app.get("/:id", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
 
     const cronJob = await prisma.cronJob.findFirst({
@@ -222,7 +222,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 4. UPDATE CRON JOB ──────────────────────────────────────────────────────
   app.patch("/:id", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
 
     const existing = await prisma.cronJob.findFirst({
@@ -286,7 +286,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 5. DELETE CRON JOB ──────────────────────────────────────────────────────
   app.delete("/:id", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
 
     const existing = await prisma.cronJob.findFirst({
@@ -308,7 +308,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 6. MANUAL 1-CLICK TRIGGER ───────────────────────────────────────────────
   app.post("/:id/trigger", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
 
     const cronJob = await prisma.cronJob.findFirst({
@@ -348,7 +348,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 7. PAGINATED EXECUTION HISTORY ──────────────────────────────────────────
   app.get("/:id/executions", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
     const page = Math.max(1, Number(request.query.page) || 1);
     const limit = Math.min(50, Math.max(1, Number(request.query.limit) || 15));
@@ -384,7 +384,7 @@ export async function cronRoutes(app: FastifyInstance) {
 
   // ─── 8. GET SINGLE EXECUTION DETAILS & LOGS ─────────────────────────────────
   app.get("/:id/executions/:execId", { preHandler: [app.authenticate] }, async (request: any, reply) => {
-    const userId = request.user.id;
+    const userId = request.user?.userId || request.user?.id;
     const { id, execId } = request.params;
 
     const cronJob = await prisma.cronJob.findFirst({
