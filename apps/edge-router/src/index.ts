@@ -148,6 +148,16 @@ proxy.on("error", (err, req, res) => {
   }).catch(() => {});
 
   if ("writeHead" in res && !res.headersSent) {
+    if (
+      req.url?.startsWith("/_internal/runtime") ||
+      req.url === "/bundle" ||
+      req.url === "/invoke" ||
+      req.headers.accept?.includes("application/json")
+    ) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "RUNTIME_UNAVAILABLE", message: "Whizan Function Runtime is temporarily unreachable" }));
+      return;
+    }
     const isHtml = req.headers.accept?.includes("text/html");
     if (isHtml) {
       res.writeHead(502, { "Content-Type": "text/html" });
@@ -176,6 +186,22 @@ function getStaticServer(staticDir: string) {
 // ─── Main HTTP Server ─────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
+  // ── Internal Runtime Bridge (Secure VM bridge for Control Plane / API) ────
+  if (req.url?.startsWith("/_internal/runtime/")) {
+    const internalSecret = req.headers["x-whizan-internal"];
+    const expectedSecret = process.env.JWT_SECRET;
+    if (expectedSecret && internalSecret !== expectedSecret) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "UNAUTHORIZED_INTERNAL_CALL", message: "Invalid or missing internal secret" }));
+      return;
+    }
+
+    // Rewrite URL to strip /_internal/runtime
+    req.url = req.url.replace(/^\/_internal\/runtime/, "") || "/";
+    proxy.web(req, res, { target: `http://127.0.0.1:${FUNCTION_RUNTIME_PORT}` });
+    return;
+  }
+
   const host = req.headers.host || "";
 
   // Extract slug from subdomain: my-app.localhost → my-app

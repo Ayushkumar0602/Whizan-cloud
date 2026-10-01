@@ -35,6 +35,52 @@ try {
 
 const RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
 
+function getRuntimeUrl(path: string): string {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  if (process.env.FUNCTION_RUNTIME_URL) {
+    return `${process.env.FUNCTION_RUNTIME_URL.replace(/\/$/, "")}${cleanPath}`;
+  }
+  const isCloudOrRender = !!process.env.RENDER || process.env.NODE_ENV === "production";
+  if (isCloudOrRender) {
+    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    return `http://${baseDomain}/_internal/runtime${cleanPath}`;
+  }
+  return `http://127.0.0.1:${RUNTIME_PORT}${cleanPath}`;
+}
+
+async function callRuntime(path: string, body: any, timeoutMs = 15000): Promise<any> {
+  const url = getRuntimeUrl(path);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-whizan-internal": process.env.JWT_SECRET || "",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      let errMsg = `Runtime request failed with status ${res.status}`;
+      try {
+        const errJson = JSON.parse(errText);
+        if (errJson.message) errMsg = errJson.message;
+        else if (errJson.error) errMsg = errJson.error;
+      } catch {}
+      throw new Error(errMsg);
+    }
+
+    return await res.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 const CreateFunctionSchema = z.object({
   name: z.string().min(1).max(60),
   slug: z
@@ -339,15 +385,11 @@ export async function functionRoutes(fastify: FastifyInstance) {
 
     let deploymentResult: any = null;
     try {
-      const bundleRes: any = await fetch(`http://127.0.0.1:${RUNTIME_PORT}/bundle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          serviceId: functionService.id,
-          version: 1,
-          rawCode: starterCode,
-        }),
-      }).then((r) => r.json());
+      const bundleRes = await callRuntime("/bundle", {
+        serviceId: functionService.id,
+        version: 1,
+        rawCode: starterCode,
+      });
 
       if (bundleRes?.bundlePath) {
         const deployment = await prisma.functionDeployment.create({
@@ -383,16 +425,26 @@ export async function functionRoutes(fastify: FastifyInstance) {
       console.warn(`[FunctionService] Initial bundling deferred or failed:`, e.message);
     }
 
+    // Always cache starter code in Redis for on-the-fly compilation resilience
+    await redisClient.set(`fn:source:${functionService.id}:v1`, starterCode).catch(() => {});
+
     return reply.code(201).send({
       service: functionService,
+      functionService,
       apiKey: {
         id: apiKey.id,
         name: apiKey.name,
-        key: fullKey, // Return plaintext ONCE
+        key: fullKey, // Plaintext returned once
         keyPrefix: apiKey.keyPrefix,
       },
+      initialApiKey: {
+        id: apiKey.id,
+        name: apiKey.name,
+        key: fullKey,
+        prefix: apiKey.keyPrefix,
+      },
       deployment: deploymentResult,
-      invocationUrl: `http://${functionService.slug}.fn.${process.env.BASE_DOMAIN || "localhost:8080"}`,
+      invocationUrl: `http://${functionService.slug}.fn.${process.env.BASE_DOMAIN || "20.2.136.11.nip.io"}`,
     });
   });
 
@@ -521,21 +573,14 @@ export async function functionRoutes(fastify: FastifyInstance) {
     const nextVersion = (fn.deployments[0]?.version || 0) + 1;
 
     // Call runtime bundler endpoint
-    const bundleRes: any = await fetch(`http://127.0.0.1:${RUNTIME_PORT}/bundle`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        serviceId: fn.id,
-        version: nextVersion,
-        rawCode: body.code,
-      }),
-    }).then(async (r) => {
-      if (!r.ok) {
-        const errJson: any = await r.json().catch(() => ({}));
-        throw new Error(errJson?.message || `Bundling failed with status ${r.status}`);
-      }
-      return r.json();
+    const bundleRes = await callRuntime("/bundle", {
+      serviceId: fn.id,
+      version: nextVersion,
+      rawCode: body.code,
     });
+
+    // Always store deployed source in Redis for on-the-fly bundling resilience
+    await redisClient.set(`fn:source:${fn.id}:v${nextVersion}`, body.code).catch(() => {});
 
     // Create Deployment record
     const deployment = await prisma.functionDeployment.create({
@@ -621,11 +666,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
       envVars: decryptedEnv,
     };
 
-    const res = await fetch(`http://127.0.0.1:${RUNTIME_PORT}/invoke`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(testPayload),
-    }).then((r) => r.json());
+    const res = await callRuntime("/invoke", testPayload, (fn.timeoutMs || 10000) + 5000);
 
     return res;
   });
@@ -746,19 +787,44 @@ export async function functionRoutes(fastify: FastifyInstance) {
       reply.raw.write(`data: ${item}\n\n`);
     }
 
-    // 2. Subscribe to real-time logs via dedicated subscriber
+    // 2. Subscribe to real-time logs via dedicated subscriber with error isolation
     const sub = redisClient.duplicate();
-    await sub.subscribe(`fn:logs:${id}`);
+    sub.on("error", (err) => {
+      console.warn(`[Functions SSE] Redis subscriber error for ${id}:`, err.message);
+    });
+
+    try {
+      await sub.subscribe(`fn:logs:${id}`);
+    } catch (e: any) {
+      console.warn(`[Functions SSE] Failed to subscribe to fn:logs:${id}:`, e.message);
+    }
 
     sub.on("message", (channel, message) => {
       if (channel === `fn:logs:${id}`) {
-        reply.raw.write(`data: ${message}\n\n`);
+        try {
+          reply.raw.write(`data: ${message}\n\n`);
+        } catch {}
       }
     });
 
+    // Send keep-alive heartbeat every 15s to keep SSE connection alive through proxies
+    const heartbeatTimer = setInterval(() => {
+      try {
+        reply.raw.write(": ping\n\n");
+      } catch {
+        clearInterval(heartbeatTimer);
+      }
+    }, 15000);
+
     request.raw.on("close", () => {
-      sub.unsubscribe();
-      sub.disconnect();
+      clearInterval(heartbeatTimer);
+      try {
+        sub.removeAllListeners("message");
+        sub.unsubscribe().catch(() => {});
+        sub.quit().catch(() => {
+          try { sub.disconnect(); } catch {}
+        });
+      } catch {}
     });
   });
 
