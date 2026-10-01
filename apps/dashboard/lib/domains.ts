@@ -57,3 +57,21 @@ export function getProjectLiveUrl(slug: string, customDomain?: string | null): s
   }
   return getServiceIngressUrl(slug);
 }
+
+/**
+ * Returns the primary subdomain ingress URL for an Edge Function (.fn.<domain>)
+ */
+export function getFunctionIngressUrl(slug: string, path = ""): string {
+  const domain = getBaseRouterDomain();
+  const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
+  return `http://${slug}.fn.${domain}${cleanPath}`;
+}
+
+/**
+ * Returns the fallback path-based ingress URL for an Edge Function (/fn/<slug>)
+ */
+export function getFunctionPathUrl(slug: string, path = ""): string {
+  const domain = getBaseRouterDomain();
+  const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
+  return `http://${domain}/fn/${slug}${cleanPath}`;
+}
