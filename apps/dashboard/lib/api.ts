@@ -1223,6 +1223,18 @@ export interface CronExecutionItem {
   retryAttempt?: number;
 }
 
+export interface CronDeadLetterItem {
+  id: string;
+  cronJobId: string;
+  executionId?: string | null;
+  failureReason: string;
+  payload?: any;
+  retryCount: number;
+  status: "UNRESOLVED" | "REPLAYED" | "DISCARDED";
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
 export const cronApi = {
   list: () => request<{ ok: boolean; cronJobs: CronJobItem[] }>("/api/crons").then((r) => r.cronJobs || []),
   get: (id: string) => request<{ ok: boolean; cronJob: CronJobItem }>(`/api/crons/${id}`).then((r) => r.cronJob),
@@ -1251,6 +1263,16 @@ export const cronApi = {
   getExecution: (id: string, execId: string) =>
     request<{ ok: boolean; execution: CronExecutionItem }>(`/api/crons/${id}/executions/${execId}`).then((r) => r.execution),
   getLogsStreamUrl: (id: string, execId: string) => `${getApiBase()}/api/crons/${id}/executions/${execId}/logs/stream`,
+  getDeadLetters: (id: string) =>
+    request<{ ok: boolean; deadLetters: CronDeadLetterItem[] }>(`/api/crons/${id}/dead-letters`).then((r) => r.deadLetters || []),
+  replayDeadLetter: (id: string, dlqId: string) =>
+    request<{ ok: boolean; message: string; executionId: string }>(`/api/crons/${id}/dead-letters/${dlqId}/replay`, {
+      method: "POST",
+    }),
+  discardDeadLetter: (id: string, dlqId: string) =>
+    request<{ ok: boolean; message: string }>(`/api/crons/${id}/dead-letters/${dlqId}/discard`, {
+      method: "POST",
+    }),
 };
 
 
