@@ -36,6 +36,8 @@ sudo bash -c "set -a && source /opt/whizan/.env.production && pm2 start /opt/whi
 
 sudo bash -c "set -a && source /opt/whizan/.env.production && pm2 start /opt/whizan/node_modules/.bin/tsx --name 'build-worker' --cwd /opt/whizan/apps/build-worker -- src/worker.ts"
 
+sudo bash -c "set -a && source /opt/whizan/.env.production && pm2 start /opt/whizan/node_modules/.bin/tsx --name 'whizan-functions' --cwd /opt/whizan/apps/function-runtime -- src/index.ts"
+
 # 4. FORCE SAVE AND LOCK IT TO THE ROOT STARTUP SEQUENCE
 sudo pm2 save --force
 sudo pm2 startup systemd -u root --hp /root

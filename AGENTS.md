@@ -85,3 +85,10 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
    - **Traffic & Performance Analytics (`whizan_get_analytics`)**:
      - For projects: Returns page views, unique visitors, bandwidth transferred, and daily trends.
      - For services: Returns real-time CPU/memory utilization, load status, and recent performance history.
+
+9. **Serverless Edge Functions (`whizan_create_function_service`, `whizan_deploy_function`, `whizan_invoke_function`)**:
+   - **When to Use**: For event-driven APIs, webhooks, cron jobs, micro-endpoints, and background functions where running a 24/7 container is inefficient.
+   - **Fast Serving & Zero Host Ports**: Edge functions execute on the dual-tier V8/Worker Thread runtime with sub-5ms cold starts and 0 host port allocation.
+   - **Authentication**: By default, functions require a dedicated Function API Key (`x-api-key: whz_fn_live_...`). Public webhooks can set `isPublic: true`.
+   - **Invocation Format**: Always invoke via `http://<slug>.fn.20.2.136.11.nip.io/<path>` or `/fn/<slug>/<path>`. Verify responses using `whizan_invoke_function`.
+

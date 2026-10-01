@@ -600,4 +600,140 @@ export class WhizanClient {
     }
     return data;
   }
+
+  // ─── Edge Functions API ─────────────────────────────────────────────────────
+
+  async listFunctions(): Promise<any[]> {
+    await this.loadConfig();
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/functions`, {
+        headers: this.getHeaders(),
+      });
+      if (!res.ok) return [];
+      return (await res.json()) as any[];
+    } catch {
+      return [];
+    }
+  }
+
+  async getFunction(id: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}`, {
+      headers: this.getHeaders(),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async createFunctionService(payload: any): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async deployFunction(id: string, code: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/deploy`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ code }),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async createFunctionApiKey(id: string, payload: any): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/keys`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async invokeFunction(
+    slug: string,
+    options: {
+      path?: string;
+      method?: string;
+      body?: any;
+      apiKey?: string;
+      headers?: Record<string, string>;
+    }
+  ): Promise<any> {
+    await this.loadConfig();
+    const targetPath = options.path || "/";
+    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const routerPort = process.env.ROUTER_PORT || (baseDomain.includes("localhost") ? "8080" : "80");
+    const portSuffix = routerPort === "80" ? "" : `:${routerPort}`;
+    const url = `http://${slug}.fn.${baseDomain}${portSuffix}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
+
+    const headers: Record<string, string> = {
+      ...(options.headers || {}),
+    };
+    if (options.apiKey) {
+      headers["x-api-key"] = options.apiKey;
+    } else if (this.config.apiKey) {
+      headers["x-api-key"] = this.config.apiKey;
+    }
+
+    const fetchOptions: any = {
+      method: options.method || (options.body ? "POST" : "GET"),
+      headers,
+    };
+    if (options.body) {
+      if (typeof options.body === "string") {
+        fetchOptions.body = options.body;
+      } else {
+        fetchOptions.body = JSON.stringify(options.body);
+        if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      }
+    }
+
+    const startTime = performance.now();
+    const res = await fetch(url, fetchOptions);
+    const durationMs = Number((performance.now() - startTime).toFixed(2));
+    const contentType = res.headers.get("content-type") || "";
+    let data: any;
+    if (contentType.includes("application/json")) {
+      data = await res.json().catch(() => null);
+    } else {
+      data = await res.text();
+    }
+
+    return {
+      status: res.status,
+      statusText: res.statusText,
+      headers: Object.fromEntries(res.headers.entries()),
+      data,
+      durationMs,
+      url,
+    };
+  }
+
+  async getFunctionLogs(id: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}`, {
+      headers: this.getHeaders(),
+    });
+    const fn: any = await res.json();
+    return {
+      serviceId: id,
+      name: fn.name,
+      slug: fn.slug,
+      deployments: fn.deployments,
+      endpoints: fn.endpoints,
+    };
+  }
 }

@@ -18,6 +18,7 @@ import { databaseRoutes } from "./routes/databases.js";
 import { githubRoutes } from "./routes/github.js";
 import { localOpencodeRoutes } from "./routes/local-opencode.js";
 import { containerRoutes } from "./routes/containers.js";
+import { functionRoutes, rehydrateEdgeFunctions } from "./routes/functions.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -42,6 +43,9 @@ try {
 } catch (err) {
   console.error("[System] Failed to run startup cleanup routine:", err);
 }
+
+// ─── Edge Functions Redis Rehydration ─────────────────────────────────────────
+await rehydrateEdgeFunctions();
 
 const app = Fastify({
   logger: {
@@ -192,6 +196,7 @@ await app.register(githubRoutes, { prefix: "/api" });
 await app.register(caddyVerifyRoutes, { prefix: "/api" });
 await app.register(localOpencodeRoutes, { prefix: "/api/local-opencode" });
 await app.register(containerRoutes, { prefix: "/api/containers" });
+await app.register(functionRoutes, { prefix: "/api/functions" });
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 

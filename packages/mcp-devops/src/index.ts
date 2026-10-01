@@ -297,6 +297,77 @@ const TOOLS: Tool[] = [
       required: ["command"],
     },
   },
+  {
+    name: "whizan_create_function_service",
+    description: "Creates a new serverless Edge Function service on Whizan Cloud (like Firebase Functions or AWS Lambda). Returns a dedicated Function API Key and high-speed invocation URL.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human-readable name of the function service" },
+        slug: { type: "string", description: "Unique subdomain slug (e.g. 'payment-api' -> 'payment-api.fn.whizan.cloud')" },
+        runtime: { type: "string", enum: ["EDGE_TYPESCRIPT", "NODEJS_20", "PYTHON_311", "GOLANG_122"], default: "EDGE_TYPESCRIPT" },
+        timeoutMs: { type: "number", default: 10000, description: "Execution timeout in ms (default 10,000ms)" },
+        memoryLimit: { type: "number", default: 128, description: "Memory allocation in MB (default 128MB)" },
+        isPublic: { type: "boolean", default: false, description: "Whether the function is publicly callable without an API key" },
+        corsOrigins: { type: "array", items: { type: "string" }, default: ["*"], description: "Allowed CORS origins" },
+        initialCode: { type: "string", description: "Optional initial TypeScript/JavaScript code for the function" },
+        envVars: { type: "object", description: "Key-value dictionary of environment variables to encrypt and inject" },
+      },
+      required: ["name", "slug"],
+    },
+  },
+  {
+    name: "whizan_deploy_function",
+    description: "Deploys a new version of TypeScript or JavaScript code to an existing Whizan Edge Function service with sub-5ms cold-start compilation and automatic disk pruning.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        functionId: { type: "string", description: "The Whizan ID of the Edge Function service" },
+        code: { type: "string", description: "Raw TypeScript/JavaScript source code to bundle and deploy" },
+        workspaceDir: { type: "string", description: "Optional path to local workspace directory to update .whizan.json" },
+      },
+      required: ["functionId", "code"],
+    },
+  },
+  {
+    name: "whizan_create_function_api_key",
+    description: "Generates a new dedicated Function API Key (whz_fn_live_...) for an Edge Function with customizable scopes, rate limiting, and IP whitelisting.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        functionId: { type: "string", description: "The Whizan ID of the Edge Function service" },
+        name: { type: "string", default: "Production Key", description: "Descriptive label for this API key" },
+        scopes: { type: "array", items: { type: "string" }, default: ["EXECUTE"], description: "Permissions (EXECUTE, READ_LOGS, ADMIN)" },
+        rateLimitRpm: { type: "number", default: 600, description: "Max requests per minute" },
+        ipWhitelist: { type: "array", items: { type: "string" }, description: "Optional list of allowed client IP addresses / CIDR blocks" },
+      },
+      required: ["functionId"],
+    },
+  },
+  {
+    name: "whizan_invoke_function",
+    description: "Invokes a live Whizan Edge Function over HTTP, testing authentication, response payload, status code, and latency in milliseconds.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "The subdomain slug of the Edge Function" },
+        path: { type: "string", default: "/", description: "Route path (e.g. '/charge' or '/users/123')" },
+        method: { type: "string", default: "POST", description: "HTTP method (GET, POST, PUT, DELETE, PATCH)" },
+        body: { type: "object", description: "Optional JSON payload to send in request body" },
+        apiKey: { type: "string", description: "Optional Function API Key (whz_fn_live_...). If omitted, uses default active key." },
+        headers: { type: "object", description: "Optional custom HTTP headers" },
+      },
+      required: ["slug"],
+    },
+  },
+  {
+    name: "whizan_list_functions",
+    description: "Lists all serverless Edge Function services registered on the user's Whizan Cloud account with runtime, endpoint count, and active deployment status.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────
@@ -359,21 +430,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // 3. Query server records for existing projects and services
         let serverProjects: any[] = [];
         let serverServices: any[] = [];
+        let serverFunctions: any[] = [];
         if (authProfile?.authenticated) {
           try {
-            const [projs, servs] = await Promise.all([
+            const [projs, servs, fns] = await Promise.all([
               client.listProjects().catch(() => []),
               client.listServices().catch(() => []),
+              client.listFunctions().catch(() => []),
             ]);
             serverProjects = projs || [];
             serverServices = servs || [];
+            serverFunctions = fns || [];
           } catch {}
         }
 
         // 4. Match local repository with server deployments
         let matchedTarget: any = null;
         let matchSource: "local_config" | "server_match" = "local_config";
-        let targetType: "project" | "service" = "project";
+        let targetType: "project" | "service" | "function" = "project";
 
         // Step A: Check localConfig targetId
         if (localConfig?.targetId && localConfig?.targetType) {
@@ -389,6 +463,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (s) {
               matchedTarget = s;
               targetType = "service";
+              matchSource = "local_config";
+            }
+          } else if (localConfig.targetType === "function") {
+            const f = serverFunctions.find((x) => x.id === localConfig.targetId);
+            if (f) {
+              matchedTarget = f;
+              targetType = "function";
               matchSource = "local_config";
             }
           }
@@ -958,6 +1039,128 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // ─── Edge Functions Tool Handlers ──────────────────────────────────────────
+
+      case "whizan_create_function_service": {
+        const payload = (args || {}) as any;
+        const result = await client.createFunctionService(payload);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  message: `Edge Function Service '${result.service?.name}' created successfully!`,
+                  serviceId: result.service?.id,
+                  slug: result.service?.slug,
+                  apiKey: result.apiKey?.key,
+                  keyPrefix: result.apiKey?.keyPrefix,
+                  invocationUrl: result.invocationUrl,
+                  isPublic: result.service?.isPublic,
+                  timeoutMs: result.service?.timeoutMs,
+                  memoryLimit: result.service?.memoryLimit,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_deploy_function": {
+        const { functionId, code, workspaceDir } = (args || {}) as any;
+        const result = await client.deployFunction(functionId, code);
+
+        if (workspaceDir) {
+          await saveLocalWhizanConfig(workspaceDir, {
+            targetType: "function",
+            targetId: functionId,
+            lastDeploymentVersion: result.version,
+            lastDeployedAt: result.createdAt,
+          });
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  message: `Edge Function version v${result.version} successfully compiled and deployed!`,
+                  version: result.version,
+                  bundleHash: result.bundleHash,
+                  bundleSizeBytes: result.bundleSizeBytes,
+                  status: result.status,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_create_function_api_key": {
+        const { functionId, name: keyName, scopes, rateLimitRpm, ipWhitelist } = (args || {}) as any;
+        const result = await client.createFunctionApiKey(functionId, {
+          name: keyName,
+          scopes,
+          rateLimitRpm,
+          ipWhitelist,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  message: `New Function API Key generated for service '${functionId}'!`,
+                  id: result.id,
+                  name: result.name,
+                  apiKey: result.key, // Plaintext key
+                  keyPrefix: result.keyPrefix,
+                  rateLimitRpm: result.rateLimitRpm,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_invoke_function": {
+        const { slug, path: fnPath, method, body, apiKey, headers } = (args || {}) as any;
+        const result = await client.invokeFunction(slug, {
+          path: fnPath,
+          method,
+          body,
+          apiKey,
+          headers,
+        });
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_list_functions": {
+        const functions = await client.listFunctions();
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(functions, null, 2),
             },
           ],
         };

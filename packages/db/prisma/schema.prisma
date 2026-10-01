@@ -33,6 +33,7 @@ model User {
   databaseServices DatabaseService[]
   refreshTokens    RefreshToken[]
   apiKeys          ApiKey[]
+  functionServices FunctionService[]
 
   @@map("users")
 }
@@ -332,4 +333,170 @@ enum DatabaseStatus {
   FAILED
 
   @@map("database_status")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION SERVICES (EDGE / SERVERLESS BACKEND)
+// ─────────────────────────────────────────
+model FunctionService {
+  id             String            @id @default(uuid())
+  userId         String            @map("user_id")
+  name           String
+  slug           String            @unique // e.g. "payment-api" -> payment-api.fn.whizan.cloud
+  runtime        FunctionRuntime   @default(EDGE_TYPESCRIPT)
+  entryFile      String            @default("index.ts") @map("entry_file")
+  timeoutMs      Int               @default(10000) @map("timeout_ms")
+  memoryLimit    Int               @default(128) @map("memory_limit") // RAM in MB (128, 256, 512, 1024)
+  minInstances   Int               @default(0) @map("min_instances")   // 0 = scale-to-zero, 1+ = keep warm
+  maxConcurrency Int               @default(10) @map("max_concurrency")
+  isPublic       Boolean           @default(false) @map("is_public")   // false = requires Function API Key
+  corsOrigins    String[]          @default(["*"]) @map("cors_origins")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apiKeys        FunctionApiKey[]
+  endpoints      FunctionEndpoint[]
+  deployments    FunctionDeployment[]
+  envVariables   FunctionEnvVariable[]
+  triggers       FunctionTrigger[]
+  invocations    FunctionInvocation[]
+
+  @@map("function_services")
+}
+
+enum FunctionRuntime {
+  EDGE_TYPESCRIPT
+  NODEJS_20
+  PYTHON_311
+  GOLANG_122
+
+  @@map("function_runtime")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION API KEYS
+// ─────────────────────────────────────────
+model FunctionApiKey {
+  id           String    @id @default(uuid())
+  serviceId    String    @map("service_id")
+  name         String    @default("Production Key")
+  keyHash      String    @unique @map("key_hash") // SHA-256 hash of plaintext key
+  keyPrefix    String    @map("key_prefix")       // e.g. "whz_fn_live_a1b2..."
+  scopes       String[]  @default(["EXECUTE"])    // EXECUTE | READ_LOGS | ADMIN
+  rateLimitRpm Int       @default(600) @map("rate_limit_rpm") // Requests per minute
+  ipWhitelist  String[]  @default([]) @map("ip_whitelist")
+  expiresAt    DateTime? @map("expires_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  service      FunctionService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@map("function_api_keys")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION ENDPOINTS
+// ─────────────────────────────────────────
+model FunctionEndpoint {
+  id          String   @id @default(uuid())
+  serviceId   String   @map("service_id")
+  name        String   // e.g. "charge", "webhook"
+  routePath   String   @map("route_path") // e.g. "/", "/charge", "/users/:id"
+  httpMethods String[] @default(["GET", "POST"]) @map("http_methods")
+  handlerName String   @default("default") @map("handler_name")
+  isPublic    Boolean  @default(false) @map("is_public")
+  cacheTtlSec Int      @default(0) @map("cache_ttl_sec") // 0 = no cache, >0 = Edge Redis cache
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  service     FunctionService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, routePath])
+  @@map("function_endpoints")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION DEPLOYMENTS
+// ─────────────────────────────────────────
+model FunctionDeployment {
+  id              String           @id @default(uuid())
+  serviceId       String           @map("service_id")
+  version         Int              @default(1)
+  bundlePath      String           @map("bundle_path") // Absolute path to compiled ESM bundle
+  bundleHash      String           @map("bundle_hash") // SHA-256 integrity hash
+  bundleSizeBytes Int              @map("bundle_size_bytes")
+  status          DeploymentStatus @default(READY)
+  trafficWeight   Int              @default(100) @map("traffic_weight")
+  errorMessage    String?          @map("error_message")
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  service         FunctionService  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, createdAt(sort: Desc)])
+  @@map("function_deployments")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION TRIGGERS
+// ─────────────────────────────────────────
+model FunctionTrigger {
+  id        String      @id @default(uuid())
+  serviceId String      @map("service_id")
+  type      TriggerType @default(HTTP)
+  config    Json        // e.g. { "cron": "0 0 * * *" }
+  enabled   Boolean     @default(true)
+  lastRunAt DateTime?   @map("last_run_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  service   FunctionService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("function_triggers")
+}
+
+enum TriggerType {
+  HTTP
+  CRON
+  DATABASE_CDC
+  STORAGE_BLOB
+  QUEUE_MESSAGE
+
+  @@map("trigger_type")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION ENV VARIABLES
+// ─────────────────────────────────────────
+model FunctionEnvVariable {
+  id        String   @id @default(uuid())
+  serviceId String   @map("service_id")
+  key       String
+  value     String   // AES-256-GCM encrypted ciphertext
+  isSecret  Boolean  @default(true) @map("is_secret")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  service   FunctionService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, key])
+  @@map("function_env_variables")
+}
+
+// ─────────────────────────────────────────
+//  FUNCTION INVOCATIONS (Buffered Telemetry)
+// ─────────────────────────────────────────
+model FunctionInvocation {
+  id         String   @id @default(uuid())
+  serviceId  String   @map("service_id")
+  endpoint   String
+  httpMethod String   @map("http_method")
+  statusCode Int      @map("status_code")
+  durationMs Float    @map("duration_ms")
+  memoryMb   Float    @map("memory_mb")
+  clientIp   String   @map("client_ip")
+  timestamp  DateTime @default(now())
+
+  service    FunctionService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId, timestamp(sort: Desc)])
+  @@map("function_invocations")
 }
