@@ -800,4 +800,72 @@ export class WhizanClient {
       endpoints: fn.endpoints,
     };
   }
+
+  // ─── CRON & SCHEDULED JOBS ────────────────────────────────────────────────
+  async listCronJobs(): Promise<any[]> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/crons`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to list cron jobs", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.cronJobs || [];
+  }
+
+  async createCronJob(jobData: {
+    name: string;
+    description?: string;
+    schedule: string;
+    timezone?: string;
+    target: any;
+    misfirePolicy?: "SKIP" | "FIRE_LATEST_ONCE" | "CATCH_UP_ALL";
+    concurrencyPolicy?: "FORBID" | "ALLOW" | "REPLACE" | "QUEUE_SERIALIZE";
+    maxConcurrentRuns?: number;
+    timeoutSeconds?: number;
+    maxRetries?: number;
+    retryDelaySeconds?: number;
+    enabled?: boolean;
+  }): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/crons`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(jobData),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to create cron job", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.cronJob;
+  }
+
+  async triggerCronJob(id: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/crons/${id}/trigger`, {
+      method: "POST",
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to trigger cron job", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getCronHistory(id: string, limit = 10): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/crons/${id}/executions?limit=${limit}`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to get cron history", res.status, err);
+    }
+    return res.json();
+  }
 }
+

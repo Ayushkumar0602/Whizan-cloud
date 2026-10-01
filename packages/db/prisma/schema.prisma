@@ -34,6 +34,7 @@ model User {
   refreshTokens    RefreshToken[]
   apiKeys          ApiKey[]
   functionServices FunctionService[]
+  cronJobs         CronJob[]
 
   @@map("users")
 }
@@ -502,3 +503,141 @@ model FunctionInvocation {
   @@index([serviceId, timestamp(sort: Desc)])
   @@map("function_invocations")
 }
+
+// ─────────────────────────────────────────
+//  CRON SCHEDULED JOBS
+// ─────────────────────────────────────────
+model CronJob {
+  id                String              @id @default(uuid())
+  userId            String              @map("user_id")
+  name              String              // e.g. "Daily Database Vacuum & Backup"
+  description       String?             @db.Text
+  schedule          String              // Standard 5/6-part cron expression (e.g. "0 0 * * *")
+  timezone          String              @default("UTC") // IANA format (e.g. "America/New_York", "Asia/Kolkata")
+  
+  targetType        CronTargetType      @map("target_type")
+  targetConfig      Json                @map("target_config")
+
+  misfirePolicy     CronMisfirePolicy   @default(SKIP) @map("misfire_policy")
+  concurrencyPolicy CronConcurrency     @default(FORBID) @map("concurrency_policy")
+  maxConcurrentRuns Int                 @default(1) @map("max_concurrent_runs")
+  
+  timeoutSeconds    Int                 @default(300) @map("timeout_seconds") // 1s to 3600s
+  maxRetries        Int                 @default(3) @map("max_retries")
+  retryDelaySeconds Int                 @default(10) @map("retry_delay_seconds")
+  
+  enabled           Boolean             @default(true)
+  nextRunAt         DateTime?           @map("next_run_at")
+  lastRunAt         DateTime?           @map("last_run_at")
+  lastStatus        CronExecutionStatus? @map("last_status")
+  
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  executions        CronExecution[]
+  deadLetters       CronDeadLetter[]
+
+  @@index([userId])
+  @@index([enabled, nextRunAt])
+  @@map("cron_jobs")
+}
+
+enum CronTargetType {
+  FUNCTION        // Whizan Edge Function
+  PROJECT         // Whizan Web Project Route
+  SERVICE         // Whizan Backend Service internal mesh endpoint
+  CONTAINER_EXEC  // Docker exec command inside existing container
+  WEBHOOK         // External HTTPS endpoint with HMAC signature
+
+  @@map("cron_target_type")
+}
+
+enum CronMisfirePolicy {
+  SKIP             // Drop missed executions during downtime, advance to next
+  FIRE_LATEST_ONCE // Fire 1 catchup execution immediately upon boot, then resume
+  CATCH_UP_ALL     // Sequentially execute all missed ticks
+
+  @@map("cron_misfire_policy")
+}
+
+enum CronConcurrency {
+  FORBID           // Skip new execution if previous run is still active
+  ALLOW            // Allow overlapping executions up to maxConcurrentRuns
+  REPLACE          // Abort running execution and spawn new one
+  QUEUE_SERIALIZE  // Enqueue next run to start as soon as active run completes
+
+  @@map("cron_concurrency")
+}
+
+enum CronExecutionStatus {
+  SCHEDULED
+  RUNNING
+  SUCCESS
+  FAILED
+  TIMED_OUT
+  SKIPPED_OVERLAP
+  MISFIRE_SKIPPED
+
+  @@map("cron_execution_status")
+}
+
+// ─────────────────────────────────────────
+//  CRON EXECUTION HISTORY (Partitioned Runs)
+// ─────────────────────────────────────────
+model CronExecution {
+  id              String              @id @default(uuid())
+  cronJobId       String              @map("cron_job_id")
+  triggerType     String              @default("SCHEDULED") @map("trigger_type") // SCHEDULED | MANUAL | RETRY | MISFIRE_CATCHUP
+  status          CronExecutionStatus @default(RUNNING)
+  
+  startedAt       DateTime            @default(now()) @map("started_at")
+  finishedAt      DateTime?           @map("finished_at")
+  durationMs      Float?              @map("duration_ms")
+  
+  exitCode        Int?                @map("exit_code")
+  httpStatusCode  Int?                @map("http_status_code")
+  errorMessage    String?             @map("error_message") @db.Text
+  
+  // Stdout & Stderr capped ring-buffer
+  stdout          String?             @db.Text
+  stderr          String?             @db.Text
+  
+  memoryMbPeak    Float?              @map("memory_mb_peak")
+  cpuMs           Float?              @map("cpu_ms")
+  retryAttempt    Int                 @default(0) @map("retry_attempt")
+
+  cronJob         CronJob             @relation(fields: [cronJobId], references: [id], onDelete: Cascade)
+
+  @@index([cronJobId, startedAt(sort: Desc)])
+  @@map("cron_executions")
+}
+
+// ─────────────────────────────────────────
+//  CRON DEAD LETTER QUEUE (DLQ)
+// ─────────────────────────────────────────
+model CronDeadLetter {
+  id              String           @id @default(uuid())
+  cronJobId       String           @map("cron_job_id")
+  executionId     String?          @map("execution_id")
+  failureReason   String           @map("failure_reason") @db.Text
+  payload         Json?
+  retryCount      Int              @default(0) @map("retry_count")
+  status          DeadLetterStatus @default(UNRESOLVED)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  resolvedAt      DateTime?        @map("resolved_at")
+
+  cronJob         CronJob          @relation(fields: [cronJobId], references: [id], onDelete: Cascade)
+
+  @@index([cronJobId, status])
+  @@map("cron_dead_letters")
+}
+
+enum DeadLetterStatus {
+  UNRESOLVED
+  REPLAYED
+  DISCARDED
+
+  @@map("dead_letter_status")
+}
+

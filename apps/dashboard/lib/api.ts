@@ -1178,4 +1178,80 @@ export const functionsApi = {
     }),
 };
 
+// ─── CRON & SCHEDULED COMPUTE API ───────────────────────────────────────────
+
+export interface CronJobItem {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string | null;
+  schedule: string;
+  timezone: string;
+  targetType: "FUNCTION" | "PROJECT" | "SERVICE" | "CONTAINER_EXEC" | "WEBHOOK";
+  targetConfig: any;
+  misfirePolicy: "SKIP" | "FIRE_LATEST_ONCE" | "CATCH_UP_ALL";
+  concurrencyPolicy: "FORBID" | "ALLOW" | "REPLACE" | "QUEUE_SERIALIZE";
+  maxConcurrentRuns: number;
+  timeoutSeconds: number;
+  maxRetries: number;
+  retryDelaySeconds: number;
+  enabled: boolean;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  lastStatus?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  executions?: CronExecutionItem[];
+  _count?: { executions: number; deadLetters: number };
+}
+
+export interface CronExecutionItem {
+  id: string;
+  cronJobId: string;
+  triggerType: string;
+  status: "SCHEDULED" | "RUNNING" | "SUCCESS" | "FAILED" | "TIMED_OUT" | "SKIPPED_OVERLAP" | "MISFIRE_SKIPPED";
+  startedAt: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  exitCode?: number | null;
+  httpStatusCode?: number | null;
+  errorMessage?: string | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  memoryMbPeak?: number | null;
+  cpuMs?: number | null;
+  retryAttempt?: number;
+}
+
+export const cronApi = {
+  list: () => request<{ ok: boolean; cronJobs: CronJobItem[] }>("/api/crons").then((r) => r.cronJobs || []),
+  get: (id: string) => request<{ ok: boolean; cronJob: CronJobItem }>(`/api/crons/${id}`).then((r) => r.cronJob),
+  create: (data: any) =>
+    request<{ ok: boolean; cronJob: CronJobItem }>("/api/crons", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }).then((r) => r.cronJob),
+  update: (id: string, data: any) =>
+    request<{ ok: boolean; cronJob: CronJobItem }>(`/api/crons/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }).then((r) => r.cronJob),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/api/crons/${id}`, {
+      method: "DELETE",
+    }),
+  trigger: (id: string) =>
+    request<{ ok: boolean; message: string; executionId: string }>(`/api/crons/${id}/trigger`, {
+      method: "POST",
+    }),
+  getExecutions: (id: string, page = 1, limit = 15) =>
+    request<{ ok: boolean; page: number; limit: number; total: number; totalPages: number; executions: CronExecutionItem[] }>(
+      `/api/crons/${id}/executions?page=${page}&limit=${limit}`
+    ),
+  getExecution: (id: string, execId: string) =>
+    request<{ ok: boolean; execution: CronExecutionItem }>(`/api/crons/${id}/executions/${execId}`).then((r) => r.execution),
+  getLogsStreamUrl: (id: string, execId: string) => `${getApiBase()}/api/crons/${id}/executions/${execId}/logs/stream`,
+};
+
+
 

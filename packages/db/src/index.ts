@@ -25,4 +25,12 @@ export type {
   FunctionInvocation,
   FunctionRuntime,
   TriggerType,
+  CronJob,
+  CronExecution,
+  CronDeadLetter,
+  CronTargetType,
+  CronMisfirePolicy,
+  CronConcurrency,
+  CronExecutionStatus,
+  DeadLetterStatus,
 } from "@prisma/client";
