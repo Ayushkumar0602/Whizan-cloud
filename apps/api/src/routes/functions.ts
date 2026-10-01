@@ -195,6 +195,13 @@ const CreateFunctionSchema = z.object({
   corsOrigins: z.array(z.string()).default(["*"]),
   envVars: z.record(z.string(), z.any()).optional(),
   initialCode: z.string().optional(),
+  endpoints: z.array(z.object({
+    name: z.string().optional(),
+    routePath: z.string(),
+    httpMethods: z.array(z.string()).optional(),
+    handlerName: z.string().optional(),
+    isPublic: z.boolean().optional(),
+  })).optional(),
 });
 
 const UpdateFunctionSchema = CreateFunctionSchema.partial().omit({ slug: true }).extend({
@@ -252,6 +259,60 @@ export function detectExportedEndpoints(source: string): string[] {
 }
 
 /**
+ * Synchronizes a function service's canonical metadata and endpoints to Redis cache (`fn:service:<slug>`).
+ */
+export async function syncServiceMetadataToRedis(serviceIdOrSlug: string, ttlSeconds = 0): Promise<any> {
+  const service = await prisma.functionService.findFirst({
+    where: {
+      OR: [{ id: serviceIdOrSlug }, { slug: serviceIdOrSlug }],
+    },
+    include: {
+      deployments: { where: { status: "READY" }, orderBy: { version: "desc" }, take: 1 },
+      endpoints: true,
+      envVariables: true,
+    },
+  });
+
+  if (!service) return null;
+
+  const activeDep = service.deployments[0];
+  const decryptedEnv: Record<string, string> = {};
+  for (const ev of service.envVariables) {
+    try {
+      decryptedEnv[ev.key] = decrypt(ev.value);
+    } catch {}
+  }
+
+  const meta = {
+    serviceId: service.id,
+    slug: service.slug,
+    version: activeDep ? activeDep.version : 1,
+    bundlePath: activeDep ? activeDep.bundlePath : `/opt/whizan/apps/function-runtime/functions-storage/${service.id}/v1/bundle.mjs`,
+    isPublic: service.isPublic,
+    timeoutMs: service.timeoutMs,
+    memoryLimit: service.memoryLimit,
+    corsOrigins: service.corsOrigins,
+    decryptedEnv,
+    endpoints: (service.endpoints || []).map((e) => ({
+      id: e.id,
+      name: e.name,
+      routePath: e.routePath,
+      httpMethods: e.httpMethods,
+      handlerName: e.handlerName,
+      isPublic: e.isPublic,
+      cacheTtlSec: e.cacheTtlSec,
+    })),
+  };
+
+  if (ttlSeconds > 0) {
+    await redisClient.set(`fn:service:${service.slug}`, JSON.stringify(meta), "EX", ttlSeconds);
+  } else {
+    await redisClient.set(`fn:service:${service.slug}`, JSON.stringify(meta));
+  }
+  return meta;
+}
+
+/**
  * Re-hydrates Redis routing keys and API key caches on boot or VM restart.
  */
 export async function rehydrateEdgeFunctions(): Promise<void> {
@@ -259,6 +320,7 @@ export async function rehydrateEdgeFunctions(): Promise<void> {
     const services = await prisma.functionService.findMany({
       include: {
         deployments: { where: { status: "READY" }, orderBy: { version: "desc" }, take: 1 },
+        endpoints: true,
         apiKeys: true,
         envVariables: true,
       },
@@ -266,30 +328,7 @@ export async function rehydrateEdgeFunctions(): Promise<void> {
 
     let keysCount = 0;
     for (const service of services) {
-      const activeDep = service.deployments[0];
-      if (activeDep) {
-        // Decrypt env vars for runtime
-        const decryptedEnv: Record<string, string> = {};
-        for (const ev of service.envVariables) {
-          try {
-            decryptedEnv[ev.key] = decrypt(ev.value);
-          } catch {}
-        }
-
-        const meta = {
-          serviceId: service.id,
-          slug: service.slug,
-          version: activeDep.version,
-          bundlePath: activeDep.bundlePath,
-          isPublic: service.isPublic,
-          timeoutMs: service.timeoutMs,
-          memoryLimit: service.memoryLimit,
-          corsOrigins: service.corsOrigins,
-          decryptedEnv,
-        };
-
-        await redisClient.set(`fn:service:${service.slug}`, JSON.stringify(meta));
-      }
+      await syncServiceMetadataToRedis(service.id);
 
       // Cache API Keys
       for (const key of service.apiKeys) {
@@ -318,40 +357,10 @@ export async function functionRoutes(fastify: FastifyInstance) {
   // Internal route for Edge Router cache-miss fallback
   fastify.get("/internal/resolve/:slug", async (request, reply) => {
     const { slug } = request.params as { slug: string };
-    const service = await prisma.functionService.findUnique({
-      where: { slug },
-      include: {
-        deployments: { where: { status: "READY" }, orderBy: { version: "desc" }, take: 1 },
-        envVariables: true,
-      },
-    });
-
-    if (!service || !service.deployments[0]) {
+    const meta = await syncServiceMetadataToRedis(slug, 600);
+    if (!meta) {
       return reply.code(404).send({ error: "SERVICE_NOT_FOUND" });
     }
-
-    const activeDep = service.deployments[0];
-    const decryptedEnv: Record<string, string> = {};
-    for (const ev of service.envVariables) {
-      try {
-        decryptedEnv[ev.key] = decrypt(ev.value);
-      } catch {}
-    }
-
-    const meta = {
-      serviceId: service.id,
-      slug: service.slug,
-      version: activeDep.version,
-      bundlePath: activeDep.bundlePath,
-      isPublic: service.isPublic,
-      timeoutMs: service.timeoutMs,
-      memoryLimit: service.memoryLimit,
-      corsOrigins: service.corsOrigins,
-      decryptedEnv,
-    };
-
-    // Hydrate Redis with 10-minute TTL
-    await redisClient.set(`fn:service:${slug}`, JSON.stringify(meta), "EX", 600);
     return meta;
   });
 
@@ -596,21 +605,34 @@ export async function functionRoutes(fastify: FastifyInstance) {
       }).catch(() => {});
     }
 
+    // Register any explicitly provided endpoints with custom security/methods
+    if (Array.isArray(body.endpoints)) {
+      for (const ep of body.endpoints) {
+        if (!ep || !ep.routePath) continue;
+        const rawPath = String(ep.routePath).trim();
+        const routePath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+        const epName = ep.name || routePath.replace(/^\//, "") || "root";
+        await prisma.functionEndpoint.upsert({
+          where: { serviceId_routePath: { serviceId: functionService.id, routePath } },
+          update: {
+            isPublic: ep.isPublic !== undefined ? Boolean(ep.isPublic) : functionService.isPublic,
+            handlerName: ep.handlerName || epName,
+            httpMethods: Array.isArray(ep.httpMethods) ? ep.httpMethods : ["GET", "POST"],
+          },
+          create: {
+            serviceId: functionService.id,
+            name: epName,
+            routePath,
+            handlerName: ep.handlerName || epName,
+            httpMethods: Array.isArray(ep.httpMethods) ? ep.httpMethods : ["GET", "POST"],
+            isPublic: ep.isPublic !== undefined ? Boolean(ep.isPublic) : functionService.isPublic,
+          },
+        }).catch(() => {});
+      }
+    }
+
     // 4. Register route in Redis
-    await redisClient.set(
-      `fn:service:${functionService.slug}`,
-      JSON.stringify({
-        serviceId: functionService.id,
-        slug: functionService.slug,
-        version: 1,
-        bundlePath,
-        isPublic: functionService.isPublic,
-        timeoutMs: functionService.timeoutMs,
-        memoryLimit: functionService.memoryLimit,
-        corsOrigins: functionService.corsOrigins,
-        decryptedEnv: body.envVars || {},
-      })
-    );
+    await syncServiceMetadataToRedis(functionService.id);
 
     // 5. Notify runtime to reload & bundle
     await redisClient.publish("fn:reload", JSON.stringify({ serviceId: functionService.id, version: 1, rawCode: starterCode }));
@@ -704,21 +726,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
     });
 
     // Update Redis routing metadata
-    const activeDep = existing.deployments[0];
-    if (activeDep) {
-      const rawMeta = await redisClient.get(`fn:service:${updated.slug}`);
-      const meta = rawMeta ? JSON.parse(rawMeta) : {};
-      const newMeta = {
-        ...meta,
-        serviceId: updated.id,
-        slug: updated.slug,
-        isPublic: updated.isPublic,
-        timeoutMs: updated.timeoutMs,
-        memoryLimit: updated.memoryLimit,
-        corsOrigins: updated.corsOrigins,
-      };
-      await redisClient.set(`fn:service:${updated.slug}`, JSON.stringify(newMeta));
-    }
+    await syncServiceMetadataToRedis(updated.id);
 
     return { success: true, service: updated, ...updated };
   };
@@ -842,29 +850,8 @@ export async function functionRoutes(fastify: FastifyInstance) {
       }).catch(() => {});
     }
 
-    // 4. Decrypt env vars for Redis caching
-    const decryptedEnv: Record<string, string> = {};
-    for (const ev of fn.envVariables) {
-      try {
-        decryptedEnv[ev.key] = decrypt(ev.value);
-      } catch {}
-    }
-
-    // Update Redis route
-    await redisClient.set(
-      `fn:service:${fn.slug}`,
-      JSON.stringify({
-        serviceId: fn.id,
-        slug: fn.slug,
-        version: nextVersion,
-        bundlePath,
-        isPublic: fn.isPublic,
-        timeoutMs: fn.timeoutMs,
-        memoryLimit: fn.memoryLimit,
-        corsOrigins: fn.corsOrigins,
-        decryptedEnv,
-      })
-    );
+    // 4. Update canonical Redis route metadata including all endpoints
+    await syncServiceMetadataToRedis(fn.id);
 
     // Notify runtime to reload
     await redisClient.publish("fn:reload", JSON.stringify({ serviceId: fn.id, version: nextVersion }));
@@ -1394,6 +1381,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
           where: { serviceId: id },
           orderBy: { createdAt: "asc" },
         });
+        await syncServiceMetadataToRedis(id).catch(() => {});
       }
     }
 
@@ -1470,6 +1458,9 @@ export async function functionRoutes(fastify: FastifyInstance) {
       JSON.stringify({ memoryLimit, timeoutSeconds, timeoutMs })
     ).catch(() => {});
 
+    // Sync canonical metadata and endpoints to Redis
+    await syncServiceMetadataToRedis(id).catch(() => {});
+
     return reply.code(201).send({
       ...endpoint,
       memoryLimit,
@@ -1520,6 +1511,9 @@ export async function functionRoutes(fastify: FastifyInstance) {
       JSON.stringify({ memoryLimit, timeoutSeconds, timeoutMs })
     ).catch(() => {});
 
+    // Sync canonical metadata and endpoints to Redis
+    await syncServiceMetadataToRedis(id).catch(() => {});
+
     return {
       ...updated,
       memoryLimit,
@@ -1542,6 +1536,9 @@ export async function functionRoutes(fastify: FastifyInstance) {
       where: { id: endpointId },
     });
     await redisClient.hdel(`fn:endpoint:meta:${id}`, endpointId).catch(() => {});
+
+    // Sync canonical metadata and endpoints to Redis
+    await syncServiceMetadataToRedis(id).catch(() => {});
 
     return { success: true, message: "Endpoint removed from service." };
   });

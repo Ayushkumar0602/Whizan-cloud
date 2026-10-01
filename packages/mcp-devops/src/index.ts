@@ -299,7 +299,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_create_function_service",
-    description: "Creates a new serverless Edge Function service on Whizan Cloud (like Firebase Functions or AWS Lambda). Returns a dedicated Function API Key and high-speed invocation URL.",
+    description: "Creates a new serverless Edge Function service on Whizan Cloud (like Firebase Functions or AWS Lambda). SECURITY MANDATE: By default, serverless functions MUST be created with 'isPublic: false' (API Key Protected) for data security. Agents must categorize functions: if creating public webhooks (e.g., Stripe, GitHub) or open status endpoints, set 'isPublic: true'. Otherwise, keep 'isPublic: false' (API Key Protected) and use 'whizan_create_function_api_key' to generate an access key ('whz_fn_live_...'). You can also provide granular 'endpoints: [{ routePath, isPublic }]' to mix public webhooks and protected endpoints in the same service.",
     inputSchema: {
       type: "object",
       properties: {
@@ -308,17 +308,30 @@ const TOOLS: Tool[] = [
         runtime: { type: "string", enum: ["EDGE_TYPESCRIPT", "NODEJS_20", "PYTHON_311", "GOLANG_122"], default: "EDGE_TYPESCRIPT" },
         timeoutMs: { type: "number", default: 10000, description: "Execution timeout in ms (default 10,000ms)" },
         memoryLimit: { type: "number", default: 128, description: "Memory allocation in MB (default 128MB)" },
-        isPublic: { type: "boolean", default: false, description: "Whether the function is publicly callable without an API key" },
+        isPublic: { type: "boolean", default: false, description: "Default security model: false = API Key Protected (Recommended), true = Public Webhook without key" },
         corsOrigins: { type: "array", items: { type: "string" }, default: ["*"], description: "Allowed CORS origins" },
         initialCode: { type: "string", description: "Optional initial TypeScript/JavaScript code for the function" },
         envVars: { type: "object", description: "Key-value dictionary of environment variables to encrypt and inject" },
+        endpoints: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              routePath: { type: "string" },
+              isPublic: { type: "boolean" },
+              httpMethods: { type: "array", items: { type: "string" } },
+            },
+          },
+          description: "Optional initial endpoints with custom security tags (isPublic: true for webhooks, false for secured APIs)",
+        },
       },
       required: ["name", "slug"],
     },
   },
   {
     name: "whizan_deploy_function",
-    description: "Deploys a new version of TypeScript or JavaScript code to an existing Whizan Edge Function service with sub-5ms cold-start compilation and automatic disk pruning.",
+    description: "Deploys a new version of TypeScript or JavaScript code to an existing Whizan Edge Function service with sub-5ms cold-start compilation, automatic multi-function endpoint discovery, and self-healing disaster recovery.",
     inputSchema: {
       type: "object",
       properties: {
@@ -330,8 +343,26 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "whizan_configure_function_endpoint",
+    description: "Configures or toggles security (Public Webhook vs API Key Protected), route path, HTTP methods, memory limit, and timeout seconds for a specific endpoint in an Edge Function service. Use this to mark webhooks as public or protect sensitive endpoints with API keys.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        functionId: { type: "string", description: "The Whizan ID of the Edge Function service" },
+        routePath: { type: "string", description: "Route path (e.g. '/webhook/stripe', '/users/:id', '/charge')" },
+        isPublic: { type: "boolean", description: "Security model: true = Public Webhook (unauthenticated), false = API Key Protected (requires whz_fn_live_...)" },
+        endpointId: { type: "string", description: "Optional existing endpoint ID to update" },
+        name: { type: "string", description: "Optional descriptive label for this endpoint" },
+        httpMethods: { type: "array", items: { type: "string" }, description: "Allowed HTTP methods, e.g. ['GET', 'POST']" },
+        memoryLimit: { type: "number", description: "Optional memory allocation in MB (e.g. 128, 256, 512)" },
+        timeoutSeconds: { type: "number", description: "Optional execution timeout in seconds (1 to 60)" },
+      },
+      required: ["functionId", "routePath", "isPublic"],
+    },
+  },
+  {
     name: "whizan_create_function_api_key",
-    description: "Generates a new dedicated Function API Key (whz_fn_live_...) for an Edge Function with customizable scopes, rate limiting, and IP whitelisting.",
+    description: "Generates a new dedicated Function API Key (whz_fn_live_...) for an Edge Function with customizable scopes, rate limiting, and IP whitelisting. Use this key in 'x-api-key: whz_fn_live_...' or 'Authorization: Bearer <key>' to authorize requests to protected functions and endpoints.",
     inputSchema: {
       type: "object",
       properties: {
@@ -346,7 +377,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_invoke_function",
-    description: "Invokes a live Whizan Edge Function over HTTP, testing authentication, response payload, status code, and latency in milliseconds.",
+    description: "Invokes a live Whizan Edge Function over HTTP, testing authentication, response payload, status code, and latency in milliseconds. NOTE: If the function or endpoint is API Key Protected ('isPublic: false'), you MUST provide the 'apiKey' parameter (format: 'whz_fn_live_...').",
     inputSchema: {
       type: "object",
       properties: {
@@ -354,7 +385,7 @@ const TOOLS: Tool[] = [
         path: { type: "string", default: "/", description: "Route path (e.g. '/charge' or '/users/123')" },
         method: { type: "string", default: "POST", description: "HTTP method (GET, POST, PUT, DELETE, PATCH)" },
         body: { type: "object", description: "Optional JSON payload to send in request body" },
-        apiKey: { type: "string", description: "Optional Function API Key (whz_fn_live_...). If omitted, uses default active key." },
+        apiKey: { type: "string", description: "Required for protected functions/endpoints: Function API Key (whz_fn_live_...)." },
         headers: { type: "object", description: "Optional custom HTTP headers" },
       },
       required: ["slug"],
@@ -1097,6 +1128,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   bundleHash: result.bundleHash,
                   bundleSizeBytes: result.bundleSizeBytes,
                   status: result.status,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_configure_function_endpoint": {
+        const payload = (args || {}) as any;
+        const result = await client.configureFunctionEndpoint(payload.functionId, payload);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  message: `Endpoint '${result.routePath || payload.routePath}' configured successfully!`,
+                  id: result.id,
+                  name: result.name,
+                  routePath: result.routePath,
+                  isPublic: result.isPublic,
+                  securityModel: result.isPublic ? "PUBLIC_WEBHOOK (Unauthenticated)" : "API_KEY_PROTECTED (Requires whz_fn_live_...)",
+                  httpMethods: result.httpMethods,
+                  memoryLimit: result.memoryLimit,
+                  timeoutSeconds: result.timeoutSeconds,
                 },
                 null,
                 2

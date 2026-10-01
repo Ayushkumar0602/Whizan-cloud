@@ -662,6 +662,70 @@ export class WhizanClient {
     return data;
   }
 
+  async getFunctionEndpoints(id: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/endpoints`, {
+      headers: this.getHeaders(),
+    });
+    const data: any = await res.json().catch(() => []);
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  async configureFunctionEndpoint(
+    id: string,
+    payload: {
+      endpointId?: string;
+      routePath: string;
+      name?: string;
+      isPublic: boolean;
+      httpMethods?: string[];
+      memoryLimit?: number;
+      timeoutSeconds?: number;
+      handlerName?: string;
+    }
+  ): Promise<any> {
+    await this.loadConfig();
+    const cleanPath = payload.routePath.startsWith("/") ? payload.routePath : `/${payload.routePath}`;
+
+    // If endpointId is provided, update directly
+    if (payload.endpointId) {
+      const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/endpoints/${payload.endpointId}`, {
+        method: "PUT",
+        headers: this.getHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload),
+      });
+      const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    // Otherwise check if an endpoint already exists for routePath
+    const existing = await this.getFunctionEndpoints(id).catch(() => []);
+    const match = Array.isArray(existing) ? existing.find((e: any) => e.routePath.toLowerCase() === cleanPath.toLowerCase()) : null;
+
+    if (match) {
+      const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/endpoints/${match.id}`, {
+        method: "PUT",
+        headers: this.getHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(payload),
+      });
+      const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    // If not found, create new endpoint
+    const res = await fetch(`${this.config.apiUrl}/api/functions/${id}/endpoints`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
   async invokeFunction(
     slug: string,
     options: {

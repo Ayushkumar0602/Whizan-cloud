@@ -422,12 +422,74 @@ async function handleFunctionRequest(
     return;
   }
 
-  // 3. Authentication & Rate Limiting
-  if (!fnMeta.isPublic) {
+  // 3. Resolve Endpoint & Granular Security Policy
+  const parsedTarget = new URL(targetPath, `http://${req.headers.host || "localhost"}`);
+  const cleanPath = parsedTarget.pathname.startsWith("/") ? parsedTarget.pathname : `/${parsedTarget.pathname}`;
+  const normalizedPath = (cleanPath.length > 1 && cleanPath.endsWith("/")) ? cleanPath.slice(0, -1) : cleanPath;
+
+  let matchedEndpoint: any = null;
+  if (Array.isArray(fnMeta.endpoints) && fnMeta.endpoints.length > 0) {
+    // 1. Exact match (case-insensitive)
+    matchedEndpoint = fnMeta.endpoints.find((ep: any) => {
+      const epPath = ep.routePath.startsWith("/") ? ep.routePath : `/${ep.routePath}`;
+      const epNorm = (epPath.length > 1 && epPath.endsWith("/")) ? epPath.slice(0, -1) : epPath;
+      return epNorm.toLowerCase() === normalizedPath.toLowerCase();
+    });
+
+    // 2. Prefix match (e.g. /courses matching /courses/123)
+    if (!matchedEndpoint) {
+      matchedEndpoint = fnMeta.endpoints.find((ep: any) => {
+        const epPath = ep.routePath.startsWith("/") ? ep.routePath : `/${ep.routePath}`;
+        return epPath !== "/" && normalizedPath.toLowerCase().startsWith(epPath.toLowerCase() + "/");
+      });
+    }
+
+    // 3. Dynamic parameter match (e.g. /users/:id)
+    if (!matchedEndpoint) {
+      matchedEndpoint = fnMeta.endpoints.find((ep: any) => {
+        if (!ep.routePath.includes(":") && !ep.routePath.includes("*")) return false;
+        const regexPattern = "^" + ep.routePath
+          .replace(/:[a-zA-Z0-9_]+/g, "[^/]+")
+          .replace(/\*/g, ".*") + "$";
+        try {
+          return new RegExp(regexPattern, "i").test(normalizedPath);
+        } catch {
+          return false;
+        }
+      });
+    }
+  }
+
+  // HTTP Method Check
+  if (matchedEndpoint && Array.isArray(matchedEndpoint.httpMethods) && matchedEndpoint.httpMethods.length > 0) {
+    const allowedMethods = matchedEndpoint.httpMethods.map((m: string) => m.toUpperCase());
+    if (req.method && req.method !== "OPTIONS" && !allowedMethods.includes(req.method.toUpperCase())) {
+      res.writeHead(405, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": originHeader,
+        "Allow": allowedMethods.join(", "),
+      });
+      res.end(JSON.stringify({
+        error: "METHOD_NOT_ALLOWED",
+        message: `HTTP ${req.method} is not allowed for endpoint '${matchedEndpoint.routePath}'. Allowed methods: ${allowedMethods.join(", ")}`,
+      }));
+      return;
+    }
+  }
+
+  // Determine if authentication is required:
+  // Explicit endpoint setting takes precedence; if unspecified, fallback to service-level isPublic.
+  const isEndpointPublic = (matchedEndpoint && typeof matchedEndpoint.isPublic === "boolean")
+    ? matchedEndpoint.isPublic
+    : Boolean(fnMeta.isPublic);
+
+  const requiresAuth = !isEndpointPublic;
+
+  // Authentication & Rate Limiting (when requiresAuth is true)
+  if (requiresAuth) {
     const keyHeader = req.headers["x-api-key"] as string | undefined;
     const authHeader = req.headers["authorization"] as string | undefined;
-    const rawUrl = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-    const queryKey = rawUrl.searchParams.get("apiKey") || rawUrl.searchParams.get("api_key");
+    const queryKey = parsedTarget.searchParams.get("apiKey") || parsedTarget.searchParams.get("api_key");
     const rawKey = keyHeader || (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null) || queryKey;
 
     if (!rawKey) {
@@ -437,7 +499,7 @@ async function handleFunctionRequest(
       });
       res.end(JSON.stringify({
         error: "UNAUTHORIZED",
-        message: "Missing required Function API Key. Provide 'x-api-key: whz_fn_live_...' or 'Authorization: Bearer whz_fn_live_...' header.",
+        message: `Authentication required for ${matchedEndpoint ? `endpoint '${matchedEndpoint.routePath}'` : `function service '${slug}'`}. Provide 'x-api-key: whz_fn_live_...' or 'Authorization: Bearer whz_fn_live_...' header.`,
       }));
       return;
     }
@@ -561,8 +623,9 @@ async function handleFunctionRequest(
     query: queryObj,
     body: parsedBody,
     clientIp,
-    timeoutMs: fnMeta.timeoutMs,
-    memoryLimit: fnMeta.memoryLimit,
+    timeoutMs: matchedEndpoint?.timeoutMs || (matchedEndpoint?.timeoutSeconds ? matchedEndpoint.timeoutSeconds * 1000 : fnMeta.timeoutMs),
+    memoryLimit: matchedEndpoint?.memoryLimit || fnMeta.memoryLimit,
+    handlerName: matchedEndpoint?.handlerName || undefined,
     envVars: fnMeta.decryptedEnv || {},
   };
 
