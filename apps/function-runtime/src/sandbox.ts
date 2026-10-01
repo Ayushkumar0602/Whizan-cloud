@@ -118,6 +118,14 @@ export class FunctionSandbox {
       signal: abortController.signal,
     });
 
+    const clientIp = req.clientIp || "127.0.0.1";
+    this.logger.log(
+      req.serviceId,
+      "INFO",
+      `[START] ${method} ${req.routePath || "/"} from ${clientIp}`,
+      secretsToRedact
+    );
+
     // 2. Build FunctionContext
     const backgroundPromises: Promise<any>[] = [];
     const context: FunctionContext = {
@@ -260,8 +268,16 @@ export class FunctionSandbox {
           bodyText = await rawResult.text();
         }
 
+        const finalStatus = rawResult.status;
+        this.logger.log(
+          req.serviceId,
+          finalStatus >= 400 ? "WARN" : "INFO",
+          `[COMPLETE] ${finalStatus} | ${durationMs}ms | ${usedMemoryMb.toFixed(1)}MB RAM`,
+          secretsToRedact
+        );
+
         return {
-          statusCode: rawResult.status,
+          statusCode: finalStatus,
           headers: responseHeaders,
           body: bodyText,
           isBase64,
@@ -271,6 +287,13 @@ export class FunctionSandbox {
       }
 
       // If handler returned plain object/value instead of Response
+      this.logger.log(
+        req.serviceId,
+        "INFO",
+        `[COMPLETE] 200 OK | ${durationMs}ms | ${usedMemoryMb.toFixed(1)}MB RAM`,
+        secretsToRedact
+      );
+
       return {
         statusCode: 200,
         headers: { "content-type": "application/json" },

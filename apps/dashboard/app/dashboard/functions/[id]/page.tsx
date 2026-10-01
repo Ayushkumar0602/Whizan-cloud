@@ -75,6 +75,20 @@ export default function FunctionDetailPage() {
     routePath: "",
     httpMethods: ["GET", "POST"],
     handlerName: "",
+    memoryLimit: 128,
+    timeoutSeconds: 10,
+    isPublic: false,
+  });
+
+  // Edit Function Endpoint state
+  const [editingEndpoint, setEditingEndpoint] = useState<FunctionEndpointItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    routePath: "",
+    httpMethods: ["GET", "POST"],
+    handlerName: "",
+    memoryLimit: 128,
+    timeoutSeconds: 10,
     isPublic: false,
   });
 
@@ -115,6 +129,8 @@ export default function FunctionDetailPage() {
   const [logs, setLogs] = useState<Array<{ timestamp: string; level: string; message: string }>>([]);
   const [logsAutoScroll, setLogsAutoScroll] = useState(true);
   const [logFilterFunction, setLogFilterFunction] = useState<string>("ALL");
+  const [logStreamStatus, setLogStreamStatus] = useState<"connecting" | "connected" | "error">("connecting");
+  const [pingingLogs, setPingingLogs] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -225,9 +241,18 @@ export async function webhook(req: Request, context: any) {
   // Handle Live Logs SSE stream
   useEffect(() => {
     if (activeTab === "logs" && service) {
+      setLogStreamStatus("connecting");
       const streamUrl = functionsApi.getLogsStreamUrl(service.id);
       const es = new EventSource(streamUrl);
       eventSourceRef.current = es;
+
+      es.onopen = () => {
+        setLogStreamStatus("connected");
+      };
+
+      es.onerror = () => {
+        setLogStreamStatus("error");
+      };
 
       es.onmessage = (event) => {
         try {
@@ -246,6 +271,20 @@ export async function webhook(req: Request, context: any) {
       };
     }
   }, [activeTab, service]);
+
+  const handlePingLogs = async () => {
+    setPingingLogs(true);
+    try {
+      await fetch(`${functionsApi.getLogsStreamUrl(functionId).replace(/\/logs$/, "/logs/ping")}`, {
+        method: "POST",
+      });
+      toast.success("Stream test ping emitted!");
+    } catch {
+      toast.error("Failed to ping log stream");
+    } finally {
+      setPingingLogs(false);
+    }
+  };
 
   useEffect(() => {
     if (logsAutoScroll && logsEndRef.current) {
@@ -270,7 +309,7 @@ export async function webhook(req: Request, context: any) {
     }
   };
 
-  // Add Function Endpoint
+  // Add Function Endpoint with Custom Compute Limits
   const handleCreateEndpoint = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!endpointForm.name.trim()) return toast.error("Name is required");
@@ -280,14 +319,62 @@ export async function webhook(req: Request, context: any) {
         routePath: endpointForm.routePath.trim() || `/${endpointForm.name.trim()}`,
         httpMethods: endpointForm.httpMethods,
         handlerName: endpointForm.handlerName.trim() || endpointForm.name.trim(),
+        memoryLimit: endpointForm.memoryLimit,
+        timeoutSeconds: endpointForm.timeoutSeconds,
+        timeoutMs: endpointForm.timeoutSeconds * 1000,
         isPublic: endpointForm.isPublic,
       });
-      toast.success(`Function '${endpointForm.name}' added to service!`);
+      toast.success(`Function '${endpointForm.name}' (${endpointForm.memoryLimit}MB, ${endpointForm.timeoutSeconds}s) added to service!`);
       setShowEndpointModal(false);
-      setEndpointForm({ name: "", routePath: "", httpMethods: ["GET", "POST"], handlerName: "", isPublic: false });
+      setEndpointForm({
+        name: "",
+        routePath: "",
+        httpMethods: ["GET", "POST"],
+        handlerName: "",
+        memoryLimit: service?.memoryLimit || 128,
+        timeoutSeconds: Math.round((service?.timeoutMs || 10000) / 1000),
+        isPublic: false,
+      });
       fetchService();
     } catch (err: any) {
       toast.error(err.message || "Failed to add function endpoint");
+    }
+  };
+
+  // Open Edit Modal for a Function Endpoint
+  const handleOpenEditEndpoint = (ep: FunctionEndpointItem) => {
+    setEditingEndpoint(ep);
+    setEditForm({
+      name: ep.name,
+      routePath: ep.routePath,
+      httpMethods: ep.httpMethods || ["GET", "POST"],
+      handlerName: ep.handlerName || ep.name,
+      memoryLimit: ep.memoryLimit || service?.memoryLimit || 128,
+      timeoutSeconds: ep.timeoutSeconds || Math.round((ep.timeoutMs || service?.timeoutMs || 10000) / 1000),
+      isPublic: ep.isPublic,
+    });
+  };
+
+  // Save Edits to a Function Endpoint
+  const handleUpdateEndpoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEndpoint) return;
+    try {
+      await functionsApi.updateEndpoint(functionId, editingEndpoint.id, {
+        name: editForm.name.trim(),
+        routePath: editForm.routePath.trim(),
+        handlerName: editForm.handlerName.trim(),
+        httpMethods: editForm.httpMethods,
+        memoryLimit: editForm.memoryLimit,
+        timeoutSeconds: editForm.timeoutSeconds,
+        timeoutMs: editForm.timeoutSeconds * 1000,
+        isPublic: editForm.isPublic,
+      });
+      toast.success(`Function '${editForm.name}' updated (${editForm.memoryLimit}MB, ${editForm.timeoutSeconds}s)!`);
+      setEditingEndpoint(null);
+      fetchService();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update function");
     }
   };
 
@@ -794,6 +881,8 @@ export async function webhook(req: Request, context: any) {
                     <th style={{ padding: "0.75rem 0.5rem" }}>Route Path</th>
                     <th style={{ padding: "0.75rem 0.5rem" }}>HTTP Methods</th>
                     <th style={{ padding: "0.75rem 0.5rem" }}>Exported Handler</th>
+                    <th style={{ padding: "0.75rem 0.5rem" }}>Compute</th>
+                    <th style={{ padding: "0.75rem 0.5rem" }}>Timeout</th>
                     <th style={{ padding: "0.75rem 0.5rem" }}>Access</th>
                     <th style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>Actions</th>
                   </tr>
@@ -801,7 +890,7 @@ export async function webhook(req: Request, context: any) {
                 <tbody>
                   {endpoints.length === 0 ? (
                     <tr>
-                      <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>
+                      <td colSpan={8} style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>
                         No functions defined yet. Click &quot;Add Function to Service&quot; above.
                       </td>
                     </tr>
@@ -823,6 +912,40 @@ export async function webhook(req: Request, context: any) {
                         <td style={{ padding: "0.75rem 0.5rem" }}>
                           <span
                             style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              fontSize: "0.76rem",
+                              background: "var(--bg-inset)",
+                              padding: "0.2rem 0.45rem",
+                              borderRadius: 4,
+                              fontWeight: 600,
+                            }}
+                          >
+                            <Cpu size={12} style={{ color: "var(--accent)" }} />
+                            {ep.memoryLimit || service.memoryLimit} MB
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem" }}>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.3rem",
+                              fontSize: "0.76rem",
+                              background: "var(--bg-inset)",
+                              padding: "0.2rem 0.45rem",
+                              borderRadius: 4,
+                              fontWeight: 600,
+                            }}
+                          >
+                            <Clock size={12} style={{ color: "#f59e0b" }} />
+                            {ep.timeoutSeconds || Math.round((ep.timeoutMs || service.timeoutMs) / 1000)}s
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.75rem 0.5rem" }}>
+                          <span
+                            style={{
                               fontSize: "0.72rem",
                               fontWeight: 700,
                               padding: "0.15rem 0.45rem",
@@ -836,6 +959,14 @@ export async function webhook(req: Request, context: any) {
                         </td>
                         <td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>
                           <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+                            <button
+                              onClick={() => handleOpenEditEndpoint(ep)}
+                              className="btn btn-outline"
+                              style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
+                              title="Configure compute & time limits"
+                            >
+                              <Sliders size={12} /> Configure
+                            </button>
                             <button
                               onClick={() => {
                                 setTestPath(ep.routePath);
@@ -1393,13 +1524,68 @@ export async function webhook(req: Request, context: any) {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} />
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  background:
+                    logStreamStatus === "connected"
+                      ? "#10b981"
+                      : logStreamStatus === "connecting"
+                      ? "#f59e0b"
+                      : "#ef4444",
+                  boxShadow:
+                    logStreamStatus === "connected" ? "0 0 8px rgba(16, 185, 129, 0.6)" : "none",
+                }}
+              />
               <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#f8fafc" }}>
                 Live Service Log Stream (SSE)
+              </span>
+              <span
+                style={{
+                  fontSize: "0.72rem",
+                  padding: "0.15rem 0.45rem",
+                  borderRadius: 4,
+                  fontWeight: 600,
+                  background:
+                    logStreamStatus === "connected"
+                      ? "rgba(16, 185, 129, 0.15)"
+                      : logStreamStatus === "connecting"
+                      ? "rgba(245, 158, 11, 0.15)"
+                      : "rgba(239, 68, 68, 0.15)",
+                  color:
+                    logStreamStatus === "connected"
+                      ? "#10b981"
+                      : logStreamStatus === "connecting"
+                      ? "#f59e0b"
+                      : "#ef4444",
+                }}
+              >
+                {logStreamStatus === "connected"
+                  ? "Connected (Live)"
+                  : logStreamStatus === "connecting"
+                  ? "Connecting..."
+                  : "Disconnected"}
               </span>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <button
+                onClick={handlePingLogs}
+                disabled={pingingLogs}
+                className="btn btn-outline"
+                style={{
+                  padding: "0.25rem 0.55rem",
+                  fontSize: "0.75rem",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "0.35rem",
+                }}
+                title="Emit a live test log to verify stream"
+              >
+                <Send size={12} /> {pingingLogs ? "Pinging..." : "Test Stream Ping"}
+              </button>
               <button
                 onClick={() => setLogsAutoScroll((p) => !p)}
                 style={{
@@ -1445,26 +1631,33 @@ export async function webhook(req: Request, context: any) {
           >
             {logs.length === 0 ? (
               <div style={{ color: "#64748b", textAlign: "center", padding: "3rem 0" }}>
-                Waiting for incoming invocations... Invoke any function in this service to see live output.
+                Waiting for incoming invocations... Click &quot;Test Stream Ping&quot; above or run a test in the Test tab.
               </div>
             ) : (
-              logs.map((log, idx) => (
-                <div key={idx} style={{ display: "flex", gap: "0.75rem", marginBottom: "0.3rem" }}>
-                  <span style={{ color: "#64748b", flexShrink: 0 }}>
-                    {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--"}
-                  </span>
-                  <span
-                    style={{
-                      color: log.level === "ERROR" ? "#f43f5e" : log.level === "WARN" ? "#f59e0b" : "#38bdf8",
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}
-                  >
-                    [{log.level || "INFO"}]
-                  </span>
-                  <span style={{ wordBreak: "break-all" }}>{log.message}</span>
-                </div>
-              ))
+              logs.map((log, idx) => {
+                const isError = log.level === "ERROR";
+                const isWarn = log.level === "WARN";
+                const isSystem = log.level === "SYSTEM";
+                const badgeColor = isError ? "#f43f5e" : isWarn ? "#f59e0b" : isSystem ? "#10b981" : "#38bdf8";
+
+                return (
+                  <div key={idx} style={{ display: "flex", gap: "0.75rem", marginBottom: "0.3rem" }}>
+                    <span style={{ color: "#64748b", flexShrink: 0 }}>
+                      {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--"}
+                    </span>
+                    <span
+                      style={{
+                        color: badgeColor,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      [{log.level || "INFO"}]
+                    </span>
+                    <span style={{ wordBreak: "break-all", color: isSystem ? "#a7f3d0" : "#f1f5f9" }}>{log.message}</span>
+                  </div>
+                );
+              })
             )}
             <div ref={logsEndRef} />
           </div>
@@ -1575,6 +1768,77 @@ export async function webhook(req: Request, context: any) {
                     <option value={512}>512 MB (Heavy)</option>
                   </select>
                 </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                    <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Default Execution Timeout</label>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>
+                      {settingsForm.timeoutSeconds} seconds
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={60}
+                    step={1}
+                    value={settingsForm.timeoutSeconds}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, timeoutSeconds: Number(e.target.value) })}
+                    style={{ width: "100%", accentColor: "var(--accent)" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                    <span>1s</span>
+                    <span>10s (Standard)</span>
+                    <span>60s (Heavy)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+                    Default Security & Access Mode
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsForm({ ...settingsForm, isPublic: false })}
+                      style={{
+                        padding: "0.55rem 0.75rem",
+                        borderRadius: "var(--radius-sm)",
+                        border: `1.5px solid ${!settingsForm.isPublic ? "var(--accent)" : "var(--border)"}`,
+                        background: !settingsForm.isPublic ? "var(--accent-glow)" : "var(--bg-inset)",
+                        color: !settingsForm.isPublic ? "var(--accent)" : "var(--muted)",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <Lock size={13} /> API Key Protected
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsForm({ ...settingsForm, isPublic: true })}
+                      style={{
+                        padding: "0.55rem 0.75rem",
+                        borderRadius: "var(--radius-sm)",
+                        border: `1.5px solid ${settingsForm.isPublic ? "#10b981" : "var(--border)"}`,
+                        background: settingsForm.isPublic ? "rgba(16, 185, 129, 0.1)" : "var(--bg-inset)",
+                        color: settingsForm.isPublic ? "#10b981" : "var(--muted)",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "0.35rem",
+                      }}
+                    >
+                      <Globe size={13} /> Public Webhook
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <button type="submit" className="btn btn-primary">
@@ -1600,36 +1864,75 @@ export async function webhook(req: Request, context: any) {
       {/* Add Function Endpoint Modal */}
       {showEndpointModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", zIndex: 1000 }}>
-          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1.75rem", maxWidth: 480, width: "100%" }}>
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1.75rem", maxWidth: 520, width: "100%" }}>
             <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "0.5rem" }}>
               Add Function to Service
             </h3>
             <p style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "1.25rem" }}>
-              Creates a new function inside &apos;{service.name}&apos;. Inherits all central environment variables.
+              Creates an endpoint inside &apos;{service.name}&apos;. Customize memory and execution time per function.
             </p>
 
             <form onSubmit={handleCreateEndpoint}>
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Function Identifier</label>
-                <input
-                  type="text"
-                  placeholder="e.g. charge, webhook, getUser"
-                  value={endpointForm.name}
-                  onChange={(e) => setEndpointForm({ ...endpointForm, name: e.target.value })}
-                  required
-                  style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)" }}
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Function Identifier</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. charge, webhook"
+                    value={endpointForm.name}
+                    onChange={(e) => setEndpointForm({ ...endpointForm, name: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Route Path</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. /charge, /webhook"
+                    value={endpointForm.routePath}
+                    onChange={(e) => setEndpointForm({ ...endpointForm, routePath: e.target.value })}
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)", fontFamily: "monospace" }}
+                  />
+                </div>
               </div>
 
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Route Path</label>
-                <input
-                  type="text"
-                  placeholder="e.g. /charge, /webhook"
-                  value={endpointForm.routePath}
-                  onChange={(e) => setEndpointForm({ ...endpointForm, routePath: e.target.value })}
-                  style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)", fontFamily: "monospace" }}
-                />
+              {/* Compute Resource & Time Allocation */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>
+                    Memory Allocation (RAM)
+                  </label>
+                  <select
+                    value={endpointForm.memoryLimit}
+                    onChange={(e) => setEndpointForm({ ...endpointForm, memoryLimit: Number(e.target.value) })}
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)" }}
+                  >
+                    <option value={64}>64 MB (Micro)</option>
+                    <option value={128}>128 MB (Default)</option>
+                    <option value={256}>256 MB (Standard)</option>
+                    <option value={512}>512 MB (Heavy)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem" }}>
+                    <label style={{ fontSize: "0.82rem", fontWeight: 600 }}>Execution Timeout</label>
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--accent)" }}>
+                      {endpointForm.timeoutSeconds}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={60}
+                    step={1}
+                    value={endpointForm.timeoutSeconds}
+                    onChange={(e) => setEndpointForm({ ...endpointForm, timeoutSeconds: Number(e.target.value) })}
+                    style={{ width: "100%", accentColor: "var(--accent)", marginTop: "0.4rem" }}
+                  />
+                </div>
               </div>
 
               <div style={{ marginBottom: "1.25rem" }}>
@@ -1646,6 +1949,99 @@ export async function webhook(req: Request, context: any) {
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
                 <button type="button" onClick={() => setShowEndpointModal(false)} className="btn btn-outline">Cancel</button>
                 <button type="submit" className="btn btn-primary">Add Function</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Function Endpoint Modal */}
+      {editingEndpoint && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", zIndex: 1000 }}>
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1.75rem", maxWidth: 520, width: "100%" }}>
+            <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+              Configure Function &apos;{editingEndpoint.name}&apos;
+            </h3>
+            <p style={{ fontSize: "0.82rem", color: "var(--muted)", marginBottom: "1.25rem" }}>
+              Adjust compute resources (RAM) and execution timeout specifically for this function.
+            </p>
+
+            <form onSubmit={handleUpdateEndpoint}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Function Identifier</label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)" }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>Route Path</label>
+                  <input
+                    type="text"
+                    value={editForm.routePath}
+                    onChange={(e) => setEditForm({ ...editForm, routePath: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)", fontFamily: "monospace" }}
+                  />
+                </div>
+              </div>
+
+              {/* Compute Resource & Time Allocation */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, marginBottom: "0.35rem" }}>
+                    Memory Allocation (RAM)
+                  </label>
+                  <select
+                    value={editForm.memoryLimit}
+                    onChange={(e) => setEditForm({ ...editForm, memoryLimit: Number(e.target.value) })}
+                    style={{ width: "100%", padding: "0.6rem 0.85rem", background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", color: "var(--foreground)" }}
+                  >
+                    <option value={64}>64 MB (Micro)</option>
+                    <option value={128}>128 MB (Default)</option>
+                    <option value={256}>256 MB (Standard)</option>
+                    <option value={512}>512 MB (Heavy)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.35rem" }}>
+                    <label style={{ fontSize: "0.82rem", fontWeight: 600 }}>Execution Timeout</label>
+                    <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--accent)" }}>
+                      {editForm.timeoutSeconds}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={60}
+                    step={1}
+                    value={editForm.timeoutSeconds}
+                    onChange={(e) => setEditForm({ ...editForm, timeoutSeconds: Number(e.target.value) })}
+                    style={{ width: "100%", accentColor: "var(--accent)", marginTop: "0.4rem" }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "1.25rem" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.isPublic}
+                    onChange={(e) => setEditForm({ ...editForm, isPublic: e.target.checked })}
+                  />
+                  <span>Public Webhook (No API key required for this function)</span>
+                </label>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
+                <button type="button" onClick={() => setEditingEndpoint(null)} className="btn btn-outline">Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Changes</button>
               </div>
             </form>
           </div>

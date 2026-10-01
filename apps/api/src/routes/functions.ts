@@ -103,7 +103,9 @@ const CreateFunctionSchema = z.object({
   initialCode: z.string().optional(),
 });
 
-const UpdateFunctionSchema = CreateFunctionSchema.partial().omit({ slug: true });
+const UpdateFunctionSchema = CreateFunctionSchema.partial().omit({ slug: true }).extend({
+  timeoutSeconds: z.number().int().min(1).max(60).optional(),
+});
 
 const CreateApiKeySchema = z.object({
   name: z.string().min(1).max(60).default("Production Key"),
@@ -479,6 +481,10 @@ export async function functionRoutes(fastify: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
     const body = UpdateFunctionSchema.parse(request.body);
+    const { timeoutSeconds, ...dataToUpdate } = body as any;
+    if (timeoutSeconds && !dataToUpdate.timeoutMs) {
+      dataToUpdate.timeoutMs = timeoutSeconds * 1000;
+    }
 
     const existing = await prisma.functionService.findFirst({
       where: role === "ADMIN" ? { id } : { id, userId },
@@ -491,7 +497,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
 
     const updated = await prisma.functionService.update({
       where: { id },
-      data: body,
+      data: dataToUpdate,
     });
 
     // Update Redis routing metadata
@@ -656,23 +662,45 @@ export async function functionRoutes(fastify: FastifyInstance) {
       } catch {}
     }
 
+    const testPath = input.path || "/";
+    const cleanPath = testPath.split("?")[0];
+
+    // Check if test path matches a specific endpoint with custom compute/time
+    let effectiveTimeoutMs = fn.timeoutMs;
+    let effectiveMemoryLimit = fn.memoryLimit;
+
+    const matchedEndpoint = await prisma.functionEndpoint.findFirst({
+      where: { serviceId: id, routePath: cleanPath },
+    });
+    if (matchedEndpoint) {
+      const epMetaRaw = await redisClient.hget(`fn:endpoint:meta:${id}`, matchedEndpoint.id).catch(() => null);
+      if (epMetaRaw) {
+        try {
+          const epMeta = JSON.parse(epMetaRaw);
+          if (epMeta.timeoutMs) effectiveTimeoutMs = epMeta.timeoutMs;
+          else if (epMeta.timeoutSeconds) effectiveTimeoutMs = epMeta.timeoutSeconds * 1000;
+          if (epMeta.memoryLimit) effectiveMemoryLimit = epMeta.memoryLimit;
+        } catch {}
+      }
+    }
+
     const testPayload = {
       serviceId: fn.id,
       slug: fn.slug,
       version: activeDep.version,
       bundlePath: activeDep.bundlePath,
-      routePath: input.path || "/",
+      routePath: testPath,
       method: input.method || "POST",
       headers: input.headers || {},
       query: input.query || {},
       body: input.body || {},
       clientIp: request.ip || "127.0.0.1",
-      timeoutMs: fn.timeoutMs,
-      memoryLimit: fn.memoryLimit,
+      timeoutMs: effectiveTimeoutMs,
+      memoryLimit: effectiveMemoryLimit,
       envVars: decryptedEnv,
     };
 
-    const res = await callRuntime("/invoke", testPayload, (fn.timeoutMs || 10000) + 5000);
+    const res = await callRuntime("/invoke", testPayload, (effectiveTimeoutMs || 10000) + 5000);
 
     let parsedData: any = res?.body;
     try {
@@ -707,6 +735,16 @@ export async function functionRoutes(fastify: FastifyInstance) {
         timestamp: new Date().toISOString(),
       })
     ).catch(() => {});
+
+    // Broadcast test console invocation into Live Logs stream
+    const testLogMsg = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: formattedResult.statusCode >= 400 ? "ERROR" : "INFO",
+      message: `[TEST CONSOLE] ${testPayload.method} ${testPayload.routePath} -> ${formattedResult.statusCode} (${formattedResult.durationMs}ms, ${formattedResult.memoryUsageMb}MB, ${effectiveMemoryLimit}MB RAM limit)`,
+    });
+    redisClient.publish(`fn:logs:${fn.id}`, testLogMsg).catch(() => {});
+    redisClient.rpush(`fn:logs:history:${fn.id}`, testLogMsg).catch(() => {});
+    redisClient.ltrim(`fn:logs:history:${fn.id}`, -1000, -1).catch(() => {});
 
     return formattedResult;
   });
@@ -835,6 +873,14 @@ export async function functionRoutes(fastify: FastifyInstance) {
     reply.raw.setHeader("Connection", "keep-alive");
     reply.raw.setHeader("Access-Control-Allow-Origin", "*");
 
+    // Send immediate initial handshake event so frontend terminal confirms connection
+    const connectEvent = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "SYSTEM",
+      message: "⚡ Connected to real-time function log stream",
+    });
+    reply.raw.write(`data: ${connectEvent}\n\n`);
+
     // 1. Replay past 100 log lines from Redis list
     const history = await redisClient.lrange(`fn:logs:history:${id}`, -100, -1);
     for (const item of history) {
@@ -882,26 +928,67 @@ export async function functionRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // POST /api/functions/:id/logs/ping - Emit test ping into live logs stream
+  fastify.post("/:id/logs/ping", async (request) => {
+    const { id } = request.params as { id: string };
+    const pingEntry = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "INFO",
+      message: "📡 Stream test ping received from dashboard console",
+    });
+    await redisClient.publish(`fn:logs:${id}`, pingEntry).catch(() => {});
+    await redisClient.rpush(`fn:logs:history:${id}`, pingEntry).catch(() => {});
+    return { success: true, message: "Ping logged to stream" };
+  });
+
   // ─── Endpoints / Sub-Functions Management ──────────────────────────────────
 
-  // GET /api/functions/:id/endpoints - List all functions in this service
+  // GET /api/functions/:id/endpoints - List all functions in this service with custom compute limits
   fastify.get("/:id/endpoints", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
 
     const fn = await prisma.functionService.findFirst({
       where: role === "ADMIN" ? { id } : { id, userId },
-      select: { id: true },
+      select: { id: true, memoryLimit: true, timeoutMs: true },
     });
     if (!fn) return reply.code(404).send({ error: "Function Service not found" });
 
-    return prisma.functionEndpoint.findMany({
-      where: { serviceId: id },
-      orderBy: { createdAt: "asc" },
+    const [endpoints, allMetaRaw] = await Promise.all([
+      prisma.functionEndpoint.findMany({
+        where: { serviceId: id },
+        orderBy: { createdAt: "asc" },
+      }),
+      redisClient.hgetall(`fn:endpoint:meta:${id}`).catch(() => ({} as Record<string, string>)),
+    ]);
+
+    const defaultTimeoutSec = Math.round(fn.timeoutMs / 1000);
+
+    return endpoints.map((ep) => {
+      let customMemory = fn.memoryLimit;
+      let customTimeoutSec = defaultTimeoutSec;
+      let customTimeoutMs = fn.timeoutMs;
+
+      if (allMetaRaw && allMetaRaw[ep.id]) {
+        try {
+          const meta = JSON.parse(allMetaRaw[ep.id]);
+          if (meta.memoryLimit) customMemory = Number(meta.memoryLimit);
+          if (meta.timeoutSeconds) customTimeoutSec = Number(meta.timeoutSeconds);
+          if (meta.timeoutMs) customTimeoutMs = Number(meta.timeoutMs);
+          else customTimeoutMs = customTimeoutSec * 1000;
+        } catch {}
+      }
+
+      return {
+        ...ep,
+        memoryLimit: customMemory,
+        timeoutSeconds: customTimeoutSec,
+        timeoutMs: customTimeoutMs,
+      };
     });
   });
 
-  // POST /api/functions/:id/endpoints - Add a new function endpoint to this service
+  // POST /api/functions/:id/endpoints - Add a new function endpoint with compute limits
   fastify.post("/:id/endpoints", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
@@ -937,10 +1024,25 @@ export async function functionRoutes(fastify: FastifyInstance) {
       },
     });
 
-    return reply.code(201).send(endpoint);
+    const memoryLimit = Number(body.memoryLimit || fn.memoryLimit);
+    const timeoutSeconds = Number(body.timeoutSeconds || Math.round((body.timeoutMs || fn.timeoutMs) / 1000));
+    const timeoutMs = Number(body.timeoutMs || timeoutSeconds * 1000);
+
+    await redisClient.hset(
+      `fn:endpoint:meta:${id}`,
+      endpoint.id,
+      JSON.stringify({ memoryLimit, timeoutSeconds, timeoutMs })
+    ).catch(() => {});
+
+    return reply.code(201).send({
+      ...endpoint,
+      memoryLimit,
+      timeoutSeconds,
+      timeoutMs,
+    });
   });
 
-  // PUT /api/functions/:id/endpoints/:endpointId - Update a function endpoint
+  // PUT /api/functions/:id/endpoints/:endpointId - Update a function endpoint & compute limits
   fastify.put("/:id/endpoints/:endpointId", async (request, reply) => {
     const { id, endpointId } = request.params as { id: string; endpointId: string };
     const { userId, role } = request.user;
@@ -966,7 +1068,28 @@ export async function functionRoutes(fastify: FastifyInstance) {
       },
     });
 
-    return updated;
+    // Update endpoint compute & time metadata in Redis
+    const currentMetaRaw = await redisClient.hget(`fn:endpoint:meta:${id}`, endpointId).catch(() => null);
+    const currentMeta = currentMetaRaw ? JSON.parse(currentMetaRaw) : {};
+
+    const memoryLimit = Number(body.memoryLimit || currentMeta.memoryLimit || fn.memoryLimit);
+    const timeoutSeconds = Number(
+      body.timeoutSeconds || currentMeta.timeoutSeconds || Math.round((body.timeoutMs || currentMeta.timeoutMs || fn.timeoutMs) / 1000)
+    );
+    const timeoutMs = Number(body.timeoutMs || timeoutSeconds * 1000);
+
+    await redisClient.hset(
+      `fn:endpoint:meta:${id}`,
+      endpointId,
+      JSON.stringify({ memoryLimit, timeoutSeconds, timeoutMs })
+    ).catch(() => {});
+
+    return {
+      ...updated,
+      memoryLimit,
+      timeoutSeconds,
+      timeoutMs,
+    };
   });
 
   // DELETE /api/functions/:id/endpoints/:endpointId - Remove a function endpoint
@@ -982,6 +1105,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
     await prisma.functionEndpoint.delete({
       where: { id: endpointId },
     });
+    await redisClient.hdel(`fn:endpoint:meta:${id}`, endpointId).catch(() => {});
 
     return { success: true, message: "Endpoint removed from service." };
   });
