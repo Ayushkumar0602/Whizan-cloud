@@ -885,4 +885,177 @@ export const apiKeysApi = {
     }),
 };
 
+// ─── Edge Functions API ──────────────────────────────────────────────────────
+
+export interface FunctionDeployment {
+  id: string;
+  version: number;
+  status: "PENDING" | "BUILDING" | "READY" | "FAILED";
+  bundlePath?: string;
+  bundleSize?: number;
+  buildDurationMs?: number;
+  buildLogs?: string;
+  createdAt: string;
+}
+
+export interface FunctionApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  rateLimitRpm: number;
+  ipWhitelist: string[];
+  lastUsedAt: string | null;
+  createdAt: string;
+  key?: string; // Only present when newly created
+}
+
+export interface FunctionEndpointItem {
+  id: string;
+  path: string;
+  method: string;
+}
+
+export interface FunctionEnvItem {
+  id: string;
+  key: string;
+  isSecret: boolean;
+  createdAt: string;
+}
+
+export interface FunctionServiceItem {
+  id: string;
+  name: string;
+  slug: string;
+  runtime: "EDGE_TYPESCRIPT" | "NODEJS_20" | "PYTHON_311" | "GOLANG_122";
+  entryFile: string;
+  timeoutMs: number;
+  memoryLimit: number;
+  minInstances: number;
+  maxConcurrency: number;
+  isPublic: boolean;
+  corsOrigins: string[];
+  createdAt: string;
+  updatedAt: string;
+  deployments: FunctionDeployment[];
+  endpoints: FunctionEndpointItem[];
+  apiKeys: FunctionApiKeyItem[];
+  envVariables?: FunctionEnvItem[];
+  _count?: {
+    invocations: number;
+  };
+  stats?: {
+    totalInvocations: number;
+    last24hInvocations: number;
+    avgDurationMs: number;
+    errorCount: number;
+  };
+}
+
+export interface FunctionTestResult {
+  status: number;
+  statusText?: string;
+  headers: Record<string, string>;
+  data: any;
+  durationMs: number;
+  memoryUsageMb: number;
+  logs?: Array<{ level: string; message: string; timestamp: number }>;
+}
+
+export const functionsApi = {
+  list: () => request<FunctionServiceItem[]>("/api/functions"),
+  
+  get: (id: string) => request<FunctionServiceItem>(`/api/functions/${id}`),
+
+  create: (data: {
+    name: string;
+    slug: string;
+    runtime?: string;
+    entryFile?: string;
+    timeoutMs?: number;
+    memoryLimit?: number;
+    minInstances?: number;
+    maxConcurrency?: number;
+    isPublic?: boolean;
+    corsOrigins?: string[];
+    initialCode?: string;
+    envVars?: Record<string, string>;
+  }) =>
+    request<{ functionService: FunctionServiceItem; initialApiKey?: { id: string; key: string; prefix: string; name: string } }>(
+      "/api/functions",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  update: (
+    id: string,
+    data: Partial<{
+      name: string;
+      timeoutMs: number;
+      memoryLimit: number;
+      minInstances: number;
+      maxConcurrency: number;
+      isPublic: boolean;
+      corsOrigins: string[];
+      envVars: Record<string, string>;
+    }>
+  ) =>
+    request<{ success: boolean; service: FunctionServiceItem }>(`/api/functions/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  delete: (id: string) =>
+    request<{ success: boolean; message: string }>(`/api/functions/${id}`, {
+      method: "DELETE",
+    }),
+
+  deploy: (id: string, code: string) =>
+    request<{
+      success: boolean;
+      deployment: FunctionDeployment;
+      stats?: { bundleSize: number; durationMs: number };
+    }>(`/api/functions/${id}/deploy`, {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  createApiKey: (
+    id: string,
+    data: {
+      name?: string;
+      scopes?: string[];
+      rateLimitRpm?: number;
+      ipWhitelist?: string[];
+    }
+  ) =>
+    request<{ success: boolean; apiKey: FunctionApiKeyItem }>(`/api/functions/${id}/api-keys`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteApiKey: (id: string, keyId: string) =>
+    request<{ success: boolean }>(`/api/functions/${id}/api-keys/${keyId}`, {
+      method: "DELETE",
+    }),
+
+  test: (
+    id: string,
+    params: {
+      path?: string;
+      method?: string;
+      headers?: Record<string, string>;
+      body?: any;
+    }
+  ) =>
+    request<FunctionTestResult>(`/api/functions/${id}/test`, {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  getLogsStreamUrl: (id: string) => `${getApiBase()}/api/functions/${id}/logs`,
+};
+
 

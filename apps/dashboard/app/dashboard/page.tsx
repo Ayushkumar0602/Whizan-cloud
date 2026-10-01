@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { projects, services, type ProjectWithLatestDeploy, type ServiceWithLatestDeploy } from "@/lib/api";
-import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
+import { projects, services, functionsApi, type ProjectWithLatestDeploy, type ServiceWithLatestDeploy, type FunctionServiceItem } from "@/lib/api";
+import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl, getFunctionIngressUrl } from "@/lib/domains";
 import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
@@ -29,6 +29,7 @@ export default function ConsolePage() {
   const { user } = useAuth();
   const [frontendList, setFrontendList] = useState<ProjectWithLatestDeploy[]>([]);
   const [backendList, setBackendList] = useState<ServiceWithLatestDeploy[]>([]);
+  const [functionList, setFunctionList] = useState<FunctionServiceItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const firstName = (user?.name || user?.email || "Developer").split(" ")[0];
@@ -38,10 +39,12 @@ export default function ConsolePage() {
     Promise.all([
       projects.list().catch(() => []),
       services.list().catch(() => []),
+      functionsApi.list().catch(() => []),
     ])
-      .then(([fList, bList]) => {
+      .then(([fList, bList, fnList]) => {
         setFrontendList(fList);
         setBackendList(bList);
+        setFunctionList(fnList);
       })
       .catch(() => toast.error("Could not load cloud assets"))
       .finally(() => setLoading(false));
@@ -83,6 +86,22 @@ export default function ConsolePage() {
           <Link href="/dashboard/backend/new" className="btn btn-secondary btn-lg" id="deploy-backend-btn">
             <Server size={16} /> Deploy Service
           </Link>
+          <Link
+            href="/dashboard/functions/new"
+            className="btn btn-lg"
+            id="deploy-function-btn"
+            style={{
+              background: "var(--accent-glow)",
+              color: "var(--accent)",
+              border: "1px solid var(--accent)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontWeight: 700,
+            }}
+          >
+            <Zap size={16} /> New Edge Function
+          </Link>
         </div>
       </div>
 
@@ -111,11 +130,12 @@ export default function ConsolePage() {
 
         <div className="stat-card">
           <div className="stat-label">
-            <GitPullRequest size={14} className="text-accent" /> Total Deployments
+            <Zap size={14} style={{ color: "var(--accent)" }} /> Edge Functions
           </div>
-          <div className="stat-value">{totalDeployments}</div>
-          <div className="stat-sub">
-            Automatic builds & cutovers
+          <div className="stat-value">{functionList.length}</div>
+          <div className="stat-sub" style={{ color: "#10b981" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+            Sub-5ms Serverless V8
           </div>
         </div>
 
