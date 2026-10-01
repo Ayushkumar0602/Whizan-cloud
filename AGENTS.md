@@ -86,9 +86,20 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
      - For projects: Returns page views, unique visitors, bandwidth transferred, and daily trends.
      - For services: Returns real-time CPU/memory utilization, load status, and recent performance history.
 
-9. **Serverless Edge Functions (`whizan_create_function_service`, `whizan_deploy_function`, `whizan_invoke_function`)**:
-   - **When to Use**: For event-driven APIs, webhooks, cron jobs, micro-endpoints, and background functions where running a 24/7 container is inefficient.
-   - **Fast Serving & Zero Host Ports**: Edge functions execute on the dual-tier V8/Worker Thread runtime with sub-5ms cold starts and 0 host port allocation.
-   - **Authentication**: By default, functions require a dedicated Function API Key (`x-api-key: whz_fn_live_...`). Public webhooks can set `isPublic: true`.
-   - **Invocation Format**: Always invoke via `http://<slug>.fn.20.2.136.11.nip.io/<path>` or `/fn/<slug>/<path>`. Verify responses using `whizan_invoke_function`.
+9. **Serverless Edge Functions (`whizan_create_function_service`, `whizan_deploy_function`, `whizan_configure_function_endpoint`, `whizan_invoke_function`)**:
+   - **When to Use**: For event-driven APIs, webhooks, micro-endpoints, database mutations, and background functions where running a 24/7 Docker container is inefficient. Edge functions execute on an isolated V8 runtime with sub-5ms cold starts and 0 host Docker ports.
+   - **MANDATORY Security Categorization Protocol**:
+     - Agents **MUST ALWAYS** evaluate and categorize each function service and individual endpoint:
+       1. **Public Webhook (`isPublic: true`)**: Only for third-party webhooks (Stripe, GitHub, Shopify) or open health/status checks that cannot send custom headers.
+       2. **Specific / Protected (`isPublic: false` - DEFAULT & MANDATORY FOR SENSITIVE CODE)**: For user data, authentication, database CRUD, AI/LLM pipelines, payments, and internal logic.
+     - For protected functions, agents **MUST** generate a dedicated Function API Key using `whizan_create_function_api_key` (`whz_fn_live_...`) and test invocations using `apiKey: "whz_fn_live_..."`.
+     - **Granular Endpoint Security**: A single function service can host both public webhooks and protected endpoints. Use `whizan_configure_function_endpoint` or the dashboard to toggle `isPublic: true` on webhooks while keeping sensitive routes `isPublic: false`.
+   - **Zero-State Disaster Recovery & VM Reboot Self-Healing**:
+     - Whizan Edge Functions use a 3-tier self-healing architecture:
+       * *Tier 1 (Disk)*: Compiled bundle in `/opt/whizan/apps/function-runtime/functions-storage/<id>/v<ver>/bundle.mjs`.
+       * *Tier 2 (Redis)*: In-memory source cache `fn:source:<id>:v<ver>`.
+       * *Tier 3 (PostgreSQL)*: Persistent source code in Render Control Plane database (`FunctionDeployment.source_code`).
+     - **Edge Case: VM Turn-Off & Reboot**: If the Azure VM restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
+   - **Invocation Format**: Always invoke via `http://<slug>.fn.20.2.136.11.nip.io/<path>`. Verify responses using `whizan_invoke_function`.
+
 

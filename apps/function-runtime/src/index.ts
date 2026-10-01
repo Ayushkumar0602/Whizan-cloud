@@ -21,6 +21,81 @@ const logger = new FunctionLogger(redis);
 const sandbox = new FunctionSandbox(logger);
 const pool = new FunctionPool(sandbox, redis);
 const bundler = new FunctionBundler();
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || "https://whizan-cloud-service.onrender.com";
+
+/**
+ * Ensures an executable bundle is present on disk for the given function.
+ * Self-healing tiers:
+ * Tier 1: Check existing bundle on local disk (/opt/whizan/apps/function-runtime/functions-storage/...)
+ * Tier 2: Check Redis raw source code cache (fn:source:<serviceId>:v<version>)
+ * Tier 3: Query Control Plane API to fetch persistent source code directly from PostgreSQL
+ * Compiles on-the-fly via esbuild, writes to disk, and repopulates Redis cache.
+ */
+async function ensureBundle(serviceId: string, slug: string, version: number, initialBundlePath?: string): Promise<string | null> {
+  let bundlePath = initialBundlePath;
+  if (!bundlePath) {
+    const rawMeta = await redis.get(`fn:service:${slug}`).catch(() => null);
+    if (rawMeta) {
+      try {
+        const parsed = JSON.parse(rawMeta);
+        bundlePath = parsed.bundlePath;
+      } catch {}
+    }
+  }
+
+  if (bundlePath && fs.existsSync(bundlePath)) {
+    return bundlePath;
+  }
+
+  // Tier 2: Check Redis source cache
+  let rawCode = await redis.get(`fn:source:${serviceId}:v${version}`).catch(() => null);
+
+  // Tier 3: Disaster recovery fallback - query Control Plane API for persistent PostgreSQL source code
+  if (!rawCode) {
+    try {
+      console.log(`[FunctionRuntime] Bundle missing on disk & Redis for ${slug} (v${version}). Fetching persistent source from control plane...`);
+      const res = await fetch(`${CONTROL_PLANE_URL}/api/functions/${serviceId}/code`);
+      if (res.ok) {
+        const data = (await res.json()) as any;
+        if (data && typeof data.sourceCode === "string") {
+          const fetchedCode: string = data.sourceCode;
+          rawCode = fetchedCode;
+          // Re-cache source in Redis (7 days TTL)
+          await redis.set(`fn:source:${serviceId}:v${version}`, fetchedCode, "EX", 86400 * 7).catch(() => {});
+          console.log(`[FunctionRuntime] Successfully restored source code from control plane for ${slug} (${fetchedCode.length} bytes)`);
+        }
+      } else {
+        console.warn(`[FunctionRuntime] Control plane responded with HTTP ${res.status} when fetching code for ${serviceId}`);
+      }
+    } catch (fetchErr: any) {
+      console.warn(`[FunctionRuntime] Control plane source fetch failed:`, fetchErr.message);
+    }
+  }
+
+  // Compile bundle on-the-fly if source code is available
+  if (rawCode) {
+    try {
+      console.log(`[FunctionRuntime] Compiling on-the-fly bundle for ${slug} (v${version})...`);
+      const bundled = await bundler.bundleCode(serviceId, version, { rawCode });
+      bundlePath = bundled.bundlePath;
+
+      // Update Redis service meta with new bundlePath
+      const currentMeta = await redis.get(`fn:service:${slug}`).catch(() => null);
+      if (currentMeta) {
+        try {
+          const parsed = JSON.parse(currentMeta);
+          parsed.bundlePath = bundlePath;
+          await redis.set(`fn:service:${slug}`, JSON.stringify(parsed));
+        } catch {}
+      }
+      return bundlePath;
+    } catch (compileErr: any) {
+      console.error(`[FunctionRuntime] On-the-fly bundle compilation failed:`, compileErr.message);
+    }
+  }
+
+  return null;
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
@@ -67,40 +142,8 @@ const server = http.createServer(async (req, res) => {
         return sendJson(400, { error: "Missing required fields: serviceId and slug" });
       }
 
-      let bundlePath = invocation.bundlePath;
       const version = invocation.version || 1;
-
-      // If bundlePath wasn't provided directly, resolve from Redis or disk
-      if (!bundlePath) {
-        const rawMeta = await redis.get(`fn:service:${invocation.slug}`);
-        if (rawMeta) {
-          const parsed = JSON.parse(rawMeta);
-          bundlePath = parsed.bundlePath;
-        }
-      }
-
-      // If bundlePath is missing or doesn't exist on disk, attempt on-the-fly bundling from Redis source!
-      if (!bundlePath || !fs.existsSync(bundlePath)) {
-        const rawCode = await redis.get(`fn:source:${invocation.serviceId}:v${version}`);
-        if (rawCode) {
-          console.log(`[FunctionRuntime] On-the-fly bundling for ${invocation.slug} (v${version})...`);
-          try {
-            const bundled = await bundler.bundleCode(invocation.serviceId, version, { rawCode });
-            bundlePath = bundled.bundlePath;
-            // Update Redis service meta with new bundlePath
-            const currentMeta = await redis.get(`fn:service:${invocation.slug}`).catch(() => null);
-            if (currentMeta) {
-              try {
-                const parsed = JSON.parse(currentMeta);
-                parsed.bundlePath = bundlePath;
-                await redis.set(`fn:service:${invocation.slug}`, JSON.stringify(parsed));
-              } catch {}
-            }
-          } catch (compileErr: any) {
-            console.error(`[FunctionRuntime] On-the-fly bundling failed:`, compileErr.message);
-          }
-        }
-      }
+      const bundlePath = await ensureBundle(invocation.serviceId, invocation.slug, version, invocation.bundlePath);
 
       if (!bundlePath || !fs.existsSync(bundlePath)) {
         return sendJson(404, {
@@ -208,35 +251,8 @@ redisSub.on("message", async (channel: string, message: string) => {
       const { requestId, invocation } = payload;
       if (!requestId || !invocation?.serviceId || !invocation?.slug) return;
       try {
-        let bundlePath = invocation.bundlePath;
         const version = invocation.version || 1;
-
-        if (!bundlePath) {
-          const rawMeta = await redis.get(`fn:service:${invocation.slug}`);
-          if (rawMeta) {
-            try {
-              const parsed = JSON.parse(rawMeta);
-              bundlePath = parsed.bundlePath;
-            } catch {}
-          }
-        }
-
-        if (!bundlePath || !fs.existsSync(bundlePath)) {
-          const rawCode = await redis.get(`fn:source:${invocation.serviceId}:v${version}`);
-          if (rawCode) {
-            console.log(`[FunctionRuntime Redis RPC] On-the-fly bundling for ${invocation.slug} (v${version})...`);
-            const bundled = await bundler.bundleCode(invocation.serviceId, version, { rawCode });
-            bundlePath = bundled.bundlePath;
-            const currentMeta = await redis.get(`fn:service:${invocation.slug}`).catch(() => null);
-            if (currentMeta) {
-              try {
-                const parsed = JSON.parse(currentMeta);
-                parsed.bundlePath = bundlePath;
-                await redis.set(`fn:service:${invocation.slug}`, JSON.stringify(parsed));
-              } catch {}
-            }
-          }
-        }
+        const bundlePath = await ensureBundle(invocation.serviceId, invocation.slug, version, invocation.bundlePath);
 
         if (!bundlePath || !fs.existsSync(bundlePath)) {
           await redis.publish(`fn:rpc:response:${requestId}`, JSON.stringify({

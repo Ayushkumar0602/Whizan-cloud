@@ -388,6 +388,20 @@ export default function FunctionDetailPage() {
     }
   };
 
+  // Quick 1-click toggle between Public Webhook and API Key Protected
+  const handleToggleEndpointPublic = async (ep: FunctionEndpointItem) => {
+    try {
+      const nextPublic = !ep.isPublic;
+      await functionsApi.updateEndpoint(functionId, ep.id, {
+        isPublic: nextPublic,
+      });
+      toast.success(`Endpoint '${ep.name}' set to ${nextPublic ? "Public Webhook" : "API Key Protected"}`);
+      fetchService();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update endpoint security");
+    }
+  };
+
   // Delete Endpoint
   const handleDeleteEndpoint = async (endpointId: string, name: string) => {
     if (!confirm(`Delete function '${name}' from this service?`)) return;
@@ -822,18 +836,26 @@ export default function FunctionDetailPage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
                     <strong style={{ fontSize: "0.9rem" }}>{ep.name}</strong>
-                    <span
+                    <button
+                      onClick={() => handleToggleEndpointPublic(ep)}
                       style={{
                         fontSize: "0.72rem",
                         padding: "0.15rem 0.45rem",
                         borderRadius: 4,
-                        background: ep.isPublic ? "rgba(16, 185, 129, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                        background: ep.isPublic ? "rgba(16, 185, 129, 0.12)" : "rgba(99, 102, 241, 0.12)",
                         color: ep.isPublic ? "#10b981" : "var(--accent)",
+                        border: `1px solid ${ep.isPublic ? "rgba(16, 185, 129, 0.3)" : "rgba(99, 102, 241, 0.3)"}`,
                         fontWeight: 700,
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.25rem",
                       }}
+                      title="Click to toggle Public Webhook vs API Key Protected"
                     >
+                      {ep.isPublic ? <Globe size={10} /> : <Lock size={10} />}
                       {ep.isPublic ? "Public" : "API Key"}
-                    </span>
+                    </button>
                   </div>
                   <div style={{ fontSize: "0.8rem", fontFamily: "monospace", color: "var(--muted)", marginBottom: "0.5rem" }}>
                     {ep.routePath} ({ep.httpMethods.join(", ")})
@@ -973,18 +995,27 @@ export default function FunctionDetailPage() {
                           </span>
                         </td>
                         <td style={{ padding: "0.75rem 0.5rem" }}>
-                          <span
+                          <button
+                            onClick={() => handleToggleEndpointPublic(ep)}
                             style={{
                               fontSize: "0.72rem",
                               fontWeight: 700,
-                              padding: "0.15rem 0.45rem",
-                              borderRadius: 4,
-                              background: ep.isPublic ? "rgba(16, 185, 129, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                              padding: "0.2rem 0.55rem",
+                              borderRadius: 6,
+                              background: ep.isPublic ? "rgba(16, 185, 129, 0.12)" : "rgba(99, 102, 241, 0.12)",
                               color: ep.isPublic ? "#10b981" : "var(--accent)",
+                              border: `1px solid ${ep.isPublic ? "rgba(16, 185, 129, 0.3)" : "rgba(99, 102, 241, 0.3)"}`,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.35rem",
+                              transition: "all 0.15s ease",
                             }}
+                            title="Click to toggle between Public Webhook and API Key Protected"
                           >
+                            {ep.isPublic ? <Globe size={11} /> : <Lock size={11} />}
                             {ep.isPublic ? "Public Webhook" : "API Key Protected"}
-                          </span>
+                          </button>
                         </td>
                         <td style={{ padding: "0.75rem 0.5rem", textAlign: "right" }}>
                           <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
@@ -2034,14 +2065,52 @@ export default function FunctionDetailPage() {
               </div>
 
               <div style={{ marginBottom: "1.25rem" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={endpointForm.isPublic}
-                    onChange={(e) => setEndpointForm({ ...endpointForm, isPublic: e.target.checked })}
-                  />
-                  <span>Public Webhook (No API key required for this function)</span>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem" }}>
+                  Security & Access Policy
                 </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <div
+                    onClick={() => setEndpointForm({ ...endpointForm, isPublic: false })}
+                    style={{
+                      border: `1.5px solid ${!endpointForm.isPublic ? "var(--accent)" : "var(--border)"}`,
+                      background: !endpointForm.isPublic ? "var(--accent-glow)" : "var(--bg-inset)",
+                      padding: "0.75rem",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 600, fontSize: "0.85rem", color: !endpointForm.isPublic ? "var(--accent)" : "inherit" }}>
+                      <Lock size={14} /> API Key Protected
+                    </div>
+                    <p style={{ fontSize: "0.72rem", color: "var(--muted)", margin: 0 }}>
+                      Requires <code>x-api-key</code>. Recommended for internal & sensitive APIs.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setEndpointForm({ ...endpointForm, isPublic: true })}
+                    style={{
+                      border: `1.5px solid ${endpointForm.isPublic ? "#10b981" : "var(--border)"}`,
+                      background: endpointForm.isPublic ? "rgba(16, 185, 129, 0.08)" : "var(--bg-inset)",
+                      padding: "0.75rem",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 600, fontSize: "0.85rem", color: endpointForm.isPublic ? "#10b981" : "inherit" }}>
+                      <Globe size={14} /> Public Webhook
+                    </div>
+                    <p style={{ fontSize: "0.72rem", color: "var(--muted)", margin: 0 }}>
+                      Publicly callable without key. Ideal for webhooks & public APIs.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
@@ -2127,14 +2196,52 @@ export default function FunctionDetailPage() {
               </div>
 
               <div style={{ marginBottom: "1.25rem" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.isPublic}
-                    onChange={(e) => setEditForm({ ...editForm, isPublic: e.target.checked })}
-                  />
-                  <span>Public Webhook (No API key required for this function)</span>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem" }}>
+                  Security & Access Policy
                 </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                  <div
+                    onClick={() => setEditForm({ ...editForm, isPublic: false })}
+                    style={{
+                      border: `1.5px solid ${!editForm.isPublic ? "var(--accent)" : "var(--border)"}`,
+                      background: !editForm.isPublic ? "var(--accent-glow)" : "var(--bg-inset)",
+                      padding: "0.75rem",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 600, fontSize: "0.85rem", color: !editForm.isPublic ? "var(--accent)" : "inherit" }}>
+                      <Lock size={14} /> API Key Protected
+                    </div>
+                    <p style={{ fontSize: "0.72rem", color: "var(--muted)", margin: 0 }}>
+                      Requires <code>x-api-key</code>. Recommended for internal & sensitive APIs.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setEditForm({ ...editForm, isPublic: true })}
+                    style={{
+                      border: `1.5px solid ${editForm.isPublic ? "#10b981" : "var(--border)"}`,
+                      background: editForm.isPublic ? "rgba(16, 185, 129, 0.08)" : "var(--bg-inset)",
+                      padding: "0.75rem",
+                      borderRadius: 8,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontWeight: 600, fontSize: "0.85rem", color: editForm.isPublic ? "#10b981" : "inherit" }}>
+                      <Globe size={14} /> Public Webhook
+                    </div>
+                    <p style={{ fontSize: "0.72rem", color: "var(--muted)", margin: 0 }}>
+                      Publicly callable without key. Ideal for webhooks & public APIs.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>

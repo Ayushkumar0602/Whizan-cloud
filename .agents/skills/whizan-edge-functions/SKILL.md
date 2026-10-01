@@ -102,14 +102,41 @@ Verify:
 
 ---
 
-## 🛡️ 3. Critical Edge Cases & Failure Recovery
+## 🔒 3. Mandatory Security Categorization Protocol
 
-1. **VM Reboot / Redis Cache Flushing:**
-   - Edge Router automatically invokes internal API fallback (`/api/functions/internal/resolve/:slug`) on cache miss.
-   - On VM restart, `rehydrateEdgeFunctions()` scans PostgreSQL and re-populates all active function routing metadata and API key hashes into Redis in under 50ms.
-2. **Infinite Loops & CPU Runaways:**
-   - The runtime enforces hard `AbortController` cancellation at `timeoutMs`. Requests that exceed the timeout immediately return HTTP `504 Gateway Timeout`.
+Agents **MUST ALWAYS** classify functions and endpoints into one of two security models:
+
+### Model A: Public Webhook (`isPublic: true`)
+- **Use Cases**: External webhook ingestion (Stripe, PayPal, GitHub, Shopify, Clerk) and unauthenticated health check endpoints (`/health`, `/status`, `/ping`).
+- **Behavior**: The Edge Router allows direct HTTP calls without requiring `x-api-key` or `Authorization` headers.
+- **Rule**: ONLY mark an endpoint as public if it is intentionally meant to be reached by arbitrary clients or third parties that cannot send a custom `x-api-key`.
+
+### Model B: Specific / API Key Protected (`isPublic: false` - DEFAULT & MANDATORY)
+- **Use Cases**: User authentication, database mutations, internal microservices, LLM/AI inference pipelines, payment processing, file conversions, and private tools.
+- **Behavior**: The Edge Router mandates a valid Function API Key (`x-api-key: whz_fn_live_...` or `Authorization: Bearer <key>`). Missing or invalid keys are immediately rejected with HTTP `401 UNAUTHORIZED`.
+- **Key Generation**: Use `whizan_create_function_api_key` to generate production keys with rate limiting (RPM) and IP whitelisting.
+
+### Hybrid Granular Security in a Single Service
+A single service can host both public webhooks and protected endpoints!
+- Use `whizan_configure_function_endpoint` to set:
+  * `/webhook/stripe` -> `isPublic: true`
+  * `/courses` -> `isPublic: false`
+  * `/processPdf` -> `isPublic: false`
+
+---
+
+## 🛡️ 4. Critical Edge Cases & Disaster Recovery
+
+1. **VM Turn-Off & Reboot (Zero-State Self-Healing):**
+   - **Scenario**: The Azure VM host is powered off, restarted, or replaces its ephemeral disk (`/opt/whizan/apps/function-runtime/functions-storage` is empty).
+   - **Resolution**: Whizan Edge Functions feature a 3-tier self-healing fallback:
+     1. *Tier 1 (Local Disk)*: Checks for precompiled ESM bundle.
+     2. *Tier 2 (Upstash Redis)*: Checks `fn:source:<id>:v<ver>` source cache.
+     3. *Tier 3 (PostgreSQL Source of Truth)*: The Function Runtime automatically queries Render Control Plane (`GET /api/functions/:id/code`), downloads persistent source code from PostgreSQL, compiles the bundle on-the-fly with esbuild, caches it in Redis, and executes the request with 200 OK!
+   - **Zero Human Intervention**: No redeployments, no file restores, and no manual SSH commands required.
+2. **Infinite Loops & Timeout Enforcements:**
+   - The runtime enforces hard V8 isolate cancellation at `timeoutMs` (or endpoint-specific `timeoutSeconds`). Requests exceeding limits return HTTP `504 Gateway Timeout`.
 3. **Database Connection Flooding:**
-   - When connecting to PostgreSQL from functions, always use the managed **PgBouncer** connection string (`poolerPort`, port 6543) to multiplex hundreds of function invocations across small connection pools.
-4. **Secret Leaks:**
-   - Secret values defined in `envVars` are automatically masked as `[REDACTED]` in stdout/stderr logs.
+   - Always connect via Supabase/PgBouncer connection pool (`poolerPort: 6543`) to multiplex hundreds of serverless executions across small connection pools.
+4. **Secret Leaks & Sanitization:**
+   - All environment variables are encrypted at rest with AES-256-GCM. Secret values in `envVars` are automatically masked as `[REDACTED]` in stdout/stderr logs.
