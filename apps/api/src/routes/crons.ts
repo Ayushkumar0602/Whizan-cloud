@@ -430,6 +430,100 @@ export async function cronRoutes(app: FastifyInstance) {
     });
   });
 
+  // ─── 9B. DEAD LETTER QUEUE (DLQ) MANAGEMENT ─────────────────────────────────
+  app.get("/:id/dead-letters", { preHandler: [app.authenticate] }, async (request: any, reply) => {
+    const userId = request.user?.userId || request.user?.id;
+    const { id } = request.params;
+
+    const cronJob = await prisma.cronJob.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!cronJob) {
+      return reply.code(404).send({ error: "Cron job not found" });
+    }
+
+    const deadLetters = await prisma.cronDeadLetter.findMany({
+      where: { cronJobId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    return reply.send({ ok: true, deadLetters });
+  });
+
+  app.post("/:id/dead-letters/:dlqId/replay", { preHandler: [app.authenticate] }, async (request: any, reply) => {
+    const userId = request.user?.userId || request.user?.id;
+    const { id, dlqId } = request.params;
+
+    const cronJob = await prisma.cronJob.findFirst({
+      where: { id, userId },
+    });
+    if (!cronJob) {
+      return reply.code(404).send({ error: "Cron job not found" });
+    }
+
+    const dlq = await prisma.cronDeadLetter.findFirst({
+      where: { id: dlqId, cronJobId: id },
+    });
+    if (!dlq) {
+      return reply.code(404).send({ error: "Dead letter record not found" });
+    }
+
+    const execution = await prisma.cronExecution.create({
+      data: {
+        cronJobId: cronJob.id,
+        triggerType: "RETRY",
+        status: "SCHEDULED",
+      },
+    });
+
+    await prisma.cronDeadLetter.update({
+      where: { id: dlqId },
+      data: {
+        status: "REPLAYED",
+        resolvedAt: new Date(),
+        retryCount: { increment: 1 },
+      },
+    });
+
+    await redisClient.xadd(
+      "cron:dispatch:stream",
+      "*",
+      "jobId",
+      cronJob.id,
+      "executionId",
+      execution.id,
+      "triggerType",
+      "RETRY"
+    );
+
+    return reply.send({ ok: true, message: "Dead letter replayed successfully", executionId: execution.id });
+  });
+
+  app.post("/:id/dead-letters/:dlqId/discard", { preHandler: [app.authenticate] }, async (request: any, reply) => {
+    const userId = request.user?.userId || request.user?.id;
+    const { id, dlqId } = request.params;
+
+    const cronJob = await prisma.cronJob.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!cronJob) {
+      return reply.code(404).send({ error: "Cron job not found" });
+    }
+
+    await prisma.cronDeadLetter.update({
+      where: { id: dlqId },
+      data: {
+        status: "DISCARDED",
+        resolvedAt: new Date(),
+      },
+    });
+
+    return reply.send({ ok: true, message: "Dead letter marked as discarded" });
+  });
+
   // ─── 10. SYSTEM DISASTER RECOVERY & VM REBOOT REHYDRATION (Internal) ─────────
   app.get("/sync", async (request: any, reply) => {
     const authHeader = request.headers.authorization;
@@ -520,7 +614,7 @@ export async function cronRoutes(app: FastifyInstance) {
       skipDuplicates: true,
     });
 
-    // Also update parent cron jobs' lastStatus and lastRunAt
+    // Also update parent cron jobs' lastStatus and lastRunAt & record Dead Letters on failure
     for (const exec of executions) {
       await prisma.cronJob.update({
         where: { id: exec.cronJobId },
@@ -529,6 +623,17 @@ export async function cronRoutes(app: FastifyInstance) {
           lastStatus: exec.status || "SUCCESS",
         },
       }).catch(() => {});
+
+      if (exec.status === "FAILED" || exec.status === "TIMED_OUT") {
+        await prisma.cronDeadLetter.create({
+          data: {
+            cronJobId: exec.cronJobId,
+            executionId: exec.id,
+            failureReason: exec.errorMessage || `Process failed with exit code ${exec.exitCode ?? -1}`,
+            status: "UNRESOLVED",
+          },
+        }).catch(() => {});
+      }
     }
 
     return reply.send({ ok: true, inserted: result.count });
