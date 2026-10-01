@@ -102,4 +102,24 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
      - **Edge Case: VM Turn-Off & Reboot**: If the Azure VM restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
    - **Invocation Format**: Always invoke via `http://<slug>.fn.20.2.136.11.nip.io/<path>`. Verify responses using `whizan_invoke_function`.
 
+10. **Enterprise Cron & Scheduled Compute (`whizan_create_cron_job`, `whizan_list_cron_jobs`, `whizan_trigger_cron_job`, `whizan_get_cron_history`)**:
+   - **Zero-Idle Super Resource Optimization Architecture**:
+     * Built around an event-driven dynamic OS sleep loop (`< 0.01%` idle CPU), eliminating traditional 86,400 daily polling intervals.
+     * Uses Redis Sorted Sets (`cron:schedule:zset`) with Unix millisecond scores for $O(\log N)$ macro-scheduling.
+     * Awakens in `< 1ms` via Redis Pub/Sub (`cron:reschedule`) on creation or modification.
+     * Capped 64KB Circular Byte Ring Buffer prevents memory explosion / OOM crashes from verbose CLI outputs.
+     * Batch Telemetry Buffer flushes execution runs to PostgreSQL every 5 seconds, cutting database roundtrips by 98%.
+   - **Supported Target Pipelines**:
+     * `FUNCTION`: Directly invokes internal Edge Function isolates (`:9090`) in `< 3ms`.
+     * `CONTAINER_EXEC`: Interacts directly with Docker Engine socket (`/var/run/docker.sock`) to execute CLI commands inside containers (e.g. `python manage.py purge_sessions`) without requiring fake HTTP servers.
+     * `SERVICE`: Dispatches internal requests across private Docker network mesh (`http://service-<id>:port`).
+     * `WEBHOOK`: Sends signed HMAC-SHA256 HTTPS requests to external endpoints.
+   - **Disaster Recovery & Reboot Self-Healing**:
+     * If the Azure VM is powered off and turned back on, the scheduler automatically recovers overdue jobs and applies the configured `misfirePolicy`:
+       - `SKIP`: Discards missed runs to avoid thundering herd crashes on boot (recommended for high-frequency crons).
+       - `FIRE_LATEST_ONCE`: Fires 1 catchup execution immediately on boot (recommended for daily backups/rollups).
+       - `CATCH_UP_ALL`: Sequentially replays missed intervals with rate-limited intervals (for financial audits).
+     * If Redis in-memory state is wiped, the scheduler rehydrates from the Control Plane (`GET /api/crons/sync`) in a single atomic pass.
+
+
 

@@ -399,6 +399,73 @@ const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "whizan_create_cron_job",
+    description: "Schedules an enterprise background task or recurring job with zero-idle CPU overhead and sub-second precision. Supports Edge Functions, Container Exec CLI, Internal Mesh Services, Web Projects, and Webhooks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human-readable name of the cron job (e.g. 'Daily Database Backup' or 'Midnight Session Cleanup')" },
+        description: { type: "string", description: "Optional description of what the job does" },
+        schedule: { type: "string", description: "Standard 5-part cron expression (e.g. '0 0 * * *' for daily midnight, '*/15 * * * *' for every 15 mins)" },
+        timezone: { type: "string", default: "UTC", description: "IANA Timezone identifier (e.g. 'UTC', 'America/New_York', 'Asia/Kolkata')" },
+        targetType: {
+          type: "string",
+          enum: ["FUNCTION", "CONTAINER_EXEC", "SERVICE", "PROJECT", "WEBHOOK"],
+          description: "Target execution pipeline: FUNCTION (Edge V8 isolate), CONTAINER_EXEC (Direct CLI command in container), SERVICE (Private mesh API), PROJECT (Web app route), or WEBHOOK (Signed HTTPS)",
+        },
+        targetConfig: {
+          type: "object",
+          description: "Configuration for target. Examples:\n- FUNCTION: { serviceId: '...', endpointPath: '/clean', method: 'POST' }\n- CONTAINER_EXEC: { serviceId: '...', command: 'python manage.py purge_sessions' }\n- SERVICE: { serviceId: '...', routePath: '/cron', port: 3000 }\n- WEBHOOK: { url: 'https://api.example.com/tasks' }",
+        },
+        misfirePolicy: {
+          type: "string",
+          enum: ["SKIP", "FIRE_LATEST_ONCE", "CATCH_UP_ALL"],
+          default: "SKIP",
+          description: "Reboot recovery policy if VM was turned off: SKIP (discard missed ticks), FIRE_LATEST_ONCE (fire 1 catchup run on boot), or CATCH_UP_ALL (run all missed intervals)",
+        },
+        concurrencyPolicy: {
+          type: "string",
+          enum: ["FORBID", "ALLOW", "REPLACE", "QUEUE_SERIALIZE"],
+          default: "FORBID",
+          description: "Behavior when next scheduled run arrives while previous run is still executing: FORBID (skip), ALLOW (parallel), REPLACE (abort old and run new)",
+        },
+        timeoutSeconds: { type: "number", default: 300, description: "Maximum execution timeout in seconds (1 to 3600)" },
+      },
+      required: ["name", "schedule", "targetType", "targetConfig"],
+    },
+  },
+  {
+    name: "whizan_list_cron_jobs",
+    description: "Lists all scheduled cron jobs on the account with schedule expression, target type, last run status, next run time, and total executions.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "whizan_trigger_cron_job",
+    description: "Manually triggers an immediate execution of a scheduled cron job (1-click trigger), bypassing schedule delay. Returns the active execution ID.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the cron job to execute immediately" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "whizan_get_cron_history",
+    description: "Fetches recent execution logs and history for a cron job, including duration in ms, exit code, HTTP status, and stdout/stderr output.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the cron job" },
+        limit: { type: "number", default: 10, description: "Number of recent executions to fetch (default: 10)" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────
@@ -1219,6 +1286,97 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: JSON.stringify(functions, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_create_cron_job": {
+        const {
+          name: jobName,
+          description: desc,
+          schedule,
+          timezone,
+          targetType,
+          targetConfig,
+          misfirePolicy,
+          concurrencyPolicy,
+          timeoutSeconds,
+        } = (args || {}) as any;
+
+        const target = {
+          targetType,
+          ...targetConfig,
+        };
+
+        const cronJob = await client.createCronJob({
+          name: jobName,
+          description: desc,
+          schedule,
+          timezone,
+          target,
+          misfirePolicy,
+          concurrencyPolicy,
+          timeoutSeconds,
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  message: `Cron job '${cronJob.name}' created successfully with Zero-Idle Macro-Scheduler!`,
+                  id: cronJob.id,
+                  schedule: cronJob.schedule,
+                  timezone: cronJob.timezone,
+                  targetType: cronJob.targetType,
+                  misfirePolicy: cronJob.misfirePolicy,
+                  concurrencyPolicy: cronJob.concurrencyPolicy,
+                  nextRunAt: cronJob.nextRunAt,
+                  enabled: cronJob.enabled,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case "whizan_list_cron_jobs": {
+        const jobs = await client.listCronJobs();
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(jobs, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_trigger_cron_job": {
+        const { id: jobId } = (args || {}) as any;
+        const res = await client.triggerCronJob(jobId);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(res, null, 2),
+            },
+          ],
+        };
+      }
+
+      case "whizan_get_cron_history": {
+        const { id: jobId, limit } = (args || {}) as any;
+        const history = await client.getCronHistory(jobId, limit || 10);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(history, null, 2),
             },
           ],
         };
