@@ -171,15 +171,41 @@ export class FunctionSandbox {
         const cleanPath = (req.routePath || "/").replace(/^\/+/, "").split("/")[0] || "";
         let selectedHandler = bundle.handler;
 
-        if (cleanPath && bundle.namedExports) {
-          if (typeof bundle.namedExports[cleanPath] === "function") {
-            selectedHandler = bundle.namedExports[cleanPath];
-          } else if (typeof bundle.namedExports[cleanPath]?.handler === "function") {
-            selectedHandler = bundle.namedExports[cleanPath].handler;
+        if (bundle.namedExports) {
+          if (cleanPath) {
+            const camelCasePath = cleanPath.replace(/-([a-z0-9])/g, (_, g) => g.toUpperCase());
+            const snakeCasePath = cleanPath.replace(/-/g, "_");
+
+            const candidate =
+              bundle.namedExports[cleanPath] ||
+              bundle.namedExports[camelCasePath] ||
+              bundle.namedExports[snakeCasePath];
+
+            if (typeof candidate === "function") {
+              selectedHandler = candidate;
+            } else if (typeof candidate?.handler === "function") {
+              selectedHandler = candidate.handler;
+            }
+          } else if (typeof bundle.namedExports[method] === "function") {
+            selectedHandler = bundle.namedExports[method];
           }
         }
 
-        return await selectedHandler(webRequest, context);
+        // Safely project envVars to process.env during execution
+        const previousEnv: Record<string, string | undefined> = {};
+        for (const [k, v] of Object.entries(envVars)) {
+          previousEnv[k] = process.env[k];
+          process.env[k] = v;
+        }
+
+        try {
+          return await selectedHandler(webRequest, context);
+        } finally {
+          for (const [k, oldVal] of Object.entries(previousEnv)) {
+            if (oldVal === undefined) delete process.env[k];
+            else process.env[k] = oldVal;
+          }
+        }
       })();
 
       const timeoutPromise = new Promise<never>((_, reject) => {

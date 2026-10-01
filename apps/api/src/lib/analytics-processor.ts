@@ -91,5 +91,42 @@ export function startAnalyticsProcessor() {
     } catch (err) {
       console.error("[Analytics] Error processing batch:", err);
     }
-  }, 30_000);
+
+    // ── Process Edge Function Invocations ────────────────────────────────────
+    try {
+      const fnBatchSize = 1000;
+      const fnEventsRaw = await redisClient.lrange("fn:invocations:buffer", 0, fnBatchSize - 1);
+      if (fnEventsRaw && fnEventsRaw.length > 0) {
+        const fnInvocations: any[] = [];
+        for (const raw of fnEventsRaw) {
+          try {
+            const ev = JSON.parse(raw);
+            if (ev.serviceId) {
+              fnInvocations.push({
+                serviceId: ev.serviceId,
+                endpoint: ev.endpoint || "/",
+                httpMethod: ev.httpMethod || "GET",
+                statusCode: Number(ev.statusCode) || 200,
+                durationMs: Number(ev.durationMs) || 0,
+                memoryMb: Number(ev.memoryMb) || 0,
+                clientIp: ev.clientIp || "127.0.0.1",
+                timestamp: ev.timestamp ? new Date(ev.timestamp) : new Date(),
+              });
+            }
+          } catch {}
+        }
+
+        if (fnInvocations.length > 0) {
+          await prisma.functionInvocation.createMany({
+            data: fnInvocations,
+            skipDuplicates: true,
+          });
+        }
+
+        await redisClient.ltrim("fn:invocations:buffer", fnEventsRaw.length, -1);
+      }
+    } catch (fnErr: any) {
+      console.error("[Analytics] Error processing function invocations:", fnErr?.message || fnErr);
+    }
+  }, 15_000);
 }
