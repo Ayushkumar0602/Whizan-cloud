@@ -919,6 +919,9 @@ export interface FunctionEndpointItem {
   handlerName: string;
   isPublic: boolean;
   cacheTtlSec?: number;
+  memoryLimit?: number;
+  timeoutSeconds?: number;
+  timeoutMs?: number;
   createdAt?: string;
 }
 
@@ -1074,6 +1077,9 @@ export const functionsApi = {
       handlerName?: string;
       isPublic?: boolean;
       cacheTtlSec?: number;
+      memoryLimit?: number;
+      timeoutSeconds?: number;
+      timeoutMs?: number;
     }
   ) =>
     request<FunctionEndpointItem>(`/api/functions/${id}/endpoints`, {
@@ -1090,6 +1096,9 @@ export const functionsApi = {
       handlerName: string;
       isPublic: boolean;
       cacheTtlSec: number;
+      memoryLimit: number;
+      timeoutSeconds: number;
+      timeoutMs: number;
     }>
   ) =>
     request<FunctionEndpointItem>(`/api/functions/${id}/endpoints/${endpointId}`, {

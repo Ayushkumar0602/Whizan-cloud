@@ -7,132 +7,29 @@ import {
   Zap,
   ArrowLeft,
   Sparkles,
-  Code2,
   Lock,
   Globe,
   Sliders,
   Check,
   Copy,
   AlertCircle,
-  FileCode,
   Shield,
-  Clock,
-  Cpu,
-  Layers,
-  Terminal,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { functionsApi } from "@/lib/api";
 
-const STARTER_TEMPLATES = [
-  {
-    id: "minimal",
-    name: "Minimal HTTP Handler",
-    desc: "Lightweight JSON response with headers and execution timestamp.",
-    code: `export default async function handler(req: Request) {
+const DEFAULT_CODE = `export default async function handler(req: Request) {
   const url = new URL(req.url);
-  
-  return new Response(JSON.stringify({
+  return Response.json({
     success: true,
     message: "Hello from Whizan Edge Function!",
     timestamp: new Date().toISOString(),
     path: url.pathname,
     method: req.method,
-  }, null, 2), {
-    status: 200,
-    headers: { "Content-Type": "application/json" }
   });
-}`,
-  },
-  {
-    id: "webhook",
-    name: "Webhook & HMAC Verifier",
-    desc: "Cryptographic HMAC signature validation using Web Crypto API.",
-    code: `export default async function handler(req: Request) {
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { status: 405 });
-  }
-
-  const signature = req.headers.get("x-signature") || "";
-  const secret = process.env.WEBHOOK_SECRET || "default-secret";
-  const body = await req.text();
-
-  // Web Crypto API HMAC Verification
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const sigBuffer = await crypto.subtle.sign("HMAC", key, enc.encode(body));
-  const expectedSig = Array.from(new Uint8Array(sigBuffer))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const verified = signature === expectedSig;
-
-  return new Response(JSON.stringify({
-    verified,
-    receivedBytes: body.length,
-    processedAt: Date.now()
-  }), {
-    status: verified ? 200 : 401,
-    headers: { "Content-Type": "application/json" }
-  });
-}`,
-  },
-  {
-    id: "rest",
-    name: "REST Micro-API Router",
-    desc: "Route GET, POST, and parameter handling with clean error handling.",
-    code: `export default async function handler(req: Request) {
-  const url = new URL(req.url);
-  const path = url.pathname;
-
-  // Route: GET /items
-  if (req.method === "GET" && path === "/") {
-    return Response.json([
-      { id: "item-1", name: "High-Performance Edge Isolate", tier: "Starter" },
-      { id: "item-2", name: "Sub-5ms Execution Worker", tier: "Pro" }
-    ]);
-  }
-
-  // Route: POST /items
-  if (req.method === "POST" && path === "/") {
-    try {
-      const data = await req.json();
-      return Response.json({ status: "created", item: data, id: crypto.randomUUID() }, { status: 201 });
-    } catch {
-      return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
-  }
-
-  return Response.json({ error: "Route not found", path }, { status: 404 });
-}`,
-  },
-  {
-    id: "ai-proxy",
-    name: "AI & Streaming Proxy",
-    desc: "Secure upstream API relay with token validation and header stripping.",
-    code: `export default async function handler(req: Request) {
-  const apiKey = process.env.UPSTREAM_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "Missing UPSTREAM_API_KEY environment variable" }, { status: 500 });
-  }
-
-  // Echo proxy response
-  return Response.json({
-    proxy: "Whizan Edge AI Gateway",
-    latency: "< 3ms",
-    status: "healthy",
-    callerIp: req.headers.get("x-forwarded-for") || "unknown"
-  });
-}`,
-  },
-];
+}
+`;
 
 export default function NewEdgeFunctionPage() {
   const router = useRouter();
@@ -142,8 +39,7 @@ export default function NewEdgeFunctionPage() {
   const [isPublic, setIsPublic] = useState(false);
   const [timeoutSeconds, setTimeoutSeconds] = useState(10);
   const [memoryLimit, setMemoryLimit] = useState(128);
-  const [selectedTemplate, setSelectedTemplate] = useState("minimal");
-  const [code, setCode] = useState(STARTER_TEMPLATES[0].code);
+  const [code] = useState(DEFAULT_CODE);
 
   // Success modal state for showing generated API key
   const [createdApiKey, setCreatedApiKey] = useState<string | null>(null);
@@ -159,14 +55,6 @@ export default function NewEdgeFunctionPage() {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
     setSlug(autoSlug);
-  };
-
-  const handleSelectTemplate = (templateId: string) => {
-    setSelectedTemplate(templateId);
-    const tpl = STARTER_TEMPLATES.find((t) => t.id === templateId);
-    if (tpl) {
-      setCode(tpl.code);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -388,118 +276,7 @@ export default function NewEdgeFunctionPage() {
             </div>
           </div>
 
-          {/* Section 3: Template & Code Editor */}
-          <div
-            style={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: "1.75rem",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "1rem",
-                flexWrap: "wrap",
-                gap: "0.5rem",
-              }}
-            >
-              <h3
-                style={{
-                  fontSize: "1.05rem",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                }}
-              >
-                <Code2 size={16} style={{ color: "var(--accent)" }} /> 3. Starter Template & Code
-              </h3>
-
-              <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                {STARTER_TEMPLATES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => handleSelectTemplate(t.id)}
-                    style={{
-                      padding: "0.3rem 0.65rem",
-                      borderRadius: 6,
-                      fontSize: "0.78rem",
-                      fontWeight: 600,
-                      border: "1px solid",
-                      borderColor: selectedTemplate === t.id ? "var(--accent)" : "var(--border)",
-                      background: selectedTemplate === t.id ? "var(--accent-glow)" : "var(--bg-inset)",
-                      color: selectedTemplate === t.id ? "var(--accent)" : "var(--muted)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Code Textarea */}
-            <div
-              style={{
-                borderRadius: "var(--radius-sm)",
-                overflow: "hidden",
-                border: "1px solid var(--border)",
-                background: "#080b11",
-              }}
-            >
-              <div
-                style={{
-                  padding: "0.5rem 1rem",
-                  background: "#0e131d",
-                  borderBottom: "1px solid rgba(255,255,255,0.06)",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span style={{ fontSize: "0.76rem", color: "#94a3b8", fontFamily: "monospace" }}>
-                  index.ts (TypeScript / Web Standards)
-                </span>
-                <span
-                  style={{
-                    fontSize: "0.72rem",
-                    padding: "0.15rem 0.4rem",
-                    borderRadius: 4,
-                    background: "rgba(99,102,241,0.2)",
-                    color: "#818cf8",
-                    fontWeight: 700,
-                  }}
-                >
-                  esbuild bundle
-                </span>
-              </div>
-              <textarea
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                rows={14}
-                spellCheck={false}
-                style={{
-                  width: "100%",
-                  padding: "1rem",
-                  background: "transparent",
-                  color: "#f8fafc",
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: "0.85rem",
-                  lineHeight: "1.55",
-                  border: "none",
-                  outline: "none",
-                  resize: "vertical",
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Section 4: Compute Limits */}
+          {/* Section 3: Compute Limits */}
           <div
             style={{
               background: "var(--card)",
@@ -518,7 +295,7 @@ export default function NewEdgeFunctionPage() {
                 gap: "0.5rem",
               }}
             >
-              <Sliders size={16} style={{ color: "var(--accent)" }} /> 4. Compute & Timeout Limits
+              <Sliders size={16} style={{ color: "var(--accent)" }} /> 3. Compute & Timeout Limits
             </h3>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
