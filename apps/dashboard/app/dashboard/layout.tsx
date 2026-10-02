@@ -7,7 +7,8 @@ import { BrandMark } from "@/components/brand";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen, Database, Sparkles, Zap, Clock, Workflow as WorkflowIcon
+  PanelLeftClose, PanelLeftOpen, Database, Sparkles, Zap, Clock, Workflow as WorkflowIcon,
+  Bot
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -98,6 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       items: [
         { href: "/dashboard/hosting",   icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
         { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend") },
+        { href: "/dashboard/mcp",       icon: Bot,         label: "MCP & AI DevOps",   match: (p: string) => p.startsWith("/dashboard/mcp"), badge: "AI" },
         { href: "/dashboard/functions", icon: Zap,         label: "Edge Functions",    match: (p: string) => p.startsWith("/dashboard/functions"), badge: "EDGE" },
         { href: "/dashboard/cron",      icon: Clock,       label: "Cron & Schedules",  match: (p: string) => p.startsWith("/dashboard/cron"), badge: "0-IDLE" },
         { href: "/dashboard/flows",     icon: WorkflowIcon,label: "Whizan Flow",       match: (p: string) => p.startsWith("/dashboard/flows"), badge: "FLOW" },

@@ -61,6 +61,10 @@ export class WhizanClient {
     return CONFIG_PATH;
   }
 
+  getApiUrl(): string {
+    return this.config.apiUrl;
+  }
+
   getHeaders(extra: Record<string, string> = {}): Record<string, string> {
     const headers: Record<string, string> = { ...extra };
     if (this.config.apiKey) {

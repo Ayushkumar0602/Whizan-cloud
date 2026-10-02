@@ -11,6 +11,13 @@ import { WhizanClient, WhizanApiError } from "./whizan-client.js";
 import { packDirectory } from "./utils/archive.js";
 import { analyzeWorkspace } from "./tools/analyze-workspace.js";
 import { generatePatch } from "./tools/generate-patch.js";
+import {
+  printWhizanBanner,
+  printServerStatusCard,
+  printInteractiveTips,
+  McpLogger,
+  colors,
+} from "./utils/terminal-ui.js";
 import fs from "fs/promises";
 import path from "path";
 import http from "http";
@@ -585,14 +592,32 @@ const TOOLS: Tool[] = [
 // ─── Request Handlers ────────────────────────────────────────────────────────
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  McpLogger.info(`Delivered ${TOOLS.length} tool definitions to MCP client.`);
   return { tools: TOOLS };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const startTime = performance.now();
+  McpLogger.toolCall(name, (args || {}) as any);
 
   try {
-    switch (name) {
+    const result = await handleToolExecution(name, args);
+    const duration = performance.now() - startTime;
+    McpLogger.toolSuccess(name, duration);
+    return result;
+  } catch (error: any) {
+    const duration = performance.now() - startTime;
+    McpLogger.toolError(name, duration, error.message);
+    return {
+      content: [{ type: "text", text: `Error executing ${name}: ${error.message}` }],
+      isError: true,
+    };
+  }
+});
+
+async function handleToolExecution(name: string, args: any) {
+  switch (name) {
       case "whizan_auth_status": {
         const status = await client.getAuthStatus();
         return {
@@ -1550,30 +1575,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
-  } catch (error: any) {
-    return {
-      content: [{ type: "text", text: `Error executing ${name}: ${error.message}` }],
-      isError: true,
-    };
-  }
-});
+}
 
 // ─── CLI Command Handlers ───────────────────────────────────────────────────
 
 function printCliHelp() {
+  printWhizanBanner("1.0.1", "Autonomous Cloud DevOps & In-IDE Deployment Engine");
+  const c = colors;
   console.log(`
-  Whizan DevOps MCP Server & CLI (@whizan/mcp-devops)
+  ${c.bold}${c.brightWhite}COMMANDS & USAGE:${c.reset}
+    ${c.cyan}npx @whizan/mcp-devops${c.reset}                  Start MCP server over stdio (Antigravity, Cursor, Windsurf, Claude)
+    ${c.cyan}npx @whizan/mcp-devops login${c.reset}            1-click in-browser authentication (saves to ~/.whizan/config.json)
+    ${c.cyan}npx @whizan/mcp-devops login -t <key>${c.reset}   Direct login with an explicit API key (whz_live_...)
+    ${c.cyan}npx @whizan/mcp-devops whoami${c.reset}           Inspect authenticated user profile and subscription tier
+    ${c.cyan}npx @whizan/mcp-devops logout${c.reset}           Clear local machine credentials
 
-  Usage:
-    npx @whizan/mcp-devops                  Start MCP server over stdio (for IDEs)
-    npx @whizan/mcp-devops login            1-click in-browser authentication
-    npx @whizan/mcp-devops login -t <key>   Direct login with an API key
-    npx @whizan/mcp-devops whoami           Check current authentication status
-    npx @whizan/mcp-devops logout           Clear saved credentials
+  ${c.bold}${c.brightWhite}ENVIRONMENT VARIABLES:${c.reset}
+    ${c.whizanCyan}WHIZAN_API_KEY${c.reset}     Explicit API Key override (bypasses ~/.whizan/config.json)
+    ${c.whizanCyan}WHIZAN_API_URL${c.reset}     Target API endpoint (defaults to https://whizan-cloud-service.onrender.com)
+
+  ${c.bold}${c.brightWhite}IDE INTEGRATION SAMPLES:${c.reset}
+    ${c.dim}Antigravity (~/.gemini/antigravity-ide/mcp_config.json):${c.reset}
+    { "mcpServers": { "whizan": { "command": "npx", "args": ["-y", "@whizan/mcp-devops"] } } }
 `);
 }
 
 async function handleCliLogin(args: string[]) {
+  printWhizanBanner("1.0.1");
+  const c = colors;
+
   let token: string | undefined;
   const tokenIdx = args.findIndex((a) => a === "--token" || a === "--api-key" || a === "-t");
   if (tokenIdx !== -1 && args[tokenIdx + 1]) {
@@ -1586,24 +1616,24 @@ async function handleCliLogin(args: string[]) {
   const customUrl = urlIdx !== -1 ? args[urlIdx + 1]?.trim() : undefined;
 
   if (token) {
-    console.log("🔐 Verifying provided API key...");
+    console.log(`  ${c.dim}[1/2]${c.reset} 🔐 Verifying provided API key...`);
     await client.saveConfig({ apiKey: token, ...(customUrl ? { apiUrl: customUrl } : {}) });
     const status = await client.getAuthStatus();
     if (status.authenticated) {
-      console.log("\n✅ Authenticated successfully with Whizan Cloud!");
-      console.log(`👤 User: ${status.user?.email || "Developer"}`);
-      console.log(`👑 Role: ${status.user?.role || "USER"} | Tier: ${status.user?.subscriptionTier || "HOBBY"}`);
-      console.log(`📁 Saved credentials to: ${WhizanClient.getConfigPath()}`);
-      console.log("\n🚀 All your IDEs (Antigravity, Cursor, Windsurf, VS Code, Claude) are now connected to Whizan Cloud without needing an API key in their config!\n");
+      console.log(`\n  ${c.emerald}✔ Authenticated successfully with Whizan Cloud!${c.reset}`);
+      console.log(`  ${c.dim}User:${c.reset}        ${c.bold}${status.user?.email || "Developer"}${c.reset}`);
+      console.log(`  ${c.dim}Role / Tier:${c.reset} ${c.amber}${status.user?.role || "USER"}${c.reset} • ${c.whizanPurple}${status.user?.subscriptionTier || "HOBBY"}${c.reset}`);
+      console.log(`  ${c.dim}Store:${c.reset}       ${WhizanClient.getConfigPath()}`);
+      console.log(`\n  ${c.brightCyan}🚀 All your IDEs (Antigravity, Cursor, Windsurf, VS Code, Claude) are now connected!${c.reset}\n`);
       process.exit(0);
     } else {
-      console.error("\n❌ Authentication failed: " + (status.message || "Invalid API key"));
+      console.error(`\n  ${c.brightRed}✖ Authentication failed: ${status.message || "Invalid API key"}${c.reset}\n`);
       process.exit(1);
     }
   }
 
   // No token: In-browser 1-click authentication
-  console.log("\n🚀 Starting Whizan Cloud In-Browser Authentication...");
+  console.log(`  ${c.whizanCyan}🚀 Launching Whizan Cloud In-Browser Authentication...${c.reset}`);
 
   const localServer = http.createServer(async (req, res) => {
     try {
@@ -1645,10 +1675,10 @@ async function handleCliLogin(args: string[]) {
             </html>
           `);
 
-          console.log("\n✅ Authenticated successfully with Whizan Cloud!");
-          if (email) console.log(`👤 User: ${email}`);
-          console.log(`📁 Credentials stored in ${WhizanClient.getConfigPath()}`);
-          console.log("🚀 All your IDEs (Antigravity, Cursor, Windsurf, Claude) are now authenticated!\n");
+          console.log(`\n  ${c.emerald}✔ Machine successfully authenticated with Whizan Cloud!${c.reset}`);
+          if (email) console.log(`  ${c.dim}User:${c.reset}  ${c.bold}${email}${c.reset}`);
+          console.log(`  ${c.dim}Store:${c.reset} ${WhizanClient.getConfigPath()}`);
+          console.log(`  ${c.brightCyan}🚀 All your IDEs (Antigravity, Cursor, Windsurf, Claude) are now connected!${c.reset}\n`);
 
           setTimeout(() => {
             localServer.close();
@@ -1672,9 +1702,9 @@ async function handleCliLogin(args: string[]) {
     const dashboardBase = customUrl || "https://whizan-cloud-service-dashboard.vercel.app";
     const authUrl = `${dashboardBase}/mcp/connect?port=${port}`;
 
-    console.log(`\n🌐 Opening browser to authorize your machine...`);
-    console.log(`👉 If it doesn't open automatically, visit this link:`);
-    console.log(`   \x1b[36m${authUrl}\x1b[0m\n`);
+    console.log(`\n  ${c.dim}Opening browser to authorize your machine...${c.reset}`);
+    console.log(`  ${c.dim}If it doesn't open automatically, visit:${c.reset}`);
+    console.log(`  ${c.whizanCyan}${authUrl}${c.reset}\n`);
 
     const openCmd =
       process.platform === "win32"
@@ -1687,31 +1717,48 @@ async function handleCliLogin(args: string[]) {
   });
 
   setTimeout(() => {
-    console.log("\n⌛ Authentication timed out (no response received). You can retry or run:");
-    console.log("   npx @whizan/mcp-devops login --token YOUR_API_KEY\n");
+    console.log(`\n  ${c.amber}⌛ Authentication timed out (no response received). You can retry or run:${c.reset}`);
+    console.log(`     ${c.cyan}npx @whizan/mcp-devops login --token YOUR_API_KEY${c.reset}\n`);
     localServer.close();
     process.exit(1);
   }, 180000);
 }
 
 async function handleCliWhoami() {
+  printWhizanBanner("1.0.1");
+  const c = colors;
   await client.loadConfig();
   const status = await client.getAuthStatus();
+
   if (status.authenticated) {
-    console.log("\n✨ Whizan Cloud Authentication Status: LOGGED IN");
-    console.log(`👤 User: ${status.user?.email || "Unknown"}`);
-    console.log(`👑 Role: ${status.user?.role || "USER"}`);
-    console.log(`⚡ Tier: ${status.user?.subscriptionTier || "HOBBY"}`);
-    console.log(`📁 Config: ${WhizanClient.getConfigPath()}\n`);
+    printServerStatusCard({
+      status: "ONLINE",
+      authenticated: true,
+      userEmail: status.user?.email,
+      role: status.user?.role,
+      tier: status.user?.subscriptionTier,
+      apiUrl: client.getApiUrl(),
+      toolCount: TOOLS.length,
+      configPath: WhizanClient.getConfigPath(),
+    });
   } else {
-    console.log("\n🔒 Whizan Cloud Authentication Status: NOT LOGGED IN");
-    console.log("👉 Run 'npx @whizan/mcp-devops login' to authenticate with 1 click.\n");
+    printServerStatusCard({
+      status: "CONNECTING",
+      authenticated: false,
+      apiUrl: client.getApiUrl(),
+      toolCount: TOOLS.length,
+      configPath: WhizanClient.getConfigPath(),
+    });
+    console.log(`  ${c.amber}👉 Run 'npx @whizan/mcp-devops login' to authenticate with 1 click.${c.reset}\n`);
   }
 }
 
 async function handleCliLogout() {
+  printWhizanBanner("1.0.1");
+  const c = colors;
   await client.clearConfig();
-  console.log("\n👋 Logged out. Local credentials removed from ~/.whizan/config.json\n");
+  console.log(`  ${c.emerald}✔ Logged out successfully.${c.reset}`);
+  console.log(`  ${c.dim}Local credentials removed from ${WhizanClient.getConfigPath()}${c.reset}\n`);
 }
 
 // ─── Start Transport ─────────────────────────────────────────────────────────
@@ -1737,9 +1784,30 @@ async function main() {
     return;
   }
 
+  // Load config & auth status
+  await client.loadConfig();
+  const authStatus = await client.getAuthStatus();
+
+  // Render branded Whizan banner & status card to stderr (preserving stdio JSON-RPC on stdout)
+  printWhizanBanner("1.0.1");
+  printServerStatusCard({
+    status: "ONLINE",
+    authenticated: authStatus.authenticated,
+    userEmail: authStatus.user?.email,
+    role: authStatus.user?.role,
+    tier: authStatus.user?.subscriptionTier,
+    apiUrl: client.getApiUrl(),
+    toolCount: TOOLS.length,
+    configPath: WhizanClient.getConfigPath(),
+  });
+
+  if (process.stdin.isTTY) {
+    printInteractiveTips(authStatus.authenticated);
+  }
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[Whizan DevOps MCP] Server running on stdio.");
+  McpLogger.info("STDIO JSON-RPC transport ready. Listening for IDE agent tool calls.");
 }
 
 main().catch((err) => {
