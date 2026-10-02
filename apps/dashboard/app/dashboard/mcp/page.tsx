@@ -81,6 +81,8 @@ export default function McpGuidePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
+  const [useZeroKey, setUseZeroKey] = useState(true);
+
   const effectiveKey = newKey?.key || (selectedKey.startsWith("whz_live_") ? selectedKey : "whz_live_YOUR_API_KEY");
 
   const runner = {
@@ -88,21 +90,28 @@ export default function McpGuidePage() {
     args: ["-y", "@whizan/mcp-devops"],
   };
 
+  const getEnvConfig = () => {
+    if (useZeroKey) return {};
+    return {
+      env: {
+        WHIZAN_API_URL: apiUrl,
+        WHIZAN_API_KEY: effectiveKey,
+      },
+    };
+  };
+
   // Config snippets for various IDEs
   const configs = {
     antigravity: {
       title: "Antigravity IDE",
-      path: "~/.gemini/antigravity-ide/mcp_config.json (macOS/Linux) or %USERPROFILE%\\.gemini\\antigravity-ide\\mcp_config.json (Windows)",
+      path: "~/.gemini/antigravity-ide/mcp_config.json",
       description: "Equips DeepMind Antigravity IDE with autonomous cloud service orchestration and deployment protocol.",
       snippet: JSON.stringify(
         {
           mcpServers: {
             whizan: {
               ...runner,
-              env: {
-                WHIZAN_API_URL: apiUrl,
-                WHIZAN_API_KEY: effectiveKey,
-              },
+              ...getEnvConfig(),
             },
           },
         },
@@ -119,10 +128,7 @@ export default function McpGuidePage() {
           mcpServers: {
             whizan: {
               ...runner,
-              env: {
-                WHIZAN_API_URL: apiUrl,
-                WHIZAN_API_KEY: effectiveKey,
-              },
+              ...getEnvConfig(),
             },
           },
         },
@@ -139,10 +145,7 @@ export default function McpGuidePage() {
           mcpServers: {
             whizan: {
               ...runner,
-              env: {
-                WHIZAN_API_URL: apiUrl,
-                WHIZAN_API_KEY: effectiveKey,
-              },
+              ...getEnvConfig(),
             },
           },
         },
@@ -159,16 +162,13 @@ export default function McpGuidePage() {
           mcpServers: {
             whizan: {
               ...runner,
-              env: {
-                WHIZAN_API_URL: apiUrl,
-                WHIZAN_API_KEY: effectiveKey,
-              },
+              ...getEnvConfig(),
               disabled: false,
               autoApprove: [
                 "whizan_analyze_workspace",
                 "whizan_generate_patch",
                 "whizan_get_build_logs",
-                "whizan_check_health"
+                "whizan_check_health",
               ],
             },
           },
@@ -186,10 +186,7 @@ export default function McpGuidePage() {
           mcpServers: {
             whizan: {
               ...runner,
-              env: {
-                WHIZAN_API_URL: apiUrl,
-                WHIZAN_API_KEY: effectiveKey,
-              },
+              ...getEnvConfig(),
             },
           },
         },
@@ -350,7 +347,7 @@ export default function McpGuidePage() {
         </div>
       </div>
 
-      {/* Step 1: Get Your API Key */}
+      {/* Step 1: 1-Click Machine Authentication (Zero API Key Setup) */}
       <div className="card" style={{ marginBottom: "2rem" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
@@ -358,61 +355,52 @@ export default function McpGuidePage() {
               1
             </div>
             <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>
-              Connect with your Whizan API Key
+              Authenticate Your Machine (Zero API Key Required)
             </h2>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <button
-              onClick={handleQuickCreateKey}
-              disabled={creatingKey}
-              className="btn btn-primary btn-sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-            >
-              {creatingKey ? <RefreshCw size={13} className="spin" /> : <Plus size={13} />}
-              Generate New Key
-            </button>
-            <Link href="/dashboard/settings" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-              Manage Keys <ExternalLink size={12} />
+            <Link href="/mcp/connect" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+              Browser Connect Page <ExternalLink size={12} />
             </Link>
           </div>
         </div>
 
-        <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1rem" }}>
-          Your API key authenticates your in-IDE AI coding agent. When you generate a key below, it will be automatically injected into the configuration snippets in Step 2.
+        <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", lineHeight: 1.55 }}>
+          Run this single command once in your terminal. It links your computer to Whizan Cloud.
+          Once completed, your AI assistants in <strong>Antigravity, Cursor, Windsurf, and VS Code</strong> connect automatically with <strong>zero API keys in your configuration files</strong>!
         </p>
 
-        {newKey ? (
-          <div style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "8px", padding: "0.85rem 1rem", marginBottom: "0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#10b981", marginBottom: "0.25rem" }}>
-                ACTIVE KEY GENERATED
-              </div>
-              <code style={{ fontSize: "0.85rem", color: "#38bdf8", wordBreak: "break-all" }}>
-                {newKey.key}
-              </code>
-            </div>
-            <button
-              onClick={() => copyText(newKey.key, "key-hero")}
-              className="btn btn-secondary btn-sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-            >
-              {copiedKey === "key-hero" ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
-              Copy
-            </button>
+        {/* 1-Click Terminal Command */}
+        <div style={{ background: "#05070a", border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: "10px", padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flex: 1, minWidth: 260 }}>
+            <Terminal size={18} style={{ color: "#38bdf8", flexShrink: 0 }} />
+            <code style={{ fontSize: "0.85rem", color: "#38bdf8", wordBreak: "break-all" }}>
+              npx @whizan/mcp-devops login {effectiveKey ? `--token ${effectiveKey}` : ""}
+            </code>
           </div>
-        ) : (
-          <div style={{ background: "rgba(0,0,0,0.25)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.75rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-            <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-              {keys.length > 0 ? `Using existing key (${keys[0].name || "Dev Key"} - ${keys[0].keyPrefix}...)` : "No API key created yet. Click 'Generate New Key' to get started."}
-            </span>
-            {keys.length === 0 && (
-              <button onClick={handleQuickCreateKey} className="btn btn-primary btn-sm">
-                Create First Key
-              </button>
-            )}
-          </div>
-        )}
+          <button
+            onClick={() => copyText(`npx @whizan/mcp-devops login ${effectiveKey ? `--token ${effectiveKey}` : ""}`, "login-cmd")}
+            className="btn btn-primary btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+          >
+            {copiedKey === "login-cmd" ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+            {copiedKey === "login-cmd" ? "Copied!" : "Copy Login Command"}
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+            <Sparkles size={13} style={{ color: "#10b981" }} />
+            Saves credentials securely in <code>~/.whizan/config.json</code> — shared across all local IDEs.
+          </span>
+          <button
+            onClick={() => setUseZeroKey(!useZeroKey)}
+            style={{ background: "none", border: "none", color: "#818cf8", cursor: "pointer", textDecoration: "underline", fontSize: "0.8rem", padding: 0 }}
+          >
+            {useZeroKey ? "Need explicit API key in JSON (for CI/CD)? Click here" : "Switch back to Zero-Key mode"}
+          </button>
+        </div>
       </div>
 
       {/* Step 2: Configure Your IDE */}
