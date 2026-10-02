@@ -24,12 +24,20 @@ import {
   X,
   RefreshCw,
   GitBranch,
+  Sliders,
+  ChevronRight,
+  Server,
+  Globe,
+  Radio,
+  Check,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
 import { PageHeader } from "@/components/page-header";
 import { flowsApi, type WorkflowItem, type WorkflowRunItem } from "@/lib/api";
-import { PRESET_FLOW_TEMPLATES, type FlowTemplateDef } from "@/lib/flow-templates";
+import { PRESET_FLOW_TEMPLATES, type FlowTemplateDef, FLOW_NODE_TYPES } from "@/lib/flow-templates";
 
 export default function FlowsOverviewPage() {
   const router = useRouter();
@@ -37,6 +45,7 @@ export default function FlowsOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
+  const [viewMode, setViewMode] = useState<"GRID" | "LIST">("GRID");
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
 
   // Drawer for Run History
@@ -49,7 +58,7 @@ export default function FlowsOverviewPage() {
       const list = await flowsApi.list();
       setWorkflows(list);
     } catch (err: any) {
-      toast.error(err.message || "Failed to load workflows");
+      toast.error(err.message || "Failed to load pipelines");
     } finally {
       setLoading(false);
     }
@@ -65,15 +74,26 @@ export default function FlowsOverviewPage() {
     try {
       const res = await flowsApi.trigger(wf.id, { source: "DASHBOARD_1_CLICK" });
       toast.success(`Pipeline triggered! Run ID: ${res.runId.slice(0, 8)}`);
-      // Refresh list to update run stats
       fetchWorkflows();
       if (historyWorkflow?.id === wf.id) {
         openHistoryDrawer(wf);
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to trigger workflow");
+      toast.error(err.message || "Failed to trigger pipeline");
     } finally {
       setTriggeringId(null);
+    }
+  };
+
+  const handleToggleEnable = async (wf: WorkflowItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newStatus = !wf.enabled;
+    try {
+      await flowsApi.update(wf.id, { enabled: newStatus });
+      setWorkflows((prev) => prev.map((w) => (w.id === wf.id ? { ...w, enabled: newStatus } : w)));
+      toast.success(newStatus ? "Pipeline resumed" : "Pipeline paused");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to toggle status");
     }
   };
 
@@ -134,111 +154,123 @@ export default function FlowsOverviewPage() {
     });
   }, [workflows, search, selectedCategory]);
 
-  // Aggregate stats
-  const totalWorkflows = workflows.length;
-  const totalRuns = workflows.reduce((acc, w) => acc + (w._count?.runs || (w.runs ? w.runs.length : 0)), 0);
-  const activeRuns = workflows.reduce((acc, w) => {
-    const isRunning = w.runs?.some((r) => r.status === "RUNNING" || r.status === "WAITING_FOR_APPROVAL");
-    return acc + (isRunning ? 1 : 0);
-  }, 0);
+  const stats = useMemo(() => {
+    const total = workflows.length;
+    const active = workflows.filter((w) => w.enabled).length;
+    const totalRuns = workflows.reduce((acc, w) => acc + (w._count?.runs || (w.runs ? w.runs.length : 0)), 0);
+    const inFlight = workflows.reduce((acc, w) => {
+      const isRunning = w.runs?.some((r) => r.status === "RUNNING" || r.status === "WAITING_FOR_APPROVAL");
+      return acc + (isRunning ? 1 : 0);
+    }, 0);
+    return { total, active, totalRuns, inFlight };
+  }, [workflows]);
+
+  const getCategoryBadgeStyle = (cat: string) => {
+    switch (cat) {
+      case "BUILD_DEPLOY":
+        return { bg: "rgba(56, 189, 248, 0.12)", color: "#38bdf8", border: "rgba(56, 189, 248, 0.25)" };
+      case "CI_CD":
+        return { bg: "rgba(245, 158, 11, 0.12)", color: "#fbbf24", border: "rgba(245, 158, 11, 0.25)" };
+      case "EDGE_OPS":
+        return { bg: "rgba(16, 185, 129, 0.12)", color: "#34d399", border: "rgba(16, 185, 129, 0.25)" };
+      case "SECURITY":
+        return { bg: "rgba(244, 63, 94, 0.12)", color: "#fb7185", border: "rgba(244, 63, 94, 0.25)" };
+      default:
+        return { bg: "rgba(99, 102, 241, 0.12)", color: "#818cf8", border: "rgba(99, 102, 241, 0.25)" };
+    }
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem", paddingBottom: "3rem" }}>
-      {/* Page Header */}
+    <div className="page" style={{ maxWidth: 1320, margin: "0 auto", padding: "1.75rem 1.25rem 4rem" }}>
+      {/* ─── PAGE HEADER ──────────────────────────────────────────────────────────── */}
       <PageHeader
         title="Whizan Flow"
-        subtitle="Autonomous build, test, canary deployment, and self-healing pipelines"
+        subtitle="Autonomous build, test, canary deployment, and self-healing pipelines with VM reboot protection."
         actions={
-          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <button
               onClick={() => {
                 setLoading(true);
                 fetchWorkflows();
               }}
-              className="btn btn-secondary btn-sm"
+              className="btn btn-secondary"
               title="Refresh workflows"
             >
               <RefreshCw size={14} className={loading ? "spin-icon" : ""} />
               Refresh
             </button>
-            <Link href="/dashboard/flows/new" className="btn btn-primary btn-sm">
-              <Plus size={15} />
-              New Workflow
+            <Link href="/dashboard/flows/new" className="btn btn-primary btn-lg">
+              <Plus size={16} />
+              New Pipeline
             </Link>
           </div>
         }
       />
 
-      {/* Metric Cards Row */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          gap: "1rem",
-        }}
-      >
-        <div className="card" style={{ padding: "1.1rem 1.25rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Total Pipelines</span>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(99, 102, 241, 0.12)", color: "#818cf8", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <GitBranch size={16} />
-            </div>
+      {/* ─── METRIC STAT CARDS ────────────────────────────────────────────────────── */}
+      <div className="stats-grid" style={{ marginBottom: "2rem" }}>
+        <div className="stat-card">
+          <div className="stat-label">
+            <GitBranch size={15} style={{ color: "var(--accent)" }} /> Total Pipelines
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--foreground)" }}>{totalWorkflows}</div>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>DAG workflows defined</span>
+          <div className="stat-value">{stats.total}</div>
+          <div className="stat-sub">
+            <span>{stats.active} enabled and ready</span>
+          </div>
         </div>
 
-        <div className="card" style={{ padding: "1.1rem 1.25rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Active In-Flight</span>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Activity size={16} />
-            </div>
+        <div className="stat-card">
+          <div className="stat-label">
+            <Activity size={15} style={{ color: "#38bdf8" }} /> In-Flight Executions
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 700, color: activeRuns > 0 ? "#38bdf8" : "var(--foreground)" }}>
-            {activeRuns}
+          <div className="stat-value" style={{ color: stats.inFlight > 0 ? "#38bdf8" : "inherit" }}>
+            {stats.inFlight}
           </div>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Executing or waiting approval</span>
+          <div className="stat-sub">
+            <span>{stats.inFlight > 0 ? "Executing or awaiting approval" : "All pipelines idle"}</span>
+          </div>
         </div>
 
-        <div className="card" style={{ padding: "1.1rem 1.25rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Total Pipeline Runs</span>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(16, 185, 129, 0.12)", color: "#10b981", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Zap size={16} />
-            </div>
+        <div className="stat-card">
+          <div className="stat-label">
+            <Zap size={15} style={{ color: "#10b981" }} /> Pipeline Runs
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "var(--foreground)" }}>{totalRuns}</div>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Buffered execution passes</span>
+          <div className="stat-value">{stats.totalRuns}</div>
+          <div className="stat-sub">
+            <span>Historical buffered passes</span>
+          </div>
         </div>
 
-        <div className="card" style={{ padding: "1.1rem 1.25rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 500 }}>Host Self-Healing</span>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: "rgba(234, 179, 8, 0.12)", color: "#eab308", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <ShieldCheck size={16} />
-            </div>
+        <div className="stat-card">
+          <div className="stat-label">
+            <ShieldCheck size={15} style={{ color: "#eab308" }} /> Self-Healing Sentinel
           </div>
-          <div style={{ fontSize: "1.6rem", fontWeight: 700, color: "#10b981" }}>Active</div>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Cold-boot reconciliation enabled</span>
+          <div className="stat-value" style={{ color: "#10b981", fontSize: "1.45rem", fontWeight: 700 }}>
+            Cold-Boot Ready
+          </div>
+          <div className="stat-sub">
+            <span>Reboot reconciler armed</span>
+          </div>
         </div>
       </div>
 
-      {/* Starter Templates Banner */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* ─── STARTER BLUEPRINTS SHOWCASE ──────────────────────────────────────────── */}
+      <div style={{ marginBottom: "2.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Sparkles size={16} style={{ color: "#ec4899" }} />
-            <span style={{ fontSize: "0.95rem", fontWeight: 600 }}>Production Starter Blueprints</span>
+            <Sparkles size={18} style={{ color: "#ec4899" }} />
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--foreground)" }}>
+              Enterprise Production Blueprints
+            </h2>
           </div>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Pre-configured DAG pipelines</span>
+          <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>1-click pre-wired DAG architectures</span>
         </div>
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: "1rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: "1.25rem",
           }}
         >
           {PRESET_FLOW_TEMPLATES.map((tmpl) => (
@@ -246,13 +278,14 @@ export default function FlowsOverviewPage() {
               key={tmpl.id}
               className="card card-hoverable"
               style={{
-                padding: "1.1rem",
+                padding: "1.35rem",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                gap: "0.85rem",
+                gap: "1.1rem",
                 position: "relative",
                 overflow: "hidden",
+                border: "1px solid var(--card-border)",
               }}
             >
               <div
@@ -265,13 +298,14 @@ export default function FlowsOverviewPage() {
                   background: tmpl.gradient,
                 }}
               />
+
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.6rem" }}>
                   <span
                     style={{
                       fontSize: "0.68rem",
-                      fontWeight: 600,
-                      padding: "0.15rem 0.45rem",
+                      fontWeight: 650,
+                      padding: "0.15rem 0.5rem",
                       borderRadius: 4,
                       background: "rgba(255, 255, 255, 0.08)",
                       color: "var(--muted)",
@@ -280,16 +314,20 @@ export default function FlowsOverviewPage() {
                   >
                     {tmpl.badge}
                   </span>
-                  <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>{tmpl.nodes.length} nodes</span>
+                  <span style={{ fontSize: "0.74rem", color: "var(--muted)", fontWeight: 550 }}>
+                    {tmpl.nodes.length} Steps Pre-Wired
+                  </span>
                 </div>
-                <div style={{ fontSize: "0.92rem", fontWeight: 650, color: "var(--foreground)", marginBottom: "0.3rem" }}>
+
+                <h3 style={{ fontSize: "0.98rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.45rem", lineHeight: 1.35 }}>
                   {tmpl.name}
-                </div>
-                <div
+                </h3>
+
+                <p
                   style={{
-                    fontSize: "0.78rem",
+                    fontSize: "0.8rem",
                     color: "var(--muted)",
-                    lineHeight: 1.45,
+                    lineHeight: 1.5,
                     display: "-webkit-box",
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
@@ -297,152 +335,214 @@ export default function FlowsOverviewPage() {
                   }}
                 >
                   {tmpl.description}
+                </p>
+
+                {/* Step Flow Preview Pills */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    marginTop: "0.85rem",
+                    overflowX: "auto",
+                    paddingBottom: "0.2rem",
+                  }}
+                >
+                  {tmpl.nodes.slice(0, 4).map((n, i) => (
+                    <div key={n.nodeKey} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                      <span
+                        style={{
+                          fontSize: "0.66rem",
+                          padding: "0.12rem 0.4rem",
+                          borderRadius: 4,
+                          background: "var(--bg-inset)",
+                          color: "var(--foreground)",
+                          whiteSpace: "nowrap",
+                          border: "1px solid var(--border)",
+                        }}
+                      >
+                        {n.name}
+                      </span>
+                      {i < Math.min(tmpl.nodes.length - 1, 3) && (
+                        <ChevronRight size={11} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                      )}
+                    </div>
+                  ))}
+                  {tmpl.nodes.length > 4 && (
+                    <span style={{ fontSize: "0.65rem", color: "var(--muted)", flexShrink: 0 }}>
+                      +{tmpl.nodes.length - 4} more
+                    </span>
+                  )}
                 </div>
               </div>
 
               <button
                 onClick={() => handleUseTemplate(tmpl)}
                 className="btn btn-secondary btn-sm"
-                style={{ width: "100%", justifyContent: "space-between", fontSize: "0.78rem" }}
+                style={{ width: "100%", justifyContent: "space-between", fontSize: "0.82rem", padding: "0.55rem 0.85rem" }}
               >
-                <span>Use Blueprint</span>
-                <ArrowRight size={13} />
+                <span>Launch Blueprint</span>
+                <ArrowRight size={14} />
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "0.85rem",
-        }}
-      >
-        {/* Search */}
-        <div style={{ position: "relative", minWidth: 260, flex: 1, maxWidth: 400 }}>
-          <Search
-            size={14}
-            style={{
-              position: "absolute",
-              left: 12,
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "var(--muted)",
-            }}
-          />
-          <input
-            type="text"
-            placeholder="Search pipelines by name, slug, tag..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "0.55rem 0.75rem 0.55rem 2.2rem",
-              background: "var(--bg-inset)",
-              border: "1px solid var(--border)",
-              borderRadius: "8px",
-              color: "var(--foreground)",
-              fontSize: "0.84rem",
-              outline: "none",
-            }}
-          />
-        </div>
+      {/* ─── PIPELINE INVENTORY HEADER & CONTROLS ─────────────────────────────────── */}
+      <div style={{ marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
+          <div>
+            <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--foreground)" }}>
+              Active Pipelines ({filteredWorkflows.length})
+            </h2>
+            <p style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
+              Manage execution schedules, concurrency gates, and DAG configurations.
+            </p>
+          </div>
 
-        {/* Category Pills */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-          {["ALL", "BUILD_DEPLOY", "CI_CD", "EDGE_OPS", "SECURITY", "CRON_MAINTENANCE"].map((cat) => (
+          {/* View Toggle */}
+          <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", background: "var(--bg-inset)", padding: "0.2rem", borderRadius: 8, border: "1px solid var(--border)" }}>
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => setViewMode("GRID")}
               style={{
-                padding: "0.35rem 0.7rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                padding: "0.3rem 0.6rem",
                 borderRadius: 6,
-                fontSize: "0.74rem",
+                fontSize: "0.76rem",
                 fontWeight: 550,
-                border: "1px solid",
-                borderColor: selectedCategory === cat ? "var(--accent)" : "var(--border)",
-                background: selectedCategory === cat ? "var(--accent-glow)" : "transparent",
-                color: selectedCategory === cat ? "var(--foreground)" : "var(--muted)",
+                background: viewMode === "GRID" ? "var(--card)" : "transparent",
+                color: viewMode === "GRID" ? "var(--foreground)" : "var(--muted)",
+                border: "none",
                 cursor: "pointer",
-                transition: "all 0.15s ease",
               }}
             >
-              {cat === "ALL" ? "All Flows" : cat.replace("_", " ")}
+              <LayoutGrid size={13} />
+              Grid
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode("LIST")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.3rem",
+                padding: "0.3rem 0.6rem",
+                borderRadius: 6,
+                fontSize: "0.76rem",
+                fontWeight: 550,
+                background: viewMode === "LIST" ? "var(--card)" : "transparent",
+                color: viewMode === "LIST" ? "var(--foreground)" : "var(--muted)",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              <List size={13} />
+              Table
+            </button>
+          </div>
+        </div>
+
+        {/* Filter & Search Bar */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+          <div style={{ position: "relative", minWidth: 280, flex: 1, maxWidth: 420 }}>
+            <Search
+              size={15}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--muted)",
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Search pipelines by name, slug, tag..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "0.6rem 0.8rem 0.6rem 2.3rem",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                color: "var(--foreground)",
+                fontSize: "0.84rem",
+                outline: "none",
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+            {["ALL", "BUILD_DEPLOY", "CI_CD", "EDGE_OPS", "SECURITY", "CRON_MAINTENANCE"].map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                style={{
+                  padding: "0.4rem 0.75rem",
+                  borderRadius: 6,
+                  fontSize: "0.74rem",
+                  fontWeight: 550,
+                  border: "1px solid",
+                  borderColor: selectedCategory === cat ? "var(--accent)" : "var(--border)",
+                  background: selectedCategory === cat ? "var(--accent-glow)" : "var(--card)",
+                  color: selectedCategory === cat ? "var(--foreground)" : "var(--muted)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {cat === "ALL" ? "All Categories" : cat.replace("_", " ")}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Workflows List / Grid */}
+      {/* ─── WORKFLOWS LISTING (GRID OR TABLE) ────────────────────────────────────── */}
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "4rem 0" }}>
           <div className="spinner" />
-          <span style={{ marginLeft: "0.8rem", color: "var(--muted)", fontSize: "0.88rem" }}>Loading workflows...</span>
+          <span style={{ marginLeft: "0.8rem", color: "var(--muted)", fontSize: "0.88rem" }}>Loading pipelines...</span>
         </div>
       ) : filteredWorkflows.length === 0 ? (
-        <div
-          className="card"
-          style={{
-            padding: "3.5rem 1.5rem",
-            textAlign: "center",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "0.9rem",
-          }}
-        >
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 14,
-              background: "rgba(99, 102, 241, 0.12)",
-              color: "#818cf8",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Workflow size={28} />
-          </div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 650 }}>No workflows found</div>
-          <p style={{ fontSize: "0.84rem", color: "var(--muted)", maxWidth: 440, lineHeight: 1.5 }}>
+        <div className="empty-state">
+          <Workflow size={36} style={{ color: "var(--accent)", opacity: 0.8 }} />
+          <h2>No pipelines found</h2>
+          <p>
             {search || selectedCategory !== "ALL"
-              ? "No pipelines match your current search and filter criteria."
-              : "Create an autonomous pipeline from scratch or launch one of our production blueprints above."}
+              ? "No pipelines match your search filter. Clear the search or pick another category."
+              : "Launch an autonomous deployment pipeline using one of our production blueprints above or create one from scratch."}
           </p>
-          <Link href="/dashboard/flows/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.5rem" }}>
-            <Plus size={15} />
+          <Link href="/dashboard/flows/new" className="btn btn-primary btn-lg" style={{ marginTop: "0.5rem" }}>
+            <Plus size={16} />
             Create First Pipeline
           </Link>
         </div>
-      ) : (
+      ) : viewMode === "GRID" ? (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-            gap: "1.1rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+            gap: "1.25rem",
           }}
         >
           {filteredWorkflows.map((wf) => {
             const lastRun = wf.runs && wf.runs.length > 0 ? wf.runs[0] : null;
             const isTriggering = triggeringId === wf.id;
+            const badgeStyle = getCategoryBadgeStyle(wf.category);
 
             return (
               <div
                 key={wf.id}
                 className="card card-hoverable"
                 style={{
-                  padding: "1.3rem",
+                  padding: "1.4rem",
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "space-between",
-                  gap: "1.1rem",
+                  gap: "1.2rem",
                   cursor: "pointer",
                 }}
                 onClick={() => router.push(`/dashboard/flows/${wf.id}`)}
@@ -452,77 +552,85 @@ export default function FlowsOverviewPage() {
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.4rem" }}>
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
-                        <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--foreground)" }}>{wf.name}</span>
-                        {!wf.enabled && (
-                          <span
-                            style={{
-                              fontSize: "0.65rem",
-                              padding: "0.1rem 0.4rem",
-                              borderRadius: 4,
-                              background: "rgba(244, 63, 94, 0.15)",
-                              color: "#f43f5e",
-                              fontWeight: 600,
-                            }}
-                          >
-                            PAUSED
-                          </span>
-                        )}
+                        <span style={{ fontSize: "1.02rem", fontWeight: 700, color: "var(--foreground)" }}>
+                          {wf.name}
+                        </span>
                       </div>
                       <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "monospace" }}>
                         {wf.slug}
                       </span>
                     </div>
 
-                    <span
-                      style={{
-                        fontSize: "0.68rem",
-                        fontWeight: 600,
-                        padding: "0.2rem 0.5rem",
-                        borderRadius: 5,
-                        background: "rgba(99, 102, 241, 0.12)",
-                        color: "#818cf8",
-                        letterSpacing: "0.03em",
-                      }}
-                    >
-                      {wf.category || "BUILD_DEPLOY"}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span
+                        style={{
+                          fontSize: "0.68rem",
+                          fontWeight: 650,
+                          padding: "0.18rem 0.55rem",
+                          borderRadius: 5,
+                          background: badgeStyle.bg,
+                          color: badgeStyle.color,
+                          border: `1px solid ${badgeStyle.border}`,
+                          letterSpacing: "0.03em",
+                        }}
+                      >
+                        {wf.category || "BUILD_DEPLOY"}
+                      </span>
+
+                      {/* Enable/Pause Switch */}
+                      <label
+                        className="switch"
+                        style={{ transform: "scale(0.8)", transformOrigin: "right center" }}
+                        onClick={(e) => e.stopPropagation()}
+                        title={wf.enabled ? "Enabled - Click to pause" : "Paused - Click to enable"}
+                      >
+                        <input type="checkbox" checked={wf.enabled} onChange={(e) => handleToggleEnable(wf, e as any)} />
+                        <span className="slider" />
+                      </label>
+                    </div>
                   </div>
 
                   {wf.description && (
                     <p
                       style={{
-                        fontSize: "0.8rem",
+                        fontSize: "0.82rem",
                         color: "var(--muted)",
-                        lineHeight: 1.45,
+                        lineHeight: 1.5,
                         display: "-webkit-box",
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: "vertical",
                         overflow: "hidden",
-                        marginBottom: "0.75rem",
+                        marginBottom: "0.9rem",
                       }}
                     >
                       {wf.description}
                     </p>
                   )}
 
-                  {/* Node & Edge metadata */}
+                  {/* DAG Stats Bar */}
                   <div
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: "0.85rem",
-                      fontSize: "0.74rem",
+                      fontSize: "0.75rem",
                       color: "var(--muted)",
-                      paddingTop: "0.4rem",
+                      paddingTop: "0.5rem",
                       borderTop: "1px solid var(--border)",
                     }}
                   >
                     <span>
-                      <strong style={{ color: "var(--foreground)" }}>{wf._count?.nodes ?? (wf.nodes ? wf.nodes.length : 0)}</strong> steps
+                      <strong style={{ color: "var(--foreground)" }}>
+                        {wf._count?.nodes ?? (wf.nodes ? wf.nodes.length : 0)}
+                      </strong>{" "}
+                      DAG Nodes
                     </span>
                     <span>•</span>
                     <span>
-                      <strong style={{ color: "var(--foreground)" }}>{wf._count?.edges ?? (wf.edges ? wf.edges.length : 0)}</strong> transitions
+                      <strong style={{ color: "var(--foreground)" }}>
+                        {wf._count?.edges ?? (wf.edges ? wf.edges.length : 0)}
+                      </strong>{" "}
+                      Transitions
                     </span>
                     <span>•</span>
                     <span>Policy: {wf.concurrencyPolicy}</span>
@@ -532,48 +640,49 @@ export default function FlowsOverviewPage() {
                 {/* Last Run Status Banner */}
                 <div
                   style={{
-                    padding: "0.55rem 0.8rem",
+                    padding: "0.65rem 0.85rem",
                     borderRadius: 8,
                     background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    fontSize: "0.76rem",
+                    fontSize: "0.78rem",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
                     {lastRun ? (
                       <>
-                        {lastRun.status === "SUCCESS" && <CheckCircle2 size={14} style={{ color: "#10b981" }} />}
-                        {lastRun.status === "FAILED" && <AlertCircle size={14} style={{ color: "#f43f5e" }} />}
-                        {lastRun.status === "RUNNING" && <RefreshCw size={14} className="spin-icon" style={{ color: "#38bdf8" }} />}
-                        {lastRun.status === "WAITING_FOR_APPROVAL" && <Clock size={14} style={{ color: "#eab308" }} />}
-                        <span style={{ fontWeight: 600 }}>{lastRun.status}</span>
+                        {lastRun.status === "SUCCESS" && <CheckCircle2 size={15} style={{ color: "#10b981" }} />}
+                        {lastRun.status === "FAILED" && <AlertCircle size={15} style={{ color: "#f43f5e" }} />}
+                        {lastRun.status === "RUNNING" && <RefreshCw size={15} className="spin-icon" style={{ color: "#38bdf8" }} />}
+                        {lastRun.status === "WAITING_FOR_APPROVAL" && <Clock size={15} style={{ color: "#eab308" }} />}
+                        <span style={{ fontWeight: 650 }}>{lastRun.status}</span>
                         {lastRun.durationMs && (
                           <span style={{ color: "var(--muted)" }}>({(lastRun.durationMs / 1000).toFixed(1)}s)</span>
                         )}
                       </>
                     ) : (
-                      <span style={{ color: "var(--muted)" }}>No executions yet</span>
+                      <span style={{ color: "var(--muted)" }}>No executions recorded</span>
                     )}
                   </div>
 
-                  <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>
+                  <span style={{ color: "var(--muted)", fontSize: "0.74rem" }}>
                     {lastRun ? formatDistanceToNow(new Date(lastRun.startedAt), { addSuffix: true }) : "Idle"}
                   </span>
                 </div>
 
-                {/* Actions Footer */}
+                {/* Action Footer */}
                 <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    paddingTop: "0.4rem",
+                    paddingTop: "0.2rem",
                   }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <button
                       onClick={(e) => handleTrigger(wf, e)}
                       disabled={isTriggering || !wf.enabled}
@@ -600,7 +709,7 @@ export default function FlowsOverviewPage() {
                     <Link
                       href={`/dashboard/flows/${wf.id}`}
                       className="btn btn-ghost btn-sm"
-                      title="Open visual canvas"
+                      title="Open visual canvas studio"
                     >
                       <ExternalLink size={14} />
                     </Link>
@@ -618,16 +727,111 @@ export default function FlowsOverviewPage() {
             );
           })}
         </div>
+      ) : (
+        /* ─── TABLE VIEW ─────────────────────────────────────────────────────────── */
+        <div className="card" style={{ padding: 0, overflow: "hidden", border: "1px solid var(--card-border)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", textAlign: "left" }}>
+            <thead>
+              <tr style={{ background: "var(--bg-inset)", borderBottom: "1px solid var(--border)", color: "var(--muted)", fontSize: "0.74rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                <th style={{ padding: "0.85rem 1.25rem" }}>Pipeline</th>
+                <th style={{ padding: "0.85rem 1rem" }}>Category</th>
+                <th style={{ padding: "0.85rem 1rem" }}>Status</th>
+                <th style={{ padding: "0.85rem 1rem" }}>DAG Steps</th>
+                <th style={{ padding: "0.85rem 1rem" }}>Last Execution</th>
+                <th style={{ padding: "0.85rem 1.25rem", textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredWorkflows.map((wf) => {
+                const lastRun = wf.runs && wf.runs.length > 0 ? wf.runs[0] : null;
+                const isTriggering = triggeringId === wf.id;
+                const badgeStyle = getCategoryBadgeStyle(wf.category);
+
+                return (
+                  <tr
+                    key={wf.id}
+                    style={{ borderBottom: "1px solid var(--border)", cursor: "pointer", transition: "background 0.15s ease" }}
+                    onClick={() => router.push(`/dashboard/flows/${wf.id}`)}
+                    className="table-row-hover"
+                  >
+                    <td style={{ padding: "1rem 1.25rem" }}>
+                      <div style={{ fontWeight: 650, color: "var(--foreground)" }}>{wf.name}</div>
+                      <div style={{ fontSize: "0.74rem", color: "var(--muted)", fontFamily: "monospace" }}>{wf.slug}</div>
+                    </td>
+                    <td style={{ padding: "1rem 1rem" }}>
+                      <span
+                        style={{
+                          fontSize: "0.68rem",
+                          fontWeight: 650,
+                          padding: "0.15rem 0.5rem",
+                          borderRadius: 4,
+                          background: badgeStyle.bg,
+                          color: badgeStyle.color,
+                          border: `1px solid ${badgeStyle.border}`,
+                        }}
+                      >
+                        {wf.category}
+                      </span>
+                    </td>
+                    <td style={{ padding: "1rem 1rem" }}>
+                      <label className="switch" style={{ transform: "scale(0.75)" }} onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={wf.enabled} onChange={(e) => handleToggleEnable(wf, e as any)} />
+                        <span className="slider" />
+                      </label>
+                    </td>
+                    <td style={{ padding: "1rem 1rem" }}>
+                      <span style={{ fontWeight: 600 }}>{wf._count?.nodes ?? (wf.nodes ? wf.nodes.length : 0)}</span> nodes
+                    </td>
+                    <td style={{ padding: "1rem 1rem" }}>
+                      {lastRun ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                          {lastRun.status === "SUCCESS" && <CheckCircle2 size={14} style={{ color: "#10b981" }} />}
+                          {lastRun.status === "FAILED" && <AlertCircle size={14} style={{ color: "#f43f5e" }} />}
+                          {lastRun.status === "RUNNING" && <RefreshCw size={14} className="spin-icon" style={{ color: "#38bdf8" }} />}
+                          {lastRun.status === "WAITING_FOR_APPROVAL" && <Clock size={14} style={{ color: "#eab308" }} />}
+                          <span style={{ fontWeight: 600, fontSize: "0.78rem" }}>{lastRun.status}</span>
+                          <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>
+                            • {formatDistanceToNow(new Date(lastRun.startedAt), { addSuffix: true })}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>None</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "1rem 1.25rem", textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.4rem" }}>
+                        <button
+                          onClick={(e) => handleTrigger(wf, e)}
+                          disabled={isTriggering || !wf.enabled}
+                          className="btn btn-primary btn-sm"
+                        >
+                          <Play size={12} className={isTriggering ? "spin-icon" : ""} />
+                          Run
+                        </button>
+                        <Link href={`/dashboard/flows/${wf.id}`} className="btn btn-ghost btn-sm">
+                          <ExternalLink size={14} />
+                        </Link>
+                        <button onClick={(e) => handleDelete(wf, e)} className="btn btn-ghost btn-sm" style={{ color: "var(--danger)" }}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {/* Slide-over Run History Drawer */}
+      {/* ─── RUN HISTORY SLIDE-OVER DRAWER ────────────────────────────────────────── */}
       {historyWorkflow && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0, 0, 0, 0.6)",
-            backdropFilter: "blur(4px)",
+            background: "rgba(0, 0, 0, 0.65)",
+            backdropFilter: "blur(6px)",
             zIndex: 1000,
             display: "flex",
             justifyContent: "flex-end",
@@ -637,17 +841,17 @@ export default function FlowsOverviewPage() {
           <div
             style={{
               width: "100%",
-              maxWidth: 540,
+              maxWidth: 560,
               height: "100%",
               background: "var(--background)",
               borderLeft: "1px solid var(--border)",
-              boxShadow: "-10px 0 30px rgba(0, 0, 0, 0.4)",
+              boxShadow: "-12px 0 35px rgba(0, 0, 0, 0.5)",
               display: "flex",
               flexDirection: "column",
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drawer Header */}
+            {/* Header */}
             <div
               style={{
                 padding: "1.25rem 1.5rem",
@@ -658,15 +862,15 @@ export default function FlowsOverviewPage() {
               }}
             >
               <div>
-                <div style={{ fontSize: "1.05rem", fontWeight: 700 }}>Execution Runs</div>
-                <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{historyWorkflow.name}</div>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--foreground)" }}>Execution History</h3>
+                <p style={{ fontSize: "0.78rem", color: "var(--muted)" }}>{historyWorkflow.name}</p>
               </div>
               <button onClick={() => setHistoryWorkflow(null)} className="btn btn-ghost btn-sm">
                 <X size={16} />
               </button>
             </div>
 
-            {/* Runs list */}
+            {/* Content */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
               {historyLoading ? (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "3rem 0" }}>
@@ -674,49 +878,50 @@ export default function FlowsOverviewPage() {
                 </div>
               ) : historyRuns.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "3rem 1rem", color: "var(--muted)" }}>
-                  <Clock size={32} style={{ margin: "0 auto 0.75rem", opacity: 0.5 }} />
-                  <div>No executions recorded yet.</div>
+                  <Clock size={36} style={{ margin: "0 auto 0.75rem", opacity: 0.5 }} />
+                  <div style={{ fontSize: "0.95rem", fontWeight: 600 }}>No executions recorded</div>
+                  <p style={{ fontSize: "0.8rem", marginTop: "0.25rem" }}>Trigger your first execution from the console or webhook.</p>
                   <button
                     onClick={() => handleTrigger(historyWorkflow)}
                     className="btn btn-primary btn-sm"
-                    style={{ marginTop: "1rem" }}
+                    style={{ marginTop: "1.25rem" }}
                   >
                     <Play size={13} /> Run Pipeline Now
                   </button>
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                   {historyRuns.map((r) => (
                     <div
                       key={r.id}
                       className="card"
                       style={{
-                        padding: "0.9rem 1.1rem",
+                        padding: "1rem 1.25rem",
                         display: "flex",
                         flexDirection: "column",
-                        gap: "0.6rem",
+                        gap: "0.75rem",
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                          {r.status === "SUCCESS" && <CheckCircle2 size={15} style={{ color: "#10b981" }} />}
-                          {r.status === "FAILED" && <AlertCircle size={15} style={{ color: "#f43f5e" }} />}
-                          {r.status === "RUNNING" && <RefreshCw size={15} className="spin-icon" style={{ color: "#38bdf8" }} />}
-                          {r.status === "WAITING_FOR_APPROVAL" && <Clock size={15} style={{ color: "#eab308" }} />}
-                          <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>{r.status}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+                          {r.status === "SUCCESS" && <CheckCircle2 size={16} style={{ color: "#10b981" }} />}
+                          {r.status === "FAILED" && <AlertCircle size={16} style={{ color: "#f43f5e" }} />}
+                          {r.status === "RUNNING" && <RefreshCw size={16} className="spin-icon" style={{ color: "#38bdf8" }} />}
+                          {r.status === "WAITING_FOR_APPROVAL" && <Clock size={16} style={{ color: "#eab308" }} />}
+                          <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{r.status}</span>
                         </div>
-                        <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontFamily: "monospace" }}>
+                        <span style={{ fontSize: "0.74rem", color: "var(--muted)", fontFamily: "monospace" }}>
                           {r.id.slice(0, 8)}
                         </span>
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.76rem", color: "var(--muted)" }}>
-                        <span>Source: {r.triggerSource}</span>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--muted)" }}>
+                        <span>Trigger: {r.triggerSource}</span>
                         <span>{format(new Date(r.startedAt), "MMM d, HH:mm:ss")}</span>
                       </div>
 
                       {r.durationMs && (
-                        <div style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
+                        <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
                           Duration: {(r.durationMs / 1000).toFixed(2)}s • Steps: {r._count?.stepRuns || r.stepRuns?.length || 0}
                         </div>
                       )}
@@ -724,26 +929,27 @@ export default function FlowsOverviewPage() {
                       {r.errorMessage && (
                         <div
                           style={{
-                            padding: "0.4rem 0.6rem",
+                            padding: "0.5rem 0.75rem",
                             borderRadius: 6,
-                            background: "rgba(244, 63, 94, 0.1)",
+                            background: "rgba(244, 63, 94, 0.12)",
                             color: "#f43f5e",
-                            fontSize: "0.74rem",
-                            lineHeight: 1.4,
+                            fontSize: "0.76rem",
+                            lineHeight: 1.45,
+                            border: "1px solid rgba(244, 63, 94, 0.25)",
                           }}
                         >
                           {r.errorMessage}
                         </div>
                       )}
 
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.2rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
                         <Link
                           href={`/dashboard/flows/${historyWorkflow.id}?runId=${r.id}`}
                           className="btn btn-secondary btn-sm"
-                          style={{ fontSize: "0.74rem" }}
+                          style={{ fontSize: "0.78rem" }}
                         >
-                          <Terminal size={12} />
-                          Inspect Logs
+                          <Terminal size={13} />
+                          Live Console & Logs
                         </Link>
                       </div>
                     </div>
