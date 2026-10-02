@@ -110,6 +110,14 @@ function getKnownTargets(workspaceDir?: string): InstallTarget[] {
           : path.join(home, ".config", "Code", "User", "globalStorage", "rooveterinaryinc.roo-cline", "settings", "cline_mcp_settings.json"),
       installed: false,
     },
+    // 8. Claude Code (Anthropic CLI)
+    {
+      id: "claude-code",
+      name: "Claude Code CLI",
+      parentDir: home,
+      configPath: path.join(home, ".claude.json"),
+      installed: false,
+    },
   ];
 
   if (workspaceDir) {
@@ -130,8 +138,13 @@ export async function detectIdeTargets(workspaceDir?: string): Promise<InstallTa
 
   for (const t of targets) {
     try {
-      await fs.access(t.parentDir);
-      t.installed = true;
+      if (t.id === "claude-code") {
+        await fs.access(t.configPath);
+        t.installed = true;
+      } else {
+        await fs.access(t.parentDir);
+        t.installed = true;
+      }
     } catch {
       t.installed = false;
     }
