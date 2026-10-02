@@ -26,7 +26,8 @@ import {
   FileCode,
   FolderArchive,
   RefreshCw,
-  Plus
+  Plus,
+  AlertTriangle
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -35,7 +36,7 @@ export default function McpGuidePage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_URL.includes("localhost")
     ? process.env.NEXT_PUBLIC_API_URL
     : "https://whizan-cloud-service.onrender.com";
-  const [activeTab, setActiveTab] = useState<"cursor" | "windsurf" | "vscode" | "claude">("cursor");
+  const [activeTab, setActiveTab] = useState<"antigravity" | "cursor" | "windsurf" | "vscode" | "claude">("antigravity");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>("");
@@ -89,7 +90,7 @@ export default function McpGuidePage() {
     if (execMode === "local") {
       return {
         command: "node",
-        args: ["packages/mcp-devops/dist/index.js"],
+        args: ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
       };
     }
     return {
@@ -102,6 +103,26 @@ export default function McpGuidePage() {
 
   // Config snippets for various IDEs
   const configs = {
+    antigravity: {
+      title: "Antigravity IDE",
+      path: "~/.gemini/antigravity-ide/mcp_config.json (macOS/Linux) or %USERPROFILE%\\.gemini\\antigravity-ide\\mcp_config.json (Windows)",
+      description: "Equips DeepMind Antigravity IDE with autonomous cloud service orchestration and deployment protocol.",
+      snippet: JSON.stringify(
+        {
+          mcpServers: {
+            whizan: {
+              ...runner,
+              env: {
+                WHIZAN_API_URL: apiUrl,
+                WHIZAN_API_KEY: effectiveKey,
+              },
+            },
+          },
+        },
+        null,
+        2
+      ),
+    },
     cursor: {
       title: "Cursor AI",
       path: ".cursor/mcp.json (in your workspace) or ~/.cursor/mcp.json (globally)",
@@ -453,7 +474,7 @@ export default function McpGuidePage() {
 
         {/* IDE Tabs */}
         <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--border)", paddingBottom: "0.75rem", marginBottom: "1.25rem", overflowX: "auto" }}>
-          {(["cursor", "windsurf", "vscode", "claude"] as const).map((tab) => (
+          {(["antigravity", "cursor", "windsurf", "vscode", "claude"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -521,6 +542,20 @@ export default function McpGuidePage() {
             {configs[activeTab].snippet}
           </pre>
         </div>
+
+        {execMode === "local" && (
+          <div style={{ marginTop: "1rem", padding: "0.85rem 1.15rem", borderRadius: "8px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", fontSize: "0.82rem", lineHeight: 1.6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontWeight: 700, color: "#f59e0b", marginBottom: "0.35rem" }}>
+              <AlertTriangle size={15} />
+              <span>Windows & Local Path Troubleshooting (MODULE_NOT_FOUND)</span>
+            </div>
+            <p style={{ margin: 0, color: "var(--foreground)" }}>
+              1. <strong>Use Full Absolute Path</strong>: Replace <code>/absolute/path/to/...</code> with the exact full path to where you cloned the repo (e.g. <code>C:/Users/YourName/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js</code>). Relative paths fail because IDEs launch node from their own program directory.
+              <br />
+              2. <strong>Build TypeScript First</strong>: In your terminal, run <code>cd packages/mcp-devops && npm install && npm run build</code> so that <code>dist/index.js</code> is compiled.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Step 3: Beginner Prompt Recipes */}

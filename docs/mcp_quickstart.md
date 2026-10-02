@@ -17,6 +17,29 @@ The **Whizan DevOps MCP Server** enables AI coding agents (inside Cursor, Windsu
 
 ## 🛠️ 2. Adding to Your IDE
 
+### For Antigravity IDE (`~/.gemini/antigravity-ide/mcp_config.json`)
+
+On macOS/Linux: `~/.gemini/antigravity-ide/mcp_config.json`
+On Windows: `C:\Users\<Username>\.gemini\antigravity-ide\mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "whizan": {
+      "command": "node",
+      "args": [
+        "C:/Users/HP/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js"
+      ],
+      "env": {
+        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_KEY": "whz_live_your_actual_key_here"
+      }
+    }
+  }
+}
+```
+> **⚠️ Critical Note**: Always use the **full absolute path** to `packages/mcp-devops/dist/index.js` (forward slashes `/` work on Windows). Before starting the server, run `cd packages/mcp-devops && npm install && npm run build` to ensure `dist/index.js` is generated.
+
 ### For Cursor (`.cursor/mcp.json` or Cursor Settings -> Features -> MCP)
 
 Add the following to your `.cursor/mcp.json` (or your user MCP config):
@@ -26,7 +49,7 @@ Add the following to your `.cursor/mcp.json` (or your user MCP config):
   "mcpServers": {
     "whizan": {
       "command": "node",
-      "args": ["packages/mcp-devops/dist/index.js"],
+      "args": ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
       "env": {
         "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
         "WHIZAN_API_KEY": "whz_live_your_actual_key_here"

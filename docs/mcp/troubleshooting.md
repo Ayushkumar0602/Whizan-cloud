@@ -98,3 +98,52 @@ When the Azure VM reboots, containers are not running.
 ### Design Guarantee:
 * Source tarballs are permanently stored in `/opt/whizan-sources/services/<id>/source.tar.gz` (never in temporary `/tmp` folders).
 * Upon reboot, the Build Worker reads persistent source archives and restarts all registered container instances automatically.
+
+---
+
+## 7. Windows / Antigravity IDE `MODULE_NOT_FOUND` on MCP Startup
+
+### Symptom:
+When connecting the Whizan MCP server in Antigravity IDE, Cursor, or VS Code on Windows, the client immediately closes with:
+```
+Error: Cannot find module 'C:\Users\...\AppData\Local\Programs\Antigravity IDE\packages\mcp-devops\dist\index.js'
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+connection closed: calling "initialize": client is closing: EOF.
+```
+
+### Root Cause:
+1. **Relative Path Trap**: The MCP configuration uses a relative path (`"args": ["packages/mcp-devops/dist/index.js"]`). On Windows, IDEs execute subprocesses from their application installation directory (`C:\Users\...\AppData\Local\Programs\Antigravity IDE`), NOT the workspace repository directory.
+2. **Missing Build Artifacts**: The repository was cloned from Git without compiling the TypeScript source files. As a result, `packages/mcp-devops/dist/` does not yet exist.
+
+### Solution:
+1. **Compile the Package**:
+   In PowerShell or Command Prompt, navigate to the cloned repository and build:
+   ```bash
+   cd packages/mcp-devops
+   npm install
+   npm run build
+   ```
+   Ensure `packages/mcp-devops/dist/index.js` exists.
+
+2. **Specify Full Absolute Path in `mcp_config.json`**:
+   In `C:\Users\<YourUser>\.gemini\antigravity-ide\mcp_config.json` (or workspace `.cursor/mcp.json`), always provide the absolute path. Use forward slashes (`/`) to avoid Windows backslash escape issues:
+   ```json
+   {
+     "mcpServers": {
+       "whizan": {
+         "command": "node",
+         "args": [
+           "C:/Users/HP/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js"
+         ],
+         "env": {
+           "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+           "WHIZAN_API_KEY": "whz_live_YOUR_ACTUAL_KEY_HERE"
+         }
+       }
+     }
+   }
+   ```
+   *(Replace `C:/Users/HP/Desktop/Whizan-cloud-service` with the actual path to the cloned repository on your drive).*
+
