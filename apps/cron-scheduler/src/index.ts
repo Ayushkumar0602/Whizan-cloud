@@ -30,8 +30,15 @@ const redisSub = new Redis(REDIS_URL, {
   lazyConnect: false,
 });
 
+const redisStream = new Redis(REDIS_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+  lazyConnect: false,
+});
+
 redis.on("error", (err) => console.error("[Redis] Command error:", err.message));
 redisSub.on("error", (err) => console.error("[Redis] Subscriber error:", err.message));
+redisStream.on("error", (err) => console.error("[Redis] Stream consumer error:", err.message));
 
 // ─── VM Reboot / Cold Start Self-Healing ──────────────────────────────────────
 async function rehydrateScheduleFromControlPlane() {
@@ -62,7 +69,7 @@ async function rehydrateScheduleFromControlPlane() {
 // ─── Initialize Engine Components ─────────────────────────────────────────────
 const flusher = new BatchTelemetryFlusher(redis, API_URL, MESH_TOKEN);
 const dispatcher = new TaskDispatcher(redis, RUNTIME_URL, MESH_TOKEN);
-const scheduler = new ZeroIdleScheduler(redis, redisSub, dispatcher, flusher);
+const scheduler = new ZeroIdleScheduler(redis, redisSub, redisStream, dispatcher, flusher);
 
 async function main() {
   await rehydrateScheduleFromControlPlane();
@@ -80,6 +87,7 @@ const shutdown = async (signal: string) => {
   await scheduler.stop();
   await redis.quit();
   await redisSub.quit();
+  await redisStream.quit();
   process.exit(0);
 };
 

@@ -34,11 +34,12 @@ export class TaskDispatcher {
     job: CronJobData,
     executionId: string,
     triggerType: string = "SCHEDULED",
-    attempt: number = 0
+    attempt: number = 0,
+    existingRingBuffer?: CircularRingBuffer
   ): Promise<ExecutionTelemetry> {
     const startedAt = new Date().toISOString();
     const startTime = Date.now();
-    const ringBuffer = new CircularRingBuffer(64 * 1024); // 64 KB memory cap
+    const ringBuffer = existingRingBuffer || new CircularRingBuffer(64 * 1024); // 64 KB memory cap
 
     const logChannel = `cron:logs:${executionId}`;
 
@@ -117,6 +118,14 @@ export class TaskDispatcher {
 
     const durationMs = Date.now() - startTime;
     const finishedAt = new Date().toISOString();
+
+    if (status === "FAILED" && attempt < (job.maxRetries || 0)) {
+      const nextAttempt = attempt + 1;
+      const delaySec = job.retryDelaySeconds || 5;
+      publishLog(`\n[Whizan-Cron] ⚠️ Attempt ${nextAttempt}/${(job.maxRetries || 0) + 1} failed (${errorMessage || "Error"}). Retrying in ${delaySec}s...\n`);
+      await new Promise((r) => setTimeout(r, delaySec * 1000));
+      return this.dispatch(job, executionId, triggerType, nextAttempt, ringBuffer);
+    }
 
     publishLog(`[Whizan-Cron] Finished in ${durationMs}ms with status ${status}\n`);
 

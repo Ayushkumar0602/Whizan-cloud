@@ -327,6 +327,9 @@ export async function cronRoutes(app: FastifyInstance) {
       },
     });
 
+    // Ensure job metadata is cached in Redis for immediate worker execution
+    await redisClient.set(`cron:job:${cronJob.id}`, JSON.stringify(cronJob), "EX", 86400).catch(() => {});
+
     // Dispatch directly to Redis Stream for immediate worker execution
     await redisClient.xadd(
       "cron:dispatch:stream",
@@ -338,6 +341,9 @@ export async function cronRoutes(app: FastifyInstance) {
       "triggerType",
       "MANUAL"
     );
+
+    // Wake up daemon immediately via pub/sub
+    await redisClient.publish("cron:reschedule", JSON.stringify({ action: "DISPATCH", jobId: cronJob.id, executionId: execution.id })).catch(() => {});
 
     return reply.code(202).send({
       ok: true,
@@ -487,6 +493,9 @@ export async function cronRoutes(app: FastifyInstance) {
       },
     });
 
+    // Ensure job metadata is cached in Redis for immediate worker execution
+    await redisClient.set(`cron:job:${cronJob.id}`, JSON.stringify(cronJob), "EX", 86400).catch(() => {});
+
     await redisClient.xadd(
       "cron:dispatch:stream",
       "*",
@@ -497,6 +506,8 @@ export async function cronRoutes(app: FastifyInstance) {
       "triggerType",
       "RETRY"
     );
+
+    await redisClient.publish("cron:reschedule", JSON.stringify({ action: "DISPATCH", jobId: cronJob.id, executionId: execution.id })).catch(() => {});
 
     return reply.send({ ok: true, message: "Dead letter replayed successfully", executionId: execution.id });
   });
@@ -592,15 +603,14 @@ export async function cronRoutes(app: FastifyInstance) {
       return reply.send({ ok: true, inserted: 0 });
     }
 
-    // Insert batch of executions in one single query
-    const result = await prisma.cronExecution.createMany({
-      data: executions.map((exec) => ({
-        id: exec.id,
+    // Upsert batch of executions (properly updates pre-allocated IDs from manual/replay triggers)
+    for (const exec of executions) {
+      const execData = {
         cronJobId: exec.cronJobId,
         triggerType: exec.triggerType || "SCHEDULED",
         status: exec.status || "SUCCESS",
         startedAt: new Date(exec.startedAt),
-        finishedAt: exec.finishedAt ? new Date(exec.finishedAt) : null,
+        finishedAt: exec.finishedAt ? new Date(exec.finishedAt) : new Date(),
         durationMs: exec.durationMs,
         exitCode: exec.exitCode,
         httpStatusCode: exec.httpStatusCode,
@@ -610,12 +620,18 @@ export async function cronRoutes(app: FastifyInstance) {
         memoryMbPeak: exec.memoryMbPeak,
         cpuMs: exec.cpuMs,
         retryAttempt: exec.retryAttempt || 0,
-      })),
-      skipDuplicates: true,
-    });
+      };
 
-    // Also update parent cron jobs' lastStatus and lastRunAt & record Dead Letters on failure
-    for (const exec of executions) {
+      await prisma.cronExecution.upsert({
+        where: { id: exec.id },
+        create: {
+          id: exec.id,
+          ...execData,
+        },
+        update: execData,
+      }).catch(() => {});
+
+      // Also update parent cron jobs' lastStatus and lastRunAt & record Dead Letters on failure
       await prisma.cronJob.update({
         where: { id: exec.cronJobId },
         data: {
@@ -636,6 +652,6 @@ export async function cronRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({ ok: true, inserted: result.count });
+    return reply.send({ ok: true, processed: executions.length });
   });
 }
