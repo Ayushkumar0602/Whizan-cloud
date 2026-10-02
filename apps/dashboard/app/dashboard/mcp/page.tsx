@@ -410,9 +410,36 @@ export default function McpGuidePage() {
 
         {authModeTab === "zero-key" ? (
           <div>
-            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", lineHeight: 1.55 }}>
-              Run this single command once in your terminal. It links your computer to Whizan Cloud.
-              Once completed, your AI assistants in <strong>Antigravity, Cursor, Windsurf, and VS Code</strong> connect automatically with <strong>zero API keys in your configuration files</strong>!
+            {/* 1-Command Auto-Installer Card */}
+            <div style={{ background: "rgba(99, 102, 241, 0.08)", border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: "10px", padding: "1.1rem 1.25rem", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#818cf8", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <Sparkles size={16} /> 1-Command Magic Installer (Terminal Auto-Setup)
+                </span>
+                <span style={{ fontSize: "0.75rem", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", padding: "0.2rem 0.55rem", borderRadius: "9999px", fontWeight: 600 }}>
+                  Zero JSON Editing
+                </span>
+              </div>
+              <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "0 0 0.75rem 0", lineHeight: 1.45 }}>
+                Scans your computer for <strong>Antigravity IDE, Cursor, Windsurf, Claude Desktop, and VS Code</strong>, automatically registering Whizan MCP into all of them at once:
+              </p>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#05070a", border: "1px solid rgba(99, 102, 241, 0.25)", borderRadius: "8px", padding: "0.65rem 0.85rem", gap: "0.5rem", flexWrap: "wrap" }}>
+                <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontFamily: "var(--font-geist-mono), monospace" }}>
+                  npx @whizan/mcp-devops install
+                </code>
+                <button
+                  onClick={() => copyText("npx @whizan/mcp-devops install", "install-cmd")}
+                  className="btn btn-primary btn-sm"
+                  style={{ fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}
+                >
+                  {copiedKey === "install-cmd" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                  {copiedKey === "install-cmd" ? "Copied!" : "Copy Auto-Install Command"}
+                </button>
+              </div>
+            </div>
+
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1rem", lineHeight: 1.55 }}>
+              Or authorize your machine with 1 click via browser:
             </p>
 
             {/* 1-Click Terminal Command */}
@@ -435,6 +462,50 @@ export default function McpGuidePage() {
                 <Link href="/mcp/connect" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
                   Browser Connect <ExternalLink size={12} />
                 </Link>
+              </div>
+            </div>
+
+            {/* Visual Form UI Helper */}
+            <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", borderRadius: "10px", padding: "1rem 1.15rem", marginBottom: "1rem" }}>
+              <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                <FileCode size={15} style={{ color: "#38bdf8" }} />
+                For IDEs with a Visual Form UI (e.g. VS Code &ldquo;Add MCP server&rdquo; dialog)
+              </div>
+              <p style={{ fontSize: "0.78rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
+                If your editor asks you to fill out form fields instead of editing JSON, copy and paste these exact values:
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.6rem" }}>
+                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Name</div>
+                    <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>whizan</code>
+                  </div>
+                  <button onClick={() => copyText("whizan", "form-name")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                    {copiedKey === "form-name" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                  </button>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem" }}>
+                  <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Transport</div>
+                  <span style={{ fontSize: "0.82rem", color: "#10b981", fontWeight: 600 }}>Local command (stdio)</span>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Command</div>
+                    <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>npx</code>
+                  </div>
+                  <button onClick={() => copyText("npx", "form-cmd")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                    {copiedKey === "form-cmd" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                  </button>
+                </div>
+                <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Arguments</div>
+                    <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>-y @whizan/mcp-devops</code>
+                  </div>
+                  <button onClick={() => copyText("-y @whizan/mcp-devops", "form-args")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                    {copiedKey === "form-args" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+                  </button>
+                </div>
               </div>
             </div>
 

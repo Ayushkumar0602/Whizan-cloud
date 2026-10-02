@@ -323,6 +323,50 @@ export default function McpApiKeysPage() {
         >
           {mcpConfigSnippet}
         </pre>
+
+        {/* Visual Form UI Helper */}
+        <div style={{ background: "rgba(0,0,0,0.3)", border: "1px solid var(--border)", borderRadius: "10px", padding: "1rem 1.15rem", marginTop: "1.5rem" }}>
+          <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--foreground)", marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <FileCode size={15} style={{ color: "#38bdf8" }} />
+            For IDEs with a Visual Form UI (e.g. VS Code &ldquo;Add MCP server&rdquo; dialog)
+          </div>
+          <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
+            If your editor asks you to fill out form fields instead of editing JSON, copy and paste these exact values:
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.6rem" }}>
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Name</div>
+                <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>whizan</code>
+              </div>
+              <button onClick={() => copyText("whizan", "form-name")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                {copiedId === "form-name" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+              </button>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem" }}>
+              <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Transport</div>
+              <span style={{ fontSize: "0.82rem", color: "#10b981", fontWeight: 600 }}>Local command (stdio)</span>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Command</div>
+                <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>npx</code>
+              </div>
+              <button onClick={() => copyText("npx", "form-cmd")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                {copiedId === "form-cmd" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+              </button>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", borderRadius: "6px", padding: "0.5rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Arguments</div>
+                <code style={{ fontSize: "0.82rem", color: "#38bdf8" }}>-y @whizan/mcp-devops</code>
+              </div>
+              <button onClick={() => copyText("-y @whizan/mcp-devops", "form-args")} className="btn btn-secondary btn-sm" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}>
+                {copiedId === "form-args" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
