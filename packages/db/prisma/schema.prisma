@@ -35,6 +35,7 @@ model User {
   apiKeys          ApiKey[]
   functionServices FunctionService[]
   cronJobs         CronJob[]
+  workflows        Workflow[]
 
   @@map("users")
 }
@@ -639,5 +640,234 @@ enum DeadLetterStatus {
   DISCARDED
 
   @@map("dead_letter_status")
+}
+
+// ─────────────────────────────────────────
+//  WORKFLOW AUTOMATION (Whizan Flow Engine)
+// ─────────────────────────────────────────
+model Workflow {
+  id                String               @id @default(uuid())
+  userId            String               @map("user_id")
+  projectId         String?              @map("project_id")
+  name              String
+  description       String?              @db.Text
+  slug              String
+  
+  visualConfig      Json                 @default("{}") @map("visual_config")
+  codeDefinition    String               @default("") @db.Text @map("code_definition")
+  
+  enabled           Boolean              @default(true)
+  isTemplate        Boolean              @default(false) @map("is_template")
+  category          String               @default("CUSTOM")
+  
+  concurrencyPolicy WorkflowConcurrency  @default(QUEUE) @map("concurrency_policy")
+  maxConcurrentRuns Int                  @default(1) @map("max_concurrent_runs")
+  timeoutSeconds    Int                  @default(3600) @map("timeout_seconds")
+  
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+
+  user              User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodes             WorkflowNode[]
+  edges             WorkflowEdge[]
+  triggers          WorkflowTrigger[]
+  runs              WorkflowRun[]
+
+  @@unique([userId, slug])
+  @@index([userId, enabled])
+  @@map("workflows")
+}
+
+enum WorkflowConcurrency {
+  FORBID
+  QUEUE
+  ALLOW
+  REPLACE
+
+  @@map("workflow_concurrency")
+}
+
+model WorkflowNode {
+  id              String             @id @default(uuid())
+  workflowId      String             @map("workflow_id")
+  nodeKey         String             @map("node_key")
+  name            String
+  type            WorkflowNodeType   @map("type")
+  config          Json               @default("{}")
+  
+  timeoutSeconds  Int                @default(600) @map("timeout_seconds")
+  maxRetries      Int                @default(0) @map("max_retries")
+  retryDelaySec   Int                @default(5) @map("retry_delay_sec")
+  continueOnError Boolean            @default(false) @map("continue_on_error")
+  
+  positionX       Float              @default(0) @map("position_x")
+  positionY       Float              @default(0) @map("position_y")
+
+  workflow        Workflow           @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stepRuns        WorkflowStepRun[]
+
+  @@unique([workflowId, nodeKey])
+  @@map("workflow_nodes")
+}
+
+enum WorkflowNodeType {
+  TRIGGER_GIT
+  TRIGGER_CRON
+  TRIGGER_WEBHOOK
+  TRIGGER_MANUAL
+  
+  ACTION_WORKSPACE_ANALYZE
+  ACTION_BUILD_CONTAINER
+  ACTION_DEPLOY_EDGE
+  ACTION_DEPLOY_SERVICE
+  ACTION_CONTAINER_EXEC
+  ACTION_RUN_TESTS
+  
+  ACTION_HEALTH_PROBE
+  ACTION_ROUTER_CUTOVER
+  ACTION_AUTO_ROLLBACK
+  
+  ACTION_V8_FUNCTION
+  ACTION_HTTP_REQUEST
+  ACTION_DATABASE_QUERY
+  ACTION_AI_PROMPT
+  ACTION_NOTIFICATION
+  
+  CONTROL_CONDITION
+  CONTROL_PARALLEL
+  CONTROL_JOIN
+  CONTROL_DELAY
+  CONTROL_APPROVAL
+
+  @@map("workflow_node_type")
+}
+
+model WorkflowEdge {
+  id            String   @id @default(uuid())
+  workflowId    String   @map("workflow_id")
+  sourceNodeKey String   @map("source_node_key")
+  targetNodeKey String   @map("target_node_key")
+  condition     String?  @default("SUCCESS")
+
+  workflow      Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId, sourceNodeKey])
+  @@map("workflow_edges")
+}
+
+model WorkflowTrigger {
+  id              String    @id @default(uuid())
+  workflowId      String    @map("workflow_id")
+  type            String    @default("MANUAL")
+  config          Json      @default("{}")
+  enabled         Boolean   @default(true)
+  lastTriggeredAt DateTime? @map("last_triggered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  workflow        Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_triggers")
+}
+
+model WorkflowRun {
+  id              String            @id @default(uuid())
+  workflowId      String            @map("workflow_id")
+  triggerSource   String            @default("MANUAL") @map("trigger_source")
+  triggerMetadata Json?             @map("trigger_metadata")
+  
+  status          WorkflowRunStatus @default(PENDING)
+  
+  startedAt       DateTime          @default(now()) @map("started_at")
+  finishedAt      DateTime?         @map("finished_at")
+  durationMs      Int?              @map("duration_ms")
+  
+  contextData     Json              @default("{}") @map("context_data")
+  errorMessage    String?           @db.Text @map("error_message")
+  triggeredBy     String?           @map("triggered_by")
+
+  workflow        Workflow          @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  stepRuns        WorkflowStepRun[]
+  approvals       WorkflowApproval[]
+
+  @@index([workflowId, status])
+  @@index([startedAt(sort: Desc)])
+  @@map("workflow_runs")
+}
+
+enum WorkflowRunStatus {
+  PENDING
+  RUNNING
+  WAITING_FOR_APPROVAL
+  PAUSED
+  SUCCESS
+  FAILED
+  CANCELLED
+  TIMED_OUT
+
+  @@map("workflow_run_status")
+}
+
+model WorkflowStepRun {
+  id              String            @id @default(uuid())
+  runId           String            @map("run_id")
+  nodeId          String?           @map("node_id")
+  nodeKey         String            @map("node_key")
+  nodeType        WorkflowNodeType  @map("node_type")
+  
+  status          WorkflowRunStatus @default(PENDING)
+  
+  startedAt       DateTime          @default(now()) @map("started_at")
+  finishedAt      DateTime?         @map("finished_at")
+  durationMs      Int?              @map("duration_ms")
+  
+  memoizationHash String?           @map("memoization_hash")
+  outputData      Json?             @map("output_data")
+  exitCode        Int?              @map("exit_code")
+  httpStatusCode  Int?              @map("http_status_code")
+  
+  stdout          String?           @db.Text
+  stderr          String?           @db.Text
+  
+  retryAttempt    Int               @default(0) @map("retry_attempt")
+  errorMessage    String?           @db.Text @map("error_message")
+
+  workflowRun     WorkflowRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  node            WorkflowNode?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, nodeKey])
+  @@index([runId, status])
+  @@map("workflow_step_runs")
+}
+
+model WorkflowApproval {
+  id            String         @id @default(uuid())
+  runId         String         @map("run_id")
+  nodeKey       String         @map("node_key")
+  
+  title         String
+  description   String?        @db.Text
+  
+  status        ApprovalStatus @default(PENDING)
+  approvalToken String         @unique @map("approval_token")
+  
+  approvedBy    String?        @map("approved_by")
+  comments      String?        @db.Text
+  
+  expiresAt     DateTime       @map("expires_at")
+  respondedAt   DateTime?      @map("responded_at")
+
+  workflowRun   WorkflowRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, status])
+  @@map("workflow_approvals")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+
+  @@map("approval_status")
 }
 

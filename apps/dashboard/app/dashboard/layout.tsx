@@ -7,7 +7,7 @@ import { BrandMark } from "@/components/brand";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen, Database, Sparkles, Zap, Clock
+  PanelLeftClose, PanelLeftOpen, Database, Sparkles, Zap, Clock, Workflow as WorkflowIcon
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -100,6 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend") },
         { href: "/dashboard/functions", icon: Zap,         label: "Edge Functions",    match: (p: string) => p.startsWith("/dashboard/functions"), badge: "EDGE" },
         { href: "/dashboard/cron",      icon: Clock,       label: "Cron & Schedules",  match: (p: string) => p.startsWith("/dashboard/cron"), badge: "0-IDLE" },
+        { href: "/dashboard/flows",     icon: WorkflowIcon,label: "Whizan Flow",       match: (p: string) => p.startsWith("/dashboard/flows"), badge: "FLOW" },
         { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases") },
         { href: "/dashboard/services",  icon: Layers,      label: "Services Catalog",  match: (p: string) => p === "/dashboard/services" },
       ]

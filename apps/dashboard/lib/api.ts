@@ -1275,5 +1275,133 @@ export const cronApi = {
     }),
 };
 
+// ─── Whizan Flow Automation API ───────────────────────────────────────────────
+
+export interface WorkflowNodeItem {
+  id?: string;
+  workflowId?: string;
+  nodeKey: string;
+  name: string;
+  type: string;
+  config: Record<string, any>;
+  timeoutSeconds?: number;
+  maxRetries?: number;
+  retryDelaySec?: number;
+  continueOnError?: boolean;
+  positionX: number;
+  positionY: number;
+}
+
+export interface WorkflowEdgeItem {
+  id?: string;
+  workflowId?: string;
+  sourceNodeKey: string;
+  targetNodeKey: string;
+  condition?: string | null;
+}
+
+export interface WorkflowItem {
+  id: string;
+  userId: string;
+  projectId?: string | null;
+  name: string;
+  description?: string | null;
+  slug: string;
+  visualConfig: Record<string, any>;
+  codeDefinition: string;
+  enabled: boolean;
+  isTemplate: boolean;
+  category: string;
+  concurrencyPolicy: "FORBID" | "QUEUE" | "ALLOW" | "REPLACE";
+  maxConcurrentRuns: number;
+  timeoutSeconds: number;
+  createdAt: string;
+  updatedAt: string;
+  nodes?: WorkflowNodeItem[];
+  edges?: WorkflowEdgeItem[];
+  _count?: { nodes: number; edges: number; runs: number };
+  runs?: Array<{
+    id: string;
+    status: string;
+    startedAt: string;
+    finishedAt: string | null;
+    durationMs: number | null;
+  }>;
+}
+
+export interface WorkflowRunItem {
+  id: string;
+  workflowId: string;
+  triggerSource: string;
+  triggerMetadata: any;
+  status: "PENDING" | "RUNNING" | "WAITING_FOR_APPROVAL" | "PAUSED" | "SUCCESS" | "FAILED" | "CANCELLED" | "TIMED_OUT";
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  contextData: any;
+  errorMessage?: string | null;
+  stepRuns?: WorkflowStepRunItem[];
+  approvals?: any[];
+  _count?: { stepRuns: number };
+}
+
+export interface WorkflowStepRunItem {
+  id: string;
+  runId: string;
+  nodeKey: string;
+  nodeType: string;
+  status: string;
+  startedAt: string;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  memoizationHash?: string | null;
+  outputData?: any;
+  exitCode?: number | null;
+  httpStatusCode?: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  errorMessage?: string | null;
+}
+
+export const flowsApi = {
+  list: () => request<{ ok: boolean; workflows: WorkflowItem[] }>("/api/flows").then((r) => r.workflows || []),
+  get: (id: string) => request<{ ok: boolean; workflow: WorkflowItem }>(`/api/flows/${id}`).then((r) => r.workflow),
+  create: (data: any) =>
+    request<{ ok: boolean; workflow: WorkflowItem }>("/api/flows", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }).then((r) => r.workflow),
+  update: (id: string, data: any) =>
+    request<{ ok: boolean; workflow: WorkflowItem }>(`/api/flows/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }).then((r) => r.workflow),
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/api/flows/${id}`, {
+      method: "DELETE",
+    }),
+  trigger: (id: string, metadata?: any) =>
+    request<{ ok: boolean; message: string; runId: string }>(`/api/flows/${id}/trigger`, {
+      method: "POST",
+      body: JSON.stringify({ triggerMetadata: metadata }),
+    }),
+  getRuns: (id: string, page = 1, limit = 20) =>
+    request<{ ok: boolean; page: number; limit: number; total: number; totalPages: number; runs: WorkflowRunItem[] }>(
+      `/api/flows/${id}/runs?page=${page}&limit=${limit}`
+    ),
+  getRun: (id: string, runId: string) =>
+    request<{ ok: boolean; run: WorkflowRunItem }>(`/api/flows/${id}/runs/${runId}`).then((r) => r.run),
+  getLogsStreamUrl: (id: string, runId: string) => `${getApiBase()}/api/flows/${id}/runs/${runId}/logs/stream`,
+  respondApproval: (token: string, approved: boolean, comments?: string) =>
+    request<{ ok: boolean; message: string }>(`/api/flows/approvals/${token}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ approved, comments }),
+    }),
+  replayRun: (id: string, runId: string) =>
+    request<{ ok: boolean; message: string; runId: string }>(`/api/flows/${id}/runs/${runId}/replay`, {
+      method: "POST",
+    }),
+};
+
 
 
