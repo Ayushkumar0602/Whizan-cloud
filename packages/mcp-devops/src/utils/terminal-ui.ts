@@ -58,7 +58,7 @@ function timestamp(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
-export function printWhizanBanner(version = "1.0.2", subtitle = "Autonomous Cloud DevOps & In-IDE Deployment Engine") {
+export function printWhizanBanner(version = "1.0.3", subtitle = "Autonomous Cloud DevOps & In-IDE Deployment Engine") {
   const c = colors;
   const banner = `
 ${c.whizanIndigo}  ██╗    ██╗██╗  ██╗██╗███████╗ █████╗ ███╗   ██╗
