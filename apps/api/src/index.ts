@@ -208,9 +208,19 @@ await app.register(containerRoutes, { prefix: "/api/containers" });
 await app.register(functionRoutes, { prefix: "/api/functions" });
 await app.register(cronRoutes, { prefix: "/api/crons" });
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
+// ─── Health Check & Root ──────────────────────────────────────────────────────
 
-app.get("/health", async () => ({ status: "ok", ts: Date.now() }));
+app.route({
+  method: ["GET", "POST", "HEAD"],
+  url: "/health",
+  handler: async () => ({ status: "ok", ts: Date.now() }),
+});
+
+app.route({
+  method: ["GET", "HEAD"],
+  url: "/",
+  handler: async () => ({ status: "ok", name: "Whizan Cloud Service Control Plane", ts: Date.now() }),
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
