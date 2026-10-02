@@ -10,31 +10,7 @@ const INTERNAL_MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_
 const WorkflowNodeSchema = z.object({
   nodeKey: z.string().min(1).max(100),
   name: z.string().min(1).max(150),
-  type: z.enum([
-    "TRIGGER_GIT",
-    "TRIGGER_CRON",
-    "TRIGGER_WEBHOOK",
-    "TRIGGER_MANUAL",
-    "ACTION_WORKSPACE_ANALYZE",
-    "ACTION_BUILD_CONTAINER",
-    "ACTION_DEPLOY_EDGE",
-    "ACTION_DEPLOY_SERVICE",
-    "ACTION_CONTAINER_EXEC",
-    "ACTION_RUN_TESTS",
-    "ACTION_HEALTH_PROBE",
-    "ACTION_ROUTER_CUTOVER",
-    "ACTION_AUTO_ROLLBACK",
-    "ACTION_V8_FUNCTION",
-    "ACTION_HTTP_REQUEST",
-    "ACTION_DATABASE_QUERY",
-    "ACTION_AI_PROMPT",
-    "ACTION_NOTIFICATION",
-    "CONTROL_CONDITION",
-    "CONTROL_PARALLEL",
-    "CONTROL_JOIN",
-    "CONTROL_DELAY",
-    "CONTROL_APPROVAL",
-  ]),
+  type: z.string().min(1),
   config: z.record(z.any()).default({}),
   timeoutSeconds: z.number().int().positive().default(600),
   maxRetries: z.number().int().min(0).max(5).default(0),
@@ -136,7 +112,7 @@ export async function flowRoutes(app: FastifyInstance) {
           create: nodes.map((n) => ({
             nodeKey: n.nodeKey,
             name: n.name,
-            type: n.type,
+            type: (n.type === "CONTROL_BRANCH" ? "CONTROL_CONDITION" : n.type) as any,
             config: n.config,
             timeoutSeconds: n.timeoutSeconds,
             maxRetries: n.maxRetries,
@@ -204,8 +180,8 @@ export async function flowRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, workflow });
   });
 
-  // ─── 4. UPDATE WORKFLOW ─────────────────────────────────────────────────────
-  app.patch("/:id", { preHandler: [app.authenticate] }, async (request: any, reply) => {
+  // ─── 4. UPDATE WORKFLOW (PUT & PATCH) ───────────────────────────────────────
+  const updateWorkflowHandler = async (request: any, reply: any) => {
     const userId = request.user?.userId || request.user?.id;
     const { id } = request.params;
 
@@ -230,14 +206,14 @@ export async function flowRoutes(app: FastifyInstance) {
             workflowId: id,
             nodeKey: n.nodeKey,
             name: n.name,
-            type: n.type,
-            config: n.config,
-            timeoutSeconds: n.timeoutSeconds,
-            maxRetries: n.maxRetries,
-            retryDelaySec: n.retryDelaySec,
-            continueOnError: n.continueOnError,
-            positionX: n.positionX,
-            positionY: n.positionY,
+            type: (n.type === "CONTROL_BRANCH" ? "CONTROL_CONDITION" : n.type) as any,
+            config: n.config || {},
+            timeoutSeconds: n.timeoutSeconds ?? 300,
+            maxRetries: n.maxRetries ?? 0,
+            retryDelaySec: n.retryDelaySec ?? 5,
+            continueOnError: Boolean(n.continueOnError),
+            positionX: n.positionX ?? 0,
+            positionY: n.positionY ?? 0,
           })),
         });
       }
@@ -249,7 +225,7 @@ export async function flowRoutes(app: FastifyInstance) {
             workflowId: id,
             sourceNodeKey: e.sourceNodeKey,
             targetNodeKey: e.targetNodeKey,
-            condition: e.condition,
+            condition: e.condition || null,
           })),
         });
       }
@@ -273,7 +249,10 @@ export async function flowRoutes(app: FastifyInstance) {
     await redisClient.set(`flow:def:${updated.id}`, JSON.stringify(updated), "EX", 86400 * 7);
 
     return reply.send({ ok: true, workflow: updated });
-  });
+  };
+
+  app.put("/:id", { preHandler: [app.authenticate] }, updateWorkflowHandler);
+  app.patch("/:id", { preHandler: [app.authenticate] }, updateWorkflowHandler);
 
   // ─── 5. DELETE WORKFLOW ─────────────────────────────────────────────────────
   app.delete("/:id", { preHandler: [app.authenticate] }, async (request: any, reply) => {
@@ -400,11 +379,17 @@ export async function flowRoutes(app: FastifyInstance) {
   // ─── 9. REAL-TIME LIVE LOG STREAMING (SSE) ─────────────────────────────────
   app.get("/:id/runs/:runId/logs/stream", async (request: any, reply) => {
     const { runId } = request.params;
+    const origin = request.headers.origin || "*";
 
-    reply.raw.setHeader("Content-Type", "text/event-stream");
-    reply.raw.setHeader("Cache-Control", "no-cache");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.flushHeaders();
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+      "X-Accel-Buffering": "no",
+    });
 
     const channelPattern = `flow:logs:${runId}:*`;
     const subscriber = redisSub.duplicate();

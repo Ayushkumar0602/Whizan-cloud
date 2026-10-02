@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useMemo, use } from "react";
+import { useEffect, useState, useRef, useMemo, use, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -40,6 +40,7 @@ import {
   Radio,
   FileCode,
   Info,
+  Link2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
@@ -77,7 +78,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
 
   // Canvas pan & zoom
   const [zoom, setZoom] = useState<number>(1);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 80, y: 80 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -87,13 +88,17 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
   const [inspectorTab, setInspectorTab] = useState<"CONFIG" | "POLICIES">("CONFIG");
   const [paletteOpen, setPaletteOpen] = useState(true);
 
-  // Dragging node
+  // Dragging node (smooth pointer tracking)
   const [draggingNodeKey, setDraggingNodeKey] = useState<string | null>(null);
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Dragging connection wire (port to port)
+  // Connection wire dragging
   const [connectingSourceKey, setConnectingSourceKey] = useState<string | null>(null);
+  const [hoveredTargetKey, setHoveredTargetKey] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Quick Add child step helper
+  const [quickAddParentKey, setQuickAddParentKey] = useState<string | null>(null);
 
   // Execution & Live Terminal
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -164,7 +169,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     toast.success("DSL code synchronized to canvas!");
   };
 
-  // Save Pipeline
+  // Save Pipeline (supports both PUT and PATCH via flowsApi.update)
   const handleSave = async () => {
     if (!workflow) return;
     setSaving(true);
@@ -195,7 +200,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     setTriggering(true);
     try {
       await handleSave();
-      const res = await flowsApi.trigger(flowId, { source: "CANVAS_INTERACTIVE" });
+      const res = await flowsApi.trigger(flowId, { source: "CANVAS_STUDIO" });
       toast.success(`Pipeline triggered! Run ID: ${res.runId.slice(0, 8)}`);
       setTerminalOpen(true);
       setTerminalLogs([{ line: `[Whizan-Flow] Enqueued execution run ${res.runId}...\n`, ts: Date.now() }]);
@@ -214,7 +219,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // Live SSE Log Streaming
+  // ─── LIVE SSE LOG STREAMING WITH AUTO-POLLING FALLBACK ─────────────────────
   useEffect(() => {
     if (!terminalOpen || !currentRun) {
       if (eventSourceRef.current) {
@@ -224,31 +229,69 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
       return;
     }
 
-    const streamUrl = flowsApi.getLogsStreamUrl(flowId, currentRun.id);
-    const token = getAccessToken();
-    const fullUrl = token ? `${streamUrl}?token=${encodeURIComponent(token)}` : streamUrl;
+    let pollInterval: any = null;
 
-    const es = new EventSource(fullUrl);
-    eventSourceRef.current = es;
-
-    es.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        if (parsed.line) {
-          setTerminalLogs((prev) => [...prev, { line: parsed.line, ts: parsed.ts || Date.now() }]);
-        }
-        if (parsed.runStatus && currentRun) {
-          setCurrentRun((prev) => (prev ? { ...prev, status: parsed.runStatus } : prev));
-        }
-      } catch {
-        setTerminalLogs((prev) => [...prev, { line: event.data + "\n", ts: Date.now() }]);
-      }
+    const startPollingFallback = () => {
+      if (pollInterval) return;
+      pollInterval = setInterval(async () => {
+        try {
+          const latestRun = await flowsApi.getRun(flowId, currentRun.id);
+          setCurrentRun(latestRun);
+          if (latestRun.stepRuns && latestRun.stepRuns.length > 0) {
+            const lines: Array<{ line: string; ts: number }> = [];
+            for (const step of latestRun.stepRuns) {
+              if (step.stdout) lines.push({ line: step.stdout, ts: Date.now() });
+              if (step.errorMessage) lines.push({ line: `[Error] ${step.errorMessage}\n`, ts: Date.now() });
+            }
+            if (lines.length > 0) {
+              setTerminalLogs((prev) => (prev.length < lines.length ? lines : prev));
+            }
+          }
+          if (["SUCCESS", "FAILED", "CANCELLED", "TIMED_OUT"].includes(latestRun.status)) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        } catch {}
+      }, 2500);
     };
 
-    es.onerror = () => {};
+    // Try EventSource
+    try {
+      const streamUrl = flowsApi.getLogsStreamUrl(flowId, currentRun.id);
+      const token = getAccessToken();
+      const fullUrl = token ? `${streamUrl}?token=${encodeURIComponent(token)}` : streamUrl;
+
+      const es = new EventSource(fullUrl);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          if (parsed.line) {
+            setTerminalLogs((prev) => [...prev, { line: parsed.line, ts: parsed.ts || Date.now() }]);
+          }
+          if (parsed.runStatus && currentRun) {
+            setCurrentRun((prev) => (prev ? { ...prev, status: parsed.runStatus } : prev));
+          }
+        } catch {
+          setTerminalLogs((prev) => [...prev, { line: event.data + "\n", ts: Date.now() }]);
+        }
+      };
+
+      es.onerror = () => {
+        // Switch to polling fallback seamlessly
+        startPollingFallback();
+      };
+    } catch {
+      startPollingFallback();
+    }
 
     return () => {
-      es.close();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (pollInterval) clearInterval(pollInterval);
     };
   }, [terminalOpen, currentRun?.id]);
 
@@ -293,12 +336,74 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // Node Dragging logic
-  const handleNodeMouseDown = (e: React.MouseEvent, nodeKey: string) => {
+  // ─── ROBUST GLOBAL POINTER LISTENERS FOR DRAGGING & PANNING ─────────────────
+  useEffect(() => {
+    const handleGlobalPointerMove = (e: PointerEvent) => {
+      if (isPanning) {
+        setPan({
+          x: e.clientX - panStartRef.current.x,
+          y: e.clientY - panStartRef.current.y,
+        });
+        return;
+      }
+
+      if (draggingNodeKey) {
+        const newX = Math.round((e.clientX - pan.x) / zoom - dragOffsetRef.current.x);
+        const newY = Math.round((e.clientY - pan.y) / zoom - dragOffsetRef.current.y);
+        setNodes((prev) =>
+          prev.map((n) => (n.nodeKey === draggingNodeKey ? { ...n, positionX: newX, positionY: newY } : n))
+        );
+        return;
+      }
+
+      if (connectingSourceKey) {
+        setMousePos({
+          x: (e.clientX - pan.x) / zoom,
+          y: (e.clientY - pan.y) / zoom,
+        });
+      }
+    };
+
+    const handleGlobalPointerUp = () => {
+      if (isPanning) setIsPanning(false);
+      if (draggingNodeKey) setDraggingNodeKey(null);
+
+      // Complete connection if released over a target node
+      if (connectingSourceKey && hoveredTargetKey && connectingSourceKey !== hoveredTargetKey) {
+        const exists = edges.some(
+          (ed) => ed.sourceNodeKey === connectingSourceKey && ed.targetNodeKey === hoveredTargetKey
+        );
+        if (!exists) {
+          setEdges((prev) => [
+            ...prev,
+            { sourceNodeKey: connectingSourceKey, targetNodeKey: hoveredTargetKey, condition: "success" },
+          ]);
+          toast.success(`Connected ${connectingSourceKey} → ${hoveredTargetKey}`);
+        }
+      }
+      setConnectingSourceKey(null);
+      setHoveredTargetKey(null);
+    };
+
+    window.addEventListener("pointermove", handleGlobalPointerMove);
+    window.addEventListener("pointerup", handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handleGlobalPointerMove);
+      window.removeEventListener("pointerup", handleGlobalPointerUp);
+    };
+  }, [isPanning, draggingNodeKey, connectingSourceKey, hoveredTargetKey, pan, zoom, edges]);
+
+  // Node Drag Initiation
+  const handleNodePointerDown = (e: React.PointerEvent, nodeKey: string) => {
     if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest(".flow-port") || target.closest("button") || target.closest("input")) return;
+
     e.stopPropagation();
     setSelectedNodeKey(nodeKey);
     setDraggingNodeKey(nodeKey);
+
     const node = nodes.find((n) => n.nodeKey === nodeKey);
     if (node) {
       dragOffsetRef.current = {
@@ -308,48 +413,27 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // Canvas Mouse Move (Panning, Dragging Node, or Dragging Wire)
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
-      setPan({
-        x: e.clientX - panStartRef.current.x,
-        y: e.clientY - panStartRef.current.y,
-      });
+  // Canvas Background Pan Initiation
+  const handleCanvasPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.closest(".flow-node-card") ||
+      target.closest(".flow-port") ||
+      target.closest("button") ||
+      target.closest("input") ||
+      target.closest(".flow-palette")
+    ) {
       return;
     }
 
-    if (draggingNodeKey) {
-      const newX = Math.round((e.clientX - pan.x) / zoom - dragOffsetRef.current.x);
-      const newY = Math.round((e.clientY - pan.y) / zoom - dragOffsetRef.current.y);
-      setNodes((prev) =>
-        prev.map((n) => (n.nodeKey === draggingNodeKey ? { ...n, positionX: newX, positionY: newY } : n))
-      );
-      return;
-    }
-
-    if (connectingSourceKey) {
-      setMousePos({
-        x: (e.clientX - pan.x) / zoom,
-        y: (e.clientY - pan.y) / zoom,
-      });
-    }
+    setIsPanning(true);
+    panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+    setSelectedNodeKey(null);
   };
 
-  const handleMouseUp = () => {
-    setIsPanning(false);
-    setDraggingNodeKey(null);
-    setConnectingSourceKey(null);
-  };
-
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0 && e.target === canvasRef.current) {
-      setIsPanning(true);
-      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-      setSelectedNodeKey(null);
-    }
-  };
-
-  const handlePortMouseDown = (e: React.MouseEvent, sourceKey: string) => {
+  // Output Port Connect Wire Initiation
+  const handlePortPointerDown = (e: React.PointerEvent, sourceKey: string) => {
     e.stopPropagation();
     setConnectingSourceKey(sourceKey);
     setMousePos({
@@ -358,50 +442,47 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     });
   };
 
-  const handlePortMouseUp = (e: React.MouseEvent, targetKey: string) => {
-    e.stopPropagation();
-    if (!connectingSourceKey || connectingSourceKey === targetKey) {
-      setConnectingSourceKey(null);
-      return;
-    }
-
-    const exists = edges.some((ed) => ed.sourceNodeKey === connectingSourceKey && ed.targetNodeKey === targetKey);
-    if (!exists) {
-      setEdges((prev) => [...prev, { sourceNodeKey: connectingSourceKey, targetNodeKey: targetKey }]);
-      toast.success(`Linked ${connectingSourceKey} → ${targetKey}`);
-    }
-    setConnectingSourceKey(null);
-  };
-
-  const handleDeleteEdge = (sourceKey: string, targetKey: string) => {
-    setEdges((prev) => prev.filter((e) => !(e.sourceNodeKey === sourceKey && e.targetNodeKey === targetKey)));
-    toast.info("Transition removed");
-  };
-
-  const handleAddNode = (type: string) => {
+  // Add Step from Palette
+  const handleAddNode = (type: string, parentKey?: string) => {
     const meta = FLOW_NODE_TYPES[type];
     if (!meta) return;
 
     const baseKey = meta.label.toLowerCase().replace(/[^a-z0-9]+/g, "_");
     const uniqueKey = `${baseKey}_${Math.random().toString(36).slice(2, 6)}`;
 
-    const posX = Math.round((-pan.x + 360) / zoom);
-    const posY = Math.round((-pan.y + 220) / zoom);
+    let posX = Math.round((-pan.x + 400) / zoom);
+    let posY = Math.round((-pan.y + 220) / zoom);
+
+    // If added as child of an existing node, place to the right!
+    if (parentKey) {
+      const parentNode = nodes.find((n) => n.nodeKey === parentKey);
+      if (parentNode) {
+        posX = parentNode.positionX + 320;
+        posY = parentNode.positionY;
+      }
+    }
 
     const newNode: WorkflowNodeItem = {
       nodeKey: uniqueKey,
       name: meta.label,
       type: meta.type,
       config: { ...meta.defaultConfig },
-      positionX: Math.max(60, posX),
-      positionY: Math.max(60, posY),
+      positionX: Math.max(40, posX),
+      positionY: Math.max(40, posY),
       timeoutSeconds: 300,
       maxRetries: 0,
       continueOnError: false,
     };
 
     setNodes((prev) => [...prev, newNode]);
+
+    // If parentKey exists, wire automatically!
+    if (parentKey) {
+      setEdges((prev) => [...prev, { sourceNodeKey: parentKey, targetNodeKey: uniqueKey, condition: "success" }]);
+    }
+
     setSelectedNodeKey(uniqueKey);
+    setQuickAddParentKey(null);
     toast.success(`Added ${meta.label}`);
   };
 
@@ -410,6 +491,11 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     setEdges((prev) => prev.filter((e) => e.sourceNodeKey !== nodeKey && e.targetNodeKey !== nodeKey));
     if (selectedNodeKey === nodeKey) setSelectedNodeKey(null);
     toast.info(`Deleted step ${nodeKey}`);
+  };
+
+  const handleDeleteEdge = (sourceKey: string, targetKey: string) => {
+    setEdges((prev) => prev.filter((e) => !(e.sourceNodeKey === sourceKey && e.targetNodeKey === targetKey)));
+    toast.info("Transition removed");
   };
 
   const selectedNode = useMemo(() => {
@@ -456,7 +542,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "0.65rem 1rem",
+          padding: "0.65rem 1.25rem",
           background: "var(--card)",
           borderBottom: "1px solid var(--border)",
           zIndex: 40,
@@ -599,19 +685,24 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
           <div
             ref={canvasRef}
             className="flow-canvas-container"
-            onMouseDown={handleCanvasMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            style={{ width: "100%", height: "100%", border: "none", borderRadius: 0 }}
+            onPointerDown={handleCanvasPointerDown}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              borderRadius: 0,
+              cursor: isPanning ? "grabbing" : "default",
+            }}
           >
             {/* ─── FLOATING STEP PALETTE (LEFT DOCK) ─────────────────────────────── */}
             <div
+              className="flow-palette"
               style={{
                 position: "absolute",
                 top: 16,
                 left: 16,
                 zIndex: 35,
-                width: paletteOpen ? 230 : 42,
+                width: paletteOpen ? 240 : 42,
                 background: "var(--card)",
                 border: "1px solid var(--border)",
                 borderRadius: 12,
@@ -670,12 +761,12 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "space-between",
-                                  padding: "0.4rem 0.6rem",
+                                  padding: "0.45rem 0.65rem",
                                   borderRadius: 6,
                                   background: "var(--bg-inset)",
                                   border: "1px solid var(--border)",
                                   color: "var(--foreground)",
-                                  fontSize: "0.74rem",
+                                  fontSize: "0.76rem",
                                   fontWeight: 550,
                                   cursor: "pointer",
                                   textAlign: "left",
@@ -719,7 +810,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               style={{
                 position: "absolute",
                 bottom: 20,
-                left: paletteOpen ? 260 : 70,
+                left: paletteOpen ? 270 : 70,
                 zIndex: 30,
                 display: "flex",
                 alignItems: "center",
@@ -752,7 +843,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               <button
                 onClick={() => {
                   setZoom(1);
-                  setPan({ x: 0, y: 0 });
+                  setPan({ x: 80, y: 80 });
                 }}
                 className="btn btn-ghost btn-sm"
                 title="Reset View"
@@ -769,8 +860,8 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 left: 0,
                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                 transformOrigin: "0 0",
-                width: 4500,
-                height: 4500,
+                width: 5000,
+                height: 5000,
                 pointerEvents: "none",
               }}
             >
@@ -912,6 +1003,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               {nodes.map((node) => {
                 const meta = FLOW_NODE_TYPES[node.type] || FLOW_NODE_TYPES.ACTION_HTTP_REQUEST;
                 const isSelected = selectedNodeKey === node.nodeKey;
+                const isTargetHovered = hoveredTargetKey === node.nodeKey;
                 const stepRun = nodeStatusMap[node.nodeKey];
                 const isRunning = stepRun?.status === "RUNNING";
                 const isSuccess = stepRun?.status === "SUCCESS";
@@ -928,7 +1020,9 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                       left: node.positionX,
                       top: node.positionY,
                       width: 260,
-                      borderColor: isSuccess
+                      borderColor: isTargetHovered
+                        ? "#10b981"
+                        : isSuccess
                         ? "#10b981"
                         : isFailed
                         ? "#f43f5e"
@@ -937,12 +1031,36 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                         : isSelected
                         ? "var(--accent)"
                         : "var(--card-border)",
+                      boxShadow: isTargetHovered
+                        ? "0 0 0 2px #10b981, 0 12px 30px rgba(16, 185, 129, 0.25)"
+                        : undefined,
                       pointerEvents: "all",
                       overflow: "hidden",
                     }}
-                    onMouseDown={(e) => handleNodeMouseDown(e, node.nodeKey)}
+                    onPointerDown={(e) => handleNodePointerDown(e, node.nodeKey)}
+                    onMouseEnter={() => {
+                      if (connectingSourceKey && connectingSourceKey !== node.nodeKey) {
+                        setHoveredTargetKey(node.nodeKey);
+                      }
+                    }}
+                    onMouseLeave={() => {
+                      if (hoveredTargetKey === node.nodeKey) {
+                        setHoveredTargetKey(null);
+                      }
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
+                      // If connecting, link it!
+                      if (connectingSourceKey && connectingSourceKey !== node.nodeKey) {
+                        setEdges((prev) => [
+                          ...prev,
+                          { sourceNodeKey: connectingSourceKey, targetNodeKey: node.nodeKey, condition: "success" },
+                        ]);
+                        setConnectingSourceKey(null);
+                        setHoveredTargetKey(null);
+                        toast.success(`Linked to ${node.nodeKey}`);
+                        return;
+                      }
                       setSelectedNodeKey(node.nodeKey);
                     }}
                   >
@@ -958,15 +1076,14 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                     {/* Input Port (Left) */}
                     <div
                       className="flow-port flow-port-input"
-                      title="Connect input"
-                      onMouseUp={(e) => handlePortMouseUp(e, node.nodeKey)}
+                      title="Input Port (click or release here to link)"
                     />
 
                     {/* Output Port (Right) */}
                     <div
                       className="flow-port flow-port-output"
-                      title="Drag to connect"
-                      onMouseDown={(e) => handlePortMouseDown(e, node.nodeKey)}
+                      title="Output Port (drag to connect next step)"
+                      onPointerDown={(e) => handlePortPointerDown(e, node.nodeKey)}
                     />
 
                     {/* Card Interior */}
@@ -993,14 +1110,29 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                           {meta.badge}
                         </span>
 
-                        {stepRun && (
-                          <div style={{ display: "flex", alignItems: "center" }}>
-                            {isSuccess && <CheckCircle2 size={14} style={{ color: "#10b981" }} />}
-                            {isFailed && <AlertCircle size={14} style={{ color: "#f43f5e" }} />}
-                            {isRunning && <span className="spinner" style={{ width: 12, height: 12 }} />}
-                            {isWaiting && <Clock size={14} style={{ color: "#eab308" }} />}
-                          </div>
-                        )}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                          {stepRun && (
+                            <>
+                              {isSuccess && <CheckCircle2 size={14} style={{ color: "#10b981" }} />}
+                              {isFailed && <AlertCircle size={14} style={{ color: "#f43f5e" }} />}
+                              {isRunning && <span className="spinner" style={{ width: 12, height: 12 }} />}
+                              {isWaiting && <Clock size={14} style={{ color: "#eab308" }} />}
+                            </>
+                          )}
+
+                          {/* Quick Add Child (+) button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setQuickAddParentKey(node.nodeKey);
+                            }}
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: "0.15rem 0.35rem", fontSize: "0.7rem", color: "var(--muted)" }}
+                            title="Add next step"
+                          >
+                            <Plus size={13} />
+                          </button>
+                        </div>
                       </div>
 
                       <div
@@ -1036,6 +1168,93 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 );
               })}
             </div>
+
+            {/* Quick Add Child Step Popup Modal */}
+            {quickAddParentKey && (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0, 0, 0, 0.6)",
+                  backdropFilter: "blur(4px)",
+                  zIndex: 100,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "1rem",
+                }}
+                onClick={() => setQuickAddParentKey(null)}
+              >
+                <div
+                  className="card"
+                  style={{
+                    width: "100%",
+                    maxWidth: 580,
+                    maxHeight: "80vh",
+                    overflowY: "auto",
+                    padding: "1.25rem",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "1rem",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <Link2 size={16} style={{ color: "var(--accent)" }} />
+                      <h3 style={{ fontSize: "1rem", fontWeight: 700 }}>
+                        Connect Next Step to &quot;{nodes.find((n) => n.nodeKey === quickAddParentKey)?.name}&quot;
+                      </h3>
+                    </div>
+                    <button onClick={() => setQuickAddParentKey(null)} className="btn btn-ghost btn-sm">
+                      <X size={15} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem" }}>
+                    {Object.values(FLOW_NODE_TYPES).map((n) => (
+                      <div
+                        key={n.type}
+                        onClick={() => handleAddNode(n.type, quickAddParentKey)}
+                        style={{
+                          padding: "0.65rem 0.8rem",
+                          borderRadius: 8,
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          transition: "all 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = n.color;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = "var(--border)";
+                        }}
+                      >
+                        <span style={{ fontSize: "0.8rem", fontWeight: 650, color: "var(--foreground)" }}>
+                          {n.label}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "0.6rem",
+                            fontWeight: 700,
+                            padding: "0.1rem 0.35rem",
+                            borderRadius: 4,
+                            background: n.bgGlow,
+                            color: n.color,
+                          }}
+                        >
+                          {n.badge}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* ─── CODE DSL EDITOR ─────────────────────────────────────────────────── */
@@ -1062,7 +1281,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 <Code2 size={16} style={{ color: "var(--accent)" }} />
                 <span style={{ fontSize: "0.86rem", fontWeight: 700 }}>TypeScript Workflow DSL</span>
                 <span style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
-                  (Edit code and click "Apply DSL to Canvas" to update the graph)
+                  (Edit code and click &quot;Apply DSL to Canvas&quot; to update the graph)
                 </span>
               </div>
 
@@ -1185,7 +1404,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                   cursor: "pointer",
                 }}
               >
-                Policies & Retries
+                Policies &amp; Retries
               </button>
             </div>
 
@@ -1606,7 +1825,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
             >
               {terminalLogs.length === 0 ? (
                 <span style={{ color: "var(--muted)" }}>
-                  Connecting to live SSE stream... Step execution logs will appear here.
+                  Connecting to live stream... Step execution logs will appear here.
                 </span>
               ) : (
                 terminalLogs.map((log, idx) => (
