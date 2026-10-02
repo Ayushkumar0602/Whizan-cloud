@@ -1613,7 +1613,7 @@ async function handleCliInstall(args: string[]) {
   console.log(`  ${c.whizanCyan}🔍 Scanning computer for installed AI IDEs and editors...${c.reset}\n`);
 
   let specificId: string | undefined;
-  for (const candidate of ["cursor", "windsurf", "claude", "vscode", "antigravity"]) {
+  for (const candidate of ["claude-code", "cursor", "windsurf", "claude", "vscode", "antigravity"]) {
     if (args.includes(`--${candidate}`)) {
       specificId = candidate;
       break;

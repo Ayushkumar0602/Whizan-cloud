@@ -1,83 +1,36 @@
-# Whizan DevOps MCP Server (`@whizan/mcp-devops`)
+# Whizan Cloud DevOps MCP (`@whizan/mcp-devops`)
 
-> Autonomous Cloud DevOps & In-IDE Deployment Engine for Antigravity IDE, Cursor, Windsurf, Claude Desktop, and VS Code.
-
-The **Whizan DevOps MCP Server** empowers AI coding assistants (like Gemini, Cursor Composer, and Claude) to autonomously audit codebases, resolve networking/port traps, provision managed cloud databases, and deploy fullstack web apps and Docker backend services directly to **Whizan Cloud Service**.
+> Connect your AI coding assistant (Cursor, Antigravity, Claude Code, Windsurf, VS Code) to Whizan Cloud. Deploy fullstack web apps, backend APIs, and managed databases with simple chat prompts.
 
 ---
 
-## 🚀 How to Set Up (Choose Your Preferred Method)
+## 🚀 Quick Setup (Just 2 Steps)
 
-We provide two frictionless methods to configure Whizan MCP in your editor:
+### Step 1: Log in from your terminal (Do this once)
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│ METHOD 1: 1-Command Terminal Setup (Fastest & Zero-Key)                 │
-│ 1. npx @whizan/mcp-devops login    ──► Authenticate machine via browser│
-│ 2. npx @whizan/mcp-devops install  ──► Auto-configures all AI editors  │
-├────────────────────────────────────────────────────────────────────────┤
-│ METHOD 2: Visual Form UI (VS Code "Add MCP server" Dialog)             │
-│ Fill in Name, Transport, Command, Arguments in the GUI modal           │
-└────────────────────────────────────────────────────────────────────────┘
-```
+Open any terminal on your computer and run:
 
----
-
-### Method 1: The 1-Command Magic Setup (Recommended)
-
-You **never need to open JSON files or copy-paste API keys**. Run these two commands in your terminal:
-
-#### Step 1: Link your machine to Whizan Cloud
 ```bash
 npx @whizan/mcp-devops login
 ```
-* Opens your browser automatically to authorize your machine.
-* Securely stores your session in `~/.whizan/config.json`.
-* **Zero API keys needed in your project or config files.**
 
-#### Step 2: Auto-register into all your IDEs
+* Your browser will automatically open to Whizan Cloud.
+* Click **Authorize**.
+* That's it! Your computer is now authenticated. You do **not** need to copy or paste any API keys.
+
+---
+
+### Step 2: Add to your favorite editor
+
+Choose your editor below:
+
+#### 🌟 Antigravity IDE
+If you are using Antigravity, it is usually already configured!
+To make sure or add it on a new computer, run:
 ```bash
-npx @whizan/mcp-devops install
+npx @whizan/mcp-devops install --antigravity
 ```
-* Automatically detects installed editors on your machine:
-  * **Antigravity IDE** (`~/.gemini/config/mcp_config.json` & `~/.gemini/antigravity-ide/mcp_config.json`)
-  * **Cursor AI** (`~/.cursor/mcp.json`)
-  * **Windsurf (Codeium Cascade)** (`~/.codeium/windsurf/mcp_config.json`)
-  * **Claude Desktop** (`claude_desktop_config.json`)
-  * **VS Code (Cline & Roo Code)** (`cline_mcp_settings.json`)
-* Safely merges `whizan` without touching any of your other existing MCP tools.
-* **Restart your editor**, and you're ready to deploy!
-
-> **Target a specific editor**:
-> ```bash
-> npx @whizan/mcp-devops install --cursor
-> npx @whizan/mcp-devops install --windsurf
-> npx @whizan/mcp-devops install --claude
-> npx @whizan/mcp-devops install --antigravity
-> npx @whizan/mcp-devops install --vscode
-> ```
-
----
-
-### Method 2: Visual Form UI (For VS Code, Windsurf, or Cursor Dialogs)
-
-Many editors provide a visual **"Add MCP server"** popup modal instead of JSON files. Fill out these exact values:
-
-| Field in Modal | What to Enter | Description |
-|---|---|---|
-| **Name** | `whizan` | The identifier for the MCP server |
-| **Transport** | `Local command (stdio)` | Standard I/O process transport |
-| **Command** | `npx` | Node package runner |
-| **Arguments** | `-y @whizan/mcp-devops` | Automatically downloads and executes the latest engine |
-
-Click **Save** / **Add**, and the server connects immediately over stdio.
-
----
-
-### Method 3: Manual JSON Configuration (For CI/CD or Power Users)
-
-If you prefer to configure your JSON files manually or are running in remote containers / CI pipelines:
-
+*Or manually:* Add this to `~/.gemini/config/mcp_config.json`:
 ```json
 {
   "mcpServers": {
@@ -89,54 +42,144 @@ If you prefer to configure your JSON files manually or are running in remote con
 }
 ```
 
-> **Note**: If running on a headless machine without browser access, pass your API key as an environment variable:
-> ```json
-> {
->   "mcpServers": {
->     "whizan": {
->       "command": "npx",
->       "args": ["-y", "@whizan/mcp-devops"],
->       "env": {
->         "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
->         "WHIZAN_API_KEY": "whz_live_YOUR_KEY_HERE"
->       }
->     }
->   }
-> }
-> ```
-> Generate API keys on your dashboard at: [https://whizan-cloud-service-dashboard.vercel.app/dashboard/mcp/api-keys](https://whizan-cloud-service-dashboard.vercel.app/dashboard/mcp/api-keys)
+---
+
+#### 🟣 Claude Code (Anthropic CLI)
+Run this single command in your terminal:
+```bash
+claude mcp add whizan -- npx -y @whizan/mcp-devops
+```
+* To use it globally across all your projects:
+  ```bash
+  claude mcp add --scope user whizan -- npx -y @whizan/mcp-devops
+  ```
+* To check status in Claude Code, just type `/mcp` inside your Claude session.
 
 ---
 
-## 🖥️ Terminal CLI Commands
+#### ⚡ Cursor AI
+Run in your terminal:
+```bash
+npx @whizan/mcp-devops install --cursor
+```
+*Or manually:* Open **Cursor Settings** → **Features** → **MCP**, click **Add New MCP Server**:
+* **Name**: `whizan`
+* **Type**: `command`
+* **Command**: `npx -y @whizan/mcp-devops`
 
-| Command | Action |
+---
+
+#### 🌊 Windsurf (Cascade)
+Run in your terminal:
+```bash
+npx @whizan/mcp-devops install --windsurf
+```
+*Or manually:* Add it to `~/.codeium/windsurf/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "whizan": {
+      "command": "npx",
+      "args": ["-y", "@whizan/mcp-devops"]
+    }
+  }
+}
+```
+
+---
+
+#### 🔷 VS Code
+If your VS Code extension (like Cline, Roo Code, or the native MCP extension) shows a form:
+* **Name**: `whizan`
+* **Transport**: `Local command (stdio)`
+* **Command**: `npx`
+* **Arguments**: `-y @whizan/mcp-devops`
+
+Or auto-configure for Cline / Roo Code via terminal:
+```bash
+npx @whizan/mcp-devops install --vscode
+```
+
+---
+
+#### 🧡 Claude Desktop
+Run in your terminal:
+```bash
+npx @whizan/mcp-devops install --claude
+```
+
+---
+
+### 💡 Or install into ALL your editors at once:
+```bash
+npx @whizan/mcp-devops install
+```
+This automatically finds all installed editors on your Mac/Windows/Linux machine and configures them in 2 seconds.
+
+---
+
+## 💬 How to Use It With Your AI
+
+Once configured, just talk to your AI assistant in plain English:
+
+* **Deploy an application**:
+  > *"Deploy this project to Whizan Cloud."*
+* **Set up a database**:
+  > *"Provision a PostgreSQL database for this project on Whizan and wire up the connection string."*
+* **Deploy a Serverless Edge Function**:
+  > *"Deploy my API endpoint as an edge function on Whizan."*
+* **Fix port and network issues**:
+  > *"Analyze this workspace with Whizan. Check for any localhost port binding traps before deploying."*
+* **Check build logs**:
+  > *"Check the latest Whizan build logs and make sure the server is healthy."*
+
+---
+
+## 🛠️ Handy Terminal Commands
+
+You can run these anytime in your terminal:
+
+| Command | What it does |
 |---|---|
-| `npx @whizan/mcp-devops login` | Authenticate your machine via browser (zero API key needed) |
-| `npx @whizan/mcp-devops login -t <key>` | Authenticate with an explicit `whz_live_...` API key |
-| `npx @whizan/mcp-devops install` | Auto-detect & register MCP into Antigravity, Cursor, Windsurf, Claude, VS Code |
-| `npx @whizan/mcp-devops whoami` | Inspect active account profile, subscription tier, and connected endpoint |
-| `npx @whizan/mcp-devops logout` | Remove stored local machine credentials |
-| `npx @whizan/mcp-devops --help` | View help and supported flags |
+| `npx @whizan/mcp-devops login` | Logs in your machine via browser (zero keys needed) |
+| `npx @whizan/mcp-devops install` | Auto-configures all your installed AI editors |
+| `npx @whizan/mcp-devops whoami` | Shows your logged-in email, plan, and server connection |
+| `npx @whizan/mcp-devops logout` | Logs out and removes saved credentials from your machine |
 
 ---
 
-## 🛠️ The 32 Autonomous DevOps Capabilities
+## ❓ Frequently Asked Questions
 
-| Category | Capability | Tool Name |
-|---|---|---|
-| **Audit & Guardrails** | Scans repo files, detects framework & port, enforces AI safety guardrails | `whizan_analyze_workspace` |
-| **Auto-Healing** | Resolves `127.0.0.1` binding traps to `0.0.0.0`, configures CORS, injects PORT | `whizan_generate_patch` |
-| **Direct Upload** | In-memory tarball streaming straight to cloud VM without Git push | `whizan_deploy_direct` |
-| **Compute & Microservices** | Registers Docker microservices (Node, Python, Go, Rust, Java, Dockerfile) | `whizan_create_service` |
-| **Web Apps & Frontends** | Edge-routed static or SSR web applications (Next.js, Vite, React, Astro) | `whizan_create_project` |
-| **Data Persistence** | Managed PostgreSQL, Redis, or MySQL database provisioning | `whizan_provision_database` |
-| **Live Build Telemetry** | Real-time log streaming from the Azure VM worker | `whizan_get_build_logs` |
-| **Verification & Rewiring** | Health checks (HTTP 200 OK) and automatic frontend `.env` rewiring | `whizan_check_health` |
-| **Serverless Edge** | V8 Edge Functions with sub-5ms cold starts | `whizan_create_function_service`, `whizan_deploy_function` |
-| **Scheduled Tasks** | Zero-idle cron compute engines with Redis micro-scheduling | `whizan_create_cron_job`, `whizan_list_cron_jobs` |
-| **Live Diagnostics** | Safe command execution (`npx prisma migrate status`, `df -h`) inside running containers | `whizan_exec_container_command` |
-| **CI/CD Pipelines** | DAG workflow execution engines (Whizan Flow) | `whizan_create_workflow`, `whizan_trigger_workflow` |
+#### 1. How do I verify it is working?
+Run:
+```bash
+npx @whizan/mcp-devops whoami
+```
+If you see your email and `Authentication: Active`, you are all set!
+
+#### 2. Where are my login credentials stored?
+Stored locally in your user folder at `~/.whizan/config.json`. They are never committed to your code repository.
+
+#### 3. What if I am on a remote server or Docker container without a browser?
+You can generate a personal API key from your Whizan dashboard and use it directly:
+```bash
+npx @whizan/mcp-devops login -t whz_live_YOUR_API_KEY
+```
+Or pass it in your MCP config environment variables:
+```json
+{
+  "mcpServers": {
+    "whizan": {
+      "command": "npx",
+      "args": ["-y", "@whizan/mcp-devops"],
+      "env": {
+        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_KEY": "whz_live_YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
 
 ---
 
