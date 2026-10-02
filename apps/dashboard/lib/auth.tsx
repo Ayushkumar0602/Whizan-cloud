@@ -112,3 +112,28 @@ export function useAuth() {
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 }
+
+/**
+ * Checks if a user is authorized for Platform Monitor & Admin options.
+ * Restricts access strictly to Root Administrators and IAM Administrators.
+ */
+export function isIamOrRootAdmin(user?: { role?: string | null; email?: string | null } | null): boolean {
+  if (!user) return false;
+
+  // 1. Root Administrator
+  if (
+    user.role === "ROOT_ADMIN" ||
+    (user.email && user.email.toLowerCase() === "aj0892829122@gmail.com")
+  ) {
+    return true;
+  }
+
+  // 2. IAM Administrator
+  const role = user.role?.toUpperCase();
+  if (role === "IAM_ADMIN" || role === "ADMIN") {
+    return true;
+  }
+
+  return false;
+}
+

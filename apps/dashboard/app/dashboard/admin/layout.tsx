@@ -3,7 +3,7 @@
 import { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isIamOrRootAdmin } from "@/lib/auth";
 import {
   LayoutDashboard,
   Container,
@@ -31,18 +31,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     { href: "/dashboard/admin/logs", label: "Host Logs", icon: Server },
   ];
 
-  const adminRoles = ["ROOT_ADMIN", "ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"];
-  const isAuthorized = user && (adminRoles.includes(user.role || "") || user.email === "aj0892829122@gmail.com");
+  const isAuthorized = isIamOrRootAdmin(user);
 
-  if (!loading && user && !isAuthorized) {
+  if (!loading && (!user || !isAuthorized)) {
     return (
       <div className="page" style={{ maxWidth: 800, margin: "4rem auto", textAlign: "center" }}>
-        <div style={{ padding: "3rem", background: "var(--card-bg)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: 16 }}>
+        <div style={{ padding: "3rem", background: "var(--card-bg)", border: "1px solid rgba(239, 68, 68, 0.25)", borderRadius: 16 }}>
           <ShieldAlert size={48} color="#ef4444" style={{ margin: "0 auto 1.5rem" }} />
           <h2 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.75rem" }}>Admin Privilege Required</h2>
           <p style={{ color: "var(--muted)", marginBottom: "1.5rem", lineHeight: 1.6 }}>
-            This section contains sensitive host infrastructure controls, VM terminal execution, and container operations.
-            Your account ({user.email}) does not have administrative rights.
+            The Platform Monitor contains sensitive cloud host infrastructure telemetry, BullMQ execution queues, live Docker container operations, and system terminal access.
+            <br />
+            <strong>This section is restricted strictly to IAM Administrators and Root Administrators.</strong>
+            {user?.email && (
+              <span style={{ display: "block", marginTop: "0.75rem", fontSize: "0.85rem" }}>
+                Current Account: <code style={{ color: "var(--foreground)" }}>{user.email}</code> (Role: <code style={{ color: "var(--foreground)" }}>{user.role || "USER"}</code>)
+              </span>
+            )}
           </p>
           <Link href="/dashboard" className="btn btn-primary">
             Return to Console

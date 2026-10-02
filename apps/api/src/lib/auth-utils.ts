@@ -4,6 +4,7 @@ export const ROOT_ADMIN_EMAIL = "aj0892829122@gmail.com";
 
 export const IAM_ROLES = [
   "ROOT_ADMIN",
+  "IAM_ADMIN",
   "ADMIN",
   "DEVOPS_ADMIN",
   "SUPPORT_ADMIN",
@@ -24,14 +25,14 @@ export function isRootAdmin(user: { email?: string; role?: string } | null | und
 }
 
 /**
- * Checks if a user is a Platform Administrator (at any administrative tier).
+ * Checks if a user is a Platform Administrator (IAM Admin or Root Admin only).
  */
 export function isUserAdmin(user: { email?: string; role?: string; id?: string } | null | undefined): boolean {
   if (!user) return false;
   if (isRootAdmin(user)) return true;
 
   const role = user.role?.toUpperCase();
-  if (role === "ADMIN" || role === "ROOT_ADMIN" || role === "DEVOPS_ADMIN" || role === "SUPPORT_ADMIN") {
+  if (role === "IAM_ADMIN" || role === "ADMIN" || role === "ROOT_ADMIN") {
     return true;
   }
 

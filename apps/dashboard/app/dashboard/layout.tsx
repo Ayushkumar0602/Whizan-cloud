@@ -1,5 +1,5 @@
 "use client";
-import { useAuth } from "@/lib/auth";
+import { useAuth, isIamOrRootAdmin } from "@/lib/auth";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -106,14 +106,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ]
     },
     {
-      heading: "Platform & Admin",
+      heading: isIamOrRootAdmin(user) ? "Platform & Admin" : "Settings",
       items: [
-        ...((user?.role === "ROOT_ADMIN" || user?.role === "ADMIN" || user?.role === "DEVOPS_ADMIN" || user?.role === "SUPPORT_ADMIN" || user?.email === "aj0892829122@gmail.com") ? [{
+        ...(isIamOrRootAdmin(user) ? [{
           href: "/dashboard/admin",
           icon: ShieldAlert,
           label: "Platform Monitor",
           match: (p: string) => p.startsWith("/dashboard/admin"),
-          badge: user?.role === "ROOT_ADMIN" || user?.email === "aj0892829122@gmail.com" ? "ROOT" : "ADMIN"
+          badge: (user?.role === "ROOT_ADMIN" || user?.email === "aj0892829122@gmail.com") ? "ROOT" : "IAM"
         }] : []),
         { href: "/dashboard/settings", icon: Settings,    label: "Settings",          match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
