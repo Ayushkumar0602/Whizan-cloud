@@ -554,11 +554,368 @@ ${edgesCode}
 }
 
 /**
- * Parses user-edited TypeScript DSL back into nodes and edges.
+ * Generates an active, informative configuration summary for display on node cards (like n8n).
+ */
+export function getNodeConfigSummary(node: { type: string; config?: Record<string, any> }): string {
+  const cfg = node.config || {};
+  switch (node.type) {
+    case "TRIGGER_CRON":
+      return cfg.schedule ? `Schedule: ${cfg.schedule}` : "Schedule: 0 * * * *";
+    case "TRIGGER_GIT":
+      return cfg.branch ? `Branch: ${cfg.branch}` : "Branch: main";
+    case "TRIGGER_WEBHOOK":
+      return cfg.secretToken ? `Auth: Token protected` : "Webhook: Public listener";
+    case "TRIGGER_MANUAL":
+      return "On-Demand • 1-Click Trigger";
+    case "ACTION_WORKSPACE_ANALYZE":
+      return cfg.workspacePath ? `Path: ${cfg.workspacePath}` : "Root workspace audit";
+    case "ACTION_BUILD_CONTAINER":
+      return cfg.dockerfilePath ? `${cfg.dockerfilePath} (${cfg.tag || "latest"})` : "./Dockerfile (latest)";
+    case "ACTION_DEPLOY_EDGE":
+      return cfg.slug ? `Edge: ${cfg.slug}` : `Edge CDN • ${cfg.outputDir || "dist"}`;
+    case "ACTION_DEPLOY_SERVICE":
+      return cfg.slug ? `Mesh: ${cfg.slug} (:${cfg.port || 8000})` : `Mesh Service (:${cfg.port || 8000})`;
+    case "ACTION_RUN_TESTS":
+      return cfg.command ? `Run: ${cfg.command}` : "Run: npm test";
+    case "ACTION_HEALTH_PROBE":
+      return cfg.url ? `Probe: ${cfg.url}` : "Probe: /health (200 OK)";
+    case "ACTION_ROUTER_CUTOVER":
+      return cfg.slug ? `Cutover: ${cfg.slug}` : "Atomic cutover (0 downtime)";
+    case "ACTION_AUTO_ROLLBACK":
+      return cfg.slug ? `Revert: ${cfg.slug}` : "Auto rollback on 5xx";
+    case "ACTION_CONTAINER_EXEC":
+      return cfg.command ? `Exec: ${cfg.command}` : "Exec CLI command";
+    case "ACTION_DATABASE_QUERY":
+      return cfg.query ? `SQL: ${cfg.query.slice(0, 28)}...` : "Database query";
+    case "ACTION_AI_PROMPT":
+      return cfg.model ? `${cfg.model}: ${cfg.prompt?.slice(0, 22) || "Release Notes"}...` : "Gemini 3.5 Flash";
+    case "ACTION_HTTP_REQUEST":
+      return cfg.url ? `${cfg.method || "POST"} ${cfg.url.slice(0, 24)}...` : "HTTP Webhook / Dispatch";
+    case "CONTROL_APPROVAL":
+      return cfg.message ? `Sign-off: ${cfg.message.slice(0, 26)}...` : "Human Approval Gate";
+    case "CONTROL_BRANCH":
+      return cfg.condition ? `If: ${cfg.condition}` : "Condition branch";
+    case "CONTROL_DELAY":
+      return cfg.delaySeconds ? `Delay: ${cfg.delaySeconds}s` : "Delay: 10s";
+    default:
+      return Object.keys(cfg).length > 0 ? `${Object.keys(cfg).length} parameters configured` : "Ready";
+  }
+}
+
+export interface NodeConfigField {
+  label: string;
+  value: string;
+  badge?: string;
+  isImportant?: boolean;
+}
+
+/**
+ * Returns structured key-value parameter pairs to display directly inside node cards (like n8n).
+ */
+export function getNodeConfigFields(node: { type: string; config?: Record<string, any> }): NodeConfigField[] {
+  const cfg = node.config || {};
+  const fields: NodeConfigField[] = [];
+
+  switch (node.type) {
+    case "TRIGGER_CRON":
+      fields.push({ label: "Cron", value: cfg.schedule || "0 * * * *", badge: "SCHEDULE" });
+      if (cfg.timezone) fields.push({ label: "Timezone", value: cfg.timezone });
+      break;
+    case "TRIGGER_GIT":
+      fields.push({ label: "Branch", value: cfg.branch || "main", badge: "BRANCH" });
+      if (cfg.repo) fields.push({ label: "Repo", value: cfg.repo });
+      break;
+    case "TRIGGER_WEBHOOK":
+      fields.push({ label: "Auth", value: cfg.secretToken ? "Bearer Token" : "Public Webhook" });
+      if (cfg.path) fields.push({ label: "Path", value: cfg.path });
+      break;
+    case "TRIGGER_MANUAL":
+      fields.push({ label: "Trigger", value: "Manual • 1-Click" });
+      break;
+    case "ACTION_WORKSPACE_ANALYZE":
+      fields.push({ label: "Directory", value: cfg.workspacePath || "./" });
+      break;
+    case "ACTION_BUILD_CONTAINER":
+      fields.push({ label: "Dockerfile", value: cfg.dockerfilePath || "./Dockerfile" });
+      fields.push({ label: "Tag", value: cfg.tag || "latest" });
+      break;
+    case "ACTION_DEPLOY_EDGE":
+      fields.push({ label: "Slug", value: cfg.slug || "edge-app" });
+      fields.push({ label: "Output Dir", value: cfg.outputDir || "dist" });
+      break;
+    case "ACTION_DEPLOY_SERVICE":
+      fields.push({ label: "Slug", value: cfg.slug || "backend" });
+      fields.push({ label: "Port", value: `:${cfg.port || 8000}` });
+      break;
+    case "ACTION_RUN_TESTS":
+      fields.push({ label: "Command", value: cfg.command || "npm test" });
+      break;
+    case "ACTION_HEALTH_PROBE":
+      fields.push({ label: "Probe URL", value: cfg.url || "http://127.0.0.1:3000/health" });
+      fields.push({ label: "Expect", value: `${cfg.expectedStatus || 200} OK` });
+      break;
+    case "ACTION_ROUTER_CUTOVER":
+      fields.push({ label: "Target", value: cfg.slug || "router" });
+      fields.push({ label: "Mode", value: "Zero Downtime" });
+      break;
+    case "ACTION_AUTO_ROLLBACK":
+      fields.push({ label: "Target", value: cfg.slug || "service" });
+      fields.push({ label: "Trigger", value: "5xx / Health Fail" });
+      break;
+    case "ACTION_CONTAINER_EXEC":
+      fields.push({ label: "Exec", value: cfg.command || "npx prisma migrate" });
+      break;
+    case "ACTION_DATABASE_QUERY":
+      fields.push({ label: "SQL", value: cfg.query ? (cfg.query.length > 28 ? cfg.query.slice(0, 26) + "..." : cfg.query) : "SELECT 1;" });
+      break;
+    case "ACTION_AI_PROMPT":
+      fields.push({ label: "Model", value: cfg.model || "gemini-3.5-flash-lite" });
+      if (cfg.prompt) fields.push({ label: "Prompt", value: cfg.prompt.length > 25 ? cfg.prompt.slice(0, 22) + "..." : cfg.prompt });
+      break;
+    case "ACTION_HTTP_REQUEST":
+      fields.push({ label: "Method", value: cfg.method || "POST", badge: cfg.method || "POST" });
+      fields.push({ label: "URL", value: cfg.url ? (cfg.url.length > 28 ? cfg.url.slice(0, 25) + "..." : cfg.url) : "https://..." });
+      break;
+    case "CONTROL_APPROVAL":
+      fields.push({ label: "Sign-off", value: cfg.message ? (cfg.message.length > 25 ? cfg.message.slice(0, 22) + "..." : cfg.message) : "Approval required" });
+      break;
+    case "CONTROL_BRANCH":
+      fields.push({ label: "Condition", value: cfg.condition || "status == 200" });
+      break;
+    case "CONTROL_DELAY":
+      fields.push({ label: "Delay", value: `${cfg.delaySeconds || 10} seconds` });
+      break;
+    default:
+      Object.entries(cfg).slice(0, 2).forEach(([k, v]) => {
+        fields.push({ label: k, value: typeof v === "object" ? JSON.stringify(v) : String(v) });
+      });
+  }
+
+  return fields;
+}
+
+/**
+ * Automatically calculates clean, non-overlapping horizontal DAG positions (like n8n Auto-Layout).
+ */
+export function autoLayoutDAG(nodes: any[], edges: any[]): any[] {
+  if (!nodes || nodes.length === 0) return [];
+
+  const inDegree: Record<string, number> = {};
+  const adj: Record<string, string[]> = {};
+  nodes.forEach((n) => {
+    inDegree[n.nodeKey] = 0;
+    adj[n.nodeKey] = [];
+  });
+
+  (edges || []).forEach((e) => {
+    if (inDegree[e.targetNodeKey] !== undefined) {
+      inDegree[e.targetNodeKey] = (inDegree[e.targetNodeKey] || 0) + 1;
+    }
+    if (adj[e.sourceNodeKey]) {
+      adj[e.sourceNodeKey].push(e.targetNodeKey);
+    }
+  });
+
+  // Calculate topological levels
+  const levels: Record<string, number> = {};
+  const queue: string[] = [];
+  nodes.forEach((n) => {
+    if (inDegree[n.nodeKey] === 0) {
+      levels[n.nodeKey] = 0;
+      queue.push(n.nodeKey);
+    }
+  });
+
+  if (queue.length === 0 && nodes.length > 0) {
+    levels[nodes[0].nodeKey] = 0;
+    queue.push(nodes[0].nodeKey);
+  }
+
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    const currLevel = levels[curr] || 0;
+    const neighbors = adj[curr] || [];
+    for (const neighbor of neighbors) {
+      levels[neighbor] = Math.max(levels[neighbor] ?? 0, currLevel + 1);
+      inDegree[neighbor]--;
+      if (inDegree[neighbor] <= 0) {
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  // Handle unreached nodes
+  nodes.forEach((n) => {
+    if (levels[n.nodeKey] === undefined) {
+      levels[n.nodeKey] = 0;
+    }
+  });
+
+  // Group nodes by level
+  const levelGroups: Record<number, string[]> = {};
+  nodes.forEach((n) => {
+    const lvl = levels[n.nodeKey] || 0;
+    if (!levelGroups[lvl]) levelGroups[lvl] = [];
+    levelGroups[lvl].push(n.nodeKey);
+  });
+
+  return nodes.map((n) => {
+    const lvl = levels[n.nodeKey] || 0;
+    const group = levelGroups[lvl] || [n.nodeKey];
+    const idx = group.indexOf(n.nodeKey);
+    const totalInLevel = group.length;
+    const yOffset = (idx - (totalInLevel - 1) / 2) * 190 + 240;
+
+    return {
+      ...n,
+      positionX: lvl * 360 + 80,
+      positionY: Math.max(60, Math.round(yOffset)),
+    };
+  });
+}
+
+/**
+ * Parses user-edited TypeScript DSL, JSON, or n8n workflow back into nodes and edges,
+ * preserving 100% of config objects and applying auto-layout if needed.
  */
 export function parseWorkflowDSL(code: string): { nodes: any[]; edges: any[] } | null {
+  if (!code || !code.trim()) return null;
+  const trimmed = code.trim();
+
+  // 1. Direct JSON Parsing (e.g. pasted workflow JSON or n8n export)
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+
+      // A. Standard Whizan format: { nodes: [...], edges: [...] }
+      if (parsed && Array.isArray(parsed.nodes)) {
+        const nodes = parsed.nodes.map((n: any, idx: number) => ({
+          nodeKey: n.key || n.nodeKey || `step_${idx + 1}`,
+          name: n.name || n.key || `Step ${idx + 1}`,
+          type: n.type || "ACTION_HTTP_REQUEST",
+          positionX: n.position?.x ?? n.positionX ?? 100 + idx * 280,
+          positionY: n.position?.y ?? n.positionY ?? 180,
+          timeoutSeconds: n.timeoutSeconds ?? 300,
+          maxRetries: n.maxRetries ?? 0,
+          continueOnError: Boolean(n.continueOnError),
+          config: n.config || {},
+        }));
+
+        const edges = (parsed.edges || []).map((e: any) => ({
+          sourceNodeKey: e.from || e.sourceNodeKey,
+          targetNodeKey: e.to || e.targetNodeKey,
+          condition: e.condition || null,
+        }));
+
+        const hasZeroPositions = nodes.every((n: any) => n.positionX === 0 && n.positionY === 0);
+        return {
+          nodes: hasZeroPositions ? autoLayoutDAG(nodes, edges) : nodes,
+          edges,
+        };
+      }
+
+      // B. Array of nodes directly: [ { key: "...", type: "..." } ]
+      if (Array.isArray(parsed)) {
+        const nodes = parsed.map((n: any, idx: number) => ({
+          nodeKey: n.key || n.nodeKey || `step_${idx + 1}`,
+          name: n.name || n.key || `Step ${idx + 1}`,
+          type: n.type || "ACTION_HTTP_REQUEST",
+          positionX: 80 + idx * 320,
+          positionY: 200,
+          timeoutSeconds: n.timeoutSeconds ?? 300,
+          maxRetries: n.maxRetries ?? 0,
+          continueOnError: Boolean(n.continueOnError),
+          config: n.config || {},
+        }));
+        return { nodes: autoLayoutDAG(nodes, []), edges: [] };
+      }
+
+      // C. n8n export workflow format: { nodes: [...], connections: {...} }
+      if (parsed && parsed.nodes && parsed.connections) {
+        const nodes = parsed.nodes.map((n: any) => {
+          let nodeType = "ACTION_HTTP_REQUEST";
+          if (n.type?.includes("webhook")) nodeType = "TRIGGER_WEBHOOK";
+          else if (n.type?.includes("cron") || n.type?.includes("schedule")) nodeType = "TRIGGER_CRON";
+          else if (n.type?.includes("git")) nodeType = "TRIGGER_GIT";
+          else if (n.type?.includes("executeCommand")) nodeType = "ACTION_CONTAINER_EXEC";
+          else if (n.type?.includes("postgres") || n.type?.includes("mysql")) nodeType = "ACTION_DATABASE_QUERY";
+
+          return {
+            nodeKey: n.name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+            name: n.name,
+            type: nodeType,
+            positionX: n.position?.[0] ?? 100,
+            positionY: n.position?.[1] ?? 100,
+            config: n.parameters || {},
+          };
+        });
+
+        const edges: any[] = [];
+        Object.entries(parsed.connections).forEach(([srcName, connObj]: [string, any]) => {
+          const srcKey = srcName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+          if (connObj && connObj.main && Array.isArray(connObj.main)) {
+            connObj.main.forEach((targets: any[]) => {
+              targets.forEach((tgt: any) => {
+                if (tgt && tgt.node) {
+                  edges.push({
+                    sourceNodeKey: srcKey,
+                    targetNodeKey: tgt.node.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+                  });
+                }
+              });
+            });
+          }
+        });
+
+        return { nodes: autoLayoutDAG(nodes, edges), edges };
+      }
+    } catch {
+      // not strict JSON, fall through to TypeScript / JS DSL evaluation
+    }
+  }
+
+  // 2. Safe JavaScript / TypeScript DSL Execution
   try {
-    // Robust extraction using regex pattern matching on the DSL structure
+    let cleaned = trimmed
+      .replace(/import\s+[^;]+;/g, "")
+      .replace(/export\s+default\s+defineWorkflow\s*\(/g, "return (")
+      .replace(/export\s+default\s*\(/g, "return (")
+      .trim();
+
+    if (cleaned.endsWith(";")) {
+      cleaned = cleaned.slice(0, -1);
+    }
+
+    const fn = new Function("defineWorkflow", cleaned.startsWith("return") ? cleaned : `return (${cleaned});`);
+    const result = fn((arg: any) => arg);
+
+    if (result && Array.isArray(result.nodes)) {
+      const nodes = result.nodes.map((n: any, idx: number) => ({
+        nodeKey: n.key || n.nodeKey || `step_${idx + 1}`,
+        name: n.name || n.key || "Step",
+        type: n.type,
+        positionX: n.position?.x ?? n.positionX ?? 80 + idx * 300,
+        positionY: n.position?.y ?? n.positionY ?? 200,
+        timeoutSeconds: n.timeoutSeconds ?? 300,
+        maxRetries: n.maxRetries ?? 0,
+        continueOnError: Boolean(n.continueOnError),
+        config: n.config || {},
+      }));
+
+      const edges = (result.edges || []).map((e: any) => ({
+        sourceNodeKey: e.from || e.sourceNodeKey,
+        targetNodeKey: e.to || e.targetNodeKey,
+        condition: e.condition || null,
+      }));
+
+      return { nodes, edges };
+    }
+  } catch {
+    // Fallback regex parsing if user code has partial syntax errors while typing
+  }
+
+  // 3. Regex Fallback Parser for Partial Code
+  try {
     const nodesMatch = code.match(/nodes:\s*\[([\s\S]*?)\]\s*,/);
     const edgesMatch = code.match(/edges:\s*\[([\s\S]*?)\]\s*,?/);
 
@@ -576,6 +933,18 @@ export function parseWorkflowDSL(code: string): { nodes: any[]; edges: any[] } |
         const timeoutMatch = block.match(/timeoutSeconds:\s*([0-9]+)/);
         const retriesMatch = block.match(/maxRetries:\s*([0-9]+)/);
         const continueMatch = block.match(/continueOnError:\s*(true|false)/);
+        const configMatch = block.match(/config:\s*(\{[\s\S]*?\})\s*,/);
+
+        let parsedConfig = {};
+        if (configMatch) {
+          try {
+            parsedConfig = JSON.parse(configMatch[1]);
+          } catch {
+            try {
+              parsedConfig = new Function(`return (${configMatch[1]});`)();
+            } catch {}
+          }
+        }
 
         if (keyMatch && typeMatch) {
           parsedNodes.push({
@@ -587,7 +956,7 @@ export function parseWorkflowDSL(code: string): { nodes: any[]; edges: any[] } |
             timeoutSeconds: timeoutMatch ? parseInt(timeoutMatch[1], 10) : 300,
             maxRetries: retriesMatch ? parseInt(retriesMatch[1], 10) : 0,
             continueOnError: continueMatch ? continueMatch[1] === "true" : false,
-            config: {},
+            config: parsedConfig,
           });
         }
       }
@@ -610,8 +979,11 @@ export function parseWorkflowDSL(code: string): { nodes: any[]; edges: any[] } |
       }
     }
 
-    return { nodes: parsedNodes, edges: parsedEdges };
-  } catch {
-    return null;
-  }
+    if (parsedNodes.length > 0) {
+      return { nodes: parsedNodes, edges: parsedEdges };
+    }
+  } catch {}
+
+  return null;
 }
+
