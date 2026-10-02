@@ -46,6 +46,14 @@ export class BatchTelemetryFlusher {
     }
   }
 
+  public getApiUrl(): string {
+    return this.apiUrl;
+  }
+
+  public getMeshToken(): string {
+    return this.meshToken;
+  }
+
   /**
    * Enqueue completed execution record into memory & Redis fallback list.
    */

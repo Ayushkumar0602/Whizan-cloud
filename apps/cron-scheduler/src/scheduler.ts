@@ -7,6 +7,7 @@ import { BatchTelemetryFlusher } from "./telemetry.js";
 export class ZeroIdleScheduler {
   private redis: Redis;
   private redisSub: Redis;
+  private redisStream: Redis;
   private dispatcher: TaskDispatcher;
   private flusher: BatchTelemetryFlusher;
   private sleepTimer: NodeJS.Timeout | null = null;
@@ -16,11 +17,13 @@ export class ZeroIdleScheduler {
   constructor(
     redis: Redis,
     redisSub: Redis,
+    redisStream: Redis,
     dispatcher: TaskDispatcher,
     flusher: BatchTelemetryFlusher
   ) {
     this.redis = redis;
     this.redisSub = redisSub;
+    this.redisStream = redisStream;
     this.dispatcher = dispatcher;
     this.flusher = flusher;
   }
@@ -46,7 +49,12 @@ export class ZeroIdleScheduler {
     // 2. Start batch telemetry flusher
     this.flusher.start();
 
-    // 3. Kick off dynamic sleep-wake loop
+    // 3. Start Redis Stream consumer for immediate manual triggers / DLQ replays
+    this.startStreamConsumer().catch((err) => {
+      console.error("[Scheduler] Stream consumer error:", err);
+    });
+
+    // 4. Kick off dynamic sleep-wake loop
     await this.scheduleNextTick();
   }
 
@@ -246,5 +254,153 @@ export class ZeroIdleScheduler {
     } catch (err: any) {
       console.error(`[Scheduler] Failed to calculate next tick for ${job.id}:`, err.message);
     }
+  }
+
+  /**
+   * Continuous event-driven consumer for immediate execution dispatches
+   * (1-click dashboard triggers, API requests, DLQ replays).
+   */
+  private async startStreamConsumer(): Promise<void> {
+    const groupName = "cron-scheduler-group";
+    const consumerName = `worker-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+
+    // Ensure consumer group exists
+    try {
+      await this.redis.xgroup("CREATE", "cron:dispatch:stream", groupName, "0", "MKSTREAM");
+      console.log(`[StreamConsumer] Created consumer group "${groupName}" on cron:dispatch:stream`);
+    } catch (err: any) {
+      if (!err.message?.includes("BUSYGROUP")) {
+        console.warn("[StreamConsumer] Warning creating group:", err.message);
+      }
+    }
+
+    console.log(`[StreamConsumer] 🎧 Listening on cron:dispatch:stream as ${consumerName}`);
+
+    while (this.isRunning) {
+      try {
+        const streamResults: any = await this.redisStream.xreadgroup(
+          "GROUP",
+          groupName,
+          consumerName,
+          "COUNT",
+          10,
+          "BLOCK",
+          2000,
+          "STREAMS",
+          "cron:dispatch:stream",
+          ">"
+        );
+
+        if (streamResults && streamResults.length > 0) {
+          for (const [stream, messages] of streamResults) {
+            for (const [msgId, fields] of messages) {
+              const data: Record<string, string> = {};
+              for (let i = 0; i < fields.length; i += 2) {
+                data[fields[i]] = fields[i + 1];
+              }
+
+              if (data.jobId && data.executionId) {
+                console.log(
+                  `[StreamConsumer] ⚡ Immediate dispatch for job ${data.jobId} (${data.triggerType || "MANUAL"}) [Exec: ${data.executionId}]`
+                );
+                await this.handleImmediateExecution(
+                  data.jobId,
+                  data.executionId,
+                  data.triggerType || "MANUAL"
+                );
+              }
+
+              // Acknowledge processed message
+              await this.redis.xack("cron:dispatch:stream", groupName, msgId).catch(() => {});
+            }
+          }
+        }
+      } catch (err: any) {
+        if (!this.isRunning) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+  }
+
+  /**
+   * Dispatches immediate execution (manual / retry) without altering the recurring schedule.
+   */
+  private async handleImmediateExecution(
+    jobId: string,
+    executionId: string,
+    triggerType: string
+  ): Promise<void> {
+    let cached = await this.redis.get(`cron:job:${jobId}`);
+    let job: (CronJobData & { schedule: string; timezone: string; misfirePolicy: string; enabled: boolean }) | null = null;
+
+    if (cached) {
+      try {
+        job = JSON.parse(cached);
+      } catch {}
+    }
+
+    // Cold-start self-healing: If job is not cached in Redis, sync from Control Plane
+    if (!job) {
+      console.log(`[StreamConsumer] Job ${jobId} not found in Redis cache. Syncing from Control Plane...`);
+      try {
+        const res = await fetch(`${this.flusher.getApiUrl()}/api/crons/sync`, {
+          headers: { "x-mesh-token": this.flusher.getMeshToken() },
+        });
+        if (res.ok) {
+          const freshCached = await this.redis.get(`cron:job:${jobId}`);
+          if (freshCached) job = JSON.parse(freshCached);
+        }
+      } catch (err: any) {
+        console.error(`[StreamConsumer] Failed to sync job ${jobId} from API:`, err.message);
+      }
+    }
+
+    if (!job) {
+      console.error(`[StreamConsumer] ❌ Job ${jobId} not found after sync attempt`);
+      return;
+    }
+
+    // Concurrency Policy Check
+    const activeLockKey = `cron:active:${job.id}`;
+    const isActive = await this.redis.get(activeLockKey);
+
+    if (isActive && job.concurrencyPolicy === "FORBID") {
+      console.warn(`[StreamConsumer] Skipping immediate run for ${job.name} (Policy: FORBID)`);
+      await this.flusher.push({
+        id: executionId,
+        cronJobId: job.id,
+        triggerType,
+        status: "SKIPPED_OVERLAP",
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        durationMs: 0,
+        exitCode: null,
+        httpStatusCode: null,
+        errorMessage: "Execution skipped due to active overlapping run.",
+        stdout: null,
+        stderr: null,
+        memoryMbPeak: null,
+        cpuMs: null,
+        retryAttempt: 0,
+      });
+      return;
+    }
+
+    // Acquire active lock with timeout + 30s grace
+    const lockTtlSeconds = (job.timeoutSeconds || 300) + 30;
+    await this.redis.set(activeLockKey, executionId, "EX", lockTtlSeconds);
+
+    // Dispatch task asynchronously
+    (async () => {
+      try {
+        const telemetry = await this.dispatcher.dispatch(job, executionId, triggerType, 0);
+        await this.flusher.push(telemetry);
+      } catch (err: any) {
+        console.error(`[StreamConsumer] Dispatch failure for job ${job.id}:`, err.message);
+      } finally {
+        // Release active lock
+        await this.redis.del(activeLockKey).catch(() => {});
+      }
+    })();
   }
 }
