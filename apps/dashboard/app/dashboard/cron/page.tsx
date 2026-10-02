@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Clock,
   Plus,
@@ -124,6 +125,7 @@ function getHumanReadableSchedule(schedule: string): string {
 }
 
 export default function CronDashboardPage() {
+  const router = useRouter();
   const [list, setList] = useState<CronJobItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1073,7 +1075,7 @@ export default function CronDashboardPage() {
             return (
               <div
                 key={job.id}
-                onClick={() => openDrawer(job, "terminal")}
+                onClick={() => router.push(`/dashboard/cron/${job.id}`)}
                 style={{
                   background: "var(--card)",
                   border: "1px solid var(--border)",
@@ -1156,7 +1158,7 @@ export default function CronDashboardPage() {
                         <span
                           onClick={(e) => {
                             e.stopPropagation();
-                            openDrawer(job, "dlq");
+                            router.push(`/dashboard/cron/${job.id}?tab=dlq`);
                           }}
                           className="badge badge-failed"
                           title="Unresolved failures awaiting review"
@@ -1359,7 +1361,7 @@ export default function CronDashboardPage() {
                   return (
                     <tr
                       key={job.id}
-                      onClick={() => openDrawer(job, "terminal")}
+                      onClick={() => router.push(`/dashboard/cron/${job.id}`)}
                       style={{ borderBottom: "1px solid var(--border)", cursor: "pointer", transition: "background 0.15s ease" }}
                       className="hover:bg-white/[0.02]"
                     >
