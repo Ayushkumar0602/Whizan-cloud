@@ -867,5 +867,102 @@ export class WhizanClient {
     }
     return res.json();
   }
+
+  // ─── Whizan Flow Automation Methods ──────────────────────────────────────────
+
+  async createWorkflow(payload: any): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to create workflow", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.workflow;
+  }
+
+  async listWorkflows(): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to list workflows", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.workflows;
+  }
+
+  async getWorkflow(id: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows/${id}`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to fetch workflow", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.workflow;
+  }
+
+  async triggerWorkflow(id: string, metadata?: any): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows/${id}/trigger`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ triggerMetadata: metadata }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to trigger workflow", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getWorkflowRun(workflowId: string, runId: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows/${workflowId}/runs/${runId}`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to fetch workflow run", res.status, err);
+    }
+    const data: any = await res.json();
+    return data.run;
+  }
+
+  async respondWorkflowApproval(token: string, approved: boolean, comments?: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows/approvals/${token}/respond`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ approved, comments }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to respond to workflow approval", res.status, err);
+    }
+    return res.json();
+  }
+
+  async replayWorkflowRun(workflowId: string, runId: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/flows/${workflowId}/runs/${runId}/replay`, {
+      method: "POST",
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to replay workflow run", res.status, err);
+    }
+    return res.json();
+  }
 }
 
