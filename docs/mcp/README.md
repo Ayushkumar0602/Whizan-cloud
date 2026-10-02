@@ -28,29 +28,17 @@ The Whizan DevOps MCP Server turns any Model Context Protocol (MCP) compliant AI
 
 ### 2. Configure Your IDE
 
-#### For Cursor (`.cursor/mcp.json` or Settings -> Features -> MCP)
-```json
-{
-  "mcpServers": {
-    "whizan": {
-      "command": "node",
-      "args": ["packages/mcp-devops/dist/index.js"],
-      "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
-        "WHIZAN_API_KEY": "whz_live_your_api_key_here"
-      }
-    }
-  }
-}
-```
+Now that `@whizan/mcp-devops` is published on npm, you can use the universal `npx` command across all operating systems without cloning the repo or compiling TypeScript.
 
-#### For Claude Desktop (`claude_desktop_config.json`)
+#### Universal Configuration (Antigravity IDE, Cursor, Windsurf, VS Code, Claude Desktop)
+Add the following to your IDE's MCP config (e.g. `~/.gemini/antigravity-ide/mcp_config.json`, `.cursor/mcp.json`, or `claude_desktop_config.json`):
+
 ```json
 {
   "mcpServers": {
     "whizan": {
-      "command": "node",
-      "args": ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@whizan/mcp-devops"],
       "env": {
         "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
         "WHIZAN_API_KEY": "whz_live_your_api_key_here"
@@ -59,6 +47,7 @@ The Whizan DevOps MCP Server turns any Model Context Protocol (MCP) compliant AI
   }
 }
 ```
+*(No cloning or file paths needed — works identically on Windows, macOS, and Linux).*
 
 ---
 
