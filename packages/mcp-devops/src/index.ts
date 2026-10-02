@@ -18,6 +18,7 @@ import {
   McpLogger,
   colors,
 } from "./utils/terminal-ui.js";
+import { autoRegisterMcp } from "./utils/ide-installer.js";
 import fs from "fs/promises";
 import path from "path";
 import http from "http";
@@ -1584,20 +1585,84 @@ function printCliHelp() {
   const c = colors;
   console.log(`
   ${c.bold}${c.brightWhite}COMMANDS & USAGE:${c.reset}
-    ${c.cyan}npx @whizan/mcp-devops${c.reset}                  Start MCP server over stdio (Antigravity, Cursor, Windsurf, Claude)
+    ${c.cyan}npx @whizan/mcp-devops install${c.reset}          ${c.brightGreen}★ 1-Click Auto-Setup: Detects & registers into Antigravity, Cursor, Windsurf, Claude, VS Code${c.reset}
+    ${c.cyan}npx @whizan/mcp-devops install --cursor${c.reset} Register specifically into Cursor AI (~/.cursor/mcp.json)
+    ${c.cyan}npx @whizan/mcp-devops install --all${c.reset}    Force-register across all supported IDE configuration paths
     ${c.cyan}npx @whizan/mcp-devops login${c.reset}            1-click in-browser authentication (saves to ~/.whizan/config.json)
     ${c.cyan}npx @whizan/mcp-devops login -t <key>${c.reset}   Direct login with an explicit API key (whz_live_...)
     ${c.cyan}npx @whizan/mcp-devops whoami${c.reset}           Inspect authenticated user profile and subscription tier
     ${c.cyan}npx @whizan/mcp-devops logout${c.reset}           Clear local machine credentials
+    ${c.cyan}npx @whizan/mcp-devops${c.reset}                  Start MCP server over stdio (called automatically by IDEs)
+
+  ${c.bold}${c.brightWhite}FOR IDES WITH A FORM UI (e.g. VS Code "Add MCP server"):${c.reset}
+    ${c.dim}• Server Name:     ${c.reset}${c.bold}whizan${c.reset}
+    ${c.dim}• Transport:       ${c.reset}${c.bold}Local command (stdio)${c.reset}
+    ${c.dim}• Command:         ${c.reset}${c.cyan}npx${c.reset}
+    ${c.dim}• Arguments:       ${c.reset}${c.whizanCyan}-y @whizan/mcp-devops${c.reset}
 
   ${c.bold}${c.brightWhite}ENVIRONMENT VARIABLES:${c.reset}
     ${c.whizanCyan}WHIZAN_API_KEY${c.reset}     Explicit API Key override (bypasses ~/.whizan/config.json)
     ${c.whizanCyan}WHIZAN_API_URL${c.reset}     Target API endpoint (defaults to https://whizan-cloud-service.onrender.com)
-
-  ${c.bold}${c.brightWhite}IDE INTEGRATION SAMPLES:${c.reset}
-    ${c.dim}Antigravity (~/.gemini/antigravity-ide/mcp_config.json):${c.reset}
-    { "mcpServers": { "whizan": { "command": "npx", "args": ["-y", "@whizan/mcp-devops"] } } }
 `);
+}
+
+async function handleCliInstall(args: string[]) {
+  printWhizanBanner("1.0.2");
+  const c = colors;
+
+  console.log(`  ${c.whizanCyan}🔍 Scanning computer for installed AI IDEs and editors...${c.reset}\n`);
+
+  let specificId: string | undefined;
+  for (const candidate of ["cursor", "windsurf", "claude", "vscode", "antigravity"]) {
+    if (args.includes(`--${candidate}`)) {
+      specificId = candidate;
+      break;
+    }
+  }
+
+  const forceAll = args.includes("--all");
+  const workspaceDir = args.includes("--workspace") || args.includes("--local") ? "." : undefined;
+
+  let token: string | undefined;
+  const tokenIdx = args.findIndex((a) => a === "--token" || a === "--api-key" || a === "-t");
+  if (tokenIdx !== -1 && args[tokenIdx + 1]) {
+    token = args[tokenIdx + 1].trim();
+  }
+
+  try {
+    const results = await autoRegisterMcp({
+      specificId,
+      forceAll,
+      apiKey: token,
+      workspaceDir,
+    });
+
+    if (results.length === 0) {
+      console.log(`  ${c.amber}No supported AI IDE configurations were detected on this machine.${c.reset}`);
+      console.log(`  ${c.dim}Run with ${c.reset}${c.cyan}'npx @whizan/mcp-devops install --all'${c.reset}${c.dim} to create configurations for all IDEs.${c.reset}\n`);
+      return;
+    }
+
+    let successCount = 0;
+    for (const res of results) {
+      const icon = res.success ? `${c.emerald}✔${c.reset}` : `${c.brightRed}✖${c.reset}`;
+      const actionText = res.action === "updated" ? `${c.whizanCyan}[UPDATED]${c.reset}` : `${c.emerald}[CREATED]${c.reset}`;
+      console.log(`  ${icon} ${c.bold}${res.target.name.padEnd(26)}${c.reset} ${actionText} ${c.dim}${res.target.configPath}${c.reset}`);
+      if (res.success) successCount++;
+      if (res.error) console.log(`     ${c.red}↳ Error: ${res.error}${c.reset}`);
+    }
+
+    console.log(`\n  ${c.emerald}🎉 Successfully configured ${successCount} AI editor(s) with Whizan DevOps MCP!${c.reset}`);
+    console.log(`  ${c.dim}👉 Simply restart your editor, and your AI assistant will have full cloud deployment tools.${c.reset}\n`);
+
+    console.log(`  ${c.bold}${c.brightWhite}📋 For IDEs with a visual Form UI (like VS Code "Add MCP server" dialog):${c.reset}`);
+    console.log(`     ${c.dim}• Server Name:     ${c.reset}${c.bold}whizan${c.reset}`);
+    console.log(`     ${c.dim}• Transport:       ${c.reset}${c.bold}Local command (stdio)${c.reset}`);
+    console.log(`     ${c.dim}• Command:         ${c.reset}${c.cyan}npx${c.reset}`);
+    console.log(`     ${c.dim}• Arguments:       ${c.reset}${c.whizanCyan}-y @whizan/mcp-devops${c.reset}\n`);
+  } catch (err: any) {
+    console.error(`  ${c.brightRed}✖ Installation error: ${err.message}${c.reset}\n`);
+  }
 }
 
 async function handleCliLogin(args: string[]) {
@@ -1767,6 +1832,10 @@ async function main() {
   const args = process.argv.slice(2);
   const command = args[0]?.toLowerCase();
 
+  if (command === "install" || command === "setup" || command === "register") {
+    await handleCliInstall(args);
+    return;
+  }
   if (command === "login" || command === "auth") {
     await handleCliLogin(args);
     return;
