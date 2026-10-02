@@ -303,21 +303,31 @@ export class TaskDispatcher {
   // ─── 3. INTERNAL SERVICE DISPATCH (Private Mesh) ───────────────────────────
   private async executeInternalService(job: CronJobData, executionId: string, log: (s: string) => void) {
     const { serviceId, routePath = "/", port = 3000, method = "POST", payload } = job.targetConfig;
+    const upperMethod = (method || "POST").toUpperCase();
+    const isPayloadPermitted = !["GET", "HEAD"].includes(upperMethod);
+
     // Internal Docker network routing
     const targetUrl = `http://service-${serviceId}:${port}${routePath.startsWith("/") ? routePath : `/${routePath}`}`;
 
     log(`[Internal-Mesh] Calling service endpoint at ${targetUrl}\n`);
 
+    const reqHeaders: Record<string, string> = {
+      "x-whizan-trigger": "CRON",
+      "x-whizan-cron-id": job.id,
+      "x-whizan-execution-id": executionId,
+      "x-mesh-token": this.meshToken,
+    };
+
+    let stringBody: string | undefined = undefined;
+    if (isPayloadPermitted && payload) {
+      stringBody = typeof payload === "string" ? payload : JSON.stringify(payload);
+      reqHeaders["Content-Type"] = "application/json";
+    }
+
     const res = await fetch(targetUrl, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-whizan-trigger": "CRON",
-        "x-whizan-cron-id": job.id,
-        "x-whizan-execution-id": executionId,
-        "x-mesh-token": this.meshToken,
-      },
-      body: payload ? JSON.stringify(payload) : undefined,
+      method: upperMethod,
+      headers: reqHeaders,
+      body: stringBody,
     });
 
     const text = await res.text();
@@ -328,19 +338,28 @@ export class TaskDispatcher {
   // ─── 4. WEB PROJECT ROUTE DISPATCH ─────────────────────────────────────────
   private async executeProjectRoute(job: CronJobData, executionId: string, log: (s: string) => void) {
     const { projectId, routePath = "/", method = "GET", payload } = job.targetConfig;
+    const upperMethod = (method || "GET").toUpperCase();
+    const isPayloadPermitted = !["GET", "HEAD"].includes(upperMethod);
     const targetUrl = `http://project-${projectId}:3000${routePath.startsWith("/") ? routePath : `/${routePath}`}`;
 
     log(`[Web-Project] Calling project route at ${targetUrl}\n`);
 
+    const reqHeaders: Record<string, string> = {
+      "x-whizan-trigger": "CRON",
+      "x-whizan-cron-id": job.id,
+      "x-whizan-execution-id": executionId,
+    };
+
+    let stringBody: string | undefined = undefined;
+    if (isPayloadPermitted && payload) {
+      stringBody = typeof payload === "string" ? payload : JSON.stringify(payload);
+      reqHeaders["Content-Type"] = "application/json";
+    }
+
     const res = await fetch(targetUrl, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-whizan-trigger": "CRON",
-        "x-whizan-cron-id": job.id,
-        "x-whizan-execution-id": executionId,
-      },
-      body: payload ? JSON.stringify(payload) : undefined,
+      method: upperMethod,
+      headers: reqHeaders,
+      body: stringBody,
     });
 
     const text = await res.text();
@@ -351,28 +370,46 @@ export class TaskDispatcher {
   // ─── 5. EXTERNAL WEBHOOK WITH HMAC SIGNATURE ──────────────────────────────
   private async executeWebhook(job: CronJobData, executionId: string, log: (s: string) => void) {
     const { url, method = "POST", headers = {}, body } = job.targetConfig;
-    const stringBody = body ? (typeof body === "string" ? body : JSON.stringify(body)) : "";
+    const upperMethod = (method || "POST").toUpperCase();
+    const isPayloadPermitted = !["GET", "HEAD"].includes(upperMethod);
+
+    let stringBody: string | undefined = undefined;
+    if (isPayloadPermitted && body !== undefined && body !== null) {
+      if (typeof body === "string") {
+        stringBody = body;
+      } else if (typeof body === "object") {
+        const keys = Object.keys(body);
+        if (keys.length > 0) {
+          stringBody = JSON.stringify(body);
+        }
+      }
+    }
 
     // Generate HMAC SHA-256 signature
     const signature = crypto
       .createHmac("sha256", this.meshToken)
-      .update(stringBody)
+      .update(stringBody || "")
       .digest("hex");
 
-    log(`[Webhook] Dispatching signed HTTP ${method} to ${url}\n`);
+    log(`[Webhook] Dispatching signed HTTP ${upperMethod} to ${url}\n`);
+
+    const reqHeaders: Record<string, string> = {
+      "User-Agent": "Whizan-Cron/1.0",
+      "x-whizan-trigger": "CRON",
+      "x-whizan-cron-id": job.id,
+      "x-whizan-execution-id": executionId,
+      "x-whizan-signature": `sha256=${signature}`,
+      ...headers,
+    };
+
+    if (stringBody) {
+      reqHeaders["Content-Type"] = reqHeaders["Content-Type"] || "application/json";
+    }
 
     const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Whizan-Cron/1.0",
-        "x-whizan-trigger": "CRON",
-        "x-whizan-cron-id": job.id,
-        "x-whizan-execution-id": executionId,
-        "x-whizan-signature": `sha256=${signature}`,
-        ...headers,
-      },
-      body: stringBody || undefined,
+      method: upperMethod,
+      headers: reqHeaders,
+      body: stringBody,
     });
 
     const text = await res.text();

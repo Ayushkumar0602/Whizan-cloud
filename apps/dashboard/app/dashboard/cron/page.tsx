@@ -426,31 +426,37 @@ export default function CronDashboardPage() {
           method: formData.method,
           payload: parsedPayload,
         };
-      } else if (formData.targetType === "SERVICE") {
-        targetConfig = {
-          targetType: "SERVICE",
-          serviceId: formData.serviceId || "default-service",
-          routePath: formData.endpointPath.startsWith("/") ? formData.endpointPath : `/${formData.endpointPath}`,
-          port: Number(formData.port) || 3000,
-          method: formData.method,
-          payload: parsedPayload,
-        };
-      } else if (formData.targetType === "PROJECT") {
-        targetConfig = {
-          targetType: "PROJECT",
-          projectId: formData.serviceId || "default-project",
-          routePath: formData.endpointPath.startsWith("/") ? formData.endpointPath : `/${formData.endpointPath}`,
-          method: formData.method,
-          payload: parsedPayload,
-        };
-      } else if (formData.targetType === "WEBHOOK") {
-        targetConfig = {
-          targetType: "WEBHOOK",
-          url: formData.webhookUrl,
-          method: formData.method,
-          headers: parsedHeaders,
-          body: parsedPayload,
-        };
+      } else {
+        // Sanitize payload: HTTP GET / HEAD requests cannot have a body
+        const isBodyAllowed = !["GET", "HEAD"].includes(formData.method);
+        const safePayload = isBodyAllowed && Object.keys(parsedPayload).length > 0 ? parsedPayload : undefined;
+
+        if (formData.targetType === "SERVICE") {
+          targetConfig = {
+            targetType: "SERVICE",
+            serviceId: formData.serviceId || "default-service",
+            routePath: formData.endpointPath.startsWith("/") ? formData.endpointPath : `/${formData.endpointPath}`,
+            port: Number(formData.port) || 3000,
+            method: formData.method,
+            payload: safePayload,
+          };
+        } else if (formData.targetType === "PROJECT") {
+          targetConfig = {
+            targetType: "PROJECT",
+            projectId: formData.serviceId || "default-project",
+            routePath: formData.endpointPath.startsWith("/") ? formData.endpointPath : `/${formData.endpointPath}`,
+            method: formData.method,
+            payload: safePayload,
+          };
+        } else if (formData.targetType === "WEBHOOK") {
+          targetConfig = {
+            targetType: "WEBHOOK",
+            url: formData.webhookUrl,
+            method: formData.method,
+            headers: parsedHeaders,
+            body: safePayload,
+          };
+        }
       }
 
       const payload = {
