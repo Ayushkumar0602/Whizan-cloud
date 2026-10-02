@@ -26,8 +26,7 @@ import {
   FileCode,
   FolderArchive,
   RefreshCw,
-  Plus,
-  AlertTriangle
+  Plus
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -82,24 +81,12 @@ export default function McpGuidePage() {
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
-  const [execMode, setExecMode] = useState<"local" | "npx">("local");
-
   const effectiveKey = newKey?.key || (selectedKey.startsWith("whz_live_") ? selectedKey : "whz_live_YOUR_API_KEY");
 
-  const getRunner = () => {
-    if (execMode === "local") {
-      return {
-        command: "node",
-        args: ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
-      };
-    }
-    return {
-      command: "npx",
-      args: ["-y", "@whizan/mcp-devops"],
-    };
+  const runner = {
+    command: "npx",
+    args: ["-y", "@whizan/mcp-devops"],
   };
-
-  const runner = getRunner();
 
   // Config snippets for various IDEs
   const configs = {
@@ -338,13 +325,16 @@ export default function McpGuidePage() {
           Whizan DevOps Model Context Protocol (MCP)
         </h1>
         <p style={{ fontSize: "1.05rem", color: "var(--muted)", maxWidth: 720, lineHeight: 1.6, marginBottom: "1.5rem" }}>
-          Transform <strong>Cursor, Windsurf, VS Code, and Claude</strong> into an autonomous Cloud Engineer.
+          Transform <strong>Antigravity IDE, Cursor, Windsurf, VS Code, and Claude Desktop</strong> into an autonomous Cloud Engineer.
           Your AI agent can audit your project, fix host and port bindings, deploy backends via direct upload,
           and automatically wire frontend endpoints — completely hands-free.
         </p>
 
         {/* Feature Pills */}
         <div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", background: "rgba(99, 102, 241, 0.15)", border: "1px solid rgba(99, 102, 241, 0.35)", color: "#818cf8", padding: "0.3rem 0.7rem", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 700 }}>
+            <Check size={14} /> npm: @whizan/mcp-devops
+          </span>
           <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.25)", color: "#10b981", padding: "0.3rem 0.7rem", borderRadius: "8px", fontSize: "0.8rem", fontWeight: 600 }}>
             <Zap size={14} /> Direct Upload (No Git Push)
           </span>
@@ -436,42 +426,6 @@ export default function McpGuidePage() {
           </h2>
         </div>
 
-        {/* Execution Mode Selector */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem", background: "rgba(0,0,0,0.25)", padding: "0.35rem", borderRadius: "8px", width: "fit-content", flexWrap: "wrap" }}>
-          <button
-            onClick={() => setExecMode("local")}
-            style={{
-              padding: "0.35rem 0.75rem",
-              borderRadius: "6px",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              background: execMode === "local" ? "var(--accent)" : "transparent",
-              color: execMode === "local" ? "#fff" : "var(--muted)",
-            }}
-          >
-            💻 Workspace / Direct Node (Instant, No NPM Publish)
-          </button>
-          <button
-            onClick={() => setExecMode("npx")}
-            style={{
-              padding: "0.35rem 0.75rem",
-              borderRadius: "6px",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              transition: "all 0.15s ease",
-              background: execMode === "npx" ? "var(--accent)" : "transparent",
-              color: execMode === "npx" ? "#fff" : "var(--muted)",
-            }}
-          >
-            🌐 NPX Package (@whizan/mcp-devops)
-          </button>
-        </div>
-
         {/* IDE Tabs */}
         <div style={{ display: "flex", gap: "0.5rem", borderBottom: "1px solid var(--border)", paddingBottom: "0.75rem", marginBottom: "1.25rem", overflowX: "auto" }}>
           {(["antigravity", "cursor", "windsurf", "vscode", "claude"] as const).map((tab) => (
@@ -543,19 +497,13 @@ export default function McpGuidePage() {
           </pre>
         </div>
 
-        {execMode === "local" && (
-          <div style={{ marginTop: "1rem", padding: "0.85rem 1.15rem", borderRadius: "8px", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", fontSize: "0.82rem", lineHeight: 1.6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontWeight: 700, color: "#f59e0b", marginBottom: "0.35rem" }}>
-              <AlertTriangle size={15} />
-              <span>Windows & Local Path Troubleshooting (MODULE_NOT_FOUND)</span>
-            </div>
-            <p style={{ margin: 0, color: "var(--foreground)" }}>
-              1. <strong>Use Full Absolute Path</strong>: Replace <code>/absolute/path/to/...</code> with the exact full path to where you cloned the repo (e.g. <code>C:/Users/YourName/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js</code>). Relative paths fail because IDEs launch node from their own program directory.
-              <br />
-              2. <strong>Build TypeScript First</strong>: In your terminal, run <code>cd packages/mcp-devops && npm install && npm run build</code> so that <code>dist/index.js</code> is compiled.
-            </p>
-          </div>
-        )}
+        {/* Universal NPM Banner */}
+        <div style={{ marginTop: "1rem", padding: "0.75rem 1rem", borderRadius: "8px", background: "rgba(99, 102, 241, 0.08)", border: "1px solid rgba(99, 102, 241, 0.25)", fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <Sparkles size={16} color="#818cf8" style={{ flexShrink: 0 }} />
+          <span style={{ color: "var(--foreground)" }}>
+            <strong>Universal Package</strong>: Powered by <code>@whizan/mcp-devops</code> on npm. Works seamlessly on Windows, macOS, and Linux with zero cloning or build steps.
+          </span>
+        </div>
       </div>
 
       {/* Step 3: Beginner Prompt Recipes */}
