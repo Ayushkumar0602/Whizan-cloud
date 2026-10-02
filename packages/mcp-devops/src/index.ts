@@ -49,7 +49,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.0.2",
+    version: "1.0.3",
   },
   {
     capabilities: {
@@ -1581,7 +1581,7 @@ async function handleToolExecution(name: string, args: any) {
 // ─── CLI Command Handlers ───────────────────────────────────────────────────
 
 function printCliHelp() {
-  printWhizanBanner("1.0.2", "Autonomous Cloud DevOps & In-IDE Deployment Engine");
+  printWhizanBanner("1.0.3", "Autonomous Cloud DevOps & In-IDE Deployment Engine");
   const c = colors;
   console.log(`
   ${c.bold}${c.brightWhite}COMMANDS & USAGE:${c.reset}
@@ -1607,7 +1607,7 @@ function printCliHelp() {
 }
 
 async function handleCliInstall(args: string[]) {
-  printWhizanBanner("1.0.2");
+  printWhizanBanner("1.0.3");
   const c = colors;
 
   console.log(`  ${c.whizanCyan}🔍 Scanning computer for installed AI IDEs and editors...${c.reset}\n`);
@@ -1666,7 +1666,7 @@ async function handleCliInstall(args: string[]) {
 }
 
 async function handleCliLogin(args: string[]) {
-  printWhizanBanner("1.0.2");
+  printWhizanBanner("1.0.3");
   const c = colors;
 
   let token: string | undefined;
@@ -1790,7 +1790,7 @@ async function handleCliLogin(args: string[]) {
 }
 
 async function handleCliWhoami() {
-  printWhizanBanner("1.0.2");
+  printWhizanBanner("1.0.3");
   const c = colors;
   await client.loadConfig();
   const status = await client.getAuthStatus();
@@ -1819,7 +1819,7 @@ async function handleCliWhoami() {
 }
 
 async function handleCliLogout() {
-  printWhizanBanner("1.0.2");
+  printWhizanBanner("1.0.3");
   const c = colors;
   await client.clearConfig();
   console.log(`  ${c.emerald}✔ Logged out successfully.${c.reset}`);
@@ -1858,7 +1858,7 @@ async function main() {
   const authStatus = await client.getAuthStatus();
 
   // Render branded Whizan banner & status card to stderr (preserving stdio JSON-RPC on stdout)
-  printWhizanBanner("1.0.2");
+  printWhizanBanner("1.0.3");
   printServerStatusCard({
     status: "ONLINE",
     authenticated: authStatus.authenticated,
