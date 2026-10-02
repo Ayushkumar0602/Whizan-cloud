@@ -5,7 +5,6 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "@whizan/mcp-devops": "./dist/index.js",
     "whizan-mcp": "./dist/index.js",
     "mcp-devops": "./dist/index.js"
   },
