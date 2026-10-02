@@ -21,7 +21,7 @@ interface PlatformUser {
   id: string;
   email: string;
   name?: string | null;
-  role: "ROOT_ADMIN" | "ADMIN" | "DEVOPS_ADMIN" | "SUPPORT_ADMIN" | "USER" | string;
+  role: "ROOT_ADMIN" | "IAM_ADMIN" | "ADMIN" | "DEVOPS_ADMIN" | "SUPPORT_ADMIN" | "USER" | string;
   iamPermissions?: string | null;
   subscriptionTier: string;
   createdAt: string;
@@ -189,7 +189,7 @@ export default function IamAdminPage() {
 
       if (roleFilter === "ALL") return true;
       if (roleFilter === "ROOT_ADMIN") return u.role === "ROOT_ADMIN" || u.email === "aj0892829122@gmail.com";
-      if (roleFilter === "ADMIN") return u.role === "ADMIN" || u.role === "DEVOPS_ADMIN" || u.role === "SUPPORT_ADMIN";
+      if (roleFilter === "ADMIN") return u.role === "ADMIN" || u.role === "IAM_ADMIN" || u.role === "DEVOPS_ADMIN" || u.role === "SUPPORT_ADMIN";
       if (roleFilter === "USER") return u.role === "USER" || !u.role;
 
       return u.role === roleFilter;
@@ -198,7 +198,7 @@ export default function IamAdminPage() {
 
   const stats = useMemo(() => {
     const rootCount = users.filter((u) => u.role === "ROOT_ADMIN" || u.email === "aj0892829122@gmail.com").length;
-    const adminCount = users.filter((u) => ["ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"].includes(u.role)).length;
+    const adminCount = users.filter((u) => ["ADMIN", "IAM_ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"].includes(u.role)).length;
     const standardCount = users.filter((u) => u.role === "USER" || !u.role).length;
     return { total: users.length, rootCount, adminCount, standardCount };
   }, [users]);
@@ -360,6 +360,7 @@ export default function IamAdminPage() {
                   color: "var(--foreground)",
                 }}
               >
+                <option value="IAM_ADMIN">IAM_ADMIN — IAM & Platform Administrator</option>
                 <option value="ADMIN">ADMIN — Full Platform & Infrastructure Admin</option>
                 <option value="DEVOPS_ADMIN">DEVOPS_ADMIN — Containers, Deployments & VM Terminal</option>
                 <option value="SUPPORT_ADMIN">SUPPORT_ADMIN — Read-only Support & Observability</option>
@@ -533,7 +534,7 @@ export default function IamAdminPage() {
               ) : (
                 filteredUsers.map((u) => {
                   const isRoot = u.role === "ROOT_ADMIN" || u.email === "aj0892829122@gmail.com";
-                  const isAdmin = ["ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"].includes(u.role);
+                  const isAdmin = ["ADMIN", "IAM_ADMIN", "DEVOPS_ADMIN", "SUPPORT_ADMIN"].includes(u.role);
 
                   return (
                     <tr

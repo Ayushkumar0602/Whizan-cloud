@@ -251,7 +251,8 @@ export type User = {
   email: string;
   name?: string;
   avatarUrl?: string;
-  role?: string;
+  role?: "ROOT_ADMIN" | "IAM_ADMIN" | "ADMIN" | "DEVOPS_ADMIN" | "SUPPORT_ADMIN" | "USER" | string;
+  iamPermissions?: string;
   subscriptionTier?: "HOBBY" | "PROFESSIONAL" | string;
   createdAt: string;
 };
