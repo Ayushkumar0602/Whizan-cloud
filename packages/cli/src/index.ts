@@ -3,7 +3,18 @@
 import { loginCommand } from "./commands/login.js";
 import { logoutCommand } from "./commands/logout.js";
 import { whoamiCommand } from "./commands/whoami.js";
+import { deployCommand, redeployCommand } from "./commands/deploy.js";
+import { initCommand } from "./commands/init.js";
 import { psCommand } from "./commands/ps.js";
+import { logsCommand } from "./commands/logs.js";
+import { envCommand } from "./commands/env.js";
+import { dbCommand } from "./commands/db.js";
+import { fnCommand } from "./commands/fn.js";
+import { cronCommand } from "./commands/cron.js";
+import { execCommand } from "./commands/exec.js";
+import { linkCommand, unlinkCommand } from "./commands/link.js";
+import { deleteCommand } from "./commands/delete.js";
+import { openCommand } from "./commands/open.js";
 import { printBanner, colors, printError } from "./utils/terminal-ui.js";
 
 const c = colors;
@@ -27,7 +38,7 @@ function printHelp() {
 
   ${c.bold}${c.brightWhite}RESOURCES${c.reset}
     ${c.whizanCyan}ps${c.reset}                 List all services, projects, functions, and crons
-    ${c.whizanCyan}logs${c.reset}               Stream build or container logs
+    ${c.whizanCyan}logs${c.reset}               Stream build or container logs (${c.dim}--tail${c.reset})
     ${c.whizanCyan}open${c.reset}               Open live URL in browser
 
   ${c.bold}${c.brightWhite}ENVIRONMENT${c.reset}
@@ -101,17 +112,16 @@ async function main() {
     // Deploy
     case "deploy":
     case "up":
-      // Phase 2: deploy command will be implemented next
-      printError("Deploy command coming in Phase 2. Use `whizan login` and `whizan whoami` for now.");
+      await deployCommand(subArgs);
       break;
 
     case "redeploy":
-      printError("Redeploy command coming in Phase 2.");
+      await redeployCommand(subArgs);
       break;
 
     case "init":
     case "setup":
-      printError("Init command coming in Phase 2.");
+      await initCommand(subArgs);
       break;
 
     // Resources
@@ -121,51 +131,51 @@ async function main() {
       break;
 
     case "logs":
-      printError("Logs command coming in Phase 3.");
+      await logsCommand(subArgs);
       break;
 
     case "open":
-      printError("Open command coming in Phase 5.");
+      await openCommand(subArgs);
       break;
 
     // Env
     case "env":
-      printError("Env command coming in Phase 3.");
+      await envCommand(subArgs);
       break;
 
     // Database
     case "db":
     case "database":
-      printError("Database command coming in Phase 4.");
+      await dbCommand(subArgs);
       break;
 
     // Functions
     case "fn":
     case "function":
-      printError("Function command coming in Phase 4.");
+      await fnCommand(subArgs);
       break;
 
     // Cron
     case "cron":
-      printError("Cron command coming in Phase 4.");
+      await cronCommand(subArgs);
       break;
 
     // Operations
     case "exec":
-      printError("Exec command coming in Phase 5.");
+      await execCommand(subArgs);
       break;
 
     case "link":
-      printError("Link command coming in Phase 5.");
+      await linkCommand(subArgs);
       break;
 
     case "unlink":
-      printError("Unlink command coming in Phase 5.");
+      await unlinkCommand();
       break;
 
     case "delete":
     case "rm":
-      printError("Delete command coming in Phase 5.");
+      await deleteCommand(subArgs);
       break;
 
     // Meta

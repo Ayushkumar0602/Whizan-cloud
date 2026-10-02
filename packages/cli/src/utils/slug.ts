@@ -16,6 +16,8 @@ export function slugify(name: string): string {
     .slice(0, 63);                  // Max DNS label length
 }
 
+export const toSlug = slugify;
+
 /**
  * Append a random suffix to a slug for uniqueness
  * "my-api" → "my-api-x7k2"
