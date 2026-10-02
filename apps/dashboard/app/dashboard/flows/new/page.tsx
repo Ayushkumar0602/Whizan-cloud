@@ -120,7 +120,7 @@ export default function NewWorkflowPage() {
   };
 
   return (
-    <div style={{ maxWidth: 840, margin: "0 auto", paddingBottom: "4rem" }}>
+    <div className="page" style={{ maxWidth: 920, margin: "0 auto", padding: "1.75rem 1.25rem 4rem" }}>
       {/* Back button */}
       <Link
         href="/dashboard/flows"
