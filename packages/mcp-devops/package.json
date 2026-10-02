@@ -5,10 +5,20 @@
   "main": "dist/index.js",
   "type": "module",
   "bin": {
-    "whizan-mcp": "./dist/index.js"
+    "@whizan/mcp-devops": "./dist/index.js",
+    "whizan-mcp": "./dist/index.js",
+    "mcp-devops": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js"
   },
