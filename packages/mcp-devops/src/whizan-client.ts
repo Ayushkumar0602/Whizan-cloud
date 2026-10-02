@@ -50,6 +50,17 @@ export class WhizanClient {
     await fs.writeFile(CONFIG_PATH, JSON.stringify(this.config, null, 2), "utf8");
   }
 
+  async clearConfig(): Promise<void> {
+    try {
+      await fs.unlink(CONFIG_PATH);
+    } catch {}
+    this.config.apiKey = undefined;
+  }
+
+  static getConfigPath(): string {
+    return CONFIG_PATH;
+  }
+
   getHeaders(extra: Record<string, string> = {}): Record<string, string> {
     const headers: Record<string, string> = { ...extra };
     if (this.config.apiKey) {
