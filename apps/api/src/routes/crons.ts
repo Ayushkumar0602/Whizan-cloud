@@ -153,15 +153,22 @@ export async function cronRoutes(app: FastifyInstance) {
     const { target, schedule, timezone, ...rest } = parsed.data;
     const nextRunAt = rest.enabled ? calculateNextRun(schedule, timezone) : null;
 
+    // Sanitize target config: Strip payload/body if method is GET or HEAD
+    const sanitizedTarget = { ...target } as any;
+    if (sanitizedTarget.method && ["GET", "HEAD"].includes(sanitizedTarget.method.toUpperCase())) {
+      delete sanitizedTarget.body;
+      delete sanitizedTarget.payload;
+    }
+
     const cronJob = await prisma.cronJob.create({
       data: {
         userId,
-        name: rest.name,
-        description: rest.description,
+        name: rest.name.trim(),
+        description: rest.description ? rest.description.trim() : undefined,
         schedule,
         timezone,
-        targetType: target.targetType,
-        targetConfig: target as any,
+        targetType: sanitizedTarget.targetType,
+        targetConfig: sanitizedTarget as any,
         misfirePolicy: rest.misfirePolicy,
         concurrencyPolicy: rest.concurrencyPolicy,
         maxConcurrentRuns: rest.maxConcurrentRuns,
@@ -254,6 +261,8 @@ export async function cronRoutes(app: FastifyInstance) {
 
     const updateData: any = {
       ...rest,
+      name: rest.name ? rest.name.trim() : undefined,
+      description: rest.description ? rest.description.trim() : undefined,
       schedule: finalSchedule,
       timezone: finalTimezone,
       enabled: finalEnabled,
@@ -261,8 +270,20 @@ export async function cronRoutes(app: FastifyInstance) {
     };
 
     if (target) {
-      updateData.targetType = target.targetType;
-      updateData.targetConfig = target;
+      const sanitizedTarget = { ...target } as any;
+      if (sanitizedTarget.method && ["GET", "HEAD"].includes(sanitizedTarget.method.toUpperCase())) {
+        delete sanitizedTarget.body;
+        delete sanitizedTarget.payload;
+      }
+      updateData.targetType = sanitizedTarget.targetType;
+      updateData.targetConfig = sanitizedTarget;
+    } else if (existing.targetConfig) {
+      const existingConfig = { ...(existing.targetConfig as any) };
+      if (existingConfig.method && ["GET", "HEAD"].includes(existingConfig.method.toUpperCase())) {
+        delete existingConfig.body;
+        delete existingConfig.payload;
+        updateData.targetConfig = existingConfig;
+      }
     }
 
     const updated = await prisma.cronJob.update({
