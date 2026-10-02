@@ -352,6 +352,39 @@ export class WhizanClient {
     return results;
   }
 
+  async listEnvVars(
+    targetType: "service" | "project",
+    targetId: string
+  ): Promise<any[]> {
+    const endpoint = targetType === "service" ? "services" : "projects";
+    try {
+      const res = await fetch(`${await this.apiUrl()}/api/${endpoint}/${targetId}/env`, {
+        headers: await this.headers(),
+      });
+      if (!res.ok) return [];
+      return (await res.json()) as any[];
+    } catch {
+      return [];
+    }
+  }
+
+  async deleteEnvVar(
+    targetType: "service" | "project",
+    targetId: string,
+    key: string
+  ): Promise<boolean> {
+    const endpoint = targetType === "service" ? "services" : "projects";
+    try {
+      const res = await fetch(`${await this.apiUrl()}/api/${endpoint}/${targetId}/env/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+        headers: await this.headers(),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   // ─── Redeploy ──────────────────────────────────────────────────────────────
 
   async redeploy(targetType: "service" | "project", targetId: string): Promise<any> {
@@ -382,6 +415,30 @@ export class WhizanClient {
   }
 
   // ─── Database ──────────────────────────────────────────────────────────────
+
+  async listDatabases(): Promise<any[]> {
+    try {
+      const res = await fetch(`${await this.apiUrl()}/api/databases`, {
+        headers: await this.headers(),
+      });
+      if (!res.ok) return [];
+      return (await res.json()) as any[];
+    } catch {
+      return [];
+    }
+  }
+
+  async getDatabase(id: string): Promise<any | null> {
+    try {
+      const res = await fetch(`${await this.apiUrl()}/api/databases/${id}`, {
+        headers: await this.headers(),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
 
   async provisionDatabase(params: {
     name: string;
@@ -464,6 +521,64 @@ export class WhizanClient {
     const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
     if (!res.ok) throw new ApiError(data.message || data.error || `HTTP ${res.status}`, res.status, data);
     return data;
+  }
+
+  async invokeFunction(
+    slug: string,
+    options: {
+      path?: string;
+      method?: string;
+      body?: any;
+      apiKey?: string;
+      headers?: Record<string, string>;
+    } = {}
+  ): Promise<any> {
+    const targetPath = options.path || "/";
+    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const routerPort = process.env.ROUTER_PORT || (baseDomain.includes("localhost") ? "8080" : "80");
+    const portSuffix = routerPort === "80" ? "" : `:${routerPort}`;
+    const url = `http://${slug}.fn.${baseDomain}${portSuffix}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
+
+    const headers: Record<string, string> = { ...(options.headers || {}) };
+    const cfg = await this.ensureConfig();
+    if (options.apiKey) {
+      headers["x-api-key"] = options.apiKey;
+    } else if (cfg.apiKey) {
+      headers["x-api-key"] = cfg.apiKey;
+    }
+
+    const fetchOptions: any = {
+      method: options.method || (options.body ? "POST" : "GET"),
+      headers,
+    };
+    if (options.body) {
+      if (typeof options.body === "string") {
+        fetchOptions.body = options.body;
+      } else {
+        fetchOptions.body = JSON.stringify(options.body);
+        if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      }
+    }
+
+    const startTime = Date.now();
+    const res = await fetch(url, fetchOptions);
+    const durationMs = Date.now() - startTime;
+    const contentType = res.headers.get("content-type") || "";
+
+    let data: any;
+    if (contentType.includes("application/json")) {
+      data = await res.json().catch(() => null);
+    } else {
+      data = await res.text().catch(() => "");
+    }
+
+    return {
+      status: res.status,
+      ok: res.ok,
+      durationMs,
+      data,
+      url,
+    };
   }
 
   // ─── Cron Jobs ─────────────────────────────────────────────────────────────
