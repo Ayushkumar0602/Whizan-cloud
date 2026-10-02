@@ -41,6 +41,17 @@ import {
   FileCode,
   Info,
   Link2,
+  Code,
+  Braces,
+  Calendar,
+  Send,
+  Database,
+  Bot,
+  Flame,
+  GitCommit,
+  CheckCheck,
+  Columns,
+  Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
@@ -57,6 +68,9 @@ import {
   FLOW_NODE_TYPES,
   generateWorkflowDSL,
   parseWorkflowDSL,
+  getNodeConfigSummary,
+  getNodeConfigFields,
+  autoLayoutDAG,
 } from "@/lib/flow-templates";
 
 export default function FlowEditorPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,9 +86,10 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // View mode: Visual Canvas vs TypeScript Code DSL
-  const [viewMode, setViewMode] = useState<"CANVAS" | "CODE">("CANVAS");
+  // View mode: Visual Canvas vs Split Dual-Mode vs TypeScript Code DSL
+  const [viewMode, setViewMode] = useState<"CANVAS" | "SPLIT" | "CODE">("CANVAS");
   const [dslCode, setDslCode] = useState<string>("");
+  const [dslSyncStatus, setDslSyncStatus] = useState<"SYNCED" | "TYPING" | "ERROR">("SYNCED");
 
   // Canvas pan & zoom
   const [zoom, setZoom] = useState<number>(1);
@@ -85,8 +100,9 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
 
   // Selection & Inspector
   const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
-  const [inspectorTab, setInspectorTab] = useState<"CONFIG" | "POLICIES">("CONFIG");
+  const [inspectorTab, setInspectorTab] = useState<"CONFIG" | "RAW_JSON" | "POLICIES">("CONFIG");
   const [paletteOpen, setPaletteOpen] = useState(true);
+  const [rawJsonText, setRawJsonText] = useState<string>("{}");
 
   // Dragging node (smooth pointer tracking)
   const [draggingNodeKey, setDraggingNodeKey] = useState<string | null>(null);
@@ -148,16 +164,55 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     loadRuns();
   }, [flowId]);
 
-  // Sync to code when entering CODE mode
+  // Mode switchers
+  const handleSwitchToSplit = () => {
+    if (workflow) {
+      setDslCode(generateWorkflowDSL({ ...workflow, nodes, edges }));
+      setDslSyncStatus("SYNCED");
+    }
+    setViewMode("SPLIT");
+  };
+
   const handleSwitchToCode = () => {
     if (!workflow) return;
     const currentWf = { ...workflow, nodes, edges };
     setDslCode(generateWorkflowDSL(currentWf));
+    setDslSyncStatus("SYNCED");
     setViewMode("CODE");
   };
 
-  // Sync code back to canvas
-  const handleApplyDsl = () => {
+  // Auto-Layout DAG Handler
+  const handleAutoLayout = () => {
+    const laidOut = autoLayoutDAG(nodes, edges);
+    setNodes(laidOut);
+    if (workflow) {
+      const code = generateWorkflowDSL({ ...workflow, nodes: laidOut, edges });
+      setDslCode(code);
+      setDslSyncStatus("SYNCED");
+    }
+    toast.success("Organized graph with automatic DAG layout!");
+  };
+
+  // ─── REAL-TIME DEBOUNCED AUTO-SYNC (CODE DSL -> VISUAL GRAPH) ───────────────
+  useEffect(() => {
+    if (viewMode === "CANVAS") return;
+
+    setDslSyncStatus("TYPING");
+    const timeout = setTimeout(() => {
+      const parsed = parseWorkflowDSL(dslCode);
+      if (parsed && parsed.nodes.length > 0) {
+        setNodes(parsed.nodes);
+        setEdges(parsed.edges);
+        setDslSyncStatus("SYNCED");
+      } else {
+        setDslSyncStatus("ERROR");
+      }
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [dslCode, viewMode]);
+
+  const handleManualApplyDsl = () => {
     const parsed = parseWorkflowDSL(dslCode);
     if (!parsed) {
       toast.error("Could not parse DSL code. Please verify syntax.");
@@ -165,11 +220,11 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     }
     setNodes(parsed.nodes);
     setEdges(parsed.edges);
-    setViewMode("CANVAS");
+    setDslSyncStatus("SYNCED");
     toast.success("DSL code synchronized to canvas!");
   };
 
-  // Save Pipeline (supports both PUT and PATCH via flowsApi.update)
+  // Save Pipeline
   const handleSave = async () => {
     if (!workflow) return;
     setSaving(true);
@@ -219,7 +274,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  // ─── LIVE SSE LOG STREAMING WITH AUTO-POLLING FALLBACK ─────────────────────
+  // ─── LIVE SSE LOG STREAMING WITH POLLING FALLBACK ──────────────────────────
   useEffect(() => {
     if (!terminalOpen || !currentRun) {
       if (eventSourceRef.current) {
@@ -255,7 +310,6 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
       }, 2500);
     };
 
-    // Try EventSource
     try {
       const streamUrl = flowsApi.getLogsStreamUrl(flowId, currentRun.id);
       const token = getAccessToken();
@@ -279,7 +333,6 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
       };
 
       es.onerror = () => {
-        // Switch to polling fallback seamlessly
         startPollingFallback();
       };
     } catch {
@@ -366,7 +419,12 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
 
     const handleGlobalPointerUp = () => {
       if (isPanning) setIsPanning(false);
-      if (draggingNodeKey) setDraggingNodeKey(null);
+      if (draggingNodeKey) {
+        setDraggingNodeKey(null);
+        if (workflow && dslSyncStatus !== "TYPING") {
+          setDslCode(generateWorkflowDSL({ ...workflow, nodes, edges }));
+        }
+      }
 
       // Complete connection if released over a target node
       if (connectingSourceKey && hoveredTargetKey && connectingSourceKey !== hoveredTargetKey) {
@@ -374,10 +432,14 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
           (ed) => ed.sourceNodeKey === connectingSourceKey && ed.targetNodeKey === hoveredTargetKey
         );
         if (!exists) {
-          setEdges((prev) => [
-            ...prev,
+          const newEdges = [
+            ...edges,
             { sourceNodeKey: connectingSourceKey, targetNodeKey: hoveredTargetKey, condition: "success" },
-          ]);
+          ];
+          setEdges(newEdges);
+          if (workflow && dslSyncStatus !== "TYPING") {
+            setDslCode(generateWorkflowDSL({ ...workflow, nodes, edges: newEdges }));
+          }
           toast.success(`Connected ${connectingSourceKey} → ${hoveredTargetKey}`);
         }
       }
@@ -410,6 +472,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
         x: (e.clientX - pan.x) / zoom - node.positionX,
         y: (e.clientY - pan.y) / zoom - node.positionY,
       };
+      setRawJsonText(JSON.stringify(node.config || {}, null, 2));
     }
   };
 
@@ -442,7 +505,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     });
   };
 
-  // Add Step from Palette
+  // Add Step from Palette or Child Button
   const handleAddNode = (type: string, parentKey?: string) => {
     const meta = FLOW_NODE_TYPES[type];
     if (!meta) return;
@@ -453,11 +516,10 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     let posX = Math.round((-pan.x + 400) / zoom);
     let posY = Math.round((-pan.y + 220) / zoom);
 
-    // If added as child of an existing node, place to the right!
     if (parentKey) {
       const parentNode = nodes.find((n) => n.nodeKey === parentKey);
       if (parentNode) {
-        posX = parentNode.positionX + 320;
+        posX = parentNode.positionX + 330;
         posY = parentNode.positionY;
       }
     }
@@ -474,27 +536,42 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
       continueOnError: false,
     };
 
-    setNodes((prev) => [...prev, newNode]);
-
-    // If parentKey exists, wire automatically!
+    const nextNodes = [...nodes, newNode];
+    let nextEdges = edges;
     if (parentKey) {
-      setEdges((prev) => [...prev, { sourceNodeKey: parentKey, targetNodeKey: uniqueKey, condition: "success" }]);
+      nextEdges = [...edges, { sourceNodeKey: parentKey, targetNodeKey: uniqueKey, condition: "success" }];
+      setEdges(nextEdges);
+    }
+    setNodes(nextNodes);
+
+    if (workflow && dslSyncStatus !== "TYPING") {
+      setDslCode(generateWorkflowDSL({ ...workflow, nodes: nextNodes, edges: nextEdges }));
     }
 
     setSelectedNodeKey(uniqueKey);
+    setRawJsonText(JSON.stringify(newNode.config, null, 2));
     setQuickAddParentKey(null);
     toast.success(`Added ${meta.label}`);
   };
 
   const handleDeleteNode = (nodeKey: string) => {
-    setNodes((prev) => prev.filter((n) => n.nodeKey !== nodeKey));
-    setEdges((prev) => prev.filter((e) => e.sourceNodeKey !== nodeKey && e.targetNodeKey !== nodeKey));
+    const nextNodes = nodes.filter((n) => n.nodeKey !== nodeKey);
+    const nextEdges = edges.filter((e) => e.sourceNodeKey !== nodeKey && e.targetNodeKey !== nodeKey);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    if (workflow && dslSyncStatus !== "TYPING") {
+      setDslCode(generateWorkflowDSL({ ...workflow, nodes: nextNodes, edges: nextEdges }));
+    }
     if (selectedNodeKey === nodeKey) setSelectedNodeKey(null);
     toast.info(`Deleted step ${nodeKey}`);
   };
 
   const handleDeleteEdge = (sourceKey: string, targetKey: string) => {
-    setEdges((prev) => prev.filter((e) => !(e.sourceNodeKey === sourceKey && e.targetNodeKey === targetKey)));
+    const nextEdges = edges.filter((e) => !(e.sourceNodeKey === sourceKey && e.targetNodeKey === targetKey));
+    setEdges(nextEdges);
+    if (workflow && dslSyncStatus !== "TYPING") {
+      setDslCode(generateWorkflowDSL({ ...workflow, nodes, edges: nextEdges }));
+    }
     toast.info("Transition removed");
   };
 
@@ -502,9 +579,41 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
     return nodes.find((n) => n.nodeKey === selectedNodeKey);
   }, [nodes, selectedNodeKey]);
 
+  // Update selected node config in state & sync to DSL
   const updateSelectedNode = (updates: Partial<WorkflowNodeItem>) => {
     if (!selectedNodeKey) return;
-    setNodes((prev) => prev.map((n) => (n.nodeKey === selectedNodeKey ? { ...n, ...updates } : n)));
+    setNodes((prev) => {
+      const next = prev.map((n) => {
+        if (n.nodeKey === selectedNodeKey) {
+          const merged = { ...n, ...updates };
+          if (updates.config) {
+            setRawJsonText(JSON.stringify(merged.config, null, 2));
+          }
+          return merged;
+        }
+        return n;
+      });
+      if (workflow && dslSyncStatus !== "TYPING") {
+        setDslCode(generateWorkflowDSL({ ...workflow, nodes: next, edges }));
+      }
+      return next;
+    });
+  };
+
+  const updateConfigField = (key: string, value: any) => {
+    if (!selectedNode) return;
+    const newConfig = { ...selectedNode.config, [key]: value };
+    updateSelectedNode({ config: newConfig });
+  };
+
+  const handleApplyRawJson = () => {
+    try {
+      const parsed = JSON.parse(rawJsonText);
+      updateSelectedNode({ config: parsed });
+      toast.success("Applied raw JSON parameters");
+    } catch {
+      toast.error("Invalid JSON syntax. Please check formatting.");
+    }
   };
 
   const nodeStatusMap = useMemo(() => {
@@ -592,7 +701,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Center: Mode Tabs */}
+        {/* Center: Mode Tabs (Canvas vs Split Dual-View vs Code DSL) */}
         <div
           style={{
             display: "flex",
@@ -609,7 +718,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               display: "flex",
               alignItems: "center",
               gap: "0.4rem",
-              padding: "0.35rem 0.85rem",
+              padding: "0.35rem 0.8rem",
               borderRadius: 6,
               fontSize: "0.78rem",
               fontWeight: 600,
@@ -621,7 +730,27 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
             }}
           >
             <Layout size={13} />
-            Visual Studio
+            Canvas
+          </button>
+          <button
+            onClick={handleSwitchToSplit}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              padding: "0.35rem 0.8rem",
+              borderRadius: 6,
+              fontSize: "0.78rem",
+              fontWeight: 600,
+              background: viewMode === "SPLIT" ? "var(--card)" : "transparent",
+              color: viewMode === "SPLIT" ? "var(--foreground)" : "var(--muted)",
+              border: "none",
+              cursor: "pointer",
+              boxShadow: viewMode === "SPLIT" ? "var(--shadow-sm)" : "none",
+            }}
+          >
+            <Columns size={13} />
+            Split View
           </button>
           <button
             onClick={handleSwitchToCode}
@@ -629,7 +758,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               display: "flex",
               alignItems: "center",
               gap: "0.4rem",
-              padding: "0.35rem 0.85rem",
+              padding: "0.35rem 0.8rem",
               borderRadius: 6,
               fontSize: "0.78rem",
               fontWeight: 600,
@@ -641,12 +770,21 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
             }}
           >
             <Code2 size={13} />
-            TypeScript DSL
+            DSL Code
           </button>
         </div>
 
         {/* Right: Actions */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <button
+            onClick={handleAutoLayout}
+            className="btn btn-secondary btn-sm"
+            title="Automatically arrange nodes in a clean DAG layout (n8n-style)"
+          >
+            <Wand2 size={13} />
+            Auto Layout
+          </button>
+
           <button onClick={handleSave} disabled={saving} className="btn btn-secondary btn-sm">
             <Save size={14} className={saving ? "spin-icon" : ""} />
             {saving ? "Saving..." : "Save Pipeline"}
@@ -681,17 +819,19 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
 
       {/* ─── STUDIO MAIN WORKSPACE ──────────────────────────────────────────────── */}
       <div style={{ position: "relative", flex: 1, overflow: "hidden", display: "flex" }}>
-        {viewMode === "CANVAS" ? (
+        {(viewMode === "CANVAS" || viewMode === "SPLIT") && (
           <div
             ref={canvasRef}
             className="flow-canvas-container"
             onPointerDown={handleCanvasPointerDown}
             style={{
-              width: "100%",
+              width: viewMode === "SPLIT" ? "55%" : "100%",
               height: "100%",
+              borderRight: viewMode === "SPLIT" ? "1px solid var(--border)" : "none",
               border: "none",
               borderRadius: 0,
               cursor: isPanning ? "grabbing" : "default",
+              position: "relative",
             }}
           >
             {/* ─── FLOATING STEP PALETTE (LEFT DOCK) ─────────────────────────────── */}
@@ -907,10 +1047,10 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                   const tgtNode = nodes.find((n) => n.nodeKey === edge.targetNodeKey);
                   if (!srcNode || !tgtNode) return null;
 
-                  const x1 = srcNode.positionX + 260;
-                  const y1 = srcNode.positionY + 44;
+                  const x1 = srcNode.positionX + 270;
+                  const y1 = srcNode.positionY + 54;
                   const x2 = tgtNode.positionX;
-                  const y2 = tgtNode.positionY + 44;
+                  const y2 = tgtNode.positionY + 54;
                   const dx = Math.max(50, Math.abs(x2 - x1) * 0.45);
                   const pathD = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
 
@@ -983,13 +1123,13 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 {connectingSourceKey && (
                   <path
                     d={`M ${
-                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionX || 0) + 260
+                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionX || 0) + 270
                     } ${
-                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionY || 0) + 44
+                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionY || 0) + 54
                     } C ${
-                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionX || 0) + 260 + 60
+                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionX || 0) + 270 + 60
                     } ${
-                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionY || 0) + 44
+                      (nodes.find((n) => n.nodeKey === connectingSourceKey)?.positionY || 0) + 54
                     }, ${mousePos.x - 60} ${mousePos.y}, ${mousePos.x} ${mousePos.y}`}
                     fill="none"
                     stroke="var(--accent)"
@@ -999,7 +1139,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 )}
               </svg>
 
-              {/* ─── NODE CARDS ────────────────────────────────────────────────────── */}
+              {/* ─── NODE CARDS (WITH VISIBLE PARAMETER CONFIGURATION) ───────────── */}
               {nodes.map((node) => {
                 const meta = FLOW_NODE_TYPES[node.type] || FLOW_NODE_TYPES.ACTION_HTTP_REQUEST;
                 const isSelected = selectedNodeKey === node.nodeKey;
@@ -1019,7 +1159,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                     style={{
                       left: node.positionX,
                       top: node.positionY,
-                      width: 260,
+                      width: 270,
                       borderColor: isTargetHovered
                         ? "#10b981"
                         : isSuccess
@@ -1050,7 +1190,6 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      // If connecting, link it!
                       if (connectingSourceKey && connectingSourceKey !== node.nodeKey) {
                         setEdges((prev) => [
                           ...prev,
@@ -1062,6 +1201,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                         return;
                       }
                       setSelectedNodeKey(node.nodeKey);
+                      setRawJsonText(JSON.stringify(node.config || {}, null, 2));
                     }}
                   >
                     {/* Top colored category bar */}
@@ -1128,24 +1268,151 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                             }}
                             className="btn btn-ghost btn-sm"
                             style={{ padding: "0.15rem 0.35rem", fontSize: "0.7rem", color: "var(--muted)" }}
-                            title="Add next step"
+                            title="Connect child step"
                           >
                             <Plus size={13} />
+                          </button>
+
+                          {/* Delete step button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteNode(node.nodeKey);
+                            }}
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: "0.15rem 0.35rem", fontSize: "0.7rem", color: "var(--muted)" }}
+                            title="Delete step"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
 
+                      {/* Step Name */}
                       <div
                         style={{
-                          fontSize: "0.88rem",
-                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          fontWeight: 750,
                           color: "var(--foreground)",
-                          marginBottom: "0.25rem",
+                          marginBottom: "0.45rem",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
                         }}
                       >
-                        {node.name}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {node.name}
+                        </span>
                       </div>
 
+                      {/* ─── VISIBLE CONFIGURATION PREVIEW LIST (LIKE N8N) ────────── */}
+                      {(() => {
+                        const fields = getNodeConfigFields(node);
+                        return (
+                          <div
+                            style={{
+                              background: "var(--bg-inset)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 8,
+                              padding: "0.45rem 0.65rem",
+                              marginBottom: "0.5rem",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "0.28rem",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginBottom: "0.1rem",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "0.64rem",
+                                  fontWeight: 700,
+                                  color: "var(--muted)",
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.04em",
+                                }}
+                              >
+                                Parameters
+                              </span>
+                              <span style={{ fontSize: "0.62rem", color: meta.color, fontWeight: 700 }}>
+                                {fields.length} active
+                              </span>
+                            </div>
+
+                            {fields.map((f, fIdx) => (
+                              <div
+                                key={fIdx}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  fontSize: "0.72rem",
+                                  gap: "0.4rem",
+                                }}
+                              >
+                                <span style={{ color: "var(--muted)", fontWeight: 550, flexShrink: 0 }}>
+                                  {f.label}:
+                                </span>
+                                <span
+                                  style={{
+                                    color: "var(--foreground)",
+                                    fontFamily: "var(--font-geist-mono), monospace",
+                                    fontWeight: 600,
+                                    maxWidth: 155,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={f.value}
+                                >
+                                  {f.value}
+                                </span>
+                              </div>
+                            ))}
+
+                            {fields.length === 0 && (
+                              <span style={{ fontSize: "0.7rem", color: "var(--muted)", fontStyle: "italic" }}>
+                                Default configuration
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Quick Action Button: Configure Parameters */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedNodeKey(node.nodeKey);
+                          setRawJsonText(JSON.stringify(node.config || {}, null, 2));
+                        }}
+                        className="btn btn-secondary btn-sm"
+                        style={{
+                          width: "100%",
+                          padding: "0.3rem 0.5rem",
+                          fontSize: "0.72rem",
+                          fontWeight: 650,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "0.35rem",
+                          marginBottom: "0.45rem",
+                          background: isSelected ? "var(--accent)" : undefined,
+                          color: isSelected ? "#fff" : undefined,
+                          borderColor: isSelected ? "var(--accent)" : undefined,
+                        }}
+                      >
+                        <Sliders size={12} />
+                        Configure Parameters
+                      </button>
+
+                      {/* Node Key & Execution Duration */}
                       <div
                         style={{
                           fontSize: "0.7rem",
@@ -1156,9 +1423,9 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                           justifyContent: "space-between",
                         }}
                       >
-                        <span>{node.nodeKey}</span>
+                        <span>#{node.nodeKey}</span>
                         {stepRun?.durationMs && (
-                          <span style={{ color: "var(--foreground)" }}>
+                          <span style={{ color: "var(--foreground)", fontWeight: 600 }}>
                             {(stepRun.durationMs / 1000).toFixed(1)}s
                           </span>
                         )}
@@ -1256,15 +1523,18 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               </div>
             )}
           </div>
-        ) : (
-          /* ─── CODE DSL EDITOR ─────────────────────────────────────────────────── */
+        )}
+
+        {/* ─── CODE DSL EDITOR (WITH REAL-TIME LIVE AUTO-CONVERT TO GRAPH) ─────── */}
+        {(viewMode === "CODE" || viewMode === "SPLIT") && (
           <div
             style={{
-              width: "100%",
+              width: viewMode === "SPLIT" ? "45%" : "100%",
               height: "100%",
               display: "flex",
               flexDirection: "column",
               background: "var(--bg-inset)",
+              borderLeft: viewMode === "SPLIT" ? "1px solid var(--border)" : "none",
             }}
           >
             <div
@@ -1277,15 +1547,84 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 borderBottom: "1px solid var(--border)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <Code2 size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: "0.86rem", fontWeight: 700 }}>TypeScript Workflow DSL</span>
-                <span style={{ fontSize: "0.74rem", color: "var(--muted)" }}>
-                  (Edit code and click &quot;Apply DSL to Canvas&quot; to update the graph)
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                  <Code2 size={16} style={{ color: "var(--accent)" }} />
+                  <span style={{ fontSize: "0.88rem", fontWeight: 700 }}>Workflow Code DSL</span>
+                </div>
+
+                {/* Auto-Sync status badge */}
+                {dslSyncStatus === "SYNCED" && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 650,
+                      color: "#10b981",
+                      background: "rgba(16, 185, 129, 0.12)",
+                      padding: "0.15rem 0.5rem",
+                      borderRadius: 4,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                    }}
+                  >
+                    <CheckCheck size={13} />
+                    Live Synced ({nodes.length} nodes)
+                  </span>
+                )}
+                {dslSyncStatus === "TYPING" && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 600,
+                      color: "#38bdf8",
+                      background: "rgba(56, 189, 248, 0.12)",
+                      padding: "0.15rem 0.5rem",
+                      borderRadius: 4,
+                    }}
+                  >
+                    Auto-converting...
+                  </span>
+                )}
+                {dslSyncStatus === "ERROR" && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 600,
+                      color: "#f59e0b",
+                      background: "rgba(245, 158, 11, 0.12)",
+                      padding: "0.15rem 0.5rem",
+                      borderRadius: 4,
+                    }}
+                  >
+                    Drafting (partial syntax)
+                  </span>
+                )}
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <button
+                  onClick={handleAutoLayout}
+                  className="btn btn-ghost btn-sm"
+                  title="Auto layout DAG"
+                >
+                  <Wand2 size={13} />
+                  Auto Layout
+                </button>
+                <button
+                  onClick={() => {
+                    if (workflow) {
+                      setDslCode(generateWorkflowDSL({ ...workflow, nodes, edges }));
+                      setDslSyncStatus("SYNCED");
+                      toast.success("DSL code reformatted!");
+                    }
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  title="Reformat DSL code"
+                >
+                  <Sparkles size={13} />
+                  Format
+                </button>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(dslCode);
@@ -1294,31 +1633,44 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                   className="btn btn-secondary btn-sm"
                 >
                   <Copy size={13} />
-                  Copy Code
+                  Copy
                 </button>
-                <button onClick={handleApplyDsl} className="btn btn-primary btn-sm">
+                <button onClick={handleManualApplyDsl} className="btn btn-primary btn-sm">
                   <Check size={13} />
-                  Apply DSL to Canvas
+                  Apply
                 </button>
               </div>
             </div>
 
-            <div style={{ flex: 1, padding: "1rem" }}>
+            <div style={{ flex: 1, padding: "0.75rem", display: "flex", flexDirection: "column" }}>
+              <div
+                style={{
+                  fontSize: "0.72rem",
+                  color: "var(--muted)",
+                  marginBottom: "0.4rem",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Edit TypeScript DSL or paste JSON workflow — auto-converts to visual flow in real time:</span>
+                <span>{dslCode.split("\n").length} lines</span>
+              </div>
               <textarea
                 value={dslCode}
                 onChange={(e) => setDslCode(e.target.value)}
                 spellCheck={false}
                 style={{
                   width: "100%",
-                  height: "100%",
-                  padding: "1.25rem",
+                  flex: 1,
+                  padding: "1.1rem",
                   background: "var(--card)",
                   border: "1px solid var(--border)",
-                  borderRadius: 10,
+                  borderRadius: 8,
                   color: "var(--foreground)",
                   fontFamily: "var(--font-geist-mono), monospace",
-                  fontSize: "0.84rem",
-                  lineHeight: 1.65,
+                  fontSize: "0.82rem",
+                  lineHeight: 1.6,
                   resize: "none",
                   outline: "none",
                 }}
@@ -1327,18 +1679,18 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
 
-        {/* ─── SLIDE-OVER NODE INSPECTOR ────────────────────────────────────────── */}
-        {selectedNode && viewMode === "CANVAS" && (
+        {/* ─── SLIDE-OVER NODE INSPECTOR (FULL CONFIG FOR EVERY STEP TYPE) ───────── */}
+        {selectedNode && (viewMode === "CANVAS" || viewMode === "SPLIT") && (
           <div
             style={{
               position: "absolute",
               top: 0,
               right: 0,
-              width: 390,
+              width: 440,
               height: "100%",
               background: "var(--background)",
               borderLeft: "1px solid var(--border)",
-              boxShadow: "-10px 0 30px rgba(0, 0, 0, 0.4)",
+              boxShadow: "-10px 0 35px rgba(0, 0, 0, 0.45)",
               zIndex: 45,
               display: "flex",
               flexDirection: "column",
@@ -1356,7 +1708,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
             >
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <Settings size={16} style={{ color: "var(--accent)" }} />
-                <span style={{ fontSize: "1rem", fontWeight: 700 }}>Step Inspector</span>
+                <span style={{ fontSize: "1rem", fontWeight: 700 }}>Step Parameters</span>
               </div>
               <button onClick={() => setSelectedNodeKey(null)} className="btn btn-ghost btn-sm">
                 <X size={15} />
@@ -1369,7 +1721,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 display: "flex",
                 borderBottom: "1px solid var(--border)",
                 padding: "0.35rem 1.25rem 0",
-                gap: "1rem",
+                gap: "1.25rem",
               }}
             >
               <button
@@ -1388,6 +1740,23 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 }}
               >
                 Configuration
+              </button>
+              <button
+                onClick={() => setInspectorTab("RAW_JSON")}
+                style={{
+                  padding: "0.5rem 0",
+                  fontSize: "0.78rem",
+                  fontWeight: 650,
+                  color: inspectorTab === "RAW_JSON" ? "var(--accent)" : "var(--muted)",
+                  borderBottom: `2px solid ${inspectorTab === "RAW_JSON" ? "var(--accent)" : "transparent"}`,
+                  background: "transparent",
+                  borderTop: "none",
+                  borderLeft: "none",
+                  borderRight: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Raw Parameters (JSON)
               </button>
               <button
                 onClick={() => setInspectorTab("POLICIES")}
@@ -1410,83 +1779,660 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
 
             {/* Form Body */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1.2rem" }}>
-              {inspectorTab === "CONFIG" ? (
-                <>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                      Step Label
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedNode.name}
-                      onChange={(e) => updateSelectedNode({ name: e.target.value })}
-                      style={{
-                        width: "100%",
-                        padding: "0.55rem 0.75rem",
-                        background: "var(--bg-inset)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        color: "var(--foreground)",
-                        fontSize: "0.84rem",
-                        outline: "none",
-                      }}
-                    />
-                  </div>
+              {/* Basic Step Meta */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                  Step Label
+                </label>
+                <input
+                  type="text"
+                  value={selectedNode.name}
+                  onChange={(e) => updateSelectedNode({ name: e.target.value })}
+                  style={{
+                    width: "100%",
+                    padding: "0.55rem 0.75rem",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    color: "var(--foreground)",
+                    fontSize: "0.84rem",
+                    outline: "none",
+                  }}
+                />
+              </div>
 
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                      Unique Node Key
-                    </label>
-                    <input
-                      type="text"
-                      value={selectedNode.nodeKey}
-                      readOnly
-                      style={{
-                        width: "100%",
-                        padding: "0.55rem 0.75rem",
-                        background: "var(--bg-inset)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 6,
-                        color: "var(--muted)",
-                        fontSize: "0.82rem",
-                        fontFamily: "monospace",
-                      }}
-                    />
-                  </div>
+              <div>
+                <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                  Unique Node Key
+                </label>
+                <input
+                  type="text"
+                  value={selectedNode.nodeKey}
+                  readOnly
+                  style={{
+                    width: "100%",
+                    padding: "0.55rem 0.75rem",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    color: "var(--muted)",
+                    fontSize: "0.82rem",
+                    fontFamily: "monospace",
+                  }}
+                />
+              </div>
 
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                      Node Action Type
-                    </label>
-                    <div
-                      style={{
-                        padding: "0.55rem 0.75rem",
-                        borderRadius: 6,
-                        background: FLOW_NODE_TYPES[selectedNode.type]?.bgGlow || "var(--bg-inset)",
-                        color: FLOW_NODE_TYPES[selectedNode.type]?.color || "var(--foreground)",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {FLOW_NODE_TYPES[selectedNode.type]?.label || selectedNode.type}
+              {/* ─── TAB 1: TAILORED FORM FOR EVERY SINGLE NODE TYPE ─────────────── */}
+              {inspectorTab === "CONFIG" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {/* Cron Trigger */}
+                  {selectedNode.type === "TRIGGER_CRON" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Schedule Presets
+                        </label>
+                        <select
+                          onChange={(e) => updateConfigField("schedule", e.target.value)}
+                          value={selectedNode.config?.schedule || "0 * * * *"}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.82rem",
+                            marginBottom: "0.5rem",
+                          }}
+                        >
+                          <option value="* * * * *">Every Minute (* * * * *)</option>
+                          <option value="*/5 * * * *">Every 5 Minutes (*/5 * * * *)</option>
+                          <option value="*/15 * * * *">Every 15 Minutes (*/15 * * * *)</option>
+                          <option value="0 * * * *">Hourly (0 * * * *)</option>
+                          <option value="0 0 * * *">Daily Midnight (0 0 * * *)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Cron Expression
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.schedule || "0 * * * *"}
+                          onChange={(e) => updateConfigField("schedule", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                            fontFamily: "monospace",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Git Trigger */}
+                  {selectedNode.type === "TRIGGER_GIT" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Target Branch
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.branch || "main"}
+                          onChange={(e) => updateConfigField("branch", e.target.value)}
+                          placeholder="main"
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Repository Name (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.repo || ""}
+                          onChange={(e) => updateConfigField("repo", e.target.value)}
+                          placeholder="owner/repo"
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Webhook Trigger */}
+                  {selectedNode.type === "TRIGGER_WEBHOOK" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        Secret Token (HMAC verification)
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config?.secretToken || ""}
+                        onChange={(e) => updateConfigField("secretToken", e.target.value)}
+                        placeholder="whz_whsec_..."
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.84rem",
+                          fontFamily: "monospace",
+                        }}
+                      />
                     </div>
-                    <p style={{ fontSize: "0.74rem", color: "var(--muted)", marginTop: "0.3rem", lineHeight: 1.45 }}>
-                      {FLOW_NODE_TYPES[selectedNode.type]?.description}
-                    </p>
-                  </div>
+                  )}
 
-                  {/* Specialized fields */}
+                  {/* Build Container */}
+                  {selectedNode.type === "ACTION_BUILD_CONTAINER" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Dockerfile Path
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.dockerfilePath || "./Dockerfile"}
+                          onChange={(e) => updateConfigField("dockerfilePath", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                            fontFamily: "monospace",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Image Tag
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.tag || "latest"}
+                          onChange={(e) => updateConfigField("tag", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Workspace Analyze */}
+                  {selectedNode.type === "ACTION_WORKSPACE_ANALYZE" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        Workspace Directory Path
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config?.workspacePath || "."}
+                        onChange={(e) => updateConfigField("workspacePath", e.target.value)}
+                        placeholder="."
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.84rem",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Deploy Edge */}
+                  {selectedNode.type === "ACTION_DEPLOY_EDGE" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Target Project Slug
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.slug || ""}
+                          onChange={(e) => updateConfigField("slug", e.target.value)}
+                          placeholder="my-storefront"
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Build Output Directory
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.outputDir || "dist"}
+                          onChange={(e) => updateConfigField("outputDir", e.target.value)}
+                          placeholder="dist or .next"
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Deploy Service */}
+                  {selectedNode.type === "ACTION_DEPLOY_SERVICE" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Service Slug
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.slug || ""}
+                          onChange={(e) => updateConfigField("slug", e.target.value)}
+                          placeholder="api-service"
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Exposed Port
+                        </label>
+                        <input
+                          type="number"
+                          value={selectedNode.config?.port || 8000}
+                          onChange={(e) => updateConfigField("port", Number(e.target.value))}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Run Tests */}
                   {selectedNode.type === "ACTION_RUN_TESTS" && (
                     <div>
-                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
                         Test Execution Command
                       </label>
                       <input
                         type="text"
                         value={selectedNode.config?.command || "npm test"}
-                        onChange={(e) =>
-                          updateSelectedNode({ config: { ...selectedNode.config, command: e.target.value } })
-                        }
+                        onChange={(e) => updateConfigField("command", e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.84rem",
+                          fontFamily: "monospace",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Health Probe */}
+                  {selectedNode.type === "ACTION_HEALTH_PROBE" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Probe Target URL
+                        </label>
+                        <input
+                          type="text"
+                          value={selectedNode.config?.url || "http://127.0.0.1:3000/health"}
+                          onChange={(e) => updateConfigField("url", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.84rem",
+                            fontFamily: "monospace",
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                            Expected Status
+                          </label>
+                          <input
+                            type="number"
+                            value={selectedNode.config?.expectedStatus || 200}
+                            onChange={(e) => updateConfigField("expectedStatus", Number(e.target.value))}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem 0.75rem",
+                              background: "var(--bg-inset)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 6,
+                              color: "var(--foreground)",
+                              fontSize: "0.84rem",
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                            Retries
+                          </label>
+                          <input
+                            type="number"
+                            value={selectedNode.config?.retries || 3}
+                            onChange={(e) => updateConfigField("retries", Number(e.target.value))}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem 0.75rem",
+                              background: "var(--bg-inset)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 6,
+                              color: "var(--foreground)",
+                              fontSize: "0.84rem",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Router Cutover */}
+                  {selectedNode.type === "ACTION_ROUTER_CUTOVER" && (
+                    <div>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedNode.config?.reloadEdge ?? true}
+                          onChange={(e) => updateConfigField("reloadEdge", e.target.checked)}
+                        />
+                        <span>Send atomic IPC reload to Edge Router</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Auto Rollback */}
+                  {selectedNode.type === "ACTION_AUTO_ROLLBACK" && (
+                    <div>
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedNode.config?.alertOnFailure ?? true}
+                          onChange={(e) => updateConfigField("alertOnFailure", e.target.checked)}
+                        />
+                        <span>Send alert on emergency rollback</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Container Exec */}
+                  {selectedNode.type === "ACTION_CONTAINER_EXEC" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        CLI Shell Command
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config?.command || "npx prisma migrate deploy"}
+                        onChange={(e) => updateConfigField("command", e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.84rem",
+                          fontFamily: "monospace",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Database Query */}
+                  {selectedNode.type === "ACTION_DATABASE_QUERY" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        SQL Query
+                      </label>
+                      <textarea
+                        value={selectedNode.config?.query || "SELECT 1;"}
+                        onChange={(e) => updateConfigField("query", e.target.value)}
+                        rows={4}
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.82rem",
+                          fontFamily: "monospace",
+                          resize: "vertical",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* AI Prompt */}
+                  {selectedNode.type === "ACTION_AI_PROMPT" && (
+                    <>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Gemini Model
+                        </label>
+                        <select
+                          value={selectedNode.config?.model || "gemini-3.5-flash-lite"}
+                          onChange={(e) => updateConfigField("model", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.82rem",
+                          }}
+                        >
+                          <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Fast &amp; Accurate)</option>
+                          <option value="gemini-1.5-pro">gemini-1.5-pro (Deep reasoning)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          Prompt Instructions
+                        </label>
+                        <textarea
+                          value={selectedNode.config?.prompt || "Generate release notes for this production build."}
+                          onChange={(e) => updateConfigField("prompt", e.target.value)}
+                          rows={4}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.82rem",
+                            resize: "vertical",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* HTTP Request */}
+                  {selectedNode.type === "ACTION_HTTP_REQUEST" && (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: "0.6rem" }}>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                            Method
+                          </label>
+                          <select
+                            value={selectedNode.config?.method || "POST"}
+                            onChange={(e) => updateConfigField("method", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem 0.75rem",
+                              background: "var(--bg-inset)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 6,
+                              color: "var(--foreground)",
+                              fontSize: "0.82rem",
+                            }}
+                          >
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                            Target URL
+                          </label>
+                          <input
+                            type="text"
+                            value={selectedNode.config?.url || "https://hooks.slack.com/services/..."}
+                            onChange={(e) => updateConfigField("url", e.target.value)}
+                            style={{
+                              width: "100%",
+                              padding: "0.55rem 0.75rem",
+                              background: "var(--bg-inset)",
+                              border: "1px solid var(--border)",
+                              borderRadius: 6,
+                              color: "var(--foreground)",
+                              fontSize: "0.82rem",
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                          JSON Payload (Body)
+                        </label>
+                        <textarea
+                          value={typeof selectedNode.config?.body === "object" ? JSON.stringify(selectedNode.config.body, null, 2) : selectedNode.config?.body || ""}
+                          onChange={(e) => {
+                            try {
+                              const parsed = JSON.parse(e.target.value);
+                              updateConfigField("body", parsed);
+                            } catch {
+                              updateConfigField("body", e.target.value);
+                            }
+                          }}
+                          rows={3}
+                          style={{
+                            width: "100%",
+                            padding: "0.55rem 0.75rem",
+                            background: "var(--bg-inset)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 6,
+                            color: "var(--foreground)",
+                            fontSize: "0.82rem",
+                            fontFamily: "monospace",
+                            resize: "vertical",
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Approval Gate */}
+                  {selectedNode.type === "CONTROL_APPROVAL" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        Approval Gate Prompt Message
+                      </label>
+                      <textarea
+                        value={selectedNode.config?.message || "Approve deployment to live production?"}
+                        onChange={(e) => updateConfigField("message", e.target.value)}
+                        rows={3}
+                        style={{
+                          width: "100%",
+                          padding: "0.55rem 0.75rem",
+                          background: "var(--bg-inset)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          color: "var(--foreground)",
+                          fontSize: "0.82rem",
+                          resize: "vertical",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Branch */}
+                  {selectedNode.type === "CONTROL_BRANCH" && (
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        Condition Expression (JavaScript)
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedNode.config?.condition || "steps.health_check.output.statusCode === 200"}
+                        onChange={(e) => updateConfigField("condition", e.target.value)}
                         style={{
                           width: "100%",
                           padding: "0.55rem 0.75rem",
@@ -1501,67 +2447,16 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                     </div>
                   )}
 
-                  {selectedNode.type === "ACTION_HEALTH_PROBE" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                          Probe URL
-                        </label>
-                        <input
-                          type="text"
-                          value={selectedNode.config?.url || "http://127.0.0.1:3000/health"}
-                          onChange={(e) =>
-                            updateSelectedNode({ config: { ...selectedNode.config, url: e.target.value } })
-                          }
-                          style={{
-                            width: "100%",
-                            padding: "0.55rem 0.75rem",
-                            background: "var(--bg-inset)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 6,
-                            color: "var(--foreground)",
-                            fontSize: "0.82rem",
-                            fontFamily: "monospace",
-                          }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                          Expected Status Code
-                        </label>
-                        <input
-                          type="number"
-                          value={selectedNode.config?.expectedStatus || 200}
-                          onChange={(e) =>
-                            updateSelectedNode({
-                              config: { ...selectedNode.config, expectedStatus: Number(e.target.value) },
-                            })
-                          }
-                          style={{
-                            width: "100%",
-                            padding: "0.55rem 0.75rem",
-                            background: "var(--bg-inset)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 6,
-                            color: "var(--foreground)",
-                            fontSize: "0.82rem",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {selectedNode.type === "CONTROL_APPROVAL" && (
+                  {/* Delay */}
+                  {selectedNode.type === "CONTROL_DELAY" && (
                     <div>
-                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                        Approval Gate Prompt Message
+                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 650, marginBottom: "0.35rem" }}>
+                        Delay Duration (Seconds)
                       </label>
-                      <textarea
-                        value={selectedNode.config?.message || "Approve deployment to live production?"}
-                        onChange={(e) =>
-                          updateSelectedNode({ config: { ...selectedNode.config, message: e.target.value } })
-                        }
-                        rows={3}
+                      <input
+                        type="number"
+                        value={selectedNode.config?.delaySeconds || 10}
+                        onChange={(e) => updateConfigField("delaySeconds", Number(e.target.value))}
                         style={{
                           width: "100%",
                           padding: "0.55rem 0.75rem",
@@ -1569,43 +2464,53 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                           border: "1px solid var(--border)",
                           borderRadius: 6,
                           color: "var(--foreground)",
-                          fontSize: "0.82rem",
-                          resize: "vertical",
+                          fontSize: "0.84rem",
                         }}
                       />
                     </div>
                   )}
+                </div>
+              )}
 
-                  {selectedNode.type === "ACTION_AI_PROMPT" && (
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.76rem", fontWeight: 600, marginBottom: "0.35rem" }}>
-                        Gemini 3.5 Prompt Instructions
-                      </label>
-                      <textarea
-                        value={selectedNode.config?.prompt || "Generate release notes for this production build."}
-                        onChange={(e) =>
-                          updateSelectedNode({ config: { ...selectedNode.config, prompt: e.target.value } })
-                        }
-                        rows={3}
-                        style={{
-                          width: "100%",
-                          padding: "0.55rem 0.75rem",
-                          background: "var(--bg-inset)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          color: "var(--foreground)",
-                          fontSize: "0.82rem",
-                          resize: "vertical",
-                        }}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
+              {/* ─── TAB 2: RAW PARAMETERS JSON EDITOR (DIRECT FULL ACCESS) ───────── */}
+              {inspectorTab === "RAW_JSON" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
+                      Edit raw step parameters object directly:
+                    </span>
+                    <button onClick={handleApplyRawJson} className="btn btn-secondary btn-sm" style={{ fontSize: "0.74rem" }}>
+                      <Check size={12} /> Apply JSON
+                    </button>
+                  </div>
+                  <textarea
+                    value={rawJsonText}
+                    onChange={(e) => setRawJsonText(e.target.value)}
+                    spellCheck={false}
+                    rows={12}
+                    style={{
+                      width: "100%",
+                      padding: "0.85rem",
+                      background: "var(--bg-inset)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 8,
+                      color: "var(--foreground)",
+                      fontFamily: "var(--font-geist-mono), monospace",
+                      fontSize: "0.8rem",
+                      lineHeight: 1.55,
+                      resize: "vertical",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* ─── TAB 3: POLICIES & RETRIES ───────────────────────────────────── */}
+              {inspectorTab === "POLICIES" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.85rem" }}>
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 600, color: "var(--muted)", marginBottom: "0.25rem" }}>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 650, color: "var(--muted)", marginBottom: "0.25rem" }}>
                         Timeout (s)
                       </label>
                       <input
@@ -1624,7 +2529,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                       />
                     </div>
                     <div>
-                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 600, color: "var(--muted)", marginBottom: "0.25rem" }}>
+                      <label style={{ display: "block", fontSize: "0.74rem", fontWeight: 650, color: "var(--muted)", marginBottom: "0.25rem" }}>
                         Max Retries
                       </label>
                       <input
@@ -1654,7 +2559,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                     />
                     <span>Continue pipeline on step failure</span>
                   </label>
-                </>
+                </div>
               )}
 
               {/* Delete Button */}
@@ -1704,7 +2609,7 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
               <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
                   <Terminal size={15} style={{ color: "#38bdf8" }} />
-                  <span style={{ fontSize: "0.84rem", fontWeight: 700, color: "#f1f5f9" }}>
+                  <span style={{ fontSize: "0.84rem", fontWeight: 750, color: "#f1f5f9" }}>
                     Live Execution Logs
                   </span>
                 </div>
