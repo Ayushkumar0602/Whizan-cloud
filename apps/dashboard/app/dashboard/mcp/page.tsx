@@ -26,7 +26,9 @@ import {
   FileCode,
   FolderArchive,
   RefreshCw,
-  Plus
+  Plus,
+  Trash2,
+  KeyRound
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -37,10 +39,13 @@ export default function McpGuidePage() {
     : "https://whizan-cloud-service.onrender.com";
   const [activeTab, setActiveTab] = useState<"antigravity" | "cursor" | "windsurf" | "vscode" | "claude">("antigravity");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [authModeTab, setAuthModeTab] = useState<"zero-key" | "api-keys">("zero-key");
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [keyName, setKeyName] = useState("");
   const [creatingKey, setCreatingKey] = useState(false);
+  const [loadingKeys, setLoadingKeys] = useState(false);
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
   useEffect(() => {
@@ -48,6 +53,7 @@ export default function McpGuidePage() {
   }, []);
 
   async function loadKeys() {
+    setLoadingKeys(true);
     try {
       const data = await apiKeysApi.list();
       setKeys(data);
@@ -56,21 +62,37 @@ export default function McpGuidePage() {
       }
     } catch {
       // offline / demo fallback
+    } finally {
+      setLoadingKeys(false);
     }
   }
 
-  async function handleQuickCreateKey() {
+  async function handleCreateKey(e?: React.FormEvent) {
+    if (e) e.preventDefault();
     setCreatingKey(true);
     try {
-      const created = await apiKeysApi.create("MCP IDE Key");
+      const created = await apiKeysApi.create(keyName.trim() || "MCP IDE Key");
       setNewKey(created);
       setSelectedKey(created.key);
-      toast.success("New API key generated and inserted into configurations!");
-      loadKeys();
+      setUseZeroKey(false);
+      setKeyName("");
+      toast.success("New API key generated and applied to IDE configurations!");
+      await loadKeys();
     } catch (err: any) {
       toast.error(err.message || "Failed to generate key");
     } finally {
       setCreatingKey(false);
+    }
+  }
+
+  async function handleDeleteKey(id: string) {
+    try {
+      await apiKeysApi.delete(id);
+      toast.success("API key revoked");
+      setKeys((prev) => prev.filter((k) => k.id !== id));
+      if (newKey?.id === id) setNewKey(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke key");
     }
   }
 
@@ -347,60 +369,279 @@ export default function McpGuidePage() {
         </div>
       </div>
 
-      {/* Step 1: 1-Click Machine Authentication (Zero API Key Setup) */}
+      {/* Step 1: Authentication Options (Zero-Key vs API Key Vault) */}
       <div className="card" style={{ marginBottom: "2rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.75rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.85rem" }}>
               1
             </div>
             <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>
-              Authenticate Your Machine (Zero API Key Required)
+              Authentication &amp; Machine Connection
             </h2>
           </div>
 
+          {/* Sub Navigation / Tabs */}
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <Link href="/mcp/connect" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-              Browser Connect Page <ExternalLink size={12} />
+            <button
+              onClick={() => { setAuthModeTab("zero-key"); setUseZeroKey(true); }}
+              className={`btn btn-sm ${authModeTab === "zero-key" ? "btn-primary" : "btn-secondary"}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem" }}
+            >
+              <Sparkles size={13} /> 1-Click Zero-Key Login
+            </button>
+            <button
+              onClick={() => { setAuthModeTab("api-keys"); }}
+              className={`btn btn-sm ${authModeTab === "api-keys" ? "btn-primary" : "btn-secondary"}`}
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem" }}
+            >
+              <KeyRound size={13} /> API Key Vault {keys.length > 0 && `(${keys.length})`}
+            </button>
+            <Link
+              href="/dashboard/mcp/api-keys"
+              className="btn btn-secondary btn-sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem" }}
+              title="Open full dedicated API Keys page"
+            >
+              Dedicated Key Route <ExternalLink size={12} />
             </Link>
           </div>
         </div>
 
-        <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", lineHeight: 1.55 }}>
-          Run this single command once in your terminal. It links your computer to Whizan Cloud.
-          Once completed, your AI assistants in <strong>Antigravity, Cursor, Windsurf, and VS Code</strong> connect automatically with <strong>zero API keys in your configuration files</strong>!
-        </p>
+        {authModeTab === "zero-key" ? (
+          <div>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", lineHeight: 1.55 }}>
+              Run this single command once in your terminal. It links your computer to Whizan Cloud.
+              Once completed, your AI assistants in <strong>Antigravity, Cursor, Windsurf, and VS Code</strong> connect automatically with <strong>zero API keys in your configuration files</strong>!
+            </p>
 
-        {/* 1-Click Terminal Command */}
-        <div style={{ background: "#05070a", border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: "10px", padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flex: 1, minWidth: 260 }}>
-            <Terminal size={18} style={{ color: "#38bdf8", flexShrink: 0 }} />
-            <code style={{ fontSize: "0.85rem", color: "#38bdf8", wordBreak: "break-all" }}>
-              npx @whizan/mcp-devops login {effectiveKey ? `--token ${effectiveKey}` : ""}
-            </code>
+            {/* 1-Click Terminal Command */}
+            <div style={{ background: "#05070a", border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: "10px", padding: "1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flex: 1, minWidth: 260 }}>
+                <Terminal size={18} style={{ color: "#38bdf8", flexShrink: 0 }} />
+                <code style={{ fontSize: "0.85rem", color: "#38bdf8", wordBreak: "break-all" }}>
+                  npx @whizan/mcp-devops login {effectiveKey && !useZeroKey ? `--token ${effectiveKey}` : ""}
+                </code>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  onClick={() => copyText(`npx @whizan/mcp-devops login ${effectiveKey && !useZeroKey ? `--token ${effectiveKey}` : ""}`, "login-cmd")}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                >
+                  {copiedKey === "login-cmd" ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+                  {copiedKey === "login-cmd" ? "Copied!" : "Copy Login Command"}
+                </button>
+                <Link href="/mcp/connect" className="btn btn-secondary btn-sm" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                  Browser Connect <ExternalLink size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                <Sparkles size={13} style={{ color: "#10b981" }} />
+                Saves credentials securely in <code>~/.whizan/config.json</code> — shared across all local IDEs.
+              </span>
+              <button
+                onClick={() => { setAuthModeTab("api-keys"); setUseZeroKey(false); }}
+                style={{ background: "none", border: "none", color: "#818cf8", cursor: "pointer", textDecoration: "underline", fontSize: "0.8rem", padding: 0 }}
+              >
+                Need an explicit API key for CI/CD or Docker? Open Key Vault &rarr;
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => copyText(`npx @whizan/mcp-devops login ${effectiveKey ? `--token ${effectiveKey}` : ""}`, "login-cmd")}
-            className="btn btn-primary btn-sm"
-            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-          >
-            {copiedKey === "login-cmd" ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
-            {copiedKey === "login-cmd" ? "Copied!" : "Copy Login Command"}
-          </button>
-        </div>
+        ) : (
+          /* API Key Generator & Vault */
+          <div>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", lineHeight: 1.55 }}>
+              Generate an explicit <code>whz_live_...</code> API key. Useful for headless CI/CD, remote containers, or embedding directly into your editor&apos;s MCP config.
+            </p>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-            <Sparkles size={13} style={{ color: "#10b981" }} />
-            Saves credentials securely in <code>~/.whizan/config.json</code> — shared across all local IDEs.
+            {/* Newly Created Key Alert Box */}
+            {newKey && (
+              <div
+                style={{
+                  background: "rgba(16, 185, 129, 0.08)",
+                  border: "1px solid rgba(16, 185, 129, 0.35)",
+                  borderRadius: "10px",
+                  padding: "1.25rem",
+                  marginBottom: "1.5rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
+                  <span style={{ fontSize: "0.9rem", fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <Sparkles size={16} /> API Key Generated: {newKey.name || "MCP Key"}
+                  </span>
+                  <span style={{ fontSize: "0.78rem", color: "#f59e0b", fontWeight: 600 }}>
+                    ⚠️ Copy it now — for security, it will never be displayed in full again!
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                  <code
+                    style={{
+                      flex: 1,
+                      minWidth: 260,
+                      background: "rgba(0,0,0,0.5)",
+                      padding: "0.6rem 0.85rem",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      wordBreak: "break-all",
+                      color: "#38bdf8",
+                      border: "1px solid rgba(56, 189, 248, 0.3)",
+                    }}
+                  >
+                    {newKey.key}
+                  </code>
+                  <button
+                    onClick={() => copyText(newKey.key, "new-key-secret")}
+                    className="btn btn-primary btn-sm"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                  >
+                    {copiedKey === "new-key-secret" ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+                    {copiedKey === "new-key-secret" ? "Copied Key!" : "Copy Key"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedKey(newKey.key);
+                      setUseZeroKey(false);
+                      toast.success("Applied to IDE configuration snippets below!");
+                    }}
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                  >
+                    <Check size={13} /> Active in Snippets Below
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Key Generation Form */}
+            <form onSubmit={handleCreateKey} style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+              <input
+                type="text"
+                placeholder="Key label (e.g. Antigravity IDE, Cursor MacBook, CI Runner)"
+                value={keyName}
+                onChange={(e) => setKeyName(e.target.value)}
+                className="input"
+                style={{ flex: 1, minWidth: 240, fontSize: "0.85rem", padding: "0.6rem 0.85rem" }}
+              />
+              <button
+                type="submit"
+                disabled={creatingKey}
+                className="btn btn-primary"
+                style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem", whiteSpace: "nowrap" }}
+              >
+                <Plus size={15} />
+                {creatingKey ? "Generating..." : "Generate New Key"}
+              </button>
+            </form>
+
+            {/* Active Keys Table */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--foreground)" }}>
+                  Active API Keys ({keys.length})
+                </span>
+                <button
+                  onClick={loadKeys}
+                  disabled={loadingKeys}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", padding: "0.25rem 0.6rem", fontSize: "0.75rem" }}
+                >
+                  <RefreshCw size={12} className={loadingKeys ? "spin" : ""} /> Refresh
+                </button>
+              </div>
+
+              {keys.length === 0 ? (
+                <div style={{ background: "rgba(0,0,0,0.2)", border: "1px dashed var(--border)", borderRadius: "8px", padding: "1.25rem", textAlign: "center", fontSize: "0.84rem", color: "var(--muted)" }}>
+                  No API keys created yet. Enter a label above to generate your first key.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {keys.map((k) => {
+                    const isSelected = selectedKey.startsWith(k.keyPrefix?.slice(0, 10) || "____") || (newKey?.id === k.id);
+                    return (
+                      <div
+                        key={k.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "0.75rem 1rem",
+                          background: isSelected ? "rgba(99, 102, 241, 0.1)" : "rgba(0,0,0,0.25)",
+                          border: isSelected ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid var(--border)",
+                          borderRadius: "8px",
+                          fontSize: "0.82rem",
+                          flexWrap: "wrap",
+                          gap: "0.6rem",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <KeyRound size={16} style={{ color: isSelected ? "#818cf8" : "var(--muted)" }} />
+                          <div>
+                            <div style={{ fontWeight: 650, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                              {k.name || "API Key"}
+                              {isSelected && !useZeroKey && (
+                                <span style={{ fontSize: "0.7rem", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", padding: "0.1rem 0.4rem", borderRadius: "4px" }}>
+                                  Active in Snippets
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "monospace" }}>
+                              Prefix: {k.keyPrefix || "whz_live_..."} • Created {new Date(k.createdAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <button
+                            onClick={() => {
+                              setSelectedKey(k.keyPrefix ? `${k.keyPrefix}` : "whz_live_YOUR_KEY");
+                              setUseZeroKey(false);
+                              toast.success(`Active key set to ${k.name || "API Key"}. IDE snippets updated!`);
+                            }}
+                            className="btn btn-secondary btn-sm"
+                            style={{ fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                          >
+                            Use in Snippets
+                          </button>
+                          <button
+                            onClick={() => handleDeleteKey(k.id)}
+                            className="btn btn-danger btn-sm"
+                            style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem", fontSize: "0.75rem", padding: "0.3rem 0.65rem" }}
+                            title="Revoke key"
+                          >
+                            <Trash2 size={12} /> Revoke
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Current Configuration Mode Pill */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255, 255, 255, 0.02)", border: "1px solid var(--border)", borderRadius: "10px", padding: "0.75rem 1.25rem", marginBottom: "1.5rem", flexWrap: "wrap", gap: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.85rem" }}>
+          <div style={{ width: 10, height: 10, borderRadius: "50%", background: useZeroKey ? "#10b981" : "#818cf8" }} />
+          <span>
+            Configuration Mode: <strong>{useZeroKey ? "Zero-Key (Terminal Linked)" : "Explicit API Key Injected"}</strong>
+            {useZeroKey ? " — No secrets written to disk." : ` — Injected ${effectiveKey.slice(0, 14)}...`}
           </span>
-          <button
-            onClick={() => setUseZeroKey(!useZeroKey)}
-            style={{ background: "none", border: "none", color: "#818cf8", cursor: "pointer", textDecoration: "underline", fontSize: "0.8rem", padding: 0 }}
-          >
-            {useZeroKey ? "Need explicit API key in JSON (for CI/CD)? Click here" : "Switch back to Zero-Key mode"}
-          </button>
         </div>
+        <button
+          onClick={() => setUseZeroKey(!useZeroKey)}
+          className="btn btn-secondary btn-sm"
+          style={{ fontSize: "0.78rem" }}
+        >
+          {useZeroKey ? "Switch to API Key Mode" : "Switch to Zero-Key Mode"}
+        </button>
       </div>
 
       {/* Step 2: Configure Your IDE */}
