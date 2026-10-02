@@ -1,0 +1,32 @@
+{
+  "name": "@whizan/cli",
+  "version": "1.0.0",
+  "description": "Whizan Cloud CLI — Deploy fullstack apps, backends, databases, and edge functions from your terminal",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "whizan": "dist/bin/whizan.js",
+    "whz": "dist/bin/whizan.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "form-data": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
