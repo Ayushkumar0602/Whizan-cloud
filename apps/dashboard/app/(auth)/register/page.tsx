@@ -1,17 +1,30 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
-export default function RegisterPage() {
-  const { register } = useAuth();
+function RegisterForm() {
+  const { user, register } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams.get("redirect");
+  const destination = getSafeRedirectUrl(redirectParam, "/dashboard");
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // If already authenticated, redirect straight to destination
+  useEffect(() => {
+    if (user) {
+      router.replace(destination);
+    }
+  }, [user, destination, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +35,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(email, password, name);
-      router.push("/dashboard");
+      router.push(destination);
     } catch (err: any) {
       toast.error(err.message || "Registration failed");
     } finally {
@@ -30,14 +43,38 @@ export default function RegisterPage() {
     }
   }
 
+  const loginHref = redirectParam
+    ? `/login?redirect=${encodeURIComponent(redirectParam)}`
+    : "/login";
+
   return (
     <>
       <h1 style={{ fontSize: "1.4rem", fontWeight: 700, letterSpacing: "-0.03em" }}>
         Create your workspace
       </h1>
       <p style={{ color: "var(--muted)", margin: "0.4rem 0 1.5rem", fontSize: "0.9rem" }}>
-        You’ll land in Frontend Hosting — other Whizan services join this console later.
+        {redirectParam ? "Sign up to access your requested page" : "Get started with Whizan Cloud Services"}
       </p>
+
+      {redirectParam && (
+        <div
+          style={{
+            background: "rgba(99, 102, 241, 0.08)",
+            border: "1px solid rgba(99, 102, 241, 0.25)",
+            borderRadius: "8px",
+            padding: "0.6rem 0.85rem",
+            marginBottom: "1.25rem",
+            fontSize: "0.8rem",
+            color: "var(--foreground)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          <span style={{ color: "var(--accent)", fontWeight: 600 }}>Destination:</span>
+          <code style={{ fontSize: "0.78rem", color: "#38bdf8" }}>{destination}</code>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
@@ -89,7 +126,7 @@ export default function RegisterPage() {
 
       <p style={{ marginTop: "1.35rem", textAlign: "center", fontSize: "0.875rem", color: "var(--muted)" }}>
         Already have an account?{" "}
-        <Link href="/login" style={{ color: "var(--accent)", textDecoration: "none" }}>
+        <Link href={loginHref} style={{ color: "var(--accent)", textDecoration: "none" }}>
           Sign in
         </Link>
       </p>
@@ -100,5 +137,19 @@ export default function RegisterPage() {
         }
       `}</style>
     </>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+          <div className="spinner" />
+        </div>
+      }
+    >
+      <RegisterForm />
+    </Suspense>
   );
 }

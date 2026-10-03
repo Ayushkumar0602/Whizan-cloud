@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Moon, Sun, Server, Menu, X, Plus,
@@ -36,15 +37,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (!loading && !user) {
-      if (
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-      ) {
-        return;
-      }
-      router.replace("/login");
+      const currentTarget =
+        typeof window !== "undefined"
+          ? window.location.pathname + window.location.search
+          : pathname;
+      const safeTarget = getSafeRedirectUrl(currentTarget, "/dashboard");
+      router.replace(`/login?redirect=${encodeURIComponent(safeTarget)}`);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, pathname]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
