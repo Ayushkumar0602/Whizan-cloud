@@ -102,7 +102,17 @@ function WakeupContent() {
         justifyContent: "center",
       }}
     >
-      <div style={{ width: "100%", height: "600px", position: "relative" }}>
+      {/* Fullscreen GhostFibers WebGL Canvas */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          width: "100vw",
+          height: "100vh",
+          zIndex: 1,
+          overflow: "hidden",
+        }}
+      >
         <GhostFibers
           lineColor="#140E35"
           glowColor="#3437A0"
@@ -132,38 +142,41 @@ function WakeupContent() {
           fps={60}
           paused={false}
         />
+      </div>
 
-        {/* Centerpiece Information Overlay */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
-            pointerEvents: "none",
-          }}
-        >
-          <div
-            style={{
-              pointerEvents: "auto",
-              width: "90%",
-              maxWidth: 460,
-              background: "rgba(16, 13, 33, 0.76)",
-              backdropFilter: "blur(32px) saturate(180%)",
-              WebkitBackdropFilter: "blur(32px) saturate(180%)",
-              border: isReady ? "1px solid rgba(99, 102, 241, 0.7)" : "1px solid rgba(52, 55, 160, 0.35)",
-              borderRadius: 24,
-              padding: "2.4rem 2rem 2rem",
-              textAlign: "center",
-              boxShadow: isReady
-                ? "0 30px 80px -10px rgba(0, 0, 0, 0.9), 0 0 80px rgba(52, 55, 160, 0.5), inset 0 1px 0 rgba(99, 102, 241, 0.4)"
-                : "0 25px 70px -10px rgba(0, 0, 0, 0.85), 0 0 50px rgba(52, 55, 160, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
-              transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
-              transform: isReady ? "scale(1.02)" : "scale(1)",
-            }}
-          >
+      {/* Atmospheric Vignette Overlay */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 2,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(12, 10, 24, 0.15) 0%, rgba(12, 10, 24, 0.6) 75%, rgba(12, 10, 24, 0.92) 100%)",
+        }}
+      />
+
+      {/* Centerpiece Information Overlay Card */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 10,
+          width: "90%",
+          maxWidth: 460,
+          background: "rgba(16, 13, 33, 0.76)",
+          backdropFilter: "blur(32px) saturate(180%)",
+          WebkitBackdropFilter: "blur(32px) saturate(180%)",
+          border: isReady ? "1px solid rgba(99, 102, 241, 0.7)" : "1px solid rgba(52, 55, 160, 0.35)",
+          borderRadius: 24,
+          padding: "2.4rem 2rem 2rem",
+          textAlign: "center",
+          boxShadow: isReady
+            ? "0 30px 80px -10px rgba(0, 0, 0, 0.9), 0 0 80px rgba(52, 55, 160, 0.5), inset 0 1px 0 rgba(99, 102, 241, 0.4)"
+            : "0 25px 70px -10px rgba(0, 0, 0, 0.85), 0 0 50px rgba(52, 55, 160, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+          transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
+          transform: isReady ? "scale(1.02)" : "scale(1)",
+        }}
+      >
             {/* Top Glowing Accent Line */}
             <div
               style={{
@@ -319,8 +332,6 @@ function WakeupContent() {
               </span>
             </div>
           </div>
-        </div>
-      </div>
 
       <style jsx global>{`
         @keyframes pulse {
