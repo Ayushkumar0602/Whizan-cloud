@@ -35,6 +35,7 @@ export async function linkCommand(args: string[] = []) {
   const config = {
     name: target.name || target.slug,
     slug: target.slug,
+    targetType,
     type: targetType,
     targetId: target.id,
     framework: target.framework || target.language,
