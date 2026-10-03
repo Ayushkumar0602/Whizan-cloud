@@ -746,7 +746,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body {
-      background: #08060c;
+      background: #0c0a18;
       color: #ffffff;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
@@ -758,7 +758,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       -webkit-font-smoothing: antialiased;
     }
 
-    #grid-canvas {
+    #fibers-canvas {
       position: fixed;
       inset: 0;
       width: 100vw;
@@ -773,7 +773,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       inset: 0;
       z-index: 2;
       pointer-events: none;
-      background: radial-gradient(circle at 50% 50%, rgba(8, 6, 12, 0.2) 0%, rgba(8, 6, 12, 0.75) 75%, rgba(8, 6, 12, 0.95) 100%);
+      background: radial-gradient(circle at 50% 50%, rgba(12, 10, 24, 0.25) 0%, rgba(12, 10, 24, 0.8) 75%, rgba(12, 10, 24, 0.98) 100%);
     }
 
     /* Precise Centerpiece Card */
@@ -782,26 +782,26 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       z-index: 10;
       width: 90%;
       max-width: 460px;
-      background: rgba(18, 14, 26, 0.72);
+      background: rgba(16, 13, 33, 0.76);
       backdrop-filter: blur(32px) saturate(180%);
       -webkit-backdrop-filter: blur(32px) saturate(180%);
-      border: 1px solid rgba(255, 159, 252, 0.22);
+      border: 1px solid rgba(52, 55, 160, 0.35);
       border-radius: 24px;
       padding: 2.4rem 2rem 2rem;
       text-align: center;
       box-shadow:
         0 25px 70px -10px rgba(0, 0, 0, 0.85),
-        0 0 50px rgba(255, 159, 252, 0.12),
+        0 0 50px rgba(52, 55, 160, 0.25),
         inset 0 1px 0 rgba(255, 255, 255, 0.12);
       transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .card.is-ready {
-      border-color: rgba(255, 159, 252, 0.7);
+      border-color: rgba(99, 102, 241, 0.7);
       box-shadow:
         0 30px 80px -10px rgba(0, 0, 0, 0.9),
-        0 0 80px rgba(255, 159, 252, 0.4),
-        inset 0 1px 0 rgba(255, 159, 252, 0.4);
+        0 0 80px rgba(52, 55, 160, 0.5),
+        inset 0 1px 0 rgba(99, 102, 241, 0.4);
       transform: scale(1.02);
     }
 
@@ -811,7 +811,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       left: 25%;
       right: 25%;
       height: 2px;
-      background: linear-gradient(90deg, transparent, #FF9FFC, #818cf8, transparent);
+      background: linear-gradient(90deg, transparent, #3437A0, #6366f1, transparent);
       border-radius: 2px;
       filter: blur(0.5px);
     }
@@ -821,8 +821,8 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       display: inline-flex;
       align-items: center;
       gap: 0.45rem;
-      background: rgba(255, 159, 252, 0.1);
-      border: 1px solid rgba(255, 159, 252, 0.25);
+      background: rgba(52, 55, 160, 0.2);
+      border: 1px solid rgba(52, 55, 160, 0.45);
       border-radius: 9999px;
       padding: 0.28rem 0.8rem;
       margin-bottom: 1.2rem;
@@ -832,8 +832,8 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #FF9FFC;
-      box-shadow: 0 0 8px #FF9FFC;
+      background: #818cf8;
+      box-shadow: 0 0 8px #818cf8;
       animation: dotPulse 1.8s ease-in-out infinite alternate;
     }
 
@@ -847,7 +847,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
-      color: #FF9FFC;
+      color: #a5b4fc;
     }
 
     h1 {
@@ -855,7 +855,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       font-weight: 700;
       letter-spacing: -0.03em;
       margin-bottom: 0.55rem;
-      background: linear-gradient(135deg, #ffffff 40%, #e2e8f0 70%, #FF9FFC 100%);
+      background: linear-gradient(135deg, #ffffff 40%, #c7d2fe 75%, #818cf8 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       line-height: 1.25;
@@ -875,7 +875,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       align-items: center;
       gap: 0.45rem;
       background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 159, 252, 0.15);
+      border: 1px solid rgba(52, 55, 160, 0.35);
       border-radius: 8px;
       padding: 0.35rem 0.75rem;
       font-family: 'JetBrains Mono', monospace;
@@ -897,8 +897,8 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       height: 100%;
       width: 25%;
       border-radius: 9999px;
-      background: linear-gradient(90deg, #818cf8, #FF9FFC, #38bdf8);
-      box-shadow: 0 0 12px rgba(255, 159, 252, 0.8);
+      background: linear-gradient(90deg, #3437A0, #6366f1, #38bdf8);
+      box-shadow: 0 0 14px rgba(99, 102, 241, 0.9);
       transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
@@ -907,7 +907,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      background: rgba(0, 0, 0, 0.35);
+      background: rgba(10, 8, 22, 0.65);
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 10px;
       padding: 0.65rem 0.9rem;
@@ -933,8 +933,8 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
   </style>
 </head>
 <body>
-  <!-- 3D GridScan Canvas -->
-  <canvas id="grid-canvas"></canvas>
+  <!-- Ghost Fibers Wave Simulation Canvas -->
+  <canvas id="fibers-canvas"></canvas>
 
   <div class="vignette"></div>
 
@@ -954,7 +954,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
 
     ${displaySlug ? `
     <div class="domain-chip">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF9FFC" stroke-width="2">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="2" y1="12" x2="22" y2="12"></line>
         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10z"></path>
@@ -976,9 +976,9 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
   </main>
 
   <script>
-    // ── 3D GridScan Simulation ──
+    // ── Ghost Fibers Visual Wave Simulation ──
     (function() {
-      const canvas = document.getElementById('grid-canvas');
+      const canvas = document.getElementById('fibers-canvas');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       let w = canvas.width = window.innerWidth;
@@ -990,62 +990,57 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       });
 
       let time = 0;
+      const layers = 4;
 
       function draw() {
-        time += 0.016;
+        time += 0.012;
         ctx.clearRect(0, 0, w, h);
 
-        ctx.fillStyle = '#08060c';
+        ctx.fillStyle = '#0c0a18';
         ctx.fillRect(0, 0, w, h);
 
-        const fov = 320;
-        const horizon = h * 0.48;
-        const gridSpacing = 42;
-        const scanY = (Math.sin(time * 0.8) * 0.5 + 0.5) * (h - horizon) + horizon;
+        const cx = w * 0.5;
+        const cy = h * 0.5;
 
-        ctx.strokeStyle = '#2F293A';
-        ctx.lineWidth = 1;
+        // Radial atmosphere glow
+        const radial = ctx.createRadialGradient(cx, cy, 10, cx, cy, Math.max(w, h) * 0.65);
+        radial.addColorStop(0, 'rgba(52, 55, 160, 0.28)');
+        radial.addColorStop(0.5, 'rgba(20, 14, 53, 0.35)');
+        radial.addColorStop(1, 'rgba(12, 10, 24, 0.9)');
+        ctx.fillStyle = radial;
+        ctx.fillRect(0, 0, w, h);
 
-        // Perspective Floor Grid Lines
-        for (let x = -w; x <= w * 2; x += gridSpacing) {
-          ctx.beginPath();
-          ctx.moveTo(x, h);
-          ctx.lineTo(w * 0.5 + (x - w * 0.5) * 0.15, horizon);
-          ctx.stroke();
+        for (let l = 1; l <= layers; l++) {
+          const fi = l;
+          const numFibers = 16;
+          for (let f = 0; f < numFibers; f++) {
+            const angleOffset = (f / numFibers) * Math.PI * 2 + time * 0.15 * (l % 2 === 0 ? 1 : -1);
+            ctx.beginPath();
+
+            const points = 45;
+            for (let i = 0; i <= points; i++) {
+              const r = (i / points) * Math.min(w, h) * 0.72;
+              const twist = Math.sin(r * 0.008 - time * 0.8 + fi) * 0.35;
+              const wave = Math.sin(r * 0.02 + time * 0.4 + fi) * 18;
+              const theta = angleOffset + twist;
+
+              const px = cx + Math.cos(theta) * (r + wave);
+              const py = cy + Math.sin(theta) * (r + wave);
+
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+
+            const alpha = (0.28 / fi) * (1 - (f % 3) * 0.2);
+            ctx.strokeStyle = f % 2 === 0 ? 'rgba(52, 55, 160, ' + alpha + ')' : 'rgba(99, 102, 241, ' + (alpha * 0.75) + ')';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+          }
         }
-
-        // Horizontal Depth Grid Lines
-        for (let i = 1; i <= 24; i++) {
-          const depth = Math.pow(i / 24, 2.2);
-          const y = horizon + depth * (h - horizon);
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(w, y);
-          ctx.stroke();
-        }
-
-        // Neon Scan Laser Beam (#FF9FFC)
-        const scanGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY + 30);
-        scanGrad.addColorStop(0, 'rgba(255, 159, 252, 0)');
-        scanGrad.addColorStop(0.5, 'rgba(255, 159, 252, 0.45)');
-        scanGrad.addColorStop(1, 'rgba(255, 159, 252, 0)');
-        ctx.fillStyle = scanGrad;
-        ctx.fillRect(0, scanY - 30, w, 60);
-
-        ctx.beginPath();
-        ctx.moveTo(0, scanY);
-        ctx.lineTo(w, scanY);
-        ctx.strokeStyle = '#FF9FFC';
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = '#FF9FFC';
-        ctx.shadowBlur = 16;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
 
         requestAnimationFrame(draw);
       }
 
-      draw();
     })();
 
     // ── Live Stopwatch & Polling ──
