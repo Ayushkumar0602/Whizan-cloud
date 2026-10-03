@@ -25,7 +25,7 @@ redisPub.on("error", (err) => {
 const prevSnapshots = new Map<string, MetricSnapshot>();
 
 export function startMetricsCollector(): () => void {
-  console.log("[Metrics Collector] Started optimized container metrics collector (10s interval, pipelined)...");
+  console.log("[Metrics Collector] Started optimized container metrics collector (45s interval, pipelined)...");
 
   const interval = setInterval(async () => {
     try {
@@ -57,7 +57,7 @@ export function startMetricsCollector(): () => void {
               updatedAt: Date.now(),
             }),
             "EX",
-            30
+            120
           );
           pipe.publish(
             `metrics:tick:${serviceId}`,
@@ -78,7 +78,7 @@ export function startMetricsCollector(): () => void {
         console.warn("[Metrics Collector] Warning:", err?.message || err);
       }
     }
-  }, 10_000);
+  }, 45_000);
 
   return () => {
     clearInterval(interval);

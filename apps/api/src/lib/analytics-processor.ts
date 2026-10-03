@@ -128,5 +128,5 @@ export function startAnalyticsProcessor() {
     } catch (fnErr: any) {
       console.error("[Analytics] Error processing function invocations:", fnErr?.message || fnErr);
     }
-  }, 15_000);
+  }, 45_000);
 }
