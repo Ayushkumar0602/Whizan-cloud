@@ -113,8 +113,10 @@ Whizan CLI supports zero-config deployment for:
 ### Monitoring & Operations
 | Command | Description |
 |---|---|
+| `whizan top` | Real-time interactive terminal dashboard monitor (htop/k9s style) |
 | `whizan ps` | List all active services, projects, functions, and crons |
 | `whizan logs [id] [--tail]` | Stream live build or container output logs |
+| `whizan logs [id] --ai "question"` | AI Log Intelligence — Diagnose crashes, errors, bottlenecks, and solutions |
 | `whizan open [id]` | Open the live deployment URL in default web browser |
 | `whizan exec -- CMD` | Execute diagnostic commands inside live container |
 

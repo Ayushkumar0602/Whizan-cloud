@@ -15,6 +15,7 @@ import { execCommand } from "./commands/exec.js";
 import { linkCommand, unlinkCommand } from "./commands/link.js";
 import { deleteCommand } from "./commands/delete.js";
 import { openCommand } from "./commands/open.js";
+import { topCommand } from "./commands/top.js";
 import { printBanner, colors, printError } from "./utils/terminal-ui.js";
 
 const c = colors;
@@ -37,8 +38,9 @@ function printHelp() {
     ${c.whizanCyan}init${c.reset}               Generate .whizan.json config for this project
 
   ${c.bold}${c.brightWhite}RESOURCES${c.reset}
+    ${c.whizanCyan}top${c.reset}                Real-time terminal resource monitor dashboard
     ${c.whizanCyan}ps${c.reset}                 List all services, projects, functions, and crons
-    ${c.whizanCyan}logs${c.reset}               Stream build or container logs (${c.dim}--tail${c.reset})
+    ${c.whizanCyan}logs${c.reset}               Stream logs (${c.dim}--tail${c.reset}) or AI diagnose (${c.dim}--ai "query"${c.reset})
     ${c.whizanCyan}open${c.reset}               Open live URL in browser
 
   ${c.bold}${c.brightWhite}ENVIRONMENT${c.reset}
@@ -125,6 +127,11 @@ async function main() {
       break;
 
     // Resources
+    case "top":
+    case "monitor":
+      await topCommand();
+      break;
+
     case "ps":
     case "list":
       await psCommand();

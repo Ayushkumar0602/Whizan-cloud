@@ -1,0 +1,8 @@
+{
+  "name": "test-cli-service",
+  "slug": "test-cli-service",
+  "type": "service",
+  "targetId": "a13dffc9-584a-4da9-b17f-6ca094751243",
+  "framework": "Express",
+  "lastDeployedAt": "2026-10-02T21:52:14.769Z"
+}

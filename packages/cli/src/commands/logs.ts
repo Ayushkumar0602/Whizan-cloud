@@ -1,14 +1,30 @@
-// ─── Whizan CLI — Logs Command ────────────────────────────────────────────────
+// ─── Whizan CLI — Logs Command with AI Intelligence ──────────────────────────
 
 import fs from "fs/promises";
 import path from "path";
 import { client } from "../core/client.js";
-import { colors, printBanner, Spinner, printError, printBuildLog } from "../utils/terminal-ui.js";
+import { analyzeLogsWithAi } from "../core/ai.js";
+import { colors, Spinner, printError, printBuildLog } from "../utils/terminal-ui.js";
 
 const c = colors;
 
 export async function logsCommand(args: string[] = []) {
-  let targetId = args.find((a) => !a.startsWith("-"));
+  // Check for AI flag
+  const aiIdx = args.findIndex((a) => a === "--ai" || a === "-a");
+  const isAiMode = aiIdx !== -1;
+  let userAiQuery: string | undefined = undefined;
+  if (isAiMode && args[aiIdx + 1] && !args[aiIdx + 1].startsWith("-")) {
+    userAiQuery = args[aiIdx + 1];
+  }
+
+  // Filter out --ai and its argument to find targetId
+  const nonFlagArgs = args.filter((a, idx) => {
+    if (a.startsWith("-")) return false;
+    if (isAiMode && idx === aiIdx + 1) return false;
+    return true;
+  });
+
+  let targetId = nonFlagArgs[0] || null;
   const tail = args.includes("--tail") || args.includes("-f");
 
   // If no targetId provided, check local .whizan.json
@@ -21,7 +37,7 @@ export async function logsCommand(args: string[] = []) {
   }
 
   if (!targetId) {
-    printError("No target ID specified and no .whizan.json found.\nUsage: whizan logs <service-or-deployment-id> [--tail]");
+    printError("No target ID specified and no .whizan.json found.\nUsage: whizan logs [service-or-project-id] [--ai \"question\"] [--tail]");
     process.exit(1);
   }
 
@@ -31,10 +47,13 @@ export async function logsCommand(args: string[] = []) {
   let logData = await client.getBuildLogs(targetId);
   spinner.stop();
 
+  let targetName = targetId;
   if (!logData.logs || logData.logs.length === 0) {
     // If targetId is a service or project ID, fetch the latest deployment first
     const svc = await client.getService(targetId).catch(() => null);
+    if (svc) targetName = svc.name || svc.slug;
     const proj = !svc ? await client.getProject(targetId).catch(() => null) : null;
+    if (proj) targetName = proj.name || proj.slug;
     const latestDepId = svc?.deployments?.[0]?.id || proj?.deployments?.[0]?.id;
 
     if (latestDepId) {
@@ -47,6 +66,56 @@ export async function logsCommand(args: string[] = []) {
     return;
   }
 
+  // ─── AI Analysis Mode ──────────────────────────────────────────────────────
+  if (isAiMode) {
+    const aiSpinner = new Spinner(`Analyzing logs with Whizan AI Intelligence...`).start();
+    try {
+      const analysis = await analyzeLogsWithAi({
+        targetId,
+        targetName,
+        logs: logData.logs,
+        userQuery: userAiQuery,
+      });
+      aiSpinner.succeed(`Log analysis completed!`);
+
+      console.error(`\n  ${c.whizanCyan}${c.bold}🤖 Whizan AI Log Intelligence Analysis${c.reset}`);
+      console.error(`  ${c.dim}Target:${c.reset} ${c.bold}${targetName}${c.reset} (${targetId})`);
+      if (userAiQuery) {
+        console.error(`  ${c.dim}Query:${c.reset} "${userAiQuery}"`);
+      }
+      console.error(`  ${c.dim}${"─".repeat(60)}${c.reset}\n`);
+
+      // Format markdown bullets nicely for terminal
+      const formatted = analysis
+        .split("\n")
+        .map((line) => {
+          if (line.startsWith("###") || line.startsWith("##")) {
+            return `\n  ${c.whizanCyan}${c.bold}${line.replace(/^#+\s*/, "")}${c.reset}`;
+          }
+          if (line.startsWith("#")) {
+            return `\n  ${c.bold}${c.brightWhite}${line.replace(/^#+\s*/, "")}${c.reset}`;
+          }
+          if (line.startsWith("- ") || line.startsWith("* ")) {
+            return `  ${c.whizanBlue}•${c.reset} ${line.slice(2)}`;
+          }
+          if (line.startsWith("```")) {
+            return `  ${c.dim}${line}${c.reset}`;
+          }
+          return `  ${line}`;
+        })
+        .join("\n");
+
+      console.log(formatted);
+      console.error(`\n  ${c.dim}${"─".repeat(60)}${c.reset}\n`);
+      return;
+    } catch (err: any) {
+      aiSpinner.fail("AI log analysis failed");
+      printError(err.message || String(err));
+      process.exit(1);
+    }
+  }
+
+  // ─── Standard Log Streaming Mode ───────────────────────────────────────────
   console.error(`\n  ${c.bold}Logs for ${c.whizanCyan}${targetId}${c.reset} (Status: ${logData.status}):\n`);
   for (const line of logData.logs) {
     printBuildLog(line);
