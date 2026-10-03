@@ -83,8 +83,15 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err: any = await res.json().catch(() => ({ error: "Unknown error" }));
+    if (res.status === 503 || err.code === "INFRA_MAINTENANCE" || err.maintenance) {
+      throw new Error(
+        err.message ||
+        err.error ||
+        "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon! All persistent databases, deployments, and code archives are 100% safe."
+      );
+    }
+    throw new Error(err.error || err.message || `HTTP ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;

@@ -23,7 +23,7 @@ import { formatDistanceToNow, format } from "date-fns";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
-import { formatDeployedUrl } from "@/lib/domains";
+import { formatDeployedUrl, getSmartDeploymentUrl } from "@/lib/domains";
 
 function buildDuration(d: Deployment) {
   if (!d.buildStartedAt) return null;
@@ -150,7 +150,7 @@ export default function ProjectPage() {
           <div className="proj-actions-group">
             {latestDeploy?.status === "READY" && (
               <a
-                href={liveUrl}
+                href={getSmartDeploymentUrl(project.slug, project.customDomain)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-secondary btn-lg"
@@ -198,7 +198,7 @@ export default function ProjectPage() {
           <div className="proj-url-bar">
             <div className="proj-url-info">
               <span className="proj-url-label">Production Domain</span>
-              <a href={liveUrl} target="_blank" rel="noreferrer" className="proj-url-link mono">
+              <a href={getSmartDeploymentUrl(project.slug, project.customDomain)} target="_blank" rel="noreferrer" className="proj-url-link mono">
                 {liveUrl} <ExternalLink size={13} />
               </a>
             </div>

@@ -530,6 +530,20 @@ export async function deployCommand(args: string[] = []) {
       printDeploySuccess(liveUrl, dashboardUrl);
     }
   } catch (err: any) {
+    if (err.statusCode === 503 || err.message?.includes("maintenance") || err.data?.code === "INFRA_MAINTENANCE") {
+      deploySpinner?.fail("Cloud Infrastructure Under Maintenance");
+      console.log(`\n${c.yellow}┌────────────────────────────────────────────────────────────────────────┐${c.reset}`);
+      console.log(`${c.yellow}│  🛑 CLOUD INFRASTRUCTURE MAINTENANCE — FREE TIER                       │${c.reset}`);
+      console.log(`${c.yellow}│                                                                        │${c.reset}`);
+      console.log(`${c.yellow}│  Cloud compute nodes and build workers are temporarily offline         │${c.reset}`);
+      console.log(`${c.yellow}│  for scheduled maintenance. We will be back online soon!               │${c.reset}`);
+      console.log(`${c.yellow}│                                                                        │${c.reset}`);
+      console.log(`${c.yellow}│  🛡️  All databases, project source code, and deployment records are    │${c.reset}`);
+      console.log(`${c.yellow}│      100% safely preserved in cloud storage.                           │${c.reset}`);
+      console.log(`${c.yellow}└────────────────────────────────────────────────────────────────────────┘${c.reset}\n`);
+      process.exit(1);
+    }
+
     deploySpinner?.fail("Deployment failed");
     printError(err.message || String(err));
     if (targetId) {

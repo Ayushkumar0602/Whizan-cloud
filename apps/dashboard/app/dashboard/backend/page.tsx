@@ -26,7 +26,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
+import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl, getSmartDeploymentUrl } from "@/lib/domains";
 
 export default function BackendHostingPage() {
   const router = useRouter();
@@ -263,7 +263,7 @@ export default function BackendHostingPage() {
                     </button>
                     {isActive && (
                       <a
-                        href={publicUrl}
+                        href={getSmartDeploymentUrl(s.slug)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="copy-chip-btn"

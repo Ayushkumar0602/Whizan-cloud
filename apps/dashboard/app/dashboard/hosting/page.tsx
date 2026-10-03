@@ -19,8 +19,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { DeployPipeline } from "@/components/deploy-pipeline";
-import { formatDeployedUrl } from "@/lib/domains";
+import { formatDeployedUrl, getSmartDeploymentUrl } from "@/lib/domains";
 
 export default function HostingPage() {
   const [list, setList] = useState<ProjectWithLatestDeploy[]>([]);
@@ -165,11 +164,11 @@ export default function HostingPage() {
 
                 {isReady && (
                   <a
-                    href={liveUrl}
+                    href={getSmartDeploymentUrl(p.slug, p.customDomain)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="frontend-url-ribbon"
-                    title={`Open live site: ${liveUrl}`}
+                    title={`Open deployment: ${p.name}`}
                   >
                     <Globe size={13} style={{ flexShrink: 0 }} />
                     <span className="frontend-url-text mono">{liveUrl.replace(/^https?:\/\//, "")}</span>

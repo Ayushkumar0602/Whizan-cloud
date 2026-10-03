@@ -287,7 +287,10 @@ export class WhizanClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (res.status === 503 || err.code === "INFRA_MAINTENANCE" || err.maintenance) {
+        throw new Error(err.message || err.error || "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon!");
+      }
       throw new Error(`Direct upload deployment failed: ${JSON.stringify(err)}`);
     }
 
@@ -313,7 +316,10 @@ export class WhizanClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (res.status === 503 || err.code === "INFRA_MAINTENANCE" || err.maintenance) {
+        throw new Error(err.message || err.error || "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon!");
+      }
       throw new Error(`Database provisioning failed: ${JSON.stringify(err)}`);
     }
 
@@ -490,7 +496,10 @@ export class WhizanClient {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (res.status === 503 || err.code === "INFRA_MAINTENANCE" || err.maintenance) {
+        throw new Error(err.message || err.error || "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon!");
+      }
       throw new Error(`Redeployment failed: ${JSON.stringify(err)}`);
     }
 

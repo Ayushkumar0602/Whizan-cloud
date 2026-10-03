@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
+import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 // Shared build queue — the build-worker consumes from this
 export const buildQueue = new Queue("build", {
@@ -125,6 +126,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         }
       }
 
+      const online = await isVmOnline();
+      if (!online) {
+        return reply.code(503).send(maintenanceResponse());
+      }
+
       const deployment = await prisma.deployment.create({
         data: {
           projectId: id,
@@ -183,6 +189,11 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         } else {
           return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
         }
+      }
+
+      const online = await isVmOnline();
+      if (!online) {
+        return reply.code(503).send(maintenanceResponse());
       }
 
       const data = await request.file();

@@ -19,11 +19,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [vmOnline, setVmOnline] = useState<boolean | null>(true);
 
   // Restore sidebar preference from localStorage
   useEffect(() => {
     const savedCollapsed = localStorage.getItem("sidebar-collapsed");
     if (savedCollapsed === "true") setSidebarCollapsed(true);
+  }, []);
+
+  // Poll VM status to reflect maintenance mode in real-time
+  useEffect(() => {
+    let active = true;
+    async function checkVm() {
+      try {
+        const res = await fetch("/api/vm-status?t=" + Date.now(), { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setVmOnline(Boolean(data.online));
+        }
+      } catch {}
+    }
+    checkVm();
+    const interval = setInterval(checkVm, 25_000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -127,11 +148,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Cloud Health Status */}
-        <div className="mesh-indicator-pill">
-          <div className="mesh-pulse-dot" />
-          <span className="mesh-pill-text">Whizan Edge Network</span>
-          <span className="mesh-pill-tag">ACTIVE</span>
-        </div>
+        {vmOnline === false ? (
+          <Link
+            href="/maintenance"
+            className="mesh-indicator-pill mesh-indicator-pill-maintenance"
+            title="Cloud infrastructure is under maintenance for Free Tier users. Click for status."
+          >
+            <div className="mesh-pulse-dot amber" />
+            <span className="mesh-pill-text amber">Cloud Maintenance</span>
+            <span className="mesh-pill-tag amber">FREE TIER</span>
+          </Link>
+        ) : (
+          <div className="mesh-indicator-pill">
+            <div className="mesh-pulse-dot" />
+            <span className="mesh-pill-text">Whizan Edge Network</span>
+            <span className="mesh-pill-tag">ACTIVE</span>
+          </div>
+        )}
 
         {/* Quick Deploy CTA */}
         <div style={{ marginTop: "1rem" }}>
@@ -454,6 +487,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           margin-top: 0.9rem;
           font-size: 0.72rem;
           color: #065f46;
+          text-decoration: none;
+          transition: all 0.15s ease;
+        }
+        .mesh-indicator-pill-maintenance {
+          background: rgba(245, 158, 11, 0.08);
+          border-color: rgba(245, 158, 11, 0.3);
+          color: #b45309;
+          cursor: pointer;
+        }
+        .mesh-indicator-pill-maintenance:hover {
+          background: rgba(245, 158, 11, 0.14);
+          border-color: rgba(245, 158, 11, 0.45);
+          transform: translateY(-0.5px);
         }
         .mesh-pulse-dot {
           width: 6px;
@@ -464,6 +510,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           animation: pulseGlow 2s infinite ease-in-out;
           flex-shrink: 0;
         }
+        .mesh-pulse-dot.amber {
+          background: #f59e0b;
+          box-shadow: 0 0 6px #f59e0b;
+        }
         .mesh-pill-text {
           font-size: 0.73rem;
           font-weight: 550;
@@ -473,11 +523,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           white-space: nowrap;
           flex: 1;
         }
+        .mesh-pill-text.amber {
+          color: #b45309;
+        }
         .mesh-pill-tag {
           font-size: 0.62rem;
           font-weight: 700;
           color: #047857;
           letter-spacing: 0.04em;
+        }
+        .mesh-pill-tag.amber {
+          color: #b45309;
         }
 
         .quick-deploy-btn {

@@ -214,7 +214,14 @@ export class WhizanClient {
       body: form as any,
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      if (res.status === 503 || err.code === "INFRA_MAINTENANCE" || err.maintenance) {
+        throw new ApiError(
+          err.message || err.error || "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon!",
+          res.status,
+          err
+        );
+      }
       throw new ApiError(`Upload failed: ${JSON.stringify(err)}`, res.status, err);
     }
     return res.json();

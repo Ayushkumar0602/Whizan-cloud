@@ -624,6 +624,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (error: any) {
     const duration = performance.now() - startTime;
     McpLogger.toolError(name, duration, error.message);
+    if (
+      error.message?.includes("maintenance") ||
+      error.statusCode === 503 ||
+      error.data?.code === "INFRA_MAINTENANCE"
+    ) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `🛑 CLOUD INFRASTRUCTURE MAINTENANCE — FREE TIER\n\nCloud compute nodes and build workers are temporarily offline for scheduled maintenance. We will be back online soon!\n\n🛡️ All persistent databases, project source code, and deployment records are 100% safely preserved in cloud storage.`,
+          },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [{ type: "text", text: `Error executing ${name}: ${error.message}` }],
       isError: true,

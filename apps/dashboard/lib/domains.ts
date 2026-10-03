@@ -59,6 +59,16 @@ export function getProjectLiveUrl(slug: string, customDomain?: string | null): s
 }
 
 /**
+ * Returns the smart preview URL that intercepts offline VMs with the maintenance page.
+ */
+export function getSmartDeploymentUrl(slug: string, customDomain?: string | null): string {
+  if (customDomain) {
+    return customDomain.startsWith("http") ? customDomain : `https://${customDomain}`;
+  }
+  return `/preview/${slug}`;
+}
+
+/**
  * Returns the primary subdomain ingress URL for an Edge Function (.fn.<domain>)
  */
 export function getFunctionIngressUrl(slug: string, path = ""): string {

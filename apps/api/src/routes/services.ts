@@ -9,6 +9,7 @@ import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
+import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -423,6 +424,11 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const online = await isVmOnline();
+    if (!online) {
+      return reply.code(503).send(maintenanceResponse());
+    }
+
     const deployment = await prisma.serviceDeployment.create({
       data: {
         serviceId: id,
@@ -481,6 +487,11 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       } else {
         return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
       }
+    }
+
+    const online = await isVmOnline();
+    if (!online) {
+      return reply.code(503).send(maintenanceResponse());
     }
 
     const data = await request.file();

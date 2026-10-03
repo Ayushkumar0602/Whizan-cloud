@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { projects, services, functionsApi, type ProjectWithLatestDeploy, type ServiceWithLatestDeploy, type FunctionServiceItem } from "@/lib/api";
-import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl, getFunctionIngressUrl } from "@/lib/domains";
+import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl, getFunctionIngressUrl, getSmartDeploymentUrl } from "@/lib/domains";
 import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
@@ -211,11 +211,11 @@ export default function ConsolePage() {
                         {latest ? <StatusBadge status={latest.status} /> : <span className="badge badge-queued">No deploys</span>}
                         {isReady && (
                           <a
-                            href={liveUrl}
+                            href={getSmartDeploymentUrl(p.slug, p.customDomain)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="live-external-btn"
-                            title={`Open live site: ${liveUrl}`}
+                            title={`Open deployment: ${p.name}`}
                           >
                             <span>Live</span>
                             <ExternalLink size={12} />
@@ -306,11 +306,11 @@ export default function ConsolePage() {
 
                         {isActive && (
                           <a
-                            href={liveUrl}
+                            href={getSmartDeploymentUrl(s.slug)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="live-external-btn"
-                            title={`Open live endpoint: ${liveUrl}`}
+                            title={`Open live endpoint: ${s.name}`}
                           >
                             <span>Live</span>
                             <ExternalLink size={12} />

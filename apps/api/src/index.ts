@@ -24,6 +24,7 @@ import { flowRoutes } from "./routes/flows.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
+import { isVmOnline } from "./lib/vm-health.js";
 
 process.on("unhandledRejection", (reason: any) => {
   console.error("[Process] Unhandled Rejection (isolated):", reason?.message || reason);
@@ -220,6 +221,18 @@ app.route({
   method: ["GET", "POST", "HEAD"],
   url: "/health",
   handler: async () => ({ status: "ok", ts: Date.now() }),
+});
+
+app.get("/api/vm-status", async () => {
+  const online = await isVmOnline();
+  return {
+    online,
+    maintenance: !online,
+    message: online
+      ? "Cloud infrastructure is operational"
+      : "Cloud infrastructure is currently under maintenance for Free Tier users. We will be back online soon!",
+    ts: Date.now(),
+  };
 });
 
 app.route({

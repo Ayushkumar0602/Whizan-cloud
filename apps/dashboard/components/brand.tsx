@@ -26,8 +26,8 @@ export function BrandMark({
           className="brand-logo-img-full"
           style={{
             width: "100%",
-            height: "58px",
-            maxWidth: "230px",
+            height: "auto",
+            maxHeight: "64px",
             objectFit: "contain",
             display: "block",
             imageRendering: "-webkit-optimize-contrast",

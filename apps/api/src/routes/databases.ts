@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { isRestrictedDatabaseUrl } from "../lib/auth-utils.js";
+import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "localhost";
 
@@ -160,6 +161,11 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
     if (!name || name.trim().length === 0) {
       return reply.code(400).send({ error: "Database name is required" });
+    }
+
+    const online = await isVmOnline();
+    if (!online) {
+      return reply.code(503).send(maintenanceResponse());
     }
 
     // Generate clean slug
