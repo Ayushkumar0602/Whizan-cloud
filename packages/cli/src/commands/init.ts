@@ -12,6 +12,7 @@ export interface WhizanProjectConfig {
   name: string;
   slug: string;
   type: "service" | "project";
+  targetType?: "service" | "project";
   framework?: string;
   language?: string;
   internalPort?: number;
@@ -55,6 +56,7 @@ export async function initCommand(args: string[] = []) {
   const config: WhizanProjectConfig = {
     name,
     slug,
+    targetType: type,
     type,
     framework: analysis.framework,
     language: analysis.language,

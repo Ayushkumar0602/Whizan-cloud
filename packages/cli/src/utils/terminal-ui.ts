@@ -24,14 +24,18 @@ export const colors = {
   yellow: "\x1b[33m",
   gray: "\x1b[90m",
   white: "\x1b[37m",
+  bgRed: "\x1b[41m",
+  bgEmerald: "\x1b[42m",
 };
 
 const c = colors;
 
+export const CLI_VERSION = "1.0.2";
+
 /**
  * Print the branded Whizan ASCII banner to stderr
  */
-export function printBanner(version: string) {
+export function printBanner(version: string = CLI_VERSION) {
   const banner = `
   ${c.whizanCyan}██╗    ██╗██╗  ██╗██╗███████╗ █████╗ ███╗   ██╗${c.reset}
   ${c.whizanCyan}██║    ██║██║  ██║██║╚══███╔╝██╔══██╗████╗  ██║${c.reset}

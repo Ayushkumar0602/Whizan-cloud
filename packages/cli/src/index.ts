@@ -16,10 +16,11 @@ import { linkCommand, unlinkCommand } from "./commands/link.js";
 import { deleteCommand } from "./commands/delete.js";
 import { openCommand } from "./commands/open.js";
 import { topCommand } from "./commands/top.js";
+import { mcpCommand } from "./commands/mcp.js";
 import { printBanner, colors, printError } from "./utils/terminal-ui.js";
 
 const c = colors;
-const VERSION = "1.0.1";
+const VERSION = "1.0.2";
 
 function printHelp() {
   printBanner(VERSION);
@@ -67,6 +68,10 @@ function printHelp() {
     ${c.whizanCyan}link${c.reset}               Link this directory to an existing Whizan deployment
     ${c.whizanCyan}unlink${c.reset}             Remove .whizan.json linkage
     ${c.whizanCyan}delete${c.reset}             Delete a service or project
+
+  ${c.bold}${c.brightWhite}AI & AGENT INTEGRATION${c.reset}
+    ${c.whizanCyan}mcp setup${c.reset}          Configure Whizan MCP for Cursor, Antigravity, Claude, Windsurf
+    ${c.whizanCyan}mcp info${c.reset}           Display MCP server status and tool inventory
 
   ${c.bold}${c.brightWhite}OPTIONS${c.reset}
     ${c.dim}--help, -h${c.reset}         Show this help
@@ -183,6 +188,11 @@ async function main() {
     case "delete":
     case "rm":
       await deleteCommand(subArgs);
+      break;
+
+    // AI & MCP Agent Integration
+    case "mcp":
+      await mcpCommand(subArgs);
       break;
 
     // Meta

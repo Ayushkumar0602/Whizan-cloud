@@ -35,12 +35,26 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
       const raw = await fs.readFile(configPath, "utf8");
       existing = JSON.parse(raw);
     } catch {}
-    const updated = {
+
+    const resolvedTargetType = data.targetType || data.type || existing.targetType || existing.type || "service";
+
+    const updated: Record<string, any> = {
       ...existing,
       ...data,
+      targetType: resolvedTargetType,
+      type: resolvedTargetType, // Always write both for 100% CLI and MCP coexistence
       updatedAt: new Date().toISOString(),
     };
-    await fs.writeFile(configPath, JSON.stringify(updated, null, 2), "utf8");
+
+    // If deployment is active or ready, clear prior failure metadata
+    const st = String(data.lastDeploymentStatus || data.status || "").toUpperCase();
+    if (st === "READY" || st === "ACTIVE") {
+      delete updated.lastFailureReason;
+      delete updated.failedAt;
+      updated.lastDeploymentStatus = "ACTIVE";
+    }
+
+    await fs.writeFile(configPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
   } catch (err: any) {
     console.error("[Whizan DevOps MCP] Failed to save .whizan.json:", err.message);
   }
@@ -49,7 +63,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.0.3",
+    version: "1.0.4",
   },
   {
     capabilities: {
@@ -688,28 +702,41 @@ async function handleToolExecution(name: string, args: any) {
         let targetType: "project" | "service" | "function" = "project";
 
         // Step A: Check localConfig targetId
-        if (localConfig?.targetId && localConfig?.targetType) {
-          if (localConfig.targetType === "project") {
+        const localTargetType = localConfig?.targetType || localConfig?.type;
+        if (localConfig?.targetId && localTargetType) {
+          if (localTargetType === "project") {
             const p = serverProjects.find((x) => x.id === localConfig.targetId);
             if (p) {
               matchedTarget = p;
               targetType = "project";
               matchSource = "local_config";
             }
-          } else if (localConfig.targetType === "service") {
+          } else if (localTargetType === "service") {
             const s = serverServices.find((x) => x.id === localConfig.targetId);
             if (s) {
               matchedTarget = s;
               targetType = "service";
               matchSource = "local_config";
             }
-          } else if (localConfig.targetType === "function") {
+          } else if (localTargetType === "function") {
             const f = serverFunctions.find((x) => x.id === localConfig.targetId);
             if (f) {
               matchedTarget = f;
               targetType = "function";
               matchSource = "local_config";
             }
+          }
+
+          // Fallback: If targetId is saved in localConfig but not found in server query array
+          if (!matchedTarget) {
+            matchedTarget = {
+              id: localConfig.targetId,
+              name: localConfig.name || localConfig.slug || "linked-deployment",
+              slug: localConfig.slug || localConfig.targetId,
+              status: localConfig.lastDeploymentStatus || "UNKNOWN",
+            };
+            targetType = localTargetType;
+            matchSource = "local_config";
           }
         }
 
@@ -781,6 +808,13 @@ async function handleToolExecution(name: string, args: any) {
             `[EXISTING DEPLOYMENT DETECTED]: Found matching ${targetType} '${matchedTarget.name}' (ID: ${matchedTarget.id}) on Whizan Cloud! DO NOT call whizan_create_${targetType}. Ask user permission to redeploy to ID '${matchedTarget.id}' and proceed directly with whizan_deploy_direct.`
           );
 
+          // Override recommended tool to redeploy instead of creating
+          report.recommendedDeploymentConfig = {
+            targetType: targetType as any,
+            toolToCall: "whizan_create_service" as any, // fallback type
+            internalPort: report.portConfig.detectedHardcodedPort || 8000,
+          };
+
           await saveLocalWhizanConfig(targetDir, {
             targetId: matchedTarget.id,
             targetType,
@@ -788,6 +822,47 @@ async function handleToolExecution(name: string, args: any) {
             slug: matchedTarget.slug,
             liveUrl,
           });
+        }
+
+        // Step D: Failure Diagnostic Handshake (Self-Healing Detection from CLI)
+        if (
+          localConfig?.targetId &&
+          (localConfig?.lastDeploymentStatus === "FAILED" ||
+            localConfig?.lastDeploymentStatus === "UNHEALTHY" ||
+            localConfig?.lastDeploymentStatus === "ERROR" ||
+            localConfig?.lastFailureReason)
+        ) {
+          let failureLogs: any = null;
+          if (localConfig.lastDeploymentId) {
+            try {
+              failureLogs = await client.getBuildLogs(localConfig.lastDeploymentId);
+            } catch {}
+          }
+
+          const rawError =
+            localConfig.lastFailureReason ||
+            failureLogs?.errorMessage ||
+            "Build or container startup failed on Azure VM";
+
+          const recentLogsList: string[] = (failureLogs?.logs || [])
+            .map((l: any) => (typeof l === "string" ? l : l.message || JSON.stringify(l)))
+            .slice(-15);
+
+          report.lastBuildFailure = {
+            deploymentId: localConfig.lastDeploymentId || "unknown",
+            targetId: localConfig.targetId,
+            targetType: (localTargetType || targetType) as any,
+            status: localConfig.lastDeploymentStatus || "FAILED",
+            errorMessage: rawError,
+            recentLogs: recentLogsList,
+            failedAt: localConfig.failedAt,
+          };
+
+          const logSnippet = recentLogsList.length > 0 ? recentLogsList.map((l) => `  ${l}`).join("\n") : "  (Check local application logs or environment)";
+
+          report.recommendations.unshift(
+            `🚨 [URGENT: PREVIOUS CLI DEPLOYMENT FAILED — SELF-HEALING DIAGNOSIS]:\nDeployment ID: ${localConfig.lastDeploymentId || "unknown"}\nTarget ID:     ${localConfig.targetId} (${localTargetType || targetType})\nStatus:        ${localConfig.lastDeploymentStatus || "FAILED"}\nFailure Error: ${rawError}\n\nRecent Build Logs from Azure VM Worker:\n${logSnippet}\n\n🛑 MANDATORY AI AGENT INSTRUCTIONS FOR REDEPLOYMENT:\n1. The cloud target '${localConfig.targetId}' ALREADY EXISTS. DO NOT call 'whizan_create_service' or 'whizan_create_project'!\n2. Analyze the build failure reason and logs above, and edit the local project files to fix the error.\n3. Ensure the app binds to '0.0.0.0' and uses 'process.env.PORT || 8000'.\n4. Call 'whizan_deploy_direct' with targetId: "${localConfig.targetId}" and targetType: "${localTargetType || targetType}" to redeploy the fixed code.\n5. Call 'whizan_check_health' to verify live status once build reaches READY/ACTIVE.`
+          );
         }
 
         if (!report.guardrailPassed) {
@@ -815,9 +890,43 @@ async function handleToolExecution(name: string, args: any) {
 
       case "whizan_create_service": {
         const serviceArgs = (args || {}) as any;
+        const checkDir = serviceArgs.rootDir || ".";
+
+        // Anti-Duplicate Guardrail: Check local .whizan.json before creating service
+        const workspaceRoot = path.resolve(checkDir);
+        try {
+          const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
+          const existingCfg = JSON.parse(cfgRaw);
+          if (existingCfg?.targetId && !serviceArgs.forceNew) {
+            const exType = existingCfg.targetType || existingCfg.type || "service";
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      blocked: true,
+                      code: "DUPLICATE_PREVENTION",
+                      message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
+                      existingDeployment: {
+                        targetId: existingCfg.targetId,
+                        targetType: exType,
+                        slug: existingCfg.slug,
+                        name: existingCfg.name,
+                      },
+                      instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate service, set 'forceNew: true'.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+        } catch {}
 
         // System Guardrail pre-check
-        const checkDir = serviceArgs.rootDir || ".";
         try {
           const audit = await analyzeWorkspace(checkDir);
           if (!audit.guardrailPassed) {
@@ -920,9 +1029,43 @@ async function handleToolExecution(name: string, args: any) {
 
       case "whizan_create_project": {
         const projectArgs = (args || {}) as any;
+        const checkDir = projectArgs.rootDir || ".";
+
+        // Anti-Duplicate Guardrail: Check local .whizan.json before creating project
+        const workspaceRoot = path.resolve(checkDir);
+        try {
+          const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
+          const existingCfg = JSON.parse(cfgRaw);
+          if (existingCfg?.targetId && !projectArgs.forceNew) {
+            const exType = existingCfg.targetType || existingCfg.type || "project";
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(
+                    {
+                      success: false,
+                      blocked: true,
+                      code: "DUPLICATE_PREVENTION",
+                      message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
+                      existingDeployment: {
+                        targetId: existingCfg.targetId,
+                        targetType: exType,
+                        slug: existingCfg.slug,
+                        name: existingCfg.name,
+                      },
+                      instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate project, set 'forceNew: true'.`,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
+            };
+          }
+        } catch {}
 
         // System Guardrail pre-check
-        const checkDir = projectArgs.rootDir || ".";
         try {
           const audit = await analyzeWorkspace(checkDir);
           if (!audit.guardrailPassed) {

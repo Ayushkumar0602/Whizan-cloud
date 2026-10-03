@@ -23,6 +23,72 @@ import {
 
 const c = colors;
 
+export async function saveDeploymentConfig(configPath: string, data: Record<string, any>) {
+  try {
+    let existing: any = {};
+    try {
+      const raw = await fs.readFile(configPath, "utf8");
+      existing = JSON.parse(raw);
+    } catch {}
+
+    const resolvedTargetType = data.targetType || data.type || existing.targetType || existing.type || "service";
+
+    const updated: Record<string, any> = {
+      ...existing,
+      ...data,
+      targetType: resolvedTargetType,
+      type: resolvedTargetType, // Canonical dual-key support for seamless CLI and MCP coexistence
+      updatedAt: new Date().toISOString(),
+    };
+
+    const st = String(data.lastDeploymentStatus || data.status || "").toUpperCase();
+    if (st === "READY" || st === "ACTIVE") {
+      delete updated.lastFailureReason;
+      delete updated.failedAt;
+      updated.lastDeploymentStatus = "ACTIVE";
+    }
+
+    await fs.writeFile(configPath, JSON.stringify(updated, null, 2) + "\n", "utf8");
+  } catch {}
+}
+
+export function printAiHandoffBanner(info: {
+  deploymentId?: string;
+  targetId: string;
+  targetType: "service" | "project";
+  slug: string;
+  failureReason: string;
+}) {
+  const depId = info.deploymentId || "unknown";
+  const promptLines = [
+    `Fix the Whizan Cloud deployment failure for deployment "${depId}" (target "${info.targetId}").`,
+    `1. Use Whizan MCP tools (whizan_analyze_workspace or whizan_get_build_logs with deploymentId "${depId}") to inspect the Azure VM build failure logs.`,
+    `2. Fix the code according to Whizan Cloud rules (bind to 0.0.0.0, use process.env.PORT || 8000, resolve missing modules, build errors, or syntax issues).`,
+    `3. DO NOT call whizan_create_service or whizan_create_project! The target ID '${info.targetId}' already exists.`,
+    `4. Redeploy directly to the SAME deployment target using 'whizan_deploy_direct' with targetId: "${info.targetId}" and targetType: "${info.targetType}".`,
+    `5. Follow build progress with 'whizan_get_build_logs' and verify live health with 'whizan_check_health'.`,
+  ].join("\n");
+
+  console.error(`
+  ${c.bgRed}${c.white}${c.bold} ✖ DEPLOYMENT FAILED ON AZURE VM ${c.reset}
+  ${c.dim}Target ID:${c.reset}     ${c.whizanCyan}${info.targetId}${c.reset} (${info.targetType})
+  ${c.dim}Deployment ID:${c.reset} ${c.whizanBlue}${depId}${c.reset}
+  ${c.dim}Failure Reason:${c.reset} ${c.red}${info.failureReason}${c.reset}
+
+  ${c.whizanCyan}${c.bold}🤖 Self-Heal with Whizan MCP & Your AI Assistant (Cursor / Antigravity / Claude / Windsurf):${c.reset}
+  Whizan MCP empowers your AI agent to inspect Azure VM build logs, patch your broken files,
+  and redeploy to the SAME cloud target with ZERO duplicate services.
+
+  ${c.bold}Step 1: Install & configure Whizan MCP in your editor:${c.reset}
+    ${c.emerald}$ whizan mcp setup${c.reset}
+
+  ${c.bold}Step 2: Copy & paste this prompt into your editor's AI chat:${c.reset}
+  ${c.dim}┌─────────────────────────────────────────────────────────────────────────────┐${c.reset}
+${promptLines.split("\n").map(l => `  ${c.yellow}│ ${l}${c.reset}`).join("\n")}
+  ${c.dim}└─────────────────────────────────────────────────────────────────────────────┘${c.reset}
+  `);
+}
+
 export interface DeployOptions {
   yes?: boolean;
   name?: string;
@@ -159,7 +225,8 @@ export async function deployCommand(args: string[] = []) {
   }
 
   // Check for existing deployment reuse
-  let targetType: "service" | "project" = opts.type || localConfig?.type || analysis.targetType;
+  let targetType: "service" | "project" =
+    opts.type || localConfig?.targetType || localConfig?.type || analysis.targetType;
   let targetId: string | null = localConfig?.targetId || null;
   let slug: string = opts.name ? toSlug(opts.name) : localConfig?.slug || toSlug(localConfig?.name || path.basename(targetDir));
   let isRedeploy = false;
@@ -280,16 +347,17 @@ export async function deployCommand(args: string[] = []) {
         dashboardUrl = `https://dashboard.vercel.app/dashboard/services/${targetId}`;
       }
 
-      // Save/update .whizan.json
-      const updatedConfig = {
+      // Save/update .whizan.json immediately upon resource creation
+      await saveDeploymentConfig(configPath, {
         name,
         slug,
+        targetType,
         type: targetType,
         targetId,
         framework: analysis.framework,
+        liveUrl,
         lastDeployedAt: new Date().toISOString(),
-      };
-      await fs.writeFile(configPath, JSON.stringify(updatedConfig, null, 2) + "\n", "utf8").catch(() => {});
+      });
     }
 
     deploySpinner?.update("Uploading archive payload to Azure VM...");
@@ -336,9 +404,34 @@ export async function deployCommand(args: string[] = []) {
 
       if (buildStatus === "FAILED" || buildStatus === "ERROR") {
         buildSpinner?.fail(`Build failed on Azure VM`);
+        const failureReason = logData.errorMessage || "Container image synthesis failed on Azure VM";
+
+        // Persist failure snapshot into .whizan.json for MCP handoff
+        await saveDeploymentConfig(configPath, {
+          targetId: targetId!,
+          targetType,
+          type: targetType,
+          slug,
+          name: opts.name || localConfig?.name || path.basename(targetDir),
+          lastDeploymentId: deploymentId,
+          lastDeploymentStatus: "FAILED",
+          lastFailureReason: failureReason,
+          failedAt: new Date().toISOString(),
+        });
+
         if (logData.errorMessage) {
           printError(logData.errorMessage);
         }
+
+        // Print actionable AI Agent Handshake Banner
+        printAiHandoffBanner({
+          deploymentId,
+          targetId: targetId!,
+          targetType,
+          slug,
+          failureReason,
+        });
+
         process.exit(1);
       }
     }
@@ -371,7 +464,49 @@ export async function deployCommand(args: string[] = []) {
 
       if (!healthy) {
         healthSpinner?.warn("Endpoint is live but returned a non-200 status or takes longer to warm up.");
+        const failureReason =
+          "Health check probe returned non-200 status. Process may have crashed on start or not bound to 0.0.0.0.";
+        await saveDeploymentConfig(configPath, {
+          targetId: targetId!,
+          targetType,
+          type: targetType,
+          slug,
+          lastDeploymentId: deploymentId,
+          lastDeploymentStatus: "UNHEALTHY",
+          lastFailureReason: failureReason,
+          failedAt: new Date().toISOString(),
+        });
+
+        printAiHandoffBanner({
+          deploymentId,
+          targetId: targetId!,
+          targetType,
+          slug,
+          failureReason,
+        });
+      } else {
+        await saveDeploymentConfig(configPath, {
+          targetId: targetId!,
+          targetType,
+          type: targetType,
+          slug,
+          lastDeploymentId: deploymentId,
+          lastDeploymentStatus: "ACTIVE",
+          liveUrl,
+          lastDeployedAt: new Date().toISOString(),
+        });
       }
+    } else {
+      await saveDeploymentConfig(configPath, {
+        targetId: targetId!,
+        targetType,
+        type: targetType,
+        slug,
+        lastDeploymentId: deploymentId,
+        lastDeploymentStatus: "ACTIVE",
+        liveUrl,
+        lastDeployedAt: new Date().toISOString(),
+      });
     }
 
     // Done!
@@ -397,6 +532,23 @@ export async function deployCommand(args: string[] = []) {
   } catch (err: any) {
     deploySpinner?.fail("Deployment failed");
     printError(err.message || String(err));
+    if (targetId) {
+      await saveDeploymentConfig(configPath, {
+        targetId,
+        targetType,
+        type: targetType,
+        slug,
+        lastDeploymentStatus: "FAILED",
+        lastFailureReason: err.message || String(err),
+        failedAt: new Date().toISOString(),
+      });
+      printAiHandoffBanner({
+        targetId,
+        targetType,
+        slug,
+        failureReason: err.message || String(err),
+      });
+    }
     process.exit(1);
   }
 }

@@ -4,12 +4,28 @@ import path from "path";
 export interface LocalWhizanConfig {
   targetId?: string;
   targetType?: "project" | "service" | "function";
+  type?: "project" | "service" | "function";
   name?: string;
   slug?: string;
   liveUrl?: string;
+  framework?: string;
+  language?: string;
   lastDeploymentId?: string;
+  lastDeploymentStatus?: "QUEUED" | "BUILDING" | "READY" | "ACTIVE" | "FAILED" | "ERROR" | "UNHEALTHY" | string;
+  lastFailureReason?: string;
+  failedAt?: string;
   lastDeployedAt?: string;
   updatedAt?: string;
+}
+
+export interface LastBuildFailureInfo {
+  deploymentId: string;
+  targetId: string;
+  targetType: "project" | "service" | "function";
+  status: string;
+  errorMessage: string;
+  recentLogs: string[];
+  failedAt?: string;
 }
 
 export interface ExistingDeploymentMatch {
@@ -59,6 +75,7 @@ export interface AnalysisReport {
   optionalEnvVars?: EnvVarSpec[];
   localWhizanConfig?: LocalWhizanConfig;
   existingDeployment?: ExistingDeploymentMatch;
+  lastBuildFailure?: LastBuildFailureInfo;
   recommendedDeploymentConfig?: {
     targetType: "service" | "project";
     toolToCall: "whizan_create_service" | "whizan_create_project";
