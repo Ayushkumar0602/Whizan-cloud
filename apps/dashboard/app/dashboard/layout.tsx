@@ -118,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <>
       <div className="sidebar-top">
         <div className="sidebar-brand-row">
-          <BrandMark href="/dashboard" />
+          <BrandMark href="/dashboard" fullWidth />
           {mobileMenuOpen && (
             <button onClick={() => setMobileMenuOpen(false)} className="icon-btn-rounded" aria-label="Close menu">
               <X size={18} />
@@ -434,6 +434,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           display: flex;
           align-items: center;
           justify-content: space-between;
+          width: 100%;
+          gap: 0.5rem;
         }
 
         .sidebar-top {
