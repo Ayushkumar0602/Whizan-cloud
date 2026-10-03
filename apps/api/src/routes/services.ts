@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { randomUUID } from "crypto";
-import { redisClient, redisSub } from "../lib/redis.js";
+import { redisClient, redisSub, getBullMqConnection } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
@@ -12,7 +12,7 @@ import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
 import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 const serviceQueue = new Queue("service-build", {
-  connection: redisClient,
+  connection: getBullMqConnection(),
   defaultJobOptions: {
     attempts: 1,
     removeOnComplete: 100,
@@ -982,8 +982,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       .filter(Boolean)
       .reverse();
 
-    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-    const sub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+    const sub = redisClient.duplicate();
     sub.on("error", () => {});
 
     let isClosed = false;
@@ -1212,8 +1211,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
     // 4b. Remote Exec Bridge to Azure VM Worker via Redis Pub/Sub
     const sessionId = `exec_${randomUUID()}`;
-    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-    const sessionSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+    const sessionSub = redisClient.duplicate();
     sessionSub.on("error", () => {});
 
     let isSessionActive = true;

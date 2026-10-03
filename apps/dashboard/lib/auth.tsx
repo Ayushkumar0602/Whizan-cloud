@@ -21,39 +21,82 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("hostify_user");
+        return saved ? JSON.parse(saved) : null;
+      } catch {}
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedUser = localStorage.getItem("hostify_user");
+        const savedToken = localStorage.getItem("hostify_token");
+        if (savedUser && savedToken) return false;
+      } catch {}
+    }
+    return true;
+  });
 
-  // On mount: try to restore session via refresh token (HttpOnly cookie)
+  // On mount: restore access token immediately and silently validate in background
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const savedToken = localStorage.getItem("hostify_token");
+    if (savedToken) {
+      setAccessToken(savedToken);
+    }
+
+    let active = true;
     (async () => {
       try {
+        // If we have an access token, fast-verify profile with /me
+        if (savedToken) {
+          try {
+            const me = await auth.me();
+            if (active && me) {
+              setUser(me);
+              localStorage.setItem("hostify_user", JSON.stringify(me));
+              return;
+            }
+          } catch {
+            // Token may have expired, proceed to refresh below
+          }
+        }
+
+        // Try restoring session via refresh token (HttpOnly cookie)
         const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
           method: "POST",
           credentials: "include",
         });
-        if (res.ok) {
+        if (res.ok && active) {
           const data = await res.json();
           setAccessToken(data.accessToken);
           const me = await auth.me();
-          setUser(me);
-          return;
+          if (active && me) {
+            setUser(me);
+            localStorage.setItem("hostify_user", JSON.stringify(me));
+            return;
+          }
         }
       } catch {
-        // No valid session — that's fine
+        // Offline or session expired
       }
 
-      // Check if we have a saved user in localStorage
-      try {
-        const savedUser = localStorage.getItem("hostify_user");
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
-          return;
-        }
-      } catch {}
+      // If neither worked and we had no saved user, ensure user is null
+      if (active && !localStorage.getItem("hostify_user")) {
+        setUser(null);
+      }
     })().finally(() => {
-      setLoading(false);
+      if (active) setLoading(false);
     });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -135,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     try {
       localStorage.removeItem("hostify_user");
+      localStorage.removeItem("hostify_token");
     } catch {}
   }, []);
 

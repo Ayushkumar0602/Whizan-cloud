@@ -37,9 +37,19 @@ async function queryControlPlaneApi(endpoint: string, options?: any) {
 
 const redis = new Redis(REDIS_URL, {
   enableReadyCheck: false,
-  maxRetriesPerRequest: null,
+  maxRetriesPerRequest: 1,
+  enableOfflineQueue: false,
+  connectTimeout: 2500,
+  commandTimeout: 2000,
+  retryStrategy(times) {
+    return Math.min(times * 200, 3000);
+  },
 });
-redis.on("error", (err) => console.error("[Router Redis] Error:", err.message));
+redis.on("error", (err) => {
+  if (!err.message?.includes("ECONNREFUSED") && !err.message?.includes("ETIMEDOUT")) {
+    console.error("[Router Redis] Error:", err.message);
+  }
+});
 
 interface DeploymentInfo {
   type: "static" | "ssr" | "hybrid" | "service";
@@ -54,7 +64,7 @@ interface CachedDeployment {
   timestamp: number;
 }
 const deploymentCache = new Map<string, CachedDeployment>();
-const DEPLOYMENT_CACHE_TTL = 15_000; // 15 seconds
+const DEPLOYMENT_CACHE_TTL = 30_000; // 30 seconds
 
 async function lookupDeployment(slug: string): Promise<DeploymentInfo | null> {
   const cached = deploymentCache.get(slug);
@@ -62,10 +72,14 @@ async function lookupDeployment(slug: string): Promise<DeploymentInfo | null> {
   if (cached && (now - cached.timestamp < DEPLOYMENT_CACHE_TTL)) {
     return cached.info;
   }
-  const raw = await redis.get(`deployment:${slug}`);
-  const info: DeploymentInfo | null = raw ? JSON.parse(raw) : null;
-  deploymentCache.set(slug, { info, timestamp: now });
-  return info;
+  try {
+    const raw = await redis.get(`deployment:${slug}`);
+    const info: DeploymentInfo | null = raw ? JSON.parse(raw) : null;
+    deploymentCache.set(slug, { info, timestamp: now });
+    return info;
+  } catch (err) {
+    return cached?.info || null;
+  }
 }
 
 function invalidateDeploymentCache(slug: string) {

@@ -25,25 +25,50 @@ export function getApiBase(): string {
 
 export const API_BASE = getApiBase();
 
-let accessToken: string | null = null;
+let accessToken: string | null =
+  typeof window !== "undefined" ? localStorage.getItem("hostify_token") : null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  if (typeof window !== "undefined") {
+    if (token) {
+      localStorage.setItem("hostify_token", token);
+    } else {
+      localStorage.removeItem("hostify_token");
+    }
+  }
 }
 
 export function getAccessToken() {
   return accessToken;
 }
 
+let refreshPromise: Promise<string | null> | null = null;
+
 async function refreshAccessToken(): Promise<string | null> {
-  const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  accessToken = data.accessToken;
-  return accessToken;
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        setAccessToken(null);
+        return null;
+      }
+      const data = await res.json();
+      setAccessToken(data.accessToken);
+      return data.accessToken;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 async function request<T>(

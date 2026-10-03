@@ -1,9 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { redisClient } from "../lib/redis.js";
-import crypto from "crypto";
 import { isUserAdmin, isRootAdmin } from "../lib/auth-utils.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -32,10 +31,27 @@ async function issueTokens(
   fastify: FastifyInstance,
   reply: any,
   userId: string,
-  email: string
+  email: string,
+  userRecord?: any
 ) {
-  // Access token — short-lived JWT
-  const accessToken = fastify.jwt.sign({ userId, email });
+  let role = userRecord?.role;
+  let subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
+  let iamPermissions = userRecord?.iamPermissions || "all";
+
+  if (!role) {
+    const isRoot = isRootAdmin({ email });
+    const isAdmin = isUserAdmin({ email });
+    role = isRoot ? "ROOT_ADMIN" : (isAdmin ? "ADMIN" : "USER");
+  }
+
+  // Access token includes claims so fastify.authenticate never needs a DB roundtrip
+  const accessToken = fastify.jwt.sign({
+    userId,
+    email,
+    role,
+    subscriptionTier,
+    iamPermissions,
+  });
 
   // Refresh token — opaque, stored in DB + HttpOnly cookie
   const refreshToken = generateRefreshToken();
@@ -72,7 +88,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return reply.code(409).send({ error: "Email already in use" });
 
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 10);
     const isRoot = isRootAdmin({ email });
     const isAdmin = isUserAdmin({ email });
     const assignedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? "ADMIN" : "USER");
@@ -80,7 +96,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       data: { email, passwordHash, name, role: assignedRole },
     });
 
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, user);
     return reply.code(201).send({
       accessToken,
       user: {
@@ -110,7 +126,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     const isRoot = isRootAdmin(user);
     const isAdmin = isUserAdmin(user);
     const resolvedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER"));
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, user);
     return reply.send({
       accessToken,
       user: {
@@ -135,12 +151,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
 
     // Rotate the refresh token
-    await prisma.refreshToken.delete({ where: { token } });
+    await prisma.refreshToken.delete({ where: { token } }).catch(() => {});
 
     const user = await prisma.user.findUnique({ where: { id: stored.userId } });
     if (!user) return reply.code(401).send({ error: "User not found" });
 
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, user);
     return reply.send({ accessToken });
   });
 

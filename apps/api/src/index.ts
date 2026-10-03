@@ -97,7 +97,7 @@ await app.register(fastifyCookie, {
 
 await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET!,
-  sign: { expiresIn: "15m" },
+  sign: { expiresIn: "24h" },
 });
 
 import { isUserAdmin, isRootAdmin } from "./lib/auth-utils.js";
@@ -136,6 +136,12 @@ app.decorate("authenticate", async (request: any, reply: any) => {
 
   try {
     await request.jwtVerify();
+    // Fast path: Token claims already contain role and subscription tier (zero DB queries needed)
+    if (request.user && request.user.role) {
+      return;
+    }
+
+    // Fallback for legacy JWTs: query DB once
     if (request.user && request.user.userId) {
       const userRecord = await prisma.user.findUnique({
         where: { id: request.user.userId },
@@ -148,7 +154,7 @@ app.decorate("authenticate", async (request: any, reply: any) => {
       request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
     }
   } catch {
-    reply.code(401).send({ error: "Unauthorized" });
+    return reply.code(401).send({ error: "Unauthorized" });
   }
 });
 

@@ -1,14 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import { prisma } from "../lib/prisma.js";
-import { redisClient, redisSub } from "../lib/redis.js";
+import { redisClient, redisSub, getBullMqConnection } from "../lib/redis.js";
 import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 // Shared build queue — the build-worker consumes from this
 export const buildQueue = new Queue("build", {
-  connection: redisClient,
+  connection: getBullMqConnection(),
   defaultJobOptions: {
     attempts: 1,
     removeOnComplete: 100,

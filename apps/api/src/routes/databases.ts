@@ -5,14 +5,14 @@ import * as crypto from "crypto";
 import { Client as PgClient } from "pg";
 import { prisma } from "../lib/prisma.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
-import { redisClient, redisSub } from "../lib/redis.js";
+import { redisClient, redisSub, getBullMqConnection } from "../lib/redis.js";
 import { isRestrictedDatabaseUrl } from "../lib/auth-utils.js";
 import { isVmOnline, maintenanceResponse } from "../lib/vm-health.js";
 
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "localhost";
 
 const databaseQueue = new Queue("database-job", {
-  connection: redisClient,
+  connection: getBullMqConnection(),
   defaultJobOptions: {
     attempts: 1,
     removeOnComplete: 100,
