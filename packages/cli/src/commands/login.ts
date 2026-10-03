@@ -9,7 +9,7 @@ import { printBanner, colors, printError, printKV } from "../utils/terminal-ui.j
 const c = colors;
 
 export async function loginCommand(args: string[]) {
-  printBanner("1.0.0");
+  printBanner();
 
   // ─── Check for explicit token via flag ──────────────────────────────────
   let token: string | undefined;

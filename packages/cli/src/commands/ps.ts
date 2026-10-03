@@ -6,7 +6,7 @@ import { printBanner, colors, Spinner } from "../utils/terminal-ui.js";
 const c = colors;
 
 export async function psCommand() {
-  printBanner("1.0.0");
+  printBanner();
 
   const spinner = new Spinner("Loading resources...").start();
   const [services, projects, functions, crons] = await Promise.all([

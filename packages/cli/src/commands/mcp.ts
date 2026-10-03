@@ -39,7 +39,7 @@ async function setupMcp(args: string[]) {
     customToken = args[tokenIdx + 1];
   }
 
-  printBanner("1.0.1");
+  printBanner();
   console.log(`  ${c.whizanCyan}${c.bold}Whizan DevOps MCP Configurator${c.reset}\n`);
 
   // Check login and retrieve credentials
@@ -217,7 +217,7 @@ async function setupMcp(args: string[]) {
 }
 
 async function infoMcp() {
-  printBanner("1.0.1");
+  printBanner();
   console.log(`  ${c.whizanCyan}${c.bold}Whizan DevOps MCP Status & Diagnostics${c.reset}\n`);
 
   const auth = await client.getAuthStatus();
