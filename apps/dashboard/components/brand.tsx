@@ -12,16 +12,26 @@ export function BrandMark({
   className?: string;
 }) {
   return (
-    <Link href={href} className={`brand-mark ${className}`.trim()} aria-label="Whizan Cloud">
+    <Link
+      href={href}
+      className={`brand-mark ${className}`.trim()}
+      aria-label="Whizan Cloud"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        textDecoration: "none",
+      }}
+    >
       <img
         src="/whizan.png"
-        alt="Whizan"
+        alt="Whizan Cloud"
         style={{
-          height: compact ? "28px" : "34px",
+          height: compact ? "36px" : "50px",
           width: "auto",
-          maxWidth: compact ? "110px" : "140px",
+          maxWidth: compact ? "140px" : "195px",
           objectFit: "contain",
           display: "block",
+          imageRendering: "-webkit-optimize-contrast",
         }}
       />
     </Link>
