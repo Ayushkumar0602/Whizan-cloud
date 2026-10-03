@@ -269,7 +269,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ── Lookup deployment from Redis ──────────────────────────────────────────
-  const deployment = await lookupDeployment(slug).catch(() => null);
+  let deployment = await lookupDeployment(slug).catch(() => null);
+
+  if (!deployment) {
+    // Try on-demand route reconciliation via build-worker before giving 404
+    await redis.publish("reconcile", JSON.stringify({ slug })).catch(() => {});
+    await new Promise((r) => setTimeout(r, 350));
+    deployment = await lookupDeployment(slug).catch(() => null);
+  }
 
   if (!deployment) {
     // Check if this slug is an Edge Function without .fn. prefix

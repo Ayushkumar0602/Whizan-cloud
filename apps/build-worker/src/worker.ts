@@ -239,6 +239,36 @@ const worker = new Worker<BuildJob>(
               }
 
               if (!recoveredFromPrevious) {
+                try {
+                  const { execFile } = await import("child_process");
+                  const { promisify } = await import("util");
+                  const execFileAsync = promisify(execFile);
+
+                  const { stdout: psOut } = await execFileAsync("docker", [
+                    "ps", "-a", "--filter", `name=app-${slug}`, "--format", "{{.Names}}"
+                  ]).catch(() => ({ stdout: "" }));
+                  const containerNames = psOut.trim().split("\n").filter(Boolean);
+                  const containerToExtract = containerNames[0];
+
+                  if (containerToExtract) {
+                    await log(`📦 Recovering source code from existing Docker container (${containerToExtract})...`);
+                    const cpRes = await execFileAsync("docker", ["cp", `${containerToExtract}:/app/.`, `${buildDir}/`]).catch(async () => {
+                      return await execFileAsync("docker", ["cp", `${containerToExtract}:/usr/src/app/.`, `${buildDir}/`]).catch(() => null);
+                    });
+                    if (cpRes) {
+                      await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+                      await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+                      await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+                      recoveredFromPrevious = true;
+                      await log("✓ Recovered source code from existing Docker container into persistent storage.");
+                    }
+                  }
+                } catch (dockerExtractErr: any) {
+                  console.warn("[DockerExtract] Notice:", dockerExtractErr.message);
+                }
+              }
+
+              if (!recoveredFromPrevious) {
                 const existing = await fs.readdir(buildDir).catch(() => []);
                 if (existing.length === 0) {
                   throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
@@ -412,6 +442,25 @@ const worker = new Worker<BuildJob>(
           where: { projectId, id: { not: deploymentId } },
         });
 
+        if (isDirectUpload) {
+          const persistentSourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
+          const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
+          try {
+            let archiveExists = false;
+            try {
+              await fs.access(persistentArchive);
+              archiveExists = true;
+            } catch {}
+            if (!archiveExists) {
+              await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+              const { execFile } = await import("child_process");
+              const { promisify } = await import("util");
+              const execFileAsync = promisify(execFile);
+              await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+            }
+          } catch {}
+        }
+
         if (oldDeployments.length > 0) {
           const Docker = (await import("dockerode")).default;
           const docker = new Docker({ socketPath: "/var/run/docker.sock" });
@@ -495,9 +544,21 @@ worker.on("failed", (job, err) => {
 
 // ─── Scale-to-Zero Idle Scaler & Wakeup ──────────────────────────────────────
 
-// 1. Listen for wakeups from Edge Router
-redisSub.subscribe("wakeup", "admin:commands").catch(() => {});
+// 1. Listen for wakeups from Edge Router and on-demand reconciliation
+redisSub.subscribe("wakeup", "admin:commands", "reconcile").catch(() => {});
 redisSub.on("message", async (channel, message) => {
+  if (channel === "reconcile") {
+    try {
+      const parsed = typeof message === "string" && message.startsWith("{") ? JSON.parse(message) : { slug: message };
+      if (parsed.slug) {
+        await reconcileSlugRoute(parsed.slug);
+      }
+    } catch (e: any) {
+      console.warn("[Reconciler] Reconcile message notice:", e.message);
+    }
+    return;
+  }
+
   if (channel === "wakeup") {
     let dId = message;
     let slug = "";
@@ -1754,20 +1815,41 @@ startMetricsCollector();
     console.warn("[Reconciler] Database startup check notice:", err.message);
   }
 
-  // Reconcile Backend Services
+  // Reconcile all active services and projects using reconcileSlugRoute
   try {
-    const activeServices = await prisma.backendService.findMany({
+    const activeServices = await prisma.backendService.findMany({ select: { slug: true } });
+    for (const s of activeServices) {
+      await reconcileSlugRoute(s.slug).catch(() => {});
+    }
+  } catch (svcErr: any) {
+    console.warn("[Reconciler] Service startup check notice:", svcErr.message);
+  }
+
+  try {
+    const activeProjects = await prisma.project.findMany({ select: { slug: true } });
+    for (const pr of activeProjects) {
+      await reconcileSlugRoute(pr.slug).catch(() => {});
+    }
+  } catch (projErr: any) {
+    console.warn("[Reconciler] Project startup check notice:", projErr.message);
+  }
+})();
+
+export async function reconcileSlugRoute(slug: string): Promise<boolean> {
+  try {
+    // 1. Check backend services
+    const s = await prisma.backendService.findUnique({
+      where: { slug },
       include: {
         deployments: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
-    const Docker = (await import("dockerode")).default;
-    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
 
-    for (const s of activeServices) {
+    if (s && s.deployments[0]) {
       const dep = s.deployments[0];
-      if (!dep) continue;
+      const Docker = (await import("dockerode")).default;
+      const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+      const allContainers = await docker.listContainers({ all: true }).catch(() => []);
 
       const match = allContainers.find((c) =>
         c.Labels?.["deploymentId"] === dep.id ||
@@ -1785,7 +1867,6 @@ startMetricsCollector();
         const mappedPortStr = inspect?.HostConfig?.PortBindings?.[exposedKey]?.[0]?.HostPort;
         if (mappedPortStr) containerPort = parseInt(mappedPortStr, 10);
 
-        // If service is always-on (autoSleep: false) and stopped, restart it
         if (!s.autoSleep && match.State !== "running") {
           console.log(`[Reconciler] Auto-resuming always-on service ${s.slug}...`);
           await docker.getContainer(match.Id).start().catch(() => {});
@@ -1804,26 +1885,19 @@ startMetricsCollector();
 
       await redisPub.set(`deployment:${s.slug}`, JSON.stringify(routeInfo)).catch(() => {});
       console.log(`[Reconciler] Synchronized route for service ${s.slug} (dep: ${dep.id.slice(0, 8)}, port: ${containerPort || "sleep"})`);
+      return true;
     }
-  } catch (svcErr: any) {
-    console.warn("[Reconciler] Service startup check notice:", svcErr.message);
-  }
 
-  // Reconcile Web Projects
-  try {
-    const activeProjects = await prisma.project.findMany({
+    // 2. Check web projects
+    const pr = await prisma.project.findUnique({
+      where: { slug },
       include: {
         deployments: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
-    const Docker = (await import("dockerode")).default;
-    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
 
-    for (const pr of activeProjects) {
+    if (pr && pr.deployments[0]) {
       const dep = pr.deployments[0];
-      if (!dep) continue;
-
       if (dep.deploymentType === "STATIC") {
         const staticDir = path.join(BUILD_BASE_DIR, dep.id, pr.outputDir || "dist");
         await redisPub.set(`deployment:${pr.slug}`, JSON.stringify({
@@ -1833,7 +1907,12 @@ startMetricsCollector();
           projectId: pr.id,
         })).catch(() => {});
         console.log(`[Reconciler] Synchronized static route for ${pr.slug} -> ${staticDir}`);
+        return true;
       } else {
+        const Docker = (await import("dockerode")).default;
+        const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+
         const match = allContainers.find((c) =>
           c.Labels?.["deploymentId"] === dep.id ||
           c.Labels?.["slug"] === pr.slug ||
@@ -1858,12 +1937,14 @@ startMetricsCollector();
 
         await redisPub.set(`deployment:${pr.slug}`, JSON.stringify(routeInfo)).catch(() => {});
         console.log(`[Reconciler] Synchronized SSR route for ${pr.slug} (dep: ${dep.id.slice(0, 8)}, port: ${containerPort || "sleep"})`);
+        return true;
       }
     }
-  } catch (projErr: any) {
-    console.warn("[Reconciler] Project startup check notice:", projErr.message);
+  } catch (err: any) {
+    console.warn(`[Reconciler] Failed to reconcile ${slug}:`, err.message);
   }
-})();
+  return false;
+}
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 

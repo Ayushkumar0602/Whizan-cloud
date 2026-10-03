@@ -182,6 +182,36 @@ const worker = new Worker<ServiceBuildJob>(
             }
 
             if (!recoveredFromPrevious) {
+              try {
+                const { execFile } = await import("child_process");
+                const { promisify } = await import("util");
+                const execFileAsync = promisify(execFile);
+
+                const { stdout: psOut } = await execFileAsync("docker", [
+                  "ps", "-a", "--filter", `name=service-${slug}`, "--format", "{{.Names}}"
+                ]).catch(() => ({ stdout: "" }));
+                const containerNames = psOut.trim().split("\n").filter(Boolean);
+                const containerToExtract = containerNames[0];
+
+                if (containerToExtract) {
+                  await log(`📦 Recovering source code from existing Docker container (${containerToExtract})...`);
+                  const cpRes = await execFileAsync("docker", ["cp", `${containerToExtract}:/app/.`, `${buildDir}/`]).catch(async () => {
+                    return await execFileAsync("docker", ["cp", `${containerToExtract}:/usr/src/app/.`, `${buildDir}/`]).catch(() => null);
+                  });
+                  if (cpRes) {
+                    await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+                    await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+                    await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+                    recoveredFromPrevious = true;
+                    await log("✓ Recovered source code from existing Docker container into persistent storage.");
+                  }
+                }
+              } catch (dockerExtractErr: any) {
+                console.warn("[DockerExtract] Notice:", dockerExtractErr.message);
+              }
+            }
+
+            if (!recoveredFromPrevious) {
               const existing = await fs.readdir(buildDir).catch(() => []);
               if (existing.length === 0) {
                 throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
@@ -315,6 +345,25 @@ const worker = new Worker<ServiceBuildJob>(
           } catch (err: any) {
             console.error(`[Service Worker] Error removing previous container:`, err.message);
           }
+        }
+
+        if (isDirectUpload) {
+          const persistentSourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
+          const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
+          try {
+            let archiveExists = false;
+            try {
+              await fs.access(persistentArchive);
+              archiveExists = true;
+            } catch {}
+            if (!archiveExists) {
+              await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+              const { execFile } = await import("child_process");
+              const { promisify } = await import("util");
+              const execFileAsync = promisify(execFile);
+              await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+            }
+          } catch {}
         }
 
         // Clean up disk files and Redis metadata of previous deployments
@@ -628,7 +677,33 @@ redisSub.on("message", async (channel, message) => {
               await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
               await publishLog(redisPub, deploymentId, `✓ [Wakeup] Source restored successfully.`);
             } else {
-              throw new Error(`Cannot wake up service ${slug}: neither build directory nor persistent source archive was found on disk.`);
+              let recoveredFromDocker = false;
+              try {
+                const { execFile } = await import("child_process");
+                const { promisify } = await import("util");
+                const execFileAsync = promisify(execFile);
+                const { stdout: psOut } = await execFileAsync("docker", [
+                  "ps", "-a", "--filter", `name=service-${slug}`, "--format", "{{.Names}}"
+                ]).catch(() => ({ stdout: "" }));
+                const containerNames = psOut.trim().split("\n").filter(Boolean);
+                const containerToExtract = containerNames[0];
+                if (containerToExtract) {
+                  await publishLog(redisPub, deploymentId, `📦 [Wakeup] Recovering source from existing Docker container (${containerToExtract})...`);
+                  const cpRes = await execFileAsync("docker", ["cp", `${containerToExtract}:/app/.`, `${buildDir}/`]).catch(async () => {
+                    return await execFileAsync("docker", ["cp", `${containerToExtract}:/usr/src/app/.`, `${buildDir}/`]).catch(() => null);
+                  });
+                  if (cpRes) {
+                    await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+                    await fs.mkdir(path.dirname(persistentArchive), { recursive: true }).catch(() => {});
+                    await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+                    recoveredFromDocker = true;
+                    await publishLog(redisPub, deploymentId, `✓ [Wakeup] Source restored from Docker container into persistent storage.`);
+                  }
+                }
+              } catch {}
+              if (!recoveredFromDocker) {
+                throw new Error(`Cannot wake up service ${slug}: neither build directory nor persistent source archive was found on disk.`);
+              }
             }
           } else {
             let finalRepoUrl = dep.service.githubRepoUrl;
