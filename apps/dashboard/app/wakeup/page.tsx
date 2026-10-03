@@ -1,234 +1,349 @@
 "use client";
 
-import { Suspense } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
+import { Globe, Zap, CheckCircle2 } from "lucide-react";
 
-function WakeupView() {
+// Dynamically import GridScan with SSR disabled to ensure WebGL initializes cleanly in the browser
+const GridScan = dynamic(() => import("./GridScan"), {
+  ssr: false,
+  loading: () => (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: "#08060c",
+      }}
+    />
+  ),
+});
+
+function WakeupContent() {
   const searchParams = useSearchParams();
-  const slug = searchParams.get("slug") || "";
-  const displaySlug = slug ? `${slug}.20.2.136.11.nip.io` : "";
+  const slug = searchParams.get("slug") || "my-service";
+  const displaySlug = `${slug}.20.2.136.11.nip.io`;
+
+  const [elapsed, setElapsed] = useState("0.0");
+  const [isReady, setIsReady] = useState(false);
+  const [stepText, setStepText] = useState("Awakening compute container...");
+  const [stepIcon, setStepIcon] = useState("⚡");
+  const [progress, setProgress] = useState(20);
+
+  useEffect(() => {
+    if (isReady) return;
+    const start = Date.now();
+
+    const timer = setInterval(() => {
+      const elapsedMs = Date.now() - start;
+      setElapsed((elapsedMs / 1000).toFixed(1));
+
+      if (elapsedMs < 1600) {
+        setStepText("Awakening compute container...");
+        setStepIcon("⚡");
+        setProgress(25);
+      } else if (elapsedMs < 3600) {
+        setStepText("Rehydrating memory & image layers...");
+        setStepIcon("📦");
+        setProgress(55);
+      } else if (elapsedMs < 5800) {
+        setStepText("Binding private edge routing mesh...");
+        setStepIcon("🌐");
+        setProgress(80);
+      } else {
+        setStepText("Probing HTTP 200 health readiness...");
+        setStepIcon("✨");
+        setProgress(92);
+      }
+    }, 100);
+
+    return () => clearInterval(timer);
+  }, [isReady]);
+
+  // Background polling to detect when live container responds
+  useEffect(() => {
+    let active = true;
+    let pollAttempts = 0;
+
+    function probe() {
+      if (!active || isReady) return;
+      pollAttempts++;
+      const nextDelay = Math.min(400 * Math.pow(1.15, pollAttempts), 1800);
+
+      setTimeout(() => {
+        fetch(typeof window !== "undefined" ? window.location.href : "", {
+          method: "HEAD",
+          cache: "no-store",
+        })
+          .then((res) => {
+            if (res.status !== 502 && res.status !== 202 && res.status !== 503) {
+              if (active) {
+                setIsReady(true);
+                setProgress(100);
+                setStepText("Application is online! Launching...");
+                setStepIcon("✅");
+                setTimeout(() => {
+                  window.location.reload();
+                }, 400);
+              }
+            } else {
+              probe();
+            }
+          })
+          .catch(() => probe());
+      }, nextDelay);
+    }
+
+    probe();
+
+    return () => {
+      active = false;
+    };
+  }, [isReady]);
 
   return (
-    <div className="wakeup-wrapper">
-      {/* Calm Ambient Aurora Background */}
-      <div className="aurora-bg">
-        <div className="aurora-blob blob-1" />
-        <div className="aurora-blob blob-2" />
-        <div className="aurora-blob blob-3" />
+    <div
+      style={{
+        position: "relative",
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+        background: "#08060c",
+        color: "#ffffff",
+        fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {/* 3D Cyberpunk Grid Scan Background */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          zIndex: 1,
+        }}
+      >
+        <GridScan
+          sensitivity={0.55}
+          lineThickness={1}
+          linesColor="#2F293A"
+          gridScale={0.1}
+          scanColor="#FF9FFC"
+          scanOpacity={0.4}
+          enablePost
+          bloomIntensity={0.6}
+          chromaticAberration={0.002}
+          noiseIntensity={0.01}
+          lineJitter={0.1}
+          scanGlow={0.5}
+          scanSoftness={2}
+          enableWebcam={false}
+          showPreview={false}
+        />
       </div>
 
-      {/* Minimal Centered Content */}
-      <div className="content">
-        <div className="pulse-ring">
-          <div className="pulse-core" />
+      {/* Vignette Depth Overlay */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 2,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 50% 50%, rgba(8, 6, 12, 0.2) 0%, rgba(8, 6, 12, 0.75) 75%, rgba(8, 6, 12, 0.95) 100%)",
+        }}
+      />
+
+      {/* Precise, Clean Centerpiece Information Card */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 10,
+          width: "90%",
+          maxWidth: 460,
+          background: "rgba(18, 14, 26, 0.7)",
+          backdropFilter: "blur(32px) saturate(180%)",
+          WebkitBackdropFilter: "blur(32px) saturate(180%)",
+          border: isReady ? "1px solid rgba(255, 159, 252, 0.7)" : "1px solid rgba(255, 159, 252, 0.2)",
+          borderRadius: 24,
+          padding: "2.4rem 2rem 2rem",
+          textAlign: "center",
+          boxShadow: isReady
+            ? "0 30px 80px -10px rgba(0, 0, 0, 0.9), 0 0 80px rgba(255, 159, 252, 0.4), inset 0 1px 0 rgba(255, 159, 252, 0.4)"
+            : "0 25px 70px -10px rgba(0, 0, 0, 0.85), 0 0 50px rgba(255, 159, 252, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+          transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
+          transform: isReady ? "scale(1.02)" : "scale(1)",
+        }}
+      >
+        {/* Top Glowing Accent Line */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "25%",
+            right: "25%",
+            height: 2,
+            background: "linear-gradient(90deg, transparent, #FF9FFC, #818cf8, transparent)",
+            borderRadius: 2,
+            filter: "blur(0.5px)",
+          }}
+        />
+
+        {/* Status Badge */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.45rem",
+            background: isReady ? "rgba(255, 159, 252, 0.18)" : "rgba(255, 159, 252, 0.1)",
+            border: isReady ? "1px solid rgba(255, 159, 252, 0.5)" : "1px solid rgba(255, 159, 252, 0.25)",
+            borderRadius: 9999,
+            padding: "0.28rem 0.8rem",
+            marginBottom: "1.2rem",
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "#FF9FFC",
+              boxShadow: "0 0 8px #FF9FFC",
+              animation: "pulse 1.8s ease-in-out infinite alternate",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#FF9FFC",
+            }}
+          >
+            {isReady ? "Online • 200 OK" : "Whizan Scale-to-Zero"}
+          </span>
         </div>
-        <h1>Waking up...</h1>
-        <p>Your application is spinning up. It will be ready in a moment.</p>
-        <div className="bar">
-          <div className="bar-line" />
+
+        {/* Heading */}
+        <h1
+          style={{
+            fontSize: "1.55rem",
+            fontWeight: 700,
+            letterSpacing: "-0.03em",
+            marginBottom: "0.55rem",
+            background: "linear-gradient(135deg, #ffffff 40%, #e2e8f0 70%, #FF9FFC 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            lineHeight: 1.25,
+          }}
+        >
+          {isReady ? "Application Live" : "Awakening Service"}
+        </h1>
+
+        {/* Precise Subtitle */}
+        <p
+          style={{
+            fontSize: "0.88rem",
+            color: "#94a3b8",
+            lineHeight: 1.55,
+            marginBottom: "1.4rem",
+            padding: "0 0.4rem",
+          }}
+        >
+          {isReady
+            ? "Container is fully warmed up and active. Launching your application..."
+            : "Your container was in eco-standby to save compute resources. Warming up memory & edge routing now."}
+        </p>
+
+        {/* Target Domain Chip */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.45rem",
+            background: "rgba(255, 255, 255, 0.04)",
+            border: "1px solid rgba(255, 159, 252, 0.15)",
+            borderRadius: 8,
+            padding: "0.35rem 0.75rem",
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: "0.78rem",
+            color: "#e2e8f0",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <Globe size={13} style={{ color: "#FF9FFC" }} />
+          <span>{displaySlug}</span>
         </div>
-        {displaySlug && <div className="endpoint">{displaySlug}</div>}
+
+        {/* Glowing Progress Bar */}
+        <div
+          style={{
+            height: 4,
+            background: "rgba(255, 255, 255, 0.08)",
+            borderRadius: 9999,
+            overflow: "hidden",
+            marginBottom: "1.2rem",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${progress}%`,
+              borderRadius: 9999,
+              background: "linear-gradient(90deg, #818cf8, #FF9FFC, #38bdf8)",
+              boxShadow: "0 0 12px rgba(255, 159, 252, 0.8)",
+              transition: "width 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+          />
+        </div>
+
+        {/* Live Step Status Feed & Elapsed Stopwatch */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "rgba(0, 0, 0, 0.35)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: 10,
+            padding: "0.65rem 0.9rem",
+            fontSize: "0.8rem",
+            color: "#e2e8f0",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
+            <span>{stepIcon}</span>
+            <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>{stepText}</span>
+          </div>
+          <span
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: "0.74rem",
+              color: "#94a3b8",
+              background: "rgba(255, 255, 255, 0.06)",
+              padding: "0.15rem 0.45rem",
+              borderRadius: 4,
+            }}
+          >
+            {elapsed}s
+          </span>
+        </div>
       </div>
 
-      <style jsx>{`
-        .wakeup-wrapper {
-          position: fixed;
-          inset: 0;
-          background: #000000;
-          color: #ffffff;
-          font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          -webkit-font-smoothing: antialiased;
-        }
-
-        .aurora-bg {
-          position: fixed;
-          inset: -20%;
-          overflow: hidden;
-          pointer-events: none;
-          filter: blur(110px);
-          opacity: 0.7;
-        }
-
-        .aurora-blob {
-          position: absolute;
-          border-radius: 50%;
-          mix-blend-mode: screen;
-          will-change: transform;
-          animation: auroraMove 18s ease-in-out infinite alternate;
-        }
-
-        .blob-1 {
-          width: 50vw;
-          height: 50vw;
-          max-width: 580px;
-          max-height: 580px;
-          background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(6, 182, 212, 0.2) 55%, transparent 75%);
-          top: 15%;
-          left: 18%;
-          animation-duration: 20s;
-        }
-
-        .blob-2 {
-          width: 55vw;
-          height: 55vw;
-          max-width: 620px;
-          max-height: 620px;
-          background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(139, 92, 246, 0.2) 55%, transparent 75%);
-          bottom: 12%;
-          right: 18%;
-          animation-duration: 24s;
-          animation-delay: -6s;
-        }
-
-        .blob-3 {
-          width: 42vw;
-          height: 42vw;
-          max-width: 480px;
-          max-height: 480px;
-          background: radial-gradient(circle, rgba(6, 182, 212, 0.35) 0%, rgba(59, 130, 246, 0.15) 55%, transparent 75%);
-          top: 38%;
-          left: 42%;
-          animation-duration: 22s;
-          animation-delay: -10s;
-        }
-
-        @keyframes auroraMove {
-          0% {
-            transform: translate(0, 0) scale(1);
-          }
-          50% {
-            transform: translate(45px, -35px) scale(1.08);
-          }
-          100% {
-            transform: translate(-35px, 45px) scale(0.96);
-          }
-        }
-
-        .content {
-          position: relative;
-          z-index: 10;
-          text-align: center;
-          max-width: 420px;
-          padding: 2.5rem 1.5rem;
-        }
-
-        .pulse-ring {
-          width: 52px;
-          height: 52px;
-          margin: 0 auto 2.2rem;
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .pulse-ring::before {
-          content: "";
-          position: absolute;
-          inset: 0;
-          border-radius: 50%;
-          background: conic-gradient(from 0deg, #10b981, #06b6d4, #8b5cf6, #10b981);
-          animation: spin 3.5s linear infinite;
-          filter: blur(5px);
-          opacity: 0.85;
-        }
-
-        .pulse-ring::after {
-          content: "";
-          position: absolute;
-          inset: 2.5px;
-          border-radius: 50%;
-          background: #000000;
-        }
-
-        .pulse-core {
-          position: relative;
-          z-index: 2;
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          background: #10b981;
-          box-shadow: 0 0 16px #10b981;
-          animation: breathe 2.6s ease-in-out infinite alternate;
-        }
-
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes breathe {
+      <style jsx global>{`
+        @keyframes pulse {
           0% {
             transform: scale(0.85);
-            opacity: 0.55;
-            box-shadow: 0 0 8px #10b981;
+            opacity: 0.6;
           }
           100% {
             transform: scale(1.2);
             opacity: 1;
-            box-shadow:
-              0 0 22px #34d399,
-              0 0 36px #06b6d4;
           }
-        }
-
-        h1 {
-          font-size: 1.55rem;
-          font-weight: 500;
-          letter-spacing: -0.025em;
-          color: #ffffff;
-          margin-bottom: 0.55rem;
-        }
-
-        p {
-          font-size: 0.92rem;
-          color: rgba(255, 255, 255, 0.45);
-          line-height: 1.55;
-          font-weight: 400;
-          margin-bottom: 2.2rem;
-        }
-
-        .bar {
-          width: 130px;
-          height: 2px;
-          background: rgba(255, 255, 255, 0.08);
-          border-radius: 2px;
-          margin: 0 auto;
-          overflow: hidden;
-          position: relative;
-        }
-
-        .bar-line {
-          position: absolute;
-          top: 0;
-          left: 0;
-          bottom: 0;
-          width: 45%;
-          background: linear-gradient(90deg, transparent, #10b981, #06b6d4, transparent);
-          border-radius: 2px;
-          animation: sweep 2.2s ease-in-out infinite;
-        }
-
-        @keyframes sweep {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(250%);
-          }
-        }
-
-        .endpoint {
-          margin-top: 2rem;
-          font-size: 0.78rem;
-          color: rgba(255, 255, 255, 0.22);
-          font-family: var(--font-mono), monospace;
-          letter-spacing: 0.02em;
         }
       `}</style>
     </div>
@@ -242,7 +357,7 @@ export default function WakeupPage() {
         <div
           style={{
             minHeight: "100vh",
-            background: "#000",
+            background: "#08060c",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -252,7 +367,7 @@ export default function WakeupPage() {
         </div>
       }
     >
-      <WakeupView />
+      <WakeupContent />
     </Suspense>
   );
 }

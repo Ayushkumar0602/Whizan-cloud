@@ -738,15 +738,15 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title || "Waking up"} • Whizan</title>
+  <title>${title || "Awakening Service"} • Whizan</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body {
-      background: #000000;
+      background: #08060c;
       color: #ffffff;
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       min-height: 100vh;
@@ -758,201 +758,339 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Ambient Aurora Glow */
-    .aurora-bg {
+    #grid-canvas {
       position: fixed;
-      inset: -20%;
-      overflow: hidden;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
       pointer-events: none;
-      filter: blur(110px);
-      opacity: 0.7;
     }
 
-    .aurora-blob {
-      position: absolute;
-      border-radius: 50%;
-      mix-blend-mode: screen;
-      will-change: transform;
-      animation: auroraMove 18s ease-in-out infinite alternate;
+    /* Vignette Depth */
+    .vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, rgba(8, 6, 12, 0.2) 0%, rgba(8, 6, 12, 0.75) 75%, rgba(8, 6, 12, 0.95) 100%);
     }
 
-    .blob-1 {
-      width: 50vw;
-      height: 50vw;
-      max-width: 580px;
-      max-height: 580px;
-      background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(6, 182, 212, 0.2) 55%, transparent 75%);
-      top: 15%;
-      left: 18%;
-      animation-duration: 20s;
-    }
-
-    .blob-2 {
-      width: 55vw;
-      height: 55vw;
-      max-width: 620px;
-      max-height: 620px;
-      background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(139, 92, 246, 0.2) 55%, transparent 75%);
-      bottom: 12%;
-      right: 18%;
-      animation-duration: 24s;
-      animation-delay: -6s;
-    }
-
-    .blob-3 {
-      width: 42vw;
-      height: 42vw;
-      max-width: 480px;
-      max-height: 480px;
-      background: radial-gradient(circle, rgba(6, 182, 212, 0.35) 0%, rgba(59, 130, 246, 0.15) 55%, transparent 75%);
-      top: 38%;
-      left: 42%;
-      animation-duration: 22s;
-      animation-delay: -10s;
-    }
-
-    @keyframes auroraMove {
-      0% { transform: translate(0, 0) scale(1); }
-      50% { transform: translate(45px, -35px) scale(1.08); }
-      100% { transform: translate(-35px, 45px) scale(0.96); }
-    }
-
-    /* Content Center */
-    .content {
+    /* Precise Centerpiece Card */
+    .card {
       position: relative;
       z-index: 10;
+      width: 90%;
+      max-width: 460px;
+      background: rgba(18, 14, 26, 0.72);
+      backdrop-filter: blur(32px) saturate(180%);
+      -webkit-backdrop-filter: blur(32px) saturate(180%);
+      border: 1px solid rgba(255, 159, 252, 0.22);
+      border-radius: 24px;
+      padding: 2.4rem 2rem 2rem;
       text-align: center;
-      max-width: 420px;
-      padding: 2.5rem 1.5rem;
+      box-shadow:
+        0 25px 70px -10px rgba(0, 0, 0, 0.85),
+        0 0 50px rgba(255, 159, 252, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Breathing Light Ring */
-    .pulse-ring {
-      width: 52px;
-      height: 52px;
-      margin: 0 auto 2.2rem;
-      position: relative;
-      display: flex;
+    .card.is-ready {
+      border-color: rgba(255, 159, 252, 0.7);
+      box-shadow:
+        0 30px 80px -10px rgba(0, 0, 0, 0.9),
+        0 0 80px rgba(255, 159, 252, 0.4),
+        inset 0 1px 0 rgba(255, 159, 252, 0.4);
+      transform: scale(1.02);
+    }
+
+    .card-rim {
+      position: absolute;
+      top: 0;
+      left: 25%;
+      right: 25%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #FF9FFC, #818cf8, transparent);
+      border-radius: 2px;
+      filter: blur(0.5px);
+    }
+
+    /* Badge */
+    .pill-badge {
+      display: inline-flex;
       align-items: center;
-      justify-content: center;
+      gap: 0.45rem;
+      background: rgba(255, 159, 252, 0.1);
+      border: 1px solid rgba(255, 159, 252, 0.25);
+      border-radius: 9999px;
+      padding: 0.28rem 0.8rem;
+      margin-bottom: 1.2rem;
     }
 
-    .pulse-ring::before {
-      content: '';
-      position: absolute;
-      inset: 0;
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: conic-gradient(from 0deg, #10b981, #06b6d4, #8b5cf6, #10b981);
-      animation: spin 3.5s linear infinite;
-      filter: blur(5px);
-      opacity: 0.85;
+      background: #FF9FFC;
+      box-shadow: 0 0 8px #FF9FFC;
+      animation: dotPulse 1.8s ease-in-out infinite alternate;
     }
 
-    .pulse-ring::after {
-      content: '';
-      position: absolute;
-      inset: 2.5px;
-      border-radius: 50%;
-      background: #000000;
+    @keyframes dotPulse {
+      0% { transform: scale(0.85); opacity: 0.6; }
+      100% { transform: scale(1.2); opacity: 1; }
     }
 
-    .pulse-core {
-      position: relative;
-      z-index: 2;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #10b981;
-      box-shadow: 0 0 16px #10b981;
-      animation: breathe 2.6s ease-in-out infinite alternate;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
-    @keyframes breathe {
-      0% { transform: scale(0.85); opacity: 0.55; box-shadow: 0 0 8px #10b981; }
-      100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 22px #34d399, 0 0 36px #06b6d4; }
+    .pill-text {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #FF9FFC;
     }
 
     h1 {
       font-size: 1.55rem;
-      font-weight: 500;
-      letter-spacing: -0.025em;
-      color: #ffffff;
+      font-weight: 700;
+      letter-spacing: -0.03em;
       margin-bottom: 0.55rem;
+      background: linear-gradient(135deg, #ffffff 40%, #e2e8f0 70%, #FF9FFC 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.25;
     }
 
-    p {
-      font-size: 0.92rem;
-      color: rgba(255, 255, 255, 0.45);
+    .subtitle {
+      font-size: 0.88rem;
+      color: #94a3b8;
       line-height: 1.55;
-      font-weight: 400;
-      margin-bottom: 2.2rem;
+      margin-bottom: 1.4rem;
+      padding: 0 0.4rem;
     }
 
-    /* Minimal Glowing Pulse Bar */
-    .bar {
-      width: 130px;
-      height: 2px;
-      background: rgba(255, 255, 255, 0.08);
-      border-radius: 2px;
-      margin: 0 auto;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .bar-line {
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      width: 45%;
-      background: linear-gradient(90deg, transparent, #10b981, #06b6d4, transparent);
-      border-radius: 2px;
-      animation: sweep 2.2s ease-in-out infinite;
-    }
-
-    @keyframes sweep {
-      0% { transform: translateX(-100%); }
-      100% { transform: translateX(250%); }
-    }
-
-    .endpoint {
-      margin-top: 2rem;
+    /* Domain Chip */
+    .domain-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 159, 252, 0.15);
+      border-radius: 8px;
+      padding: 0.35rem 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
       font-size: 0.78rem;
-      color: rgba(255, 255, 255, 0.22);
-      font-family: -apple-system, BlinkMacSystemFont, monospace;
-      letter-spacing: 0.02em;
+      color: #e2e8f0;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Progress Bar */
+    .progress-bar {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      overflow: hidden;
+      margin-bottom: 1.2rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 25%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, #818cf8, #FF9FFC, #38bdf8);
+      box-shadow: 0 0 12px rgba(255, 159, 252, 0.8);
+      transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Live Step Feed */
+    .stage-step {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 0.65rem 0.9rem;
+      font-size: 0.8rem;
+      color: #e2e8f0;
+    }
+
+    .step-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-align: left;
+    }
+
+    .timer-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.74rem;
+      color: #94a3b8;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
     }
   </style>
 </head>
 <body>
-  <div class="aurora-bg">
-    <div class="aurora-blob blob-1"></div>
-    <div class="aurora-blob blob-2"></div>
-    <div class="aurora-blob blob-3"></div>
-  </div>
+  <!-- 3D GridScan Canvas -->
+  <canvas id="grid-canvas"></canvas>
 
-  <div class="content">
-    <div class="pulse-ring">
-      <div class="pulse-core"></div>
+  <div class="vignette"></div>
+
+  <!-- Precise Centerpiece Card -->
+  <main class="card" id="main-card">
+    <div class="card-rim"></div>
+
+    <div class="pill-badge">
+      <span class="pulse-dot"></span>
+      <span class="pill-text" id="status-pill-text">Whizan Scale-to-Zero</span>
     </div>
-    <h1>Waking up...</h1>
-    <p>Your application is spinning up. It will be ready in a moment.</p>
-    <div class="bar">
-      <div class="bar-line"></div>
+
+    <h1 id="headline">Awakening Service</h1>
+    <p class="subtitle" id="subtext">
+      Your container was in eco-standby to save compute resources. Warming up memory & edge routing now.
+    </p>
+
+    ${displaySlug ? `
+    <div class="domain-chip">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF9FFC" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10z"></path>
+      </svg>
+      <span>${displaySlug}</span>
+    </div>` : ""}
+
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
     </div>
-    ${displaySlug ? `<div class="endpoint">${displaySlug}</div>` : ""}
-  </div>
+
+    <div class="stage-step">
+      <div class="step-left">
+        <span id="step-icon">⚡</span>
+        <span id="step-text" style="color: #cbd5e1;">Awakening compute container...</span>
+      </div>
+      <span class="timer-badge" id="elapsed-timer">0.0s</span>
+    </div>
+  </main>
 
   <script>
+    // ── 3D GridScan Simulation ──
+    (function() {
+      const canvas = document.getElementById('grid-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      let w = canvas.width = window.innerWidth;
+      let h = canvas.height = window.innerHeight;
+
+      window.addEventListener('resize', function() {
+        w = canvas.width = window.innerWidth;
+        h = canvas.height = window.innerHeight;
+      });
+
+      let time = 0;
+
+      function draw() {
+        time += 0.016;
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.fillStyle = '#08060c';
+        ctx.fillRect(0, 0, w, h);
+
+        const fov = 320;
+        const horizon = h * 0.48;
+        const gridSpacing = 42;
+        const scanY = (Math.sin(time * 0.8) * 0.5 + 0.5) * (h - horizon) + horizon;
+
+        ctx.strokeStyle = '#2F293A';
+        ctx.lineWidth = 1;
+
+        // Perspective Floor Grid Lines
+        for (let x = -w; x <= w * 2; x += gridSpacing) {
+          ctx.beginPath();
+          ctx.moveTo(x, h);
+          ctx.lineTo(w * 0.5 + (x - w * 0.5) * 0.15, horizon);
+          ctx.stroke();
+        }
+
+        // Horizontal Depth Grid Lines
+        for (let i = 1; i <= 24; i++) {
+          const depth = Math.pow(i / 24, 2.2);
+          const y = horizon + depth * (h - horizon);
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+
+        // Neon Scan Laser Beam (#FF9FFC)
+        const scanGrad = ctx.createLinearGradient(0, scanY - 30, 0, scanY + 30);
+        scanGrad.addColorStop(0, 'rgba(255, 159, 252, 0)');
+        scanGrad.addColorStop(0.5, 'rgba(255, 159, 252, 0.45)');
+        scanGrad.addColorStop(1, 'rgba(255, 159, 252, 0)');
+        ctx.fillStyle = scanGrad;
+        ctx.fillRect(0, scanY - 30, w, 60);
+
+        ctx.beginPath();
+        ctx.moveTo(0, scanY);
+        ctx.lineTo(w, scanY);
+        ctx.strokeStyle = '#FF9FFC';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#FF9FFC';
+        ctx.shadowBlur = 16;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        requestAnimationFrame(draw);
+      }
+
+      draw();
+    })();
+
+    // ── Live Stopwatch & Polling ──
+    const start = Date.now();
+    const timer = document.getElementById('elapsed-timer');
+    const stepText = document.getElementById('step-text');
+    const stepIcon = document.getElementById('step-icon');
+    const progressFill = document.getElementById('progress-fill');
+    const card = document.getElementById('main-card');
+
+    const interval = setInterval(function() {
+      const ms = Date.now() - start;
+      if (timer) timer.textContent = (ms / 1000).toFixed(1) + 's';
+
+      if (ms < 1600) {
+        if (stepText) stepText.textContent = 'Awakening compute container...';
+        if (stepIcon) stepIcon.textContent = '⚡';
+        if (progressFill) progressFill.style.width = '25%';
+      } else if (ms < 3600) {
+        if (stepText) stepText.textContent = 'Rehydrating memory & image layers...';
+        if (stepIcon) stepIcon.textContent = '📦';
+        if (progressFill) progressFill.style.width = '55%';
+      } else if (ms < 5800) {
+        if (stepText) stepText.textContent = 'Binding private edge routing mesh...';
+        if (stepIcon) stepIcon.textContent = '🌐';
+        if (progressFill) progressFill.style.width = '80%';
+      } else {
+        if (stepText) stepText.textContent = 'Probing HTTP 200 health readiness...';
+        if (stepIcon) stepIcon.textContent = '✨';
+        if (progressFill) progressFill.style.width = '92%';
+      }
+    }, 100);
+
     function check() {
       fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
         .then(function(r) {
           if (r.status !== 502 && r.status !== 202 && r.status !== 503) {
-            window.location.reload(true);
+            clearInterval(interval);
+            if (progressFill) progressFill.style.width = '100%';
+            if (card) card.classList.add('is-ready');
+            if (stepText) stepText.textContent = 'Application online! Launching...';
+            if (stepIcon) stepIcon.textContent = '✅';
+            setTimeout(function() {
+              window.location.reload(true);
+            }, 350);
           } else {
             setTimeout(check, 800);
           }
@@ -961,6 +1099,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
           setTimeout(check, 800);
         });
     }
+
     setTimeout(check, 600);
   </script>
 </body>
