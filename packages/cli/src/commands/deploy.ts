@@ -68,7 +68,7 @@ export async function deployCommand(args: string[] = []) {
   const targetDir = opts.dir ? path.resolve(process.cwd(), opts.dir) : process.cwd();
 
   if (!opts.json) {
-    printBanner("1.0.0");
+    printBanner("1.0.1");
   }
 
   // ═════════════════════════════════════════════════════════════════════════
