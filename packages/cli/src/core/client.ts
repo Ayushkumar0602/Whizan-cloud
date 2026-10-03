@@ -414,6 +414,26 @@ export class WhizanClient {
     return data;
   }
 
+  async inspectDeployment(targetType: "project" | "service", targetId: string): Promise<any> {
+    const query = new URLSearchParams({ targetType, targetId });
+    const res = await fetch(`${await this.apiUrl()}/api/containers/inspect?${query.toString()}`, {
+      headers: await this.headers(),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new ApiError(data.error || `Inspect failed with HTTP ${res.status}`, res.status, data);
+    return data;
+  }
+
+  async getAnalytics(targetType: "project" | "service", targetId: string, days = 30): Promise<any> {
+    const query = new URLSearchParams({ targetType, targetId, days: String(days) });
+    const res = await fetch(`${await this.apiUrl()}/api/containers/analytics?${query.toString()}`, {
+      headers: await this.headers(),
+    });
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) throw new ApiError(data.error || `Analytics failed with HTTP ${res.status}`, res.status, data);
+    return data;
+  }
+
   // ─── Database ──────────────────────────────────────────────────────────────
 
   async listDatabases(): Promise<any[]> {
