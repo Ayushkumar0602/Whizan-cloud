@@ -6,7 +6,6 @@ import { CLOUD_SERVICES } from "@/lib/services";
 import { useAuth } from "@/lib/auth";
 import {
   ArrowRight,
-  CheckCircle2,
   Globe,
   Server,
   Database,
@@ -15,8 +14,11 @@ import {
   Zap,
   Activity,
   Cpu,
+  Layers,
+  Sparkles,
+  CheckCircle2,
   Lock,
-  Layers
+  ArrowUpRight
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -27,55 +29,68 @@ export default function LandingPage() {
   const getServiceIcon = (id: string) => {
     switch (id) {
       case "frontend-hosting":
-        return <Globe size={22} style={{ color: "#38bdf8" }} />;
+        return <Globe size={20} className="text-sky-600" />;
       case "backend-hosting":
-        return <Server size={22} className="text-accent" />;
+        return <Server size={20} className="text-indigo-600" />;
       case "managed-postgres":
-        return <Database size={22} style={{ color: "#818cf8" }} />;
+        return <Database size={20} className="text-violet-600" />;
       case "managed-redis":
-        return <Zap size={22} style={{ color: "#f59e0b" }} />;
+        return <Zap size={20} className="text-amber-600" />;
       case "devops-mcp":
-        return <Terminal size={22} style={{ color: "#a855f7" }} />;
+        return <Terminal size={20} className="text-purple-600" />;
       default:
-        return <Layers size={22} className="text-accent" />;
+        return <Layers size={20} className="text-indigo-600" />;
     }
   };
 
   return (
-    <div className="landing-shell">
-      {/* Top Navigation */}
-      <header className="landing-nav">
-        <BrandMark />
-        <nav className="landing-nav-links">
-          <a href="#services">Services</a>
-          <a href="#capabilities">Platform</a>
-          <Link href="/dashboard/mcp" className="nav-text-link">MCP Server</Link>
-          {user ? (
-            <Link href="/dashboard" className="btn btn-primary btn-sm">
-              Console <ArrowRight size={14} />
+    <div className="landing-shell aurora-bg">
+      {/* Top Glass Navigation */}
+      <header className="landing-nav-wrapper">
+        <div className="landing-nav">
+          <BrandMark href="/" />
+          
+          <nav className="landing-nav-links">
+            <a href="#services" className="nav-link-item">Services</a>
+            <a href="#architecture" className="nav-link-item">Architecture</a>
+            <a href="#capabilities" className="nav-link-item">Platform</a>
+            <Link href="/dashboard/mcp" className="nav-link-item flex items-center gap-1">
+              MCP Server
+              <span className="nav-sub-badge">AI</span>
             </Link>
-          ) : (
-            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <Link href="/login" className="btn btn-secondary btn-sm">Sign in</Link>
-              <Link href="/register" className="btn btn-primary btn-sm">Get started</Link>
-            </div>
-          )}
-        </nav>
+          </nav>
+
+          <div className="landing-nav-cta">
+            {user ? (
+              <Link href="/dashboard" className="btn btn-primary btn-sm">
+                Console <ArrowRight size={14} />
+              </Link>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href="/login" className="btn btn-secondary btn-sm">Sign in</Link>
+                <Link href="/register" className="btn btn-primary btn-sm">Get started</Link>
+              </div>
+            )}
+          </div>
+        </div>
       </header>
 
       {/* Hero Section */}
       <section className="landing-hero">
         <div className="hero-pill-badge">
           <span className="hero-pulse-dot" />
-          <span>Production Cloud Platform</span>
+          <span className="font-semibold text-slate-800">Production Cloud Platform</span>
+          <span className="text-slate-400">•</span>
+          <span className="text-indigo-600 font-medium">Sub-5ms Edge Routing</span>
         </div>
 
         <h1 className="hero-headline">
-          The Cloud Platform Built for <span className="headline-gradient">Speed & Precision</span>
+          The Cloud Platform Built for <br />
+          <span className="headline-gradient">Speed & Precision</span>
         </h1>
 
         <p className="hero-lead-text">
-          Deploy Next.js & Vite frontends, containerized Docker backends, and managed databases with zero DevOps friction. Real-time observability, automated edge SSL, and sub-millisecond routing.
+          Deploy Next.js & Vite frontends, containerized Docker microservices, and managed relational databases with zero DevOps friction. Real-time telemetry, automated edge SSL, and native AI agent tooling.
         </p>
 
         <div className="hero-cta-row">
@@ -88,10 +103,59 @@ export default function LandingPage() {
         </div>
 
         <div className="hero-feature-pills">
-          <span className="feature-pill"><Globe size={13} /> Global Edge CDN</span>
-          <span className="feature-pill"><ShieldCheck size={13} /> Automatic Wildcard SSL</span>
-          <span className="feature-pill"><Cpu size={13} /> Instant Container Deploys</span>
-          <span className="feature-pill"><Terminal size={13} /> AI Agent MCP Ready</span>
+          <span className="feature-pill"><Globe size={13} className="text-sky-600" /> Global Edge CDN</span>
+          <span className="feature-pill"><ShieldCheck size={13} className="text-emerald-600" /> Automated TLS 1.3</span>
+          <span className="feature-pill"><Cpu size={13} className="text-indigo-600" /> Instant Containers</span>
+          <span className="feature-pill"><Terminal size={13} className="text-purple-600" /> AI Agent MCP Ready</span>
+        </div>
+      </section>
+
+      {/* Interactive Architecture Snapshot */}
+      <section id="architecture" className="landing-section">
+        <div className="architecture-card">
+          <div className="architecture-header">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+              <span className="font-mono text-xs font-semibold text-slate-600">WHIZAN CLOUD SERVICE MESH</span>
+            </div>
+            <div className="text-xs text-slate-400 font-mono">20.2.136.11 • HTTP / HTTPS EDGE PROXY</div>
+          </div>
+          
+          <div className="architecture-grid">
+            <div className="arch-node">
+              <div className="arch-node-icon bg-sky-50 text-sky-600">
+                <Globe size={18} />
+              </div>
+              <div className="arch-node-title">Edge Router</div>
+              <div className="arch-node-desc">Sub-millisecond SSL termination & path routing</div>
+            </div>
+
+            <div className="arch-connector">
+              <div className="connector-line" />
+              <div className="connector-badge">REST / WS</div>
+            </div>
+
+            <div className="arch-node arch-node-highlight">
+              <div className="arch-node-icon bg-indigo-50 text-indigo-600">
+                <Server size={18} />
+              </div>
+              <div className="arch-node-title">Docker Runtimes</div>
+              <div className="arch-node-desc">Isolated multi-stage containers with health checks</div>
+            </div>
+
+            <div className="arch-connector">
+              <div className="connector-line" />
+              <div className="connector-badge">TCP Mesh</div>
+            </div>
+
+            <div className="arch-node">
+              <div className="arch-node-icon bg-violet-50 text-violet-600">
+                <Database size={18} />
+              </div>
+              <div className="arch-node-title">PostgreSQL & Redis</div>
+              <div className="arch-node-desc">Dedicated persistence with pooling & low latency</div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -111,7 +175,7 @@ export default function LandingPage() {
                   {getServiceIcon(svc.id)}
                 </div>
                 <span className="badge badge-ready">
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   Live
                 </span>
               </div>
@@ -143,7 +207,7 @@ export default function LandingPage() {
 
         <div className="capabilities-grid">
           <div className="card capability-card">
-            <div className="capability-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
+            <div className="capability-icon bg-sky-50 text-sky-600">
               <Zap size={22} />
             </div>
             <h3 className="capability-title">Zero-Downtime Cutovers</h3>
@@ -153,7 +217,7 @@ export default function LandingPage() {
           </div>
 
           <div className="card capability-card">
-            <div className="capability-icon" style={{ background: "rgba(99, 102, 241, 0.12)", color: "#818cf8" }}>
+            <div className="capability-icon bg-indigo-50 text-indigo-600">
               <Terminal size={22} />
             </div>
             <h3 className="capability-title">DevOps Agent MCP</h3>
@@ -163,7 +227,7 @@ export default function LandingPage() {
           </div>
 
           <div className="card capability-card">
-            <div className="capability-icon" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#34d399" }}>
+            <div className="capability-icon bg-emerald-50 text-emerald-600">
               <ShieldCheck size={22} />
             </div>
             <h3 className="capability-title">Automated SSL & Security</h3>
@@ -173,7 +237,7 @@ export default function LandingPage() {
           </div>
 
           <div className="card capability-card">
-            <div className="capability-icon" style={{ background: "rgba(245, 158, 11, 0.12)", color: "#fbbf24" }}>
+            <div className="capability-icon bg-amber-50 text-amber-600">
               <Activity size={22} />
             </div>
             <h3 className="capability-title">Real-Time Telemetry</h3>
@@ -203,27 +267,35 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="landing-footer">
-        <BrandMark />
-        <div className="footer-links-row">
-          <Link href="/dashboard" className="footer-link">Console</Link>
-          <Link href="/dashboard/hosting" className="footer-link">Frontend</Link>
-          <Link href="/dashboard/backend" className="footer-link">Backend</Link>
-          <Link href="/dashboard/databases" className="footer-link">Databases</Link>
-          <Link href="/dashboard/mcp" className="footer-link">MCP</Link>
-        </div>
-        <div className="footer-copy">
-          © {new Date().getFullYear()} Whizan Cloud Services. All rights reserved.
+        <div className="landing-footer-inner">
+          <BrandMark />
+          <div className="footer-links-row">
+            <Link href="/dashboard" className="footer-link">Console</Link>
+            <Link href="/dashboard/hosting" className="footer-link">Frontend</Link>
+            <Link href="/dashboard/backend" className="footer-link">Backend</Link>
+            <Link href="/dashboard/databases" className="footer-link">Databases</Link>
+            <Link href="/dashboard/mcp" className="footer-link">MCP</Link>
+          </div>
+          <div className="footer-copy">
+            © {new Date().getFullYear()} Whizan Cloud Services. All rights reserved.
+          </div>
         </div>
       </footer>
 
       <style>{`
         .landing-shell {
           min-height: 100vh;
-          background:
-            radial-gradient(1100px 500px at 50% -10%, rgba(99, 102, 241, 0.15), transparent 60%),
-            radial-gradient(800px 400px at 100% 20%, rgba(56, 189, 248, 0.08), transparent 50%),
-            var(--background);
           color: var(--foreground);
+        }
+
+        .landing-nav-wrapper {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          background: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-bottom: 1px solid rgba(226, 232, 240, 0.8);
         }
 
         .landing-nav {
@@ -232,7 +304,7 @@ export default function LandingPage() {
           justify-content: space-between;
           max-width: 1200px;
           margin: 0 auto;
-          padding: 1.25rem 2rem;
+          padding: 1rem 1.75rem;
         }
 
         .landing-nav-links {
@@ -240,15 +312,23 @@ export default function LandingPage() {
           align-items: center;
           gap: 1.5rem;
         }
-        .landing-nav-links a:not(.btn) {
+        .nav-link-item {
           color: var(--muted);
           text-decoration: none;
           font-size: 0.88rem;
           font-weight: 500;
           transition: color 0.15s ease;
         }
-        .landing-nav-links a:not(.btn):hover {
+        .nav-link-item:hover {
           color: var(--foreground);
+        }
+        .nav-sub-badge {
+          font-size: 0.62rem;
+          font-weight: 700;
+          background: rgba(79, 70, 229, 0.1);
+          color: var(--accent);
+          padding: 0.1rem 0.35rem;
+          border-radius: 4px;
         }
 
         /* Hero */
@@ -266,14 +346,13 @@ export default function LandingPage() {
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          padding: 0.3rem 0.85rem;
+          padding: 0.35rem 0.95rem;
           border-radius: 9999px;
-          background: rgba(99, 102, 241, 0.1);
-          border: 1px solid rgba(99, 102, 241, 0.25);
+          background: #ffffff;
+          border: 1px solid rgba(79, 70, 229, 0.2);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
           font-size: 0.78rem;
-          font-weight: 600;
-          color: var(--accent);
-          margin-bottom: 1.25rem;
+          margin-bottom: 1.5rem;
         }
         .hero-pulse-dot {
           width: 7px;
@@ -285,20 +364,20 @@ export default function LandingPage() {
 
         .hero-headline {
           font-size: clamp(2.4rem, 5.5vw, 4rem);
-          font-weight: 850;
+          font-weight: 800;
           letter-spacing: -0.04em;
-          line-height: 1.08;
+          line-height: 1.1;
           color: var(--foreground);
           margin-bottom: 1.25rem;
         }
         .headline-gradient {
-          background: var(--accent-gradient);
+          background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 40%, #0284c7 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
 
         .hero-lead-text {
-          font-size: 1.1rem;
+          font-size: 1.08rem;
           color: var(--muted);
           line-height: 1.6;
           max-width: 44rem;
@@ -324,19 +403,94 @@ export default function LandingPage() {
           align-items: center;
           gap: 0.45rem;
           font-size: 0.8rem;
+          font-weight: 500;
           color: var(--muted);
-          background: var(--card);
-          border: 1px solid var(--card-border);
+          background: #ffffff;
+          border: 1px solid var(--border);
           border-radius: 9999px;
           padding: 0.35rem 0.85rem;
-          backdrop-filter: blur(12px);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+        }
+
+        /* Architecture Card */
+        .architecture-card {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          padding: 1.75rem;
+          box-shadow: var(--shadow-md);
+        }
+        .architecture-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding-bottom: 1.25rem;
+          border-bottom: 1px solid var(--border);
+          margin-bottom: 1.5rem;
+        }
+        .architecture-grid {
+          display: grid;
+          grid-template-columns: 1fr auto 1fr auto 1fr;
+          align-items: center;
+          gap: 1rem;
+        }
+        .arch-node {
+          background: var(--bg-inset);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 1.25rem 1rem;
+          text-align: center;
+        }
+        .arch-node-highlight {
+          background: rgba(79, 70, 229, 0.04);
+          border-color: rgba(79, 70, 229, 0.3);
+        }
+        .arch-node-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 0.6rem;
+        }
+        .arch-node-title {
+          font-size: 0.92rem;
+          font-weight: 650;
+          color: var(--foreground);
+          margin-bottom: 0.25rem;
+        }
+        .arch-node-desc {
+          font-size: 0.76rem;
+          color: var(--muted);
+          line-height: 1.4;
+        }
+        .arch-connector {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.35rem;
+        }
+        .connector-line {
+          width: 30px;
+          height: 2px;
+          background: #cbd5e1;
+        }
+        .connector-badge {
+          font-size: 0.62rem;
+          font-family: var(--font-geist-mono), monospace;
+          background: #f1f5f9;
+          color: #64748b;
+          padding: 0.15rem 0.4rem;
+          border-radius: 4px;
+          border: 1px solid #e2e8f0;
         }
 
         /* Section Layouts */
         .landing-section {
           max-width: 1200px;
           margin: 0 auto;
-          padding: 3rem 1.5rem;
+          padding: 3.5rem 1.5rem;
         }
 
         .section-header-block {
@@ -376,6 +530,7 @@ export default function LandingPage() {
           flex-direction: column;
           padding: 1.5rem;
           border-radius: var(--radius);
+          background: #ffffff;
         }
         .service-card-top {
           display: flex;
@@ -387,8 +542,8 @@ export default function LandingPage() {
           width: 44px;
           height: 44px;
           border-radius: 10px;
-          background: var(--bg-inset);
-          border: 1px solid var(--card-border);
+          background: #f8fafc;
+          border: 1px solid var(--border);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -398,11 +553,12 @@ export default function LandingPage() {
           font-weight: 700;
           letter-spacing: -0.02em;
           margin-bottom: 0.25rem;
+          color: var(--foreground);
         }
         .showcase-tagline {
           font-size: 0.8rem;
           color: var(--accent);
-          font-weight: 550;
+          font-weight: 600;
           margin-bottom: 0.65rem;
         }
         .showcase-desc {
@@ -413,11 +569,11 @@ export default function LandingPage() {
         }
         .showcase-specs {
           font-size: 0.72rem;
-          color: var(--muted);
-          background: var(--bg-inset);
-          padding: 0.25rem 0.5rem;
+          color: #475569;
+          background: #f1f5f9;
+          padding: 0.25rem 0.55rem;
           border-radius: 6px;
-          border: 1px solid var(--card-border);
+          border: 1px solid #e2e8f0;
           margin-bottom: 0.75rem;
           display: inline-block;
         }
@@ -431,6 +587,7 @@ export default function LandingPage() {
         .capability-card {
           padding: 1.75rem;
           border-radius: var(--radius);
+          background: #ffffff;
         }
         .capability-icon {
           width: 46px;
@@ -446,6 +603,7 @@ export default function LandingPage() {
           font-weight: 700;
           letter-spacing: -0.02em;
           margin-bottom: 0.5rem;
+          color: var(--foreground);
         }
         .capability-desc {
           font-size: 0.85rem;
@@ -455,20 +613,21 @@ export default function LandingPage() {
 
         /* CTA Banner */
         .cta-banner-card {
-          background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(56, 189, 248, 0.08) 100%);
-          border: 1px solid rgba(99, 102, 241, 0.25);
+          background: #ffffff;
+          border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 2.75rem;
+          padding: 2.75rem 2.5rem;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 2rem;
-          box-shadow: var(--shadow);
+          box-shadow: var(--shadow-md);
         }
         .cta-banner-title {
           font-size: 1.75rem;
-          font-weight: 800;
+          font-weight: 750;
           letter-spacing: -0.03em;
+          color: var(--foreground);
           margin-bottom: 0.5rem;
         }
         .cta-banner-desc {
@@ -480,23 +639,26 @@ export default function LandingPage() {
 
         /* Footer */
         .landing-footer {
+          border-top: 1px solid var(--border);
+          background: #ffffff;
+          padding: 2.5rem 1.5rem;
+        }
+        .landing-footer-inner {
           max-width: 1200px;
           margin: 0 auto;
-          padding: 2rem 1.5rem;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          border-top: 1px solid var(--card-border);
-          gap: 1.5rem;
           flex-wrap: wrap;
+          gap: 1.5rem;
         }
         .footer-links-row {
           display: flex;
-          gap: 1.25rem;
+          gap: 1.5rem;
         }
         .footer-link {
+          font-size: 0.85rem;
           color: var(--muted);
-          font-size: 0.825rem;
           text-decoration: none;
           transition: color 0.15s ease;
         }
@@ -504,17 +666,26 @@ export default function LandingPage() {
           color: var(--foreground);
         }
         .footer-copy {
+          font-size: 0.8rem;
           color: var(--muted-fg);
-          font-size: 0.78rem;
         }
 
-        @media (max-width: 860px) {
-          .landing-nav-links a:not(.btn) {
-            display: none;
+        /* Responsive Breakpoints */
+        @media (max-width: 900px) {
+          .architecture-grid {
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+          }
+          .connector-line {
+            width: 2px;
+            height: 20px;
           }
           .cta-banner-card {
             flex-direction: column;
-            align-items: flex-start;
+            text-align: center;
+          }
+          .landing-nav-links {
+            display: none;
           }
         }
       `}</style>

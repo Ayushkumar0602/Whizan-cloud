@@ -831,8 +831,8 @@ ping -c 3 ${service.slug}`}
         }
 
         .code-container {
-          background: #0b1016;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: #0f172a;
+          border: 1px solid #1e293b;
           border-radius: 8px;
           overflow: hidden;
         }
@@ -842,7 +842,7 @@ ping -c 3 ${service.slug}`}
           padding: 1rem 1.25rem;
           font-size: 0.82rem;
           line-height: 1.6;
-          color: #e2e8f0;
+          color: #f1f5f9;
           overflow-x: auto;
         }
 
@@ -851,10 +851,10 @@ ping -c 3 ${service.slug}`}
           justify-content: space-between;
           align-items: center;
           padding: 0.6rem 1rem;
-          background: rgba(255, 255, 255, 0.02);
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          background: #1e293b;
+          border-top: 1px solid #334155;
           font-size: 0.78rem;
-          color: var(--muted);
+          color: #94a3b8;
           flex-wrap: wrap;
           gap: 0.5rem;
         }

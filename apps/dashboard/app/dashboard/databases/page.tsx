@@ -110,38 +110,25 @@ export default function DatabasesPage() {
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <Link
             href="/dashboard/databases/tester"
+            className="btn btn-secondary"
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.45rem",
-              padding: "0.65rem 1.15rem",
-              borderRadius: "var(--radius)",
-              background: "rgba(16, 185, 129, 0.12)",
-              color: "#34d399",
-              border: "1px solid rgba(16, 185, 129, 0.3)",
+              padding: "0.55rem 1rem",
+              background: "var(--success-bg)",
+              color: "#047857",
+              borderColor: "var(--success-border)",
               fontWeight: 600,
-              fontSize: "0.9rem",
-              transition: "all 0.2s ease",
             }}
           >
-            <Zap size={16} />
+            <Zap size={15} />
             URL Tester & Studio
           </Link>
 
           <Link
             href="/dashboard/databases/new"
+            className="btn btn-primary"
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              padding: "0.65rem 1.25rem",
-              borderRadius: "var(--radius)",
-              background: "var(--accent-gradient)",
-              color: "#fff",
+              padding: "0.55rem 1.15rem",
               fontWeight: 600,
-              fontSize: "0.9rem",
-              boxShadow: "0 4px 14px rgba(99, 102, 241, 0.35)",
-              transition: "all 0.2s ease",
             }}
           >
             <Plus size={18} />

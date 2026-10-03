@@ -419,7 +419,7 @@ export default function StoragePage() {
           justify-content: space-between;
           padding: 1rem 1.35rem;
           border-bottom: 1px solid var(--card-border);
-          background: rgba(255, 255, 255, 0.02);
+          background: #fafbfc;
           flex-wrap: wrap;
           gap: 0.75rem;
         }

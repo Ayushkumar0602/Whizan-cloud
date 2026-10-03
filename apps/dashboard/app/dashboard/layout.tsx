@@ -7,8 +7,8 @@ import { BrandMark } from "@/components/brand";
 import { getSafeRedirectUrl } from "@/lib/redirect";
 import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
-  Layers, Moon, Sun, Server, Menu, X, Plus,
-  PanelLeftClose, PanelLeftOpen, Database, Sparkles, Zap, Clock, Workflow as WorkflowIcon,
+  Layers, Server, Menu, X, Plus,
+  PanelLeftClose, PanelLeftOpen, Database, Zap, Clock, Workflow as WorkflowIcon,
   Bot
 } from "lucide-react";
 
@@ -17,20 +17,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
 
-  const [theme, setTheme] = useState("dark");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Restore preferences from localStorage
+  // Restore sidebar preference from localStorage
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme");
-    if (savedTheme === "light") {
-      setTheme("light");
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
-      setTheme("dark");
-      document.documentElement.setAttribute("data-theme", "dark");
-    }
     const savedCollapsed = localStorage.getItem("sidebar-collapsed");
     if (savedCollapsed === "true") setSidebarCollapsed(true);
   }, []);
@@ -49,13 +40,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [pathname]);
-
-  function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
-  }
 
   function toggleSidebar() {
     const next = !sidebarCollapsed;
@@ -142,14 +126,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </div>
 
-        {/* Cloud Health Pill */}
+        {/* Cloud Health Status */}
         <div className="mesh-indicator-pill">
           <div className="mesh-pulse-dot" />
-          <span className="mesh-pill-text">Whizan Cloud</span>
-          <span className="mesh-pill-tag">ONLINE</span>
+          <span className="mesh-pill-text">Whizan Edge Network</span>
+          <span className="mesh-pill-tag">ACTIVE</span>
         </div>
 
-        {/* Quick Deploy */}
+        {/* Quick Deploy CTA */}
         <div style={{ marginTop: "1rem" }}>
           <Link href="/dashboard/deploy" className="quick-deploy-btn">
             <Plus size={15} />
@@ -193,14 +177,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <div className="sidebar-actions-row">
-          <button onClick={toggleTheme} className="action-pill-btn" title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}>
-            {theme === "dark"
-              ? <><Sun size={14} className="text-amber" /><span>Light</span></>
-              : <><Moon size={14} className="text-indigo" /><span>Dark</span></>
-            }
-          </button>
+          <Link href="/dashboard/settings" className="action-pill-btn" title="Account Settings">
+            <Settings size={14} />
+            <span>Settings</span>
+          </Link>
           <button onClick={handleLogout} className="action-pill-btn action-pill-danger" id="logout-btn" title="Sign out">
-            <LogOut size={14} /><span>Logout</span>
+            <LogOut size={14} />
+            <span>Logout</span>
           </button>
         </div>
 
@@ -245,9 +228,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Bottom expand button */}
       <div className="rail-bottom">
-        <button onClick={toggleTheme} className="rail-icon-btn" title="Toggle theme">
-          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <Link href="/dashboard/settings" className="rail-icon-btn" title="Settings">
+          <Settings size={16} />
+        </Link>
         <button
           className="rail-icon-btn rail-expand-btn"
           onClick={toggleSidebar}
@@ -270,9 +253,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <BrandMark href="/dashboard" compact />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <button onClick={toggleTheme} className="icon-btn-rounded" title="Toggle theme">
-            {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </button>
           <Link href="/dashboard/settings" className="user-avatar-sm" title={user.email}>
             {initials}
           </Link>
@@ -293,8 +273,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {sidebarCollapsed ? collapsedSidebarContent : fullSidebarContent}
       </aside>
 
-      {/* Main */}
-      <main className="dash-main">
+      {/* Main Container with subtle Aurora Background */}
+      <main className="dash-main aurora-bg">
         {children}
       </main>
 
@@ -305,16 +285,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           background: var(--background);
         }
 
-        /* ── Desktop Sidebar (expanded) ── */
+        /* Desktop Sidebar (expanded) */
         .desktop-sidebar {
-          width: 260px;
+          width: 254px;
           height: 100vh;
           position: sticky;
           top: 0;
-          background: var(--card);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border-right: 1px solid var(--card-border);
+          background: #ffffff;
+          border-right: 1px solid var(--border);
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -323,54 +301,57 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           z-index: 40;
           overflow-y: auto;
           overflow-x: hidden;
-          transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+          transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          box-shadow: 1px 0 3px 0 rgba(0, 0, 0, 0.02);
         }
 
-        /* ── Collapsed rail ── */
+        /* Collapsed rail */
         .dash-shell-collapsed .desktop-sidebar {
-          width: 60px;
+          width: 62px;
           padding: 0;
           overflow: visible;
         }
 
         .sidebar-rail {
-          width: 60px;
+          width: 62px;
           height: 100%;
           display: flex;
           flex-direction: column;
           align-items: center;
-          padding: 1rem 0;
-          gap: 0.25rem;
+          padding: 1.1rem 0;
+          gap: 0.35rem;
         }
 
         .rail-brand-icon {
-          width: 36px;
-          height: 36px;
+          width: 38px;
+          height: 38px;
           border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
           color: var(--accent);
-          background: var(--accent-glow);
+          background: rgba(79, 70, 229, 0.08);
           text-decoration: none;
-          margin-bottom: 0.75rem;
+          margin-bottom: 0.85rem;
           transition: all 0.15s ease;
         }
-        .rail-brand-icon:hover { background: rgba(99,102,241,0.25); }
+        .rail-brand-icon:hover {
+          background: rgba(79, 70, 229, 0.14);
+        }
 
         .rail-nav {
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 0.2rem;
+          gap: 0.25rem;
           flex: 1;
           width: 100%;
           padding: 0 0.5rem;
         }
 
         .rail-link {
-          width: 40px;
-          height: 40px;
+          width: 38px;
+          height: 38px;
           border-radius: 8px;
           display: flex;
           align-items: center;
@@ -380,8 +361,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           transition: all 0.15s ease;
           position: relative;
         }
-        .rail-link:hover { background: var(--card-hover); color: var(--foreground); }
-        .rail-link-active { background: var(--accent-glow); color: var(--accent); }
+        .rail-link:hover {
+          background: var(--bg-inset);
+          color: var(--foreground);
+        }
+        .rail-link-active {
+          background: rgba(79, 70, 229, 0.09);
+          color: var(--accent);
+          font-weight: 600;
+        }
 
         .rail-bottom {
           display: flex;
@@ -392,8 +380,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           width: 100%;
         }
         .rail-icon-btn {
-          width: 40px;
-          height: 40px;
+          width: 38px;
+          height: 38px;
           border-radius: 8px;
           border: none;
           background: transparent;
@@ -405,172 +393,333 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           transition: all 0.15s ease;
           font-family: inherit;
         }
-        .rail-icon-btn:hover { background: var(--card-hover); color: var(--foreground); }
-        .rail-expand-btn { color: var(--accent); }
-        .rail-expand-btn:hover { background: var(--accent-glow); }
+        .rail-icon-btn:hover {
+          background: var(--bg-inset);
+          color: var(--foreground);
+        }
+        .rail-expand-btn {
+          color: var(--accent);
+        }
+        .rail-expand-btn:hover {
+          background: rgba(79, 70, 229, 0.09);
+        }
 
-        /* ── Sidebar Collapse Button ── */
+        /* Sidebar Collapse Button */
         .sidebar-collapse-btn {
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 0.45rem;
           width: 100%;
-          padding: 0.42rem 0.7rem;
+          padding: 0.45rem 0.7rem;
           border-radius: 7px;
-          background: transparent;
-          border: 1px solid var(--card-border);
+          background: #ffffff;
+          border: 1px solid var(--border);
           font-size: 0.76rem;
           font-weight: 550;
           color: var(--muted);
           cursor: pointer;
           font-family: inherit;
           transition: all 0.15s ease;
-          margin-top: 0.25rem;
+          margin-top: 0.35rem;
         }
         .sidebar-collapse-btn:hover {
-          background: var(--card-hover);
+          background: var(--bg-inset);
           color: var(--foreground);
-          border-color: var(--muted-fg);
+          border-color: var(--card-border-hover);
         }
 
-        /* ── Sidebar internals ── */
+        /* Sidebar internals */
         .sidebar-brand-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
         }
 
-        .sidebar-top { display: flex; flex-direction: column; }
+        .sidebar-top {
+          display: flex;
+          flex-direction: column;
+        }
 
         .mesh-indicator-pill {
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          background: rgba(16,185,129,0.08);
-          border: 1px solid rgba(16,185,129,0.2);
+          background: rgba(16, 185, 129, 0.08);
+          border: 1px solid rgba(16, 185, 129, 0.22);
           border-radius: 9999px;
-          padding: 0.3rem 0.65rem;
-          margin-top: 1rem;
+          padding: 0.28rem 0.65rem;
+          margin-top: 0.9rem;
           font-size: 0.72rem;
-          color: var(--foreground);
+          color: #065f46;
         }
         .mesh-pulse-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: #10b981; box-shadow: 0 0 8px #10b981;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 6px #10b981;
           animation: pulseGlow 2s infinite ease-in-out;
           flex-shrink: 0;
         }
         .mesh-pill-text {
-          font-family: var(--font-geist-mono), monospace;
-          font-size: 0.72rem; color: var(--muted);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+          font-size: 0.73rem;
+          font-weight: 550;
+          color: #047857;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          flex: 1;
         }
-        .mesh-pill-tag { font-size: 0.62rem; font-weight: 700; color: #10b981; letter-spacing: 0.04em; }
+        .mesh-pill-tag {
+          font-size: 0.62rem;
+          font-weight: 700;
+          color: #047857;
+          letter-spacing: 0.04em;
+        }
 
         .quick-deploy-btn {
-          display: flex; align-items: center; justify-content: center; gap: 0.45rem;
-          width: 100%; padding: 0.6rem 0.85rem; border-radius: 8px;
-          background: var(--accent-gradient); color: #ffffff;
-          font-size: 0.82rem; font-weight: 600; text-decoration: none;
-          box-shadow: 0 4px 14px var(--accent-glow); transition: all 0.15s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.45rem;
+          width: 100%;
+          padding: 0.58rem 0.85rem;
+          border-radius: 8px;
+          background: var(--foreground);
+          color: #ffffff;
+          font-size: 0.82rem;
+          font-weight: 600;
+          text-decoration: none;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          transition: all 0.15s ease;
         }
-        .quick-deploy-btn:hover { transform: translateY(-1px); opacity: 0.93; box-shadow: 0 6px 18px var(--accent-glow); }
+        .quick-deploy-btn:hover {
+          background: #1e293b;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        }
 
-        .sidebar-nav { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1.5rem; }
-        .nav-group { display: flex; flex-direction: column; gap: 0.2rem; }
+        .sidebar-nav {
+          display: flex;
+          flex-direction: column;
+          gap: 1.15rem;
+          margin-top: 1.35rem;
+        }
+        .nav-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.2rem;
+        }
         .nav-group-label {
-          font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.08em; color: var(--muted); padding: 0 0.65rem; margin-bottom: 0.35rem;
+          font-size: 0.68rem;
+          font-weight: 650;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: var(--muted-fg);
+          padding: 0 0.65rem;
+          margin-bottom: 0.3rem;
         }
         .nav-link {
-          display: flex; align-items: center; gap: 0.65rem;
-          padding: 0.55rem 0.75rem; border-radius: 8px;
-          font-size: 0.84rem; font-weight: 500; color: var(--muted);
-          text-decoration: none; transition: all 0.15s cubic-bezier(0.16,1,0.3,1);
-          border: 1px solid transparent;
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          padding: 0.52rem 0.75rem;
+          border-radius: 7px;
+          font-size: 0.835rem;
+          font-weight: 500;
+          color: var(--muted);
+          text-decoration: none;
+          transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .nav-link:hover { background: var(--card-hover); color: var(--foreground); border-color: rgba(255,255,255,0.04); }
-        .nav-link-active { background: var(--accent-glow); color: var(--accent); font-weight: 600; border-color: rgba(99,102,241,0.25); }
-        .nav-icon { flex-shrink: 0; opacity: 0.85; }
-        .nav-link-active .nav-icon { opacity: 1; color: var(--accent); }
-        .nav-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .nav-link:hover {
+          background: var(--bg-inset);
+          color: var(--foreground);
+        }
+        .nav-link-active {
+          background: rgba(79, 70, 229, 0.08);
+          color: var(--accent);
+          font-weight: 600;
+        }
+        .nav-icon {
+          flex-shrink: 0;
+          opacity: 0.85;
+        }
+        .nav-link-active .nav-icon {
+          opacity: 1;
+          color: var(--accent);
+        }
+        .nav-label {
+          flex: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
         .nav-badge {
-          font-size: 0.64rem; font-weight: 700; text-transform: uppercase;
-          padding: 0.1rem 0.4rem; border-radius: 4px;
-          background: rgba(99,102,241,0.15); color: var(--accent);
+          font-size: 0.64rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 0.1rem 0.4rem;
+          border-radius: 4px;
+          background: rgba(79, 70, 229, 0.1);
+          color: var(--accent);
           font-family: var(--font-geist-mono), monospace;
         }
 
         .sidebar-bottom {
-          padding-top: 1rem; border-top: 1px solid var(--card-border);
-          display: flex; flex-direction: column; gap: 0.65rem; margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+          margin-top: 1.25rem;
         }
         .user-profile-card {
-          display: flex; align-items: center; gap: 0.65rem;
-          padding: 0.4rem 0.5rem; border-radius: 8px;
-          background: rgba(255,255,255,0.03); border: 1px solid var(--card-border);
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          padding: 0.45rem 0.55rem;
+          border-radius: 8px;
+          background: var(--bg-inset);
+          border: 1px solid var(--border);
         }
         .user-avatar-glow {
-          width: 34px; height: 34px; border-radius: 50%;
-          background: var(--accent-gradient); color: #ffffff;
-          display: flex; align-items: center; justify-content: center;
-          font-weight: 700; font-size: 0.85rem; flex-shrink: 0;
-          box-shadow: 0 2px 8px var(--accent-glow);
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #4f46e5, #06b6d4);
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 0.82rem;
+          flex-shrink: 0;
         }
-        .user-meta { flex: 1; min-width: 0; }
-        .user-name { font-size: 0.82rem; font-weight: 600; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .user-email { font-size: 0.72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .user-meta {
+          flex: 1;
+          min-width: 0;
+        }
+        .user-name {
+          font-size: 0.81rem;
+          font-weight: 600;
+          color: var(--foreground);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .user-email {
+          font-size: 0.72rem;
+          color: var(--muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
 
-        .sidebar-actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+        .sidebar-actions-row {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 0.4rem;
+        }
         .action-pill-btn {
-          display: flex; align-items: center; justify-content: center; gap: 0.4rem;
-          padding: 0.45rem 0.6rem; border-radius: 6px; background: var(--bg-inset);
-          border: 1px solid var(--card-border); font-size: 0.76rem; font-weight: 550;
-          color: var(--muted); cursor: pointer; transition: all 0.15s ease; font-family: inherit;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.35rem;
+          padding: 0.45rem 0.6rem;
+          border-radius: 6px;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          font-size: 0.76rem;
+          font-weight: 550;
+          color: var(--muted);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          font-family: inherit;
+          text-decoration: none;
         }
-        .action-pill-btn:hover { background: var(--card-hover); color: var(--foreground); border-color: var(--muted-fg); }
-        .action-pill-danger:hover { background: var(--danger-glow); color: var(--danger); border-color: rgba(244,63,94,0.3); }
+        .action-pill-btn:hover {
+          background: var(--bg-inset);
+          color: var(--foreground);
+          border-color: var(--card-border-hover);
+        }
+        .action-pill-danger {
+          color: #be123c;
+        }
+        .action-pill-danger:hover {
+          background: var(--danger-bg);
+          color: var(--danger);
+          border-color: var(--danger-border);
+        }
 
-        .text-amber { color: #f59e0b; }
-        .text-indigo { color: #818cf8; }
-
-        /* ── Mobile Header ── */
+        /* Mobile Header */
         .mobile-header {
-          display: none; position: sticky; top: 0; z-index: 50;
-          background: var(--card); backdrop-filter: blur(16px);
+          display: none;
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          background: rgba(255, 255, 255, 0.92);
+          backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-          border-bottom: 1px solid var(--card-border);
+          border-bottom: 1px solid var(--border);
           padding: 0.75rem 1rem;
-          align-items: center; justify-content: space-between;
+          align-items: center;
+          justify-content: space-between;
         }
         .icon-btn-rounded {
-          background: var(--bg-inset); border: 1px solid var(--card-border);
-          color: var(--foreground); width: 36px; height: 36px; border-radius: 8px;
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer; transition: all 0.15s ease;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          color: var(--foreground);
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          transition: all 0.15s ease;
         }
-        .icon-btn-rounded:hover { background: var(--card-hover); border-color: var(--muted-fg); }
+        .icon-btn-rounded:hover {
+          background: var(--bg-inset);
+          border-color: var(--card-border-hover);
+        }
         .user-avatar-sm {
-          width: 32px; height: 32px; border-radius: 50%;
-          background: var(--accent-gradient); color: #ffffff;
-          display: flex; align-items: center; justify-content: center;
-          font-weight: 700; font-size: 0.8rem; text-decoration: none;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #4f46e5, #06b6d4);
+          color: #ffffff;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 700;
+          font-size: 0.8rem;
+          text-decoration: none;
         }
 
-        /* ── Mobile Drawer ── */
+        /* Mobile Drawer */
         .mobile-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.65);
-          backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-          z-index: 99; display: flex;
+          position: fixed;
+          inset: 0;
+          background: rgba(15, 23, 42, 0.4);
+          backdrop-filter: blur(4px);
+          -webkit-backdrop-filter: blur(4px);
+          z-index: 99;
+          display: flex;
         }
         .mobile-drawer {
-          width: 290px; max-width: 85vw; height: 100%;
-          background: var(--card); border-right: 1px solid var(--card-border);
-          padding: 1.25rem 1rem; display: flex; flex-direction: column;
-          justify-content: space-between; overflow-y: auto;
-          box-shadow: 0 0 40px rgba(0,0,0,0.5);
-          animation: slideInLeft 0.22s cubic-bezier(0.16,1,0.3,1) forwards;
+          width: 290px;
+          max-width: 85vw;
+          height: 100%;
+          background: #ffffff;
+          border-right: 1px solid var(--border);
+          padding: 1.25rem 1rem;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          overflow-y: auto;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+          animation: slideInLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
 
         @keyframes slideInLeft {
@@ -578,9 +727,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           to   { transform: translateX(0); }
         }
 
-        .dash-main { flex: 1; min-width: 0; overflow-y: auto; }
+        .dash-main {
+          flex: 1;
+          min-width: 0;
+          overflow-y: auto;
+        }
 
-        /* ── Responsive ── */
+        /* Responsive Breakpoints */
         @media (max-width: 1023px) {
           .dash-shell { flex-direction: column; }
           .desktop-sidebar { display: none; }

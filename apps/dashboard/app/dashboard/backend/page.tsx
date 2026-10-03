@@ -529,7 +529,7 @@ export default function BackendHostingPage() {
         }
         .copy-chip-btn:hover {
           color: var(--foreground);
-          background: rgba(255, 255, 255, 0.08);
+          background: #f1f5f9;
         }
 
         /* Resource Chips */
@@ -550,22 +550,22 @@ export default function BackendHostingPage() {
           border: 1px solid transparent;
         }
         .chip-amber {
-          background: rgba(245, 158, 11, 0.1);
-          color: #f59e0b;
-          border-color: rgba(245, 158, 11, 0.25);
+          background: rgba(245, 158, 11, 0.08);
+          color: #b45309;
+          border-color: rgba(245, 158, 11, 0.22);
         }
         .chip-green {
-          background: rgba(16, 185, 129, 0.1);
-          color: #10b981;
-          border-color: rgba(16, 185, 129, 0.25);
+          background: rgba(16, 185, 129, 0.08);
+          color: #047857;
+          border-color: rgba(16, 185, 129, 0.22);
         }
         .chip-blue {
-          background: rgba(56, 189, 248, 0.1);
-          color: #38bdf8;
-          border-color: rgba(56, 189, 248, 0.25);
+          background: rgba(2, 132, 199, 0.08);
+          color: #0369a1;
+          border-color: rgba(2, 132, 199, 0.22);
         }
         .chip-neutral {
-          background: rgba(255, 255, 255, 0.05);
+          background: #f1f5f9;
           color: var(--muted);
           border-color: var(--card-border);
         }

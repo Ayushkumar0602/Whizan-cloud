@@ -216,8 +216,8 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               gap: "0.35rem",
               padding: "0.35rem 0.75rem",
               borderRadius: 6,
-              background: "rgba(255, 255, 255, 0.05)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "#f1f5f9",
+              border: "1px solid var(--border)",
               color: "var(--foreground)",
               fontSize: "0.8rem",
               cursor: "pointer",
@@ -234,7 +234,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               textAlign: "center",
               color: "var(--muted)",
               fontSize: "0.85rem",
-              background: "rgba(255, 255, 255, 0.02)",
+              background: "var(--bg-inset)",
               borderRadius: 6,
             }}
           >
@@ -245,7 +245,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--border-color, #27272a)", color: "var(--muted)", textAlign: "left" }}>
+                <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", textAlign: "left" }}>
                   <th style={{ padding: "0.5rem 0.75rem" }}>PID</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>User</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Duration</th>
@@ -256,7 +256,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               </thead>
               <tbody>
                 {insights.runningQueries.map((q) => (
-                  <tr key={q.pid} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                  <tr key={q.pid} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "0.55rem 0.75rem", fontFamily: "monospace", fontWeight: 600 }}>{q.pid}</td>
                     <td style={{ padding: "0.55rem 0.75rem", color: "var(--muted)" }}>{q.usename}</td>
                     <td style={{ padding: "0.55rem 0.75rem", color: q.duration_seconds > 5 ? "#ef4444" : "#f59e0b", fontWeight: 600 }}>
@@ -302,7 +302,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
       <div
         style={{
           background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          border: "1px solid var(--border)",
           borderRadius: 10,
           padding: "1.25rem",
         }}
@@ -323,8 +323,8 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               gap: "0.35rem",
               padding: "0.35rem 0.75rem",
               borderRadius: 6,
-              background: "rgba(255, 255, 255, 0.05)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "#f1f5f9",
+              border: "1px solid var(--border)",
               color: "var(--muted)",
               fontSize: "0.8rem",
               cursor: "pointer",
@@ -341,7 +341,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               textAlign: "center",
               color: "var(--muted)",
               fontSize: "0.85rem",
-              background: "rgba(255, 255, 255, 0.02)",
+              background: "var(--bg-inset)",
               borderRadius: 6,
             }}
           >
@@ -351,7 +351,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
               <thead>
-                <tr style={{ borderBottom: "1px solid var(--border-color, #27272a)", color: "var(--muted)", textAlign: "left" }}>
+                <tr style={{ borderBottom: "1px solid var(--border)", color: "var(--muted)", textAlign: "left" }}>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Query Statement</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Calls</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Mean Time</th>
@@ -362,7 +362,7 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
               </thead>
               <tbody>
                 {insights.slowQueries.map((sq, idx) => (
-                  <tr key={idx} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                  <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
                     <td
                       style={{
                         padding: "0.55rem 0.75rem",

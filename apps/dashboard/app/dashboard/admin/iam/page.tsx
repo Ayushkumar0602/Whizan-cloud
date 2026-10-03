@@ -500,8 +500,8 @@ export default function IamAdminPage() {
                   fontSize: "0.8rem",
                   fontWeight: 600,
                   cursor: "pointer",
-                  border: "none",
-                  background: roleFilter === tab ? "var(--accent)" : "rgba(255, 255, 255, 0.05)",
+                  background: roleFilter === tab ? "var(--accent)" : "#f1f5f9",
+                  border: roleFilter === tab ? "1px solid var(--accent)" : "1px solid var(--border)",
                   color: roleFilter === tab ? "#fff" : "var(--muted)",
                 }}
               >
@@ -553,16 +553,17 @@ export default function IamAdminPage() {
                               height: 34,
                               borderRadius: "50%",
                               background: isRoot
-                                ? "rgba(245, 158, 11, 0.2)"
+                                ? "rgba(245, 158, 11, 0.15)"
                                 : isAdmin
-                                ? "rgba(99, 102, 241, 0.2)"
-                                : "rgba(255, 255, 255, 0.1)",
+                                ? "rgba(79, 70, 229, 0.12)"
+                                : "#f1f5f9",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
                               fontWeight: 700,
-                              color: isRoot ? "#f59e0b" : isAdmin ? "#818cf8" : "inherit",
+                              color: isRoot ? "#b45309" : isAdmin ? "#4338ca" : "var(--foreground)",
                               fontSize: "0.85rem",
+                              border: "1px solid var(--border)",
                             }}
                           >
                             {(u.name || u.email)[0].toUpperCase()}
@@ -589,17 +590,17 @@ export default function IamAdminPage() {
                             fontSize: "0.75rem",
                             fontWeight: 700,
                             background: isRoot
-                              ? "rgba(245, 158, 11, 0.15)"
+                              ? "rgba(245, 158, 11, 0.1)"
                               : isAdmin
-                              ? "rgba(99, 102, 241, 0.15)"
-                              : "rgba(255, 255, 255, 0.05)",
-                            color: isRoot ? "#f59e0b" : isAdmin ? "#818cf8" : "var(--muted)",
+                              ? "rgba(79, 70, 229, 0.08)"
+                              : "#f1f5f9",
+                            color: isRoot ? "#b45309" : isAdmin ? "#4338ca" : "var(--muted)",
                             border: `1px solid ${
                               isRoot
-                                ? "rgba(245, 158, 11, 0.4)"
+                                ? "rgba(245, 158, 11, 0.25)"
                                 : isAdmin
-                                ? "rgba(99, 102, 241, 0.4)"
-                                : "transparent"
+                                ? "rgba(79, 70, 229, 0.25)"
+                                : "var(--border)"
                             }`,
                           }}
                         >

@@ -922,7 +922,7 @@ export default function AdminOverviewPage() {
           gap: 0.4rem;
           padding: 0.75rem 1.6rem;
           border-bottom: 1px solid var(--card-border);
-          background: rgba(255, 255, 255, 0.015);
+          background: #fafbfc;
           overflow-x: auto;
         }
         .hosting-tab-btn {
@@ -945,16 +945,17 @@ export default function AdminOverviewPage() {
           background: var(--bg-inset);
         }
         .hosting-tab-active {
-          background: var(--card) !important;
-          color: var(--foreground) !important;
-          border-color: var(--card-border) !important;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+          background: #ffffff !important;
+          color: var(--accent) !important;
+          border-color: rgba(79, 70, 229, 0.25) !important;
+          box-shadow: var(--shadow-sm);
         }
         .tab-badge {
           font-size: 0.68rem;
           padding: 0.05rem 0.4rem;
           border-radius: 9999px;
-          background: rgba(255, 255, 255, 0.08);
+          background: #f1f5f9;
+          border: 1px solid var(--border);
           color: var(--foreground);
         }
 
@@ -976,7 +977,7 @@ export default function AdminOverviewPage() {
           border-bottom: none;
         }
         .hosting-row:hover {
-          background: rgba(255, 255, 255, 0.02);
+          background: #f8fafc;
         }
         .hosting-row-left {
           display: flex;

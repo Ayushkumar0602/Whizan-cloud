@@ -96,7 +96,7 @@ export default function LogsPage() {
 
       <style>{`
         .terminal-panel-card {
-          background: #05070b;
+          background: #0f172a;
           border: 1px solid var(--card-border);
           border-radius: var(--radius);
           overflow: hidden;
@@ -171,7 +171,7 @@ export default function LogsPage() {
           height: 600px;
           overflow-y: auto;
           padding: 1.25rem;
-          background: #05070b;
+          background: #0f172a;
         }
         .terminal-pre {
           color: #34d399;

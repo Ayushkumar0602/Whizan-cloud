@@ -294,8 +294,8 @@ export default function FleetApplicationsPage() {
                   fontSize: "0.8rem",
                   fontWeight: 600,
                   cursor: "pointer",
-                  border: "none",
-                  background: typeFilter === tab ? "var(--accent)" : "rgba(255, 255, 255, 0.05)",
+                  background: typeFilter === tab ? "var(--accent)" : "#f1f5f9",
+                  border: typeFilter === tab ? "1px solid var(--accent)" : "1px solid var(--border)",
                   color: typeFilter === tab ? "#fff" : "var(--muted)",
                 }}
               >

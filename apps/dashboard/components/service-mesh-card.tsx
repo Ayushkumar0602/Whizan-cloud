@@ -330,7 +330,7 @@ export function ServiceMeshCard({ service, containerStatus = "running" }: Servic
             borderRadius: '12px',
             width: '100%',
             maxWidth: '680px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
+            boxShadow: 'var(--shadow-lg)',
             overflow: 'hidden',
           }}>
             {/* Modal Header */}
@@ -340,7 +340,7 @@ export function ServiceMeshCard({ service, containerStatus = "running" }: Servic
               alignItems: 'center',
               padding: '1.25rem 1.5rem',
               borderBottom: '1px solid var(--border)',
-              background: 'rgba(255, 255, 255, 0.02)',
+              background: 'var(--bg-inset)',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                 <Radio size={20} color="#38bdf8" />

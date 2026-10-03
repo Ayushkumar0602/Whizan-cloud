@@ -26,26 +26,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                if (localStorage.getItem('theme') === 'light') {
-                  document.documentElement.setAttribute('data-theme', 'light');
-                } else {
-                  document.documentElement.setAttribute('data-theme', 'dark');
-                }
-              } catch (_) {}
-            `,
-          }}
-        />
-      </head>
+    <html lang="en" data-theme="light" className="light" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <AuthProvider>
           {children}
-          <Toaster richColors position="top-right" />
+          <Toaster richColors theme="light" position="top-right" />
         </AuthProvider>
       </body>
     </html>

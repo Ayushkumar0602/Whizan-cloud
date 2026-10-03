@@ -1213,8 +1213,8 @@ export default function CronDashboardPage() {
                   {/* High-Contrast Command Box */}
                   <div
                     style={{
-                      background: "rgba(0, 0, 0, 0.45)",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      background: "#0f172a",
+                      border: "1px solid #1e293b",
                       borderRadius: "8px",
                       padding: "0.75rem 0.9rem",
                       marginBottom: "1.25rem",
@@ -1446,19 +1446,19 @@ export default function CronDashboardPage() {
 
       {/* ─── CREATE & EDIT TASK MODAL ────────────────────────────────────────── */}
       {modalOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0, 0, 0, 0.75)", backdropFilter: "blur(8px)", padding: "1rem" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.35)", backdropFilter: "blur(8px)", padding: "1rem" }}>
           <div
             style={{
-              background: "#0c1017",
+              background: "#ffffff",
               border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
+              borderRadius: "var(--radius-lg)",
               width: "100%",
               maxWidth: 680,
               maxHeight: "92vh",
               overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+              boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.2)",
             }}
           >
             {/* Modal Header */}
@@ -1921,17 +1921,17 @@ export default function CronDashboardPage() {
 
       {/* ─── OBSERVABILITY DRAWER ──────────────────────────────────────────────── */}
       {drawerOpen && selectedJob && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", justifyContent: "flex-end", background: "rgba(0, 0, 0, 0.65)", backdropFilter: "blur(4px)" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", justifyContent: "flex-end", background: "rgba(15, 23, 42, 0.35)", backdropFilter: "blur(4px)" }}>
           <div
             style={{
               width: "100%",
               maxWidth: 780,
-              background: "#0c1017",
+              background: "#ffffff",
               borderLeft: "1px solid var(--border)",
               height: "100%",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "var(--shadow-hover)",
+              boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.25)",
             }}
           >
             {/* Drawer Header */}

@@ -319,7 +319,7 @@ export default function BackendDeploymentLogsPage() {
 
         /* Terminal Panel */
         .terminal-panel-card {
-          background: #05070b;
+          background: #0f172a;
           border: 1px solid var(--card-border);
           border-radius: var(--radius);
           overflow: hidden;
@@ -395,7 +395,7 @@ export default function BackendDeploymentLogsPage() {
           overflow-y: auto;
           padding: 0.75rem 0;
           font-family: var(--font-geist-mono), monospace;
-          background: #05070b;
+          background: #0f172a;
         }
         .logs-empty-waiting {
           display: flex;
