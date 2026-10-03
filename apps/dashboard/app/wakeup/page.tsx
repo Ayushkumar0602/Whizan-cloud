@@ -94,15 +94,30 @@ function WakeupContent() {
         width: "100vw",
         minHeight: "100vh",
         overflow: "hidden",
-        background: "#0c0a18",
-        color: "#ffffff",
+        background: "#fafbfc",
+        color: "#0f172a",
         fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
       }}
     >
-      {/* Fullscreen GhostFibers WebGL Canvas */}
+      {/* Aurora Ambient Background Blobs */}
+      <div
+        style={{
+          position: "fixed",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          background: `
+            radial-gradient(ellipse 80% 60% at 50% -20%, rgba(99, 102, 241, 0.12), transparent 70%),
+            radial-gradient(ellipse 60% 50% at 85% 40%, rgba(56, 189, 248, 0.1), transparent 60%),
+            radial-gradient(ellipse 50% 50% at 15% 70%, rgba(168, 85, 247, 0.08), transparent 60%)
+          `,
+        }}
+      />
+
+      {/* Fullscreen GhostFibers WebGL Canvas in Light Mode */}
       <div
         style={{
           position: "fixed",
@@ -111,15 +126,16 @@ function WakeupContent() {
           height: "100vh",
           zIndex: 1,
           overflow: "hidden",
+          opacity: 0.85,
         }}
       >
         <GhostFibers
-          lineColor="#140E35"
-          glowColor="#3437A0"
+          lineColor="#818cf8"
+          glowColor="#6366f1"
           speed={0.2}
           scale={2}
           rotation={0}
-          rotationSpeed={0.25}
+          rotationSpeed={0.2}
           layers={4}
           waveAmplitude={0.015}
           waveFrequency={3}
@@ -132,29 +148,17 @@ function WakeupContent() {
           lineSpacing={2}
           lineSharpness={16}
           glowFalloff={10}
-          glowIntensity={1.6}
-          brightness={2}
-          blueBoost={1.25}
-          vignette={0.8}
-          grain={0.05}
+          glowIntensity={1.4}
+          brightness={1.8}
+          blueBoost={1.15}
+          vignette={0.4}
+          grain={0.02}
           dpr={1}
-          lightMode={false}
+          lightMode={true}
           fps={60}
           paused={false}
         />
       </div>
-
-      {/* Atmospheric Vignette Overlay */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 2,
-          pointerEvents: "none",
-          background:
-            "radial-gradient(circle at 50% 50%, rgba(12, 10, 24, 0.15) 0%, rgba(12, 10, 24, 0.6) 75%, rgba(12, 10, 24, 0.92) 100%)",
-        }}
-      />
 
       {/* Centerpiece Information Overlay Card */}
       <div
@@ -162,176 +166,175 @@ function WakeupContent() {
           position: "relative",
           zIndex: 10,
           width: "90%",
-          maxWidth: 460,
-          background: "rgba(16, 13, 33, 0.76)",
-          backdropFilter: "blur(32px) saturate(180%)",
-          WebkitBackdropFilter: "blur(32px) saturate(180%)",
-          border: isReady ? "1px solid rgba(99, 102, 241, 0.7)" : "1px solid rgba(52, 55, 160, 0.35)",
+          maxWidth: 480,
+          background: "rgba(255, 255, 255, 0.94)",
+          backdropFilter: "blur(24px) saturate(180%)",
+          WebkitBackdropFilter: "blur(24px) saturate(180%)",
+          border: isReady ? "1px solid rgba(99, 102, 241, 0.5)" : "1px solid #e2e8f0",
           borderRadius: 24,
           padding: "2.4rem 2rem 2rem",
           textAlign: "center",
           boxShadow: isReady
-            ? "0 30px 80px -10px rgba(0, 0, 0, 0.9), 0 0 80px rgba(52, 55, 160, 0.5), inset 0 1px 0 rgba(99, 102, 241, 0.4)"
-            : "0 25px 70px -10px rgba(0, 0, 0, 0.85), 0 0 50px rgba(52, 55, 160, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12)",
+            ? "0 25px 50px -12px rgba(99, 102, 241, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.2)"
+            : "0 20px 40px -12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05)",
           transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
           transform: isReady ? "scale(1.02)" : "scale(1)",
         }}
       >
-            {/* Top Glowing Accent Line */}
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: "25%",
-                right: "25%",
-                height: 2,
-                background: "linear-gradient(90deg, transparent, #3437A0, #6366f1, transparent)",
-                borderRadius: 2,
-                filter: "blur(0.5px)",
-              }}
-            />
+        {/* Top Glowing Accent Line */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "25%",
+            right: "25%",
+            height: 3,
+            background: "linear-gradient(90deg, transparent, #6366f1, #38bdf8, transparent)",
+            borderRadius: 3,
+          }}
+        />
 
-            {/* Status Pill Badge */}
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.45rem",
-                background: isReady ? "rgba(99, 102, 241, 0.2)" : "rgba(52, 55, 160, 0.2)",
-                border: isReady ? "1px solid rgba(99, 102, 241, 0.6)" : "1px solid rgba(52, 55, 160, 0.45)",
-                borderRadius: 9999,
-                padding: "0.28rem 0.8rem",
-                marginBottom: "1.2rem",
-              }}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: isReady ? "#38bdf8" : "#818cf8",
-                  boxShadow: isReady ? "0 0 8px #38bdf8" : "0 0 8px #818cf8",
-                  animation: "pulse 1.8s ease-in-out infinite alternate",
-                }}
-              />
-              <span
-                style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: isReady ? "#38bdf8" : "#a5b4fc",
-                }}
-              >
-                {isReady ? "Online • 200 OK" : "Whizan Scale-to-Zero"}
-              </span>
-            </div>
+        {/* Status Pill Badge */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.45rem",
+            background: isReady ? "rgba(16, 185, 129, 0.1)" : "rgba(99, 102, 241, 0.08)",
+            border: isReady ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(99, 102, 241, 0.25)",
+            borderRadius: 9999,
+            padding: "0.3rem 0.85rem",
+            marginBottom: "1.2rem",
+          }}
+        >
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: isReady ? "#10b981" : "#6366f1",
+              boxShadow: isReady ? "0 0 8px rgba(16, 185, 129, 0.6)" : "0 0 8px rgba(99, 102, 241, 0.6)",
+              animation: "pulse 1.8s ease-in-out infinite alternate",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "0.72rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: isReady ? "#059669" : "#4f46e5",
+            }}
+          >
+            {isReady ? "Online • 200 OK" : "Whizan Scale-to-Zero"}
+          </span>
+        </div>
 
-            {/* Heading */}
-            <h1
-              style={{
-                fontSize: "1.55rem",
-                fontWeight: 700,
-                letterSpacing: "-0.03em",
-                marginBottom: "0.55rem",
-                background: "linear-gradient(135deg, #ffffff 40%, #c7d2fe 75%, #818cf8 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                lineHeight: 1.25,
-              }}
-            >
-              {isReady ? "Application Live" : "Awakening Service"}
-            </h1>
+        {/* Heading */}
+        <h1
+          style={{
+            fontSize: "1.6rem",
+            fontWeight: 700,
+            letterSpacing: "-0.03em",
+            marginBottom: "0.55rem",
+            color: "#0f172a",
+            lineHeight: 1.25,
+          }}
+        >
+          {isReady ? "Application Live" : "Awakening Service"}
+        </h1>
 
-            {/* Precise Subtitle */}
-            <p
-              style={{
-                fontSize: "0.88rem",
-                color: "#94a3b8",
-                lineHeight: 1.55,
-                marginBottom: "1.4rem",
-                padding: "0 0.4rem",
-              }}
-            >
-              {isReady
-                ? "Container is fully warmed up and active. Launching your application..."
-                : "Your container was in eco-standby to save compute resources. Warming up memory & edge routing now."}
-            </p>
+        {/* Precise Subtitle */}
+        <p
+          style={{
+            fontSize: "0.88rem",
+            color: "#64748b",
+            lineHeight: 1.55,
+            marginBottom: "1.4rem",
+            padding: "0 0.4rem",
+          }}
+        >
+          {isReady
+            ? "Container is fully warmed up and active. Launching your application..."
+            : "Your container was in eco-standby to save compute resources. Warming up memory & edge routing now."}
+        </p>
 
-            {/* Target Domain Chip */}
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.45rem",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(52, 55, 160, 0.35)",
-                borderRadius: 8,
-                padding: "0.35rem 0.75rem",
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: "0.78rem",
-                color: "#e2e8f0",
-                marginBottom: "1.5rem",
-              }}
-            >
-              <Globe size={13} style={{ color: "#818cf8" }} />
-              <span>{displaySlug}</span>
-            </div>
+        {/* Target Domain Chip */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 8,
+            padding: "0.4rem 0.85rem",
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: "0.8rem",
+            color: "#334155",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <Globe size={13} style={{ color: "#6366f1" }} />
+          <span>{displaySlug}</span>
+        </div>
 
-            {/* Glowing Progress Bar */}
-            <div
-              style={{
-                height: 4,
-                background: "rgba(255, 255, 255, 0.08)",
-                borderRadius: 9999,
-                overflow: "hidden",
-                marginBottom: "1.2rem",
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: `${progress}%`,
-                  borderRadius: 9999,
-                  background: "linear-gradient(90deg, #3437A0, #6366f1, #38bdf8)",
-                  boxShadow: "0 0 14px rgba(99, 102, 241, 0.9)",
-                  transition: "width 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-                }}
-              />
-            </div>
+        {/* Glowing Progress Bar */}
+        <div
+          style={{
+            height: 6,
+            background: "#f1f5f9",
+            borderRadius: 9999,
+            overflow: "hidden",
+            marginBottom: "1.2rem",
+            border: "1px solid #e2e8f0",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${progress}%`,
+              borderRadius: 9999,
+              background: "linear-gradient(90deg, #6366f1, #38bdf8)",
+              boxShadow: "0 0 10px rgba(99, 102, 241, 0.4)",
+              transition: "width 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+          />
+        </div>
 
-            {/* Live Step Status Feed & Elapsed Stopwatch */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                background: "rgba(10, 8, 22, 0.65)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: 10,
-                padding: "0.65rem 0.9rem",
-                fontSize: "0.8rem",
-                color: "#e2e8f0",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", textAlign: "left" }}>
-                <span>{stepIcon}</span>
-                <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>{stepText}</span>
-              </div>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: "0.74rem",
-                  color: "#94a3b8",
-                  background: "rgba(255, 255, 255, 0.06)",
-                  padding: "0.15rem 0.45rem",
-                  borderRadius: 4,
-                }}
-              >
-                {elapsed}s
-              </span>
-            </div>
+        {/* Live Step Status Feed & Elapsed Stopwatch */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: "0.75rem 1rem",
+            fontSize: "0.82rem",
+            color: "#0f172a",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", textAlign: "left" }}>
+            <span>{stepIcon}</span>
+            <span style={{ fontSize: "0.82rem", color: "#334155", fontWeight: 500 }}>{stepText}</span>
           </div>
+          <span
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: "0.76rem",
+              fontWeight: 600,
+              color: "#6366f1",
+              background: "rgba(99, 102, 241, 0.08)",
+              padding: "0.2rem 0.5rem",
+              borderRadius: 6,
+            }}
+          >
+            {elapsed}s
+          </span>
+        </div>
+      </div>
 
       <style jsx global>{`
         @keyframes pulse {
@@ -356,7 +359,7 @@ export default function WakeupPage() {
         <div
           style={{
             minHeight: "100vh",
-            background: "#0c0a18",
+            background: "#fafbfc",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

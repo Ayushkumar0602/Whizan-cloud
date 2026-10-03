@@ -253,9 +253,10 @@ export default function AdminTerminalPage() {
               <button
                 onClick={() => setTargetType("local")}
                 style={{
-                  background: targetType === "local" ? "rgba(255, 255, 255, 0.08)" : "transparent",
+                  background: targetType === "local" ? "#ffffff" : "transparent",
                   color: targetType === "local" ? "var(--foreground)" : "var(--muted)",
-                  border: "none",
+                  border: targetType === "local" ? "1px solid var(--border)" : "1px solid transparent",
+                  boxShadow: targetType === "local" ? "var(--shadow-sm)" : "none",
                   padding: "0.3rem 0.75rem",
                   borderRadius: 6,
                   fontSize: "0.76rem",
@@ -276,9 +277,10 @@ export default function AdminTerminalPage() {
                   if (!remoteConfig.host) setShowRemoteModal(true);
                 }}
                 style={{
-                  background: targetType === "remote" ? "rgba(255, 255, 255, 0.08)" : "transparent",
+                  background: targetType === "remote" ? "#ffffff" : "transparent",
                   color: targetType === "remote" ? "var(--foreground)" : "var(--muted)",
-                  border: "none",
+                  border: targetType === "remote" ? "1px solid var(--border)" : "1px solid transparent",
+                  boxShadow: targetType === "remote" ? "var(--shadow-sm)" : "none",
                   padding: "0.3rem 0.75rem",
                   borderRadius: 6,
                   fontSize: "0.76rem",

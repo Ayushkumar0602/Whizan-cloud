@@ -621,7 +621,7 @@ export default function SettingsPage() {
         }
         .copy-icon-btn:hover {
           color: var(--foreground);
-          background: rgba(255, 255, 255, 0.08);
+          background: #f1f5f9;
         }
 
         /* Security Box */

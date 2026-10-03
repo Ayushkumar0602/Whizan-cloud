@@ -49,53 +49,42 @@ function RegisterForm() {
 
   return (
     <>
-      <h1 style={{ fontSize: "1.4rem", fontWeight: 700, letterSpacing: "-0.03em" }}>
-        Create your workspace
-      </h1>
-      <p style={{ color: "var(--muted)", margin: "0.4rem 0 1.5rem", fontSize: "0.9rem" }}>
-        {redirectParam ? "Sign up to access your requested page" : "Get started with Whizan Cloud Services"}
-      </p>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          Create your workspace
+        </h1>
+        <p className="text-slate-500 text-sm mt-1">
+          {redirectParam ? "Sign up to access your requested page" : "Get started with Whizan Cloud Services"}
+        </p>
+      </div>
 
       {redirectParam && (
-        <div
-          style={{
-            background: "rgba(99, 102, 241, 0.08)",
-            border: "1px solid rgba(99, 102, 241, 0.25)",
-            borderRadius: "8px",
-            padding: "0.6rem 0.85rem",
-            marginBottom: "1.25rem",
-            fontSize: "0.8rem",
-            color: "var(--foreground)",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-          }}
-        >
-          <span style={{ color: "var(--accent)", fontWeight: 600 }}>Destination:</span>
-          <code style={{ fontSize: "0.78rem", color: "#38bdf8" }}>{destination}</code>
+        <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-lg p-2.5 mb-5 text-xs text-slate-700 flex items-center gap-2">
+          <span className="text-indigo-600 font-semibold">Destination:</span>
+          <code className="text-indigo-800 font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-indigo-100">{destination}</code>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
-          <label className="form-label">Name</label>
+          <label className="form-label">Full Name</label>
           <input
             id="name"
             type="text"
             className="input"
-            placeholder="Your name"
+            placeholder="Ada Lovelace"
             value={name}
             onChange={e => setName(e.target.value)}
             autoFocus
           />
         </div>
         <div>
-          <label className="form-label">Email</label>
+          <label className="form-label">Work Email</label>
           <input
             id="email"
             type="email"
             className="input"
-            placeholder="you@example.com"
+            placeholder="you@company.com"
             value={email}
             onChange={e => setEmail(e.target.value)}
             required
@@ -107,35 +96,30 @@ function RegisterForm() {
             id="password"
             type="password"
             className="input"
-            placeholder="Min. 8 characters"
+            placeholder="At least 8 characters"
             value={password}
             onChange={e => setPassword(e.target.value)}
             required
           />
         </div>
+        
         <button
           id="register-btn"
           type="submit"
           className="btn btn-primary"
           disabled={loading}
-          style={{ marginTop: "0.35rem", width: "100%", padding: "0.8rem" }}
+          style={{ marginTop: "0.5rem", width: "100%", padding: "0.68rem 1rem", fontSize: "0.9rem" }}
         >
-          {loading ? "Creating workspace…" : "Create workspace"}
+          {loading ? "Creating workspace…" : "Create Free Workspace"}
         </button>
       </form>
 
-      <p style={{ marginTop: "1.35rem", textAlign: "center", fontSize: "0.875rem", color: "var(--muted)" }}>
+      <div className="mt-6 pt-5 border-t border-slate-100 text-center text-sm text-slate-500">
         Already have an account?{" "}
-        <Link href={loginHref} style={{ color: "var(--accent)", textDecoration: "none" }}>
+        <Link href={loginHref} className="text-indigo-600 font-semibold hover:underline">
           Sign in
         </Link>
-      </p>
-      <style>{`
-        .form-label {
-          display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted);
-          margin-bottom: 0.4rem; letter-spacing: 0.04em; text-transform: uppercase;
-        }
-      `}</style>
+      </div>
     </>
   );
 }

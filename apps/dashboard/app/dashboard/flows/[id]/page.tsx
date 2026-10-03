@@ -2602,8 +2602,8 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "0.55rem 1.1rem",
-                background: "rgba(0, 0, 0, 0.4)",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                background: "#0f172a",
+                borderBottom: "1px solid #1e293b",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "0.85rem" }}>
@@ -2659,10 +2659,10 @@ export default function FlowEditorPage({ params }: { params: Promise<{ id: strin
                 <span
                   style={{
                     fontSize: "0.68rem",
-                    color: "var(--muted)",
+                    color: "#94a3b8",
                     padding: "0.2rem 0.45rem",
                     borderRadius: 4,
-                    background: "rgba(255, 255, 255, 0.05)",
+                    background: "#1e293b",
                   }}
                 >
                   64KB Ring Buffer Active

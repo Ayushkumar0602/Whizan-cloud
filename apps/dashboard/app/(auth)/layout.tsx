@@ -31,19 +31,19 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
   const features = [
     {
-      icon: <Globe size={18} style={{ color: "#38bdf8" }} />,
+      icon: <Globe size={18} className="text-sky-600" />,
       title: "Global Edge CDN",
       desc: "Zero-configuration deployments with automated wildcard SSL and edge routing.",
     },
     {
-      icon: <Server size={18} className="text-accent" />,
+      icon: <Server size={18} className="text-indigo-600" />,
       title: "Container Runtimes",
       desc: "Run Node.js, Python, Go, and Docker microservices with live process telemetry.",
     },
     {
-      icon: <Database size={18} style={{ color: "#818cf8" }} />,
+      icon: <Database size={18} className="text-violet-600" />,
       title: "Managed Persistence",
-      desc: "Dedicated PostgreSQL clusters with PgBouncer connection pooling and Redis caching.",
+      desc: "Dedicated PostgreSQL clusters with connection pooling and Redis caching.",
     },
   ];
 
@@ -51,10 +51,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <div className="auth-shell">
       <aside className="auth-aside">
         <BrandMark href="/" />
-        <div style={{ marginTop: "3rem" }}>
+        <div style={{ marginTop: "2.5rem" }}>
           <div className="auth-badge">
             <span className="auth-dot" />
-            <span>Developer Cloud</span>
+            <span>Developer Cloud Console</span>
           </div>
           <h1 className="auth-title">Deploy with speed, scale with precision.</h1>
           <p className="auth-lead">
@@ -75,12 +75,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         <div className="auth-aside-footer">
-          <ShieldCheck size={14} className="text-accent" />
+          <ShieldCheck size={15} className="text-emerald-600" />
           <span>Enterprise TLS 1.3 Encryption Standard</span>
         </div>
       </aside>
 
-      <main className="auth-main">
+      <main className="auth-main aurora-bg">
         <div className="auth-card">{children}</div>
       </main>
 
@@ -88,15 +88,16 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         .auth-shell {
           min-height: 100vh;
           display: grid;
-          grid-template-columns: 1.1fr 0.9fr;
+          grid-template-columns: 1.05fr 0.95fr;
           background: var(--background);
         }
         .auth-aside {
-          padding: 3rem 3.5rem;
+          padding: 3.5rem 4rem;
           background:
-            radial-gradient(700px 350px at 0% 0%, rgba(99, 102, 241, 0.14), transparent 60%),
-            #07090e;
-          border-right: 1px solid var(--card-border);
+            radial-gradient(800px 400px at 0% 0%, rgba(224, 231, 255, 0.7), transparent 70%),
+            radial-gradient(600px 300px at 100% 100%, rgba(207, 250, 254, 0.4), transparent 60%),
+            #ffffff;
+          border-right: 1px solid var(--border);
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -106,24 +107,25 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           display: inline-flex;
           align-items: center;
           gap: 0.45rem;
-          padding: 0.25rem 0.65rem;
-          background: rgba(99, 102, 241, 0.1);
-          border: 1px solid rgba(99, 102, 241, 0.2);
+          padding: 0.25rem 0.7rem;
+          background: rgba(79, 70, 229, 0.08);
+          border: 1px solid rgba(79, 70, 229, 0.2);
           border-radius: 9999px;
           font-size: 0.74rem;
           font-weight: 600;
           color: var(--accent);
-          margin-bottom: 1rem;
+          margin-bottom: 1.25rem;
         }
         .auth-dot {
           width: 6px;
           height: 6px;
           border-radius: 50%;
           background: #10b981;
+          box-shadow: 0 0 6px #10b981;
         }
 
         .auth-title {
-          font-size: 2.25rem;
+          font-size: 2.2rem;
           letter-spacing: -0.04em;
           color: var(--foreground);
           line-height: 1.15;
@@ -132,7 +134,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         }
         .auth-lead {
           color: var(--muted);
-          line-height: 1.55;
+          line-height: 1.6;
           font-size: 0.95rem;
           max-width: 30rem;
         }
@@ -140,20 +142,21 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         .auth-features-list {
           display: flex;
           flex-direction: column;
-          gap: 1.25rem;
+          gap: 1.35rem;
           margin: 3rem 0;
         }
         .auth-feature-row {
           display: flex;
           align-items: flex-start;
-          gap: 0.85rem;
+          gap: 0.9rem;
         }
         .auth-feature-icon {
-          width: 36px;
-          height: 36px;
-          border-radius: 8px;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid var(--card-border);
+          width: 38px;
+          height: 38px;
+          border-radius: 9px;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -163,10 +166,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           font-size: 0.9rem;
           font-weight: 650;
           color: var(--foreground);
-          margin-bottom: 0.15rem;
+          margin-bottom: 0.2rem;
         }
         .auth-feature-desc {
-          font-size: 0.8rem;
+          font-size: 0.82rem;
           color: var(--muted);
           line-height: 1.45;
         }
@@ -175,8 +178,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          font-size: 0.75rem;
+          font-size: 0.78rem;
           color: var(--muted);
+          font-weight: 500;
         }
 
         .auth-main {
@@ -184,17 +188,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           align-items: center;
           justify-content: center;
           padding: 2.5rem 1.5rem;
-          background: radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.04) 0%, transparent 60%);
         }
         .auth-card {
           width: 100%;
           max-width: 420px;
-          background: var(--card);
-          backdrop-filter: blur(16px);
-          border: 1px solid var(--card-border);
+          background: #ffffff;
+          border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 2.25rem;
-          box-shadow: var(--shadow);
+          padding: 2.5rem;
+          box-shadow: var(--shadow-lg);
         }
 
         @media (max-width: 900px) {

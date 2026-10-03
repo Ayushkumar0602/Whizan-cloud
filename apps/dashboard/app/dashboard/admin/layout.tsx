@@ -170,10 +170,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         }
 
         .admin-nav-tab-active {
-          background: var(--card) !important;
+          background: #ffffff !important;
           color: var(--accent) !important;
-          border-color: rgba(99, 102, 241, 0.25) !important;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+          border-color: rgba(79, 70, 229, 0.25) !important;
+          box-shadow: var(--shadow-sm);
         }
 
         .admin-page-content {

@@ -247,7 +247,7 @@ export default function ContainersPage() {
           justify-content: space-between;
           padding: 1.15rem 1.35rem;
           border-bottom: 1px solid var(--card-border);
-          background: rgba(255, 255, 255, 0.02);
+          background: #fafbfc;
         }
         .containers-count-badge {
           font-size: 0.74rem;
@@ -324,7 +324,7 @@ export default function ContainersPage() {
         .modal-body-terminal {
           padding: 1rem;
           overflow-y: auto;
-          background: #05070b;
+          background: #0f172a;
           flex: 1;
         }
         .terminal-pre {

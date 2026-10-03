@@ -307,8 +307,9 @@ export default function FlowsOverviewPage() {
                       fontWeight: 650,
                       padding: "0.15rem 0.5rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.08)",
-                      color: "var(--muted)",
+                      background: "#f1f5f9",
+                      border: "1px solid var(--border)",
+                      color: "var(--foreground)",
                       letterSpacing: "0.04em",
                     }}
                   >

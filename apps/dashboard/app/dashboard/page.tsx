@@ -9,8 +9,6 @@ import { StatusBadge } from "@/components/status-badge";
 import {
   ArrowRight,
   Plus,
-  Activity,
-  GitPullRequest,
   Server,
   Globe,
   ExternalLink,
@@ -20,7 +18,8 @@ import {
   Zap,
   Radio,
   Terminal,
-  Database
+  Database,
+  ArrowUpRight
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -64,7 +63,7 @@ export default function ConsolePage() {
 
   return (
     <div className="page">
-      {/* Premium Welcome Header */}
+      {/* Premium Welcome Header with subtle Aurora glow */}
       <div className="console-hero">
         <div className="hero-content">
           <div className="hero-badge">
@@ -80,27 +79,23 @@ export default function ConsolePage() {
         </div>
 
         <div className="hero-actions">
-          <Link href="/dashboard/projects/new" className="btn btn-primary btn-lg" id="deploy-frontend-btn">
-            <Globe size={16} /> Deploy Frontend
+          <Link href="/dashboard/projects/new" className="btn btn-primary" id="deploy-frontend-btn">
+            <Globe size={15} /> Deploy Frontend
           </Link>
-          <Link href="/dashboard/backend/new" className="btn btn-secondary btn-lg" id="deploy-backend-btn">
-            <Server size={16} /> Deploy Service
+          <Link href="/dashboard/backend/new" className="btn btn-secondary" id="deploy-backend-btn">
+            <Server size={15} /> Deploy Service
           </Link>
           <Link
             href="/dashboard/functions/new"
-            className="btn btn-lg"
+            className="btn btn-secondary"
             id="deploy-function-btn"
             style={{
-              background: "var(--accent-glow)",
+              background: "rgba(79, 70, 229, 0.06)",
               color: "var(--accent)",
-              border: "1px solid var(--accent)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              fontWeight: 700,
+              borderColor: "rgba(79, 70, 229, 0.2)",
             }}
           >
-            <Zap size={16} /> New Edge Function
+            <Zap size={15} /> Edge Function
           </Link>
         </div>
       </div>
@@ -109,46 +104,46 @@ export default function ConsolePage() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-label">
-            <Globe size={14} className="text-accent" /> Frontend Apps
+            <Globe size={14} className="text-sky-600" /> Frontend Apps
           </div>
           <div className="stat-value">{frontendList.length}</div>
-          <div className="stat-sub" style={{ color: "var(--success)" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+          <div className="stat-sub text-emerald-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             {liveFrontends} live on Edge CDN
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-label">
-            <Server size={14} className="text-accent" /> Backend Services
+            <Server size={14} className="text-indigo-600" /> Backend Services
           </div>
           <div className="stat-value">{backendList.length}</div>
-          <div className="stat-sub">
+          <div className="stat-sub text-slate-500">
             {activeBackends} active / {backendList.length - activeBackends} asleep
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-label">
-            <Zap size={14} style={{ color: "var(--accent)" }} /> Edge Functions
+            <Zap size={14} className="text-violet-600" /> Edge Functions
           </div>
           <div className="stat-value">{functionList.length}</div>
-          <div className="stat-sub" style={{ color: "#10b981" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
+          <div className="stat-sub text-violet-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
             Sub-5ms Serverless V8
           </div>
         </div>
 
         <div className="stat-card">
           <div className="stat-label">
-            <Radio size={14} className="text-accent" /> Cloud Ingress
+            <Radio size={14} className="text-sky-600" /> Cloud Ingress
           </div>
-          <div className="stat-value" style={{ fontSize: "1.25rem", fontFamily: "var(--font-geist-mono), monospace" }}>
-            {baseDomain}
+          <div className="stat-value mono text-sm font-semibold truncate" title={baseDomain}>
+            20.2.136.11
           </div>
-          <div className="stat-sub" style={{ color: "var(--success)" }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-            Operational • Port 80
+          <div className="stat-sub text-emerald-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            Port 80 • nip.io mesh
           </div>
         </div>
       </div>
@@ -158,7 +153,7 @@ export default function ConsolePage() {
         {/* Left Column: Active Frontends & Services */}
         <div className="console-main-col">
           {/* Frontend Applications Snippet */}
-          <div className="section-card">
+          <div className="card">
             <div className="section-card-header">
               <div>
                 <h2 className="section-card-title">Frontend Applications</h2>
@@ -173,9 +168,9 @@ export default function ConsolePage() {
               <div className="skeleton" style={{ height: 140 }} />
             ) : frontendList.length === 0 ? (
               <div className="empty-inner">
-                <Globe size={28} className="text-muted" />
-                <div style={{ fontWeight: 600, marginTop: "0.5rem" }}>No frontend applications deployed</div>
-                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                <Globe size={28} className="text-slate-400" />
+                <div style={{ fontWeight: 650, marginTop: "0.5rem", color: "var(--foreground)" }}>No frontend applications deployed</div>
+                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem", maxWidth: 360 }}>
                   Connect your repository to deploy Next.js, Vite, or React apps in seconds.
                 </p>
                 <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
@@ -192,8 +187,8 @@ export default function ConsolePage() {
                   return (
                     <div key={p.id} className="item-row">
                       <Link href={`/dashboard/projects/${p.id}`} className="item-details-link">
-                        <div className="item-icon-box">
-                          <Globe size={18} style={{ color: "#38bdf8" }} />
+                        <div className="item-icon-box text-sky-600 bg-sky-50/70 border-sky-100">
+                          <Globe size={18} />
                         </div>
                         <div className="item-details">
                           <div className="item-name-row">
@@ -201,7 +196,7 @@ export default function ConsolePage() {
                             <span className="item-mesh-alias mono">/{p.slug}</span>
                           </div>
                           <div className="item-sub-row">
-                            <span>{p.framework}</span>
+                            <span className="font-medium text-slate-700">{p.framework}</span>
                             <span>•</span>
                             <span>branch: {p.branch}</span>
                             <span>•</span>
@@ -235,7 +230,7 @@ export default function ConsolePage() {
           </div>
 
           {/* Backend Services Snippet */}
-          <div className="section-card" style={{ marginTop: "1.5rem" }}>
+          <div className="card" style={{ marginTop: "1.5rem" }}>
             <div className="section-card-header">
               <div>
                 <h2 className="section-card-title">Backend Services</h2>
@@ -250,9 +245,9 @@ export default function ConsolePage() {
               <div className="skeleton" style={{ height: 140 }} />
             ) : backendList.length === 0 ? (
               <div className="empty-inner">
-                <Server size={28} className="text-muted" />
-                <div style={{ fontWeight: 600, marginTop: "0.5rem" }}>No backend services deployed</div>
-                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+                <Server size={28} className="text-slate-400" />
+                <div style={{ fontWeight: 650, marginTop: "0.5rem", color: "var(--foreground)" }}>No backend services deployed</div>
+                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem", maxWidth: 360 }}>
                   Deploy your Node.js, Python, or Go services with automated health checks.
                 </p>
                 <Link href="/dashboard/backend/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
@@ -270,8 +265,8 @@ export default function ConsolePage() {
                   return (
                     <div key={s.id} className="item-row">
                       <Link href={`/dashboard/backend/${s.id}`} className="item-details-link">
-                        <div className="item-icon-box">
-                          <Server size={18} className="text-accent" />
+                        <div className="item-icon-box text-indigo-600 bg-indigo-50/70 border-indigo-100">
+                          <Server size={18} />
                         </div>
                         <div className="item-details">
                           <div className="item-name-row">
@@ -279,7 +274,7 @@ export default function ConsolePage() {
                             <span className="item-mesh-alias mono">/{s.slug}</span>
                           </div>
                           <div className="item-sub-row">
-                            <span className="mono">{s.language}</span>
+                            <span className="mono font-semibold text-slate-700">{s.language}</span>
                             <span>•</span>
                             <span>branch: {s.branch}</span>
                             <span>•</span>
@@ -293,7 +288,7 @@ export default function ConsolePage() {
                       <div className="item-status-col">
                         {isActive && (
                           <span className="badge badge-ready">
-                            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             ACTIVE
                           </span>
                         )}
@@ -332,14 +327,14 @@ export default function ConsolePage() {
 
         {/* Right Column: Platform Navigation & Endpoints */}
         <div className="console-side-col">
-          <div className="section-card">
+          <div className="card">
             <h3 className="section-card-title" style={{ marginBottom: "1rem" }}>
               Quick Actions
             </h3>
             <div className="quick-actions-stack">
               <Link href="/dashboard/projects/new" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(56, 189, 248, 0.12)", color: "#38bdf8" }}>
-                  <Globe size={18} />
+                <div className="quick-card-icon bg-sky-50 text-sky-600 border border-sky-100">
+                  <Globe size={17} />
                 </div>
                 <div>
                   <div className="quick-card-title">New Frontend Application</div>
@@ -348,8 +343,8 @@ export default function ConsolePage() {
               </Link>
 
               <Link href="/dashboard/backend/new" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(99, 102, 241, 0.12)", color: "#818cf8" }}>
-                  <Server size={18} />
+                <div className="quick-card-icon bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  <Server size={17} />
                 </div>
                 <div>
                   <div className="quick-card-title">New Backend Service</div>
@@ -357,9 +352,19 @@ export default function ConsolePage() {
                 </div>
               </Link>
 
+              <Link href="/dashboard/functions/new" className="quick-card">
+                <div className="quick-card-icon bg-violet-50 text-violet-600 border border-violet-100">
+                  <Zap size={17} />
+                </div>
+                <div>
+                  <div className="quick-card-title">New Edge Function</div>
+                  <div className="quick-card-sub">Serverless V8 isolated micro-APIs</div>
+                </div>
+              </Link>
+
               <Link href="/dashboard/databases" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(16, 185, 129, 0.12)", color: "#34d399" }}>
-                  <Database size={18} />
+                <div className="quick-card-icon bg-emerald-50 text-emerald-600 border border-emerald-100">
+                  <Database size={17} />
                 </div>
                 <div>
                   <div className="quick-card-title">Managed Databases</div>
@@ -368,25 +373,25 @@ export default function ConsolePage() {
               </Link>
 
               <Link href="/dashboard/mcp" className="quick-card">
-                <div className="quick-card-icon" style={{ background: "rgba(168, 85, 247, 0.12)", color: "#c084fc" }}>
-                  <Terminal size={18} />
+                <div className="quick-card-icon bg-purple-50 text-purple-600 border border-purple-100">
+                  <Terminal size={17} />
                 </div>
                 <div>
                   <div className="quick-card-title">DevOps Agent MCP</div>
-                  <div className="quick-card-sub">Autonomous deployment tooling</div>
+                  <div className="quick-card-sub">AI autonomous deployment protocol</div>
                 </div>
               </Link>
             </div>
           </div>
 
           {/* Cloud Ingress & Edge Router Status */}
-          <div className="section-card" style={{ marginTop: "1.5rem" }}>
+          <div className="card" style={{ marginTop: "1.5rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
               <h3 className="section-card-title" style={{ margin: 0 }}>
                 Cloud Ingress
               </h3>
               <span className="badge badge-ready">
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                 Operational
               </span>
             </div>
@@ -394,19 +399,19 @@ export default function ConsolePage() {
             <div className="ingress-info-stack">
               <div className="ingress-info-row">
                 <span className="ingress-key">Edge Ingress IP</span>
-                <span className="ingress-val mono">20.2.136.11</span>
+                <span className="ingress-val mono text-xs font-semibold">20.2.136.11</span>
               </div>
               <div className="ingress-info-row">
                 <span className="ingress-key">Wildcard Gateway</span>
-                <span className="ingress-val mono">*.{baseDomain}</span>
+                <span className="ingress-val mono text-xs">*.{baseDomain}</span>
               </div>
               <div className="ingress-info-row">
                 <span className="ingress-key">Traffic Protocol</span>
-                <span className="ingress-val">HTTP / Port 80</span>
+                <span className="ingress-val text-xs">HTTP / Port 80</span>
               </div>
               <div className="ingress-info-row">
                 <span className="ingress-key">Zero-Downtime Cutover</span>
-                <span className="ingress-val" style={{ color: "#10b981" }}>Enabled</span>
+                <span className="ingress-val text-xs text-emerald-700 font-semibold">Enabled</span>
               </div>
             </div>
           </div>
@@ -414,30 +419,21 @@ export default function ConsolePage() {
       </div>
 
       <style>{`
-        /* Hero Banner */
+        /* Hero Banner with Daylight Aurora Glow */
         .console-hero {
-          background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(56, 189, 248, 0.05) 50%, rgba(16, 185, 129, 0.04) 100%);
-          border: 1px solid var(--card-border);
+          background:
+            radial-gradient(900px 300px at 10% 0%, rgba(224, 231, 255, 0.7), transparent 60%),
+            radial-gradient(800px 250px at 90% 100%, rgba(207, 250, 254, 0.5), transparent 60%),
+            #ffffff;
+          border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 2.25rem;
+          padding: 2.25rem 2.5rem;
           margin-bottom: 2rem;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 2rem;
-          position: relative;
-          overflow: hidden;
-          box-shadow: var(--shadow);
-        }
-        .console-hero::before {
-          content: "";
-          position: absolute;
-          top: -50%;
-          left: -20%;
-          width: 60%;
-          height: 200%;
-          background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
-          pointer-events: none;
+          box-shadow: var(--shadow-sm);
         }
 
         .hero-content {
@@ -448,9 +444,9 @@ export default function ConsolePage() {
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          padding: 0.25rem 0.75rem;
-          background: rgba(99, 102, 241, 0.1);
-          border: 1px solid rgba(99, 102, 241, 0.2);
+          padding: 0.25rem 0.7rem;
+          background: rgba(79, 70, 229, 0.08);
+          border: 1px solid rgba(79, 70, 229, 0.2);
           border-radius: 9999px;
           font-size: 0.75rem;
           font-weight: 600;
@@ -465,30 +461,30 @@ export default function ConsolePage() {
           box-shadow: 0 0 6px #10b981;
         }
         .hero-title {
-          font-size: 2.1rem;
+          font-size: 2rem;
           font-weight: 800;
           letter-spacing: -0.035em;
           color: var(--foreground);
           line-height: 1.15;
         }
         .hero-name-gradient {
-          background: var(--accent-gradient);
+          background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 40%, #0284c7 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
         .hero-subtitle {
           color: var(--muted);
-          font-size: 0.94rem;
+          font-size: 0.92rem;
           max-width: 44rem;
           margin-top: 0.5rem;
           line-height: 1.55;
         }
         .hero-actions {
           display: flex;
-          gap: 0.75rem;
+          gap: 0.65rem;
           flex-shrink: 0;
-          position: relative;
-          z-index: 1;
+          align-items: center;
+          flex-wrap: wrap;
         }
 
         /* 2-Column Console Layout */
@@ -499,14 +495,6 @@ export default function ConsolePage() {
           align-items: start;
         }
 
-        .section-card {
-          background: var(--card);
-          backdrop-filter: blur(16px);
-          border: 1px solid var(--card-border);
-          border-radius: var(--radius);
-          padding: 1.5rem;
-          box-shadow: var(--shadow);
-        }
         .section-card-header {
           display: flex;
           align-items: flex-start;
@@ -532,7 +520,7 @@ export default function ConsolePage() {
           gap: 0.35rem;
           font-size: 0.8125rem;
           color: var(--accent);
-          font-weight: 550;
+          font-weight: 600;
           transition: opacity 0.15s ease;
           white-space: nowrap;
         }
@@ -552,14 +540,15 @@ export default function ConsolePage() {
           justify-content: space-between;
           gap: 1rem;
           padding: 0.85rem 1rem;
-          background: var(--bg-inset);
-          border: 1px solid var(--card-border);
+          background: #ffffff;
+          border: 1px solid var(--border);
           border-radius: 10px;
           transition: all 0.15s ease;
         }
         .item-row:hover {
           border-color: var(--card-border-hover);
-          background: var(--card-hover);
+          background: var(--bg-inset);
+          transform: translateX(1px);
         }
 
         .item-details-link {
@@ -576,8 +565,7 @@ export default function ConsolePage() {
           width: 38px;
           height: 38px;
           border-radius: 8px;
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid var(--card-border);
+          border-width: 1px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -600,11 +588,12 @@ export default function ConsolePage() {
           color: var(--foreground);
         }
         .item-mesh-alias {
-          font-size: 0.75rem;
+          font-size: 0.73rem;
           color: var(--muted);
-          background: rgba(255, 255, 255, 0.04);
-          padding: 0.15rem 0.4rem;
+          background: #f1f5f9;
+          padding: 0.12rem 0.4rem;
           border-radius: 4px;
+          border: 1px solid #e2e8f0;
         }
 
         .item-sub-row {
@@ -627,19 +616,18 @@ export default function ConsolePage() {
           display: inline-flex;
           align-items: center;
           gap: 0.3rem;
-          padding: 0.25rem 0.6rem;
+          padding: 0.22rem 0.55rem;
           border-radius: 6px;
-          background: rgba(16, 185, 129, 0.1);
-          border: 1px solid rgba(16, 185, 129, 0.25);
-          color: #10b981;
+          background: var(--success-bg);
+          border: 1px solid var(--success-border);
+          color: #047857;
           font-size: 0.72rem;
           font-weight: 600;
           text-decoration: none;
           transition: all 0.15s ease;
         }
         .live-external-btn:hover {
-          background: rgba(16, 185, 129, 0.2);
-          border-color: rgba(16, 185, 129, 0.4);
+          background: rgba(16, 185, 129, 0.15);
           transform: translateY(-1px);
         }
 
@@ -656,25 +644,26 @@ export default function ConsolePage() {
         .quick-actions-stack {
           display: flex;
           flex-direction: column;
-          gap: 0.75rem;
+          gap: 0.65rem;
         }
 
         .quick-card {
           display: flex;
           align-items: center;
           gap: 0.85rem;
-          padding: 0.85rem;
+          padding: 0.75rem 0.85rem;
           border-radius: 10px;
           background: var(--bg-inset);
-          border: 1px solid var(--card-border);
+          border: 1px solid var(--border);
           text-decoration: none;
           color: inherit;
           transition: all 0.15s ease;
         }
         .quick-card:hover {
           border-color: var(--card-border-hover);
-          background: var(--card-hover);
+          background: #ffffff;
           transform: translateX(2px);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
         }
         .quick-card-icon {
           width: 36px;
@@ -686,12 +675,12 @@ export default function ConsolePage() {
           flex-shrink: 0;
         }
         .quick-card-title {
-          font-size: 0.88rem;
+          font-size: 0.875rem;
           font-weight: 650;
           color: var(--foreground);
         }
         .quick-card-sub {
-          font-size: 0.75rem;
+          font-size: 0.74rem;
           color: var(--muted);
           margin-top: 0.15rem;
         }
@@ -700,14 +689,14 @@ export default function ConsolePage() {
         .ingress-info-stack {
           display: flex;
           flex-direction: column;
-          gap: 0.65rem;
+          gap: 0.55rem;
         }
         .ingress-info-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.5rem 0;
-          border-bottom: 1px solid var(--card-border);
+          padding: 0.45rem 0;
+          border-bottom: 1px solid #f1f5f9;
           font-size: 0.8125rem;
         }
         .ingress-info-row:last-child {

@@ -792,16 +792,16 @@ export default function CronJobDetailPage() {
           </div>
 
           {/* Right: Modern Terminal Console */}
-          <div style={{ background: "#05080e", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "10px", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}>
             {/* Terminal Header */}
             <div
               style={{
                 padding: "0.75rem 1.25rem",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+                borderBottom: "1px solid #334155",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                background: "rgba(255, 255, 255, 0.02)",
+                background: "#1e293b",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
@@ -1113,8 +1113,8 @@ export default function CronJobDetailPage() {
 
       {/* ─── EDIT MODAL ──────────────────────────────────────────────────────── */}
       {editModalOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0, 0, 0, 0.75)", backdropFilter: "blur(8px)", padding: "1rem" }}>
-          <div style={{ background: "#0c1017", border: "1px solid var(--border)", borderRadius: "var(--radius)", width: "100%", maxWidth: 640, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "var(--shadow-hover)" }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.35)", backdropFilter: "blur(8px)", padding: "1rem" }}>
+          <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", width: "100%", maxWidth: 640, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.2)" }}>
             <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-inset)" }}>
               <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--foreground)" }}>Edit Cron Task Configuration</h3>
               <button onClick={() => setEditModalOpen(false)} style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: "1.25rem", cursor: "pointer" }}>✕</button>

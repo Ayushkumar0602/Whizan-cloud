@@ -387,9 +387,10 @@ export default function McpAndCliDocsPage() {
             gap: "0.5rem",
             marginTop: "1.5rem",
             padding: "0.35rem",
-            background: "rgba(15, 18, 30, 0.65)",
-            border: "1px solid rgba(255, 255, 255, 0.08)",
+            background: "#ffffff",
+            border: "1px solid var(--border)",
             borderRadius: 12,
+            boxShadow: "var(--shadow-sm)",
             width: "fit-content",
             flexWrap: "wrap",
           }}
@@ -407,9 +408,9 @@ export default function McpAndCliDocsPage() {
               cursor: "pointer",
               transition: "all 0.15s ease",
               border: "none",
-              background: activeTab === "mcp" ? "#6366f1" : "transparent",
-              color: activeTab === "mcp" ? "#ffffff" : "#94a3b8",
-              boxShadow: activeTab === "mcp" ? "0 4px 12px rgba(99, 102, 241, 0.3)" : "none",
+              background: activeTab === "mcp" ? "#4f46e5" : "transparent",
+              color: activeTab === "mcp" ? "#ffffff" : "var(--muted)",
+              boxShadow: activeTab === "mcp" ? "0 2px 8px rgba(79, 70, 229, 0.25)" : "none",
             }}
           >
             <Sparkles size={15} />
@@ -419,8 +420,8 @@ export default function McpAndCliDocsPage() {
                 fontSize: "0.68rem",
                 padding: "0.1rem 0.4rem",
                 borderRadius: 4,
-                background: activeTab === "mcp" ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.06)",
-                color: activeTab === "mcp" ? "#ffffff" : "#94a3b8",
+                background: activeTab === "mcp" ? "rgba(255,255,255,0.2)" : "#f1f5f9",
+                color: activeTab === "mcp" ? "#ffffff" : "var(--muted)",
               }}
             >
               v1.0.5
@@ -440,9 +441,9 @@ export default function McpAndCliDocsPage() {
               cursor: "pointer",
               transition: "all 0.15s ease",
               border: "none",
-              background: activeTab === "cli" ? "#6366f1" : "transparent",
-              color: activeTab === "cli" ? "#ffffff" : "#94a3b8",
-              boxShadow: activeTab === "cli" ? "0 4px 12px rgba(99, 102, 241, 0.3)" : "none",
+              background: activeTab === "cli" ? "#4f46e5" : "transparent",
+              color: activeTab === "cli" ? "#ffffff" : "var(--muted)",
+              boxShadow: activeTab === "cli" ? "0 2px 8px rgba(79, 70, 229, 0.25)" : "none",
             }}
           >
             <Terminal size={15} />
@@ -563,10 +564,10 @@ export default function McpAndCliDocsPage() {
               <Sparkles size={18} />
             </div>
             <div>
-              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "#f8fafc" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "var(--foreground)" }}>
                 What is Whizan MCP?
               </h3>
-              <p style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: 0, lineHeight: 1.55 }}>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
                 The Model Context Protocol (MCP) connects your AI coding assistant (Cursor, Claude Desktop, Antigravity, Windsurf) directly to your Whizan Cloud account. Your agent can inspect your workspace, deploy apps, stream live compilation errors, fix code, and provision databases right from your chat window.
               </p>
             </div>
@@ -575,8 +576,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 1: Installation & Auto-Setup */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -598,11 +600,11 @@ export default function McpAndCliDocsPage() {
               >
                 1
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Install &amp; Auto-Configure Whizan MCP
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Choose any of the three commands below. Each command automatically discovers your installed AI editors and writes the configuration for you.
             </p>
 
@@ -610,11 +612,11 @@ export default function McpAndCliDocsPage() {
               {/* Method A: Via CLI */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.8)",
-                  border: "1px solid rgba(99, 102, 241, 0.3)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem 1.25rem",
-                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+                  boxShadow: "var(--shadow-sm)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
@@ -623,16 +625,16 @@ export default function McpAndCliDocsPage() {
                       style={{
                         fontSize: "0.72rem",
                         fontWeight: 700,
-                        color: "#38bdf8",
-                        background: "rgba(56, 189, 248, 0.12)",
-                        border: "1px solid rgba(56, 189, 248, 0.25)",
+                        color: "var(--accent)",
+                        background: "rgba(99, 102, 241, 0.1)",
+                        border: "1px solid rgba(99, 102, 241, 0.25)",
                         padding: "0.15rem 0.5rem",
                         borderRadius: 9999,
                       }}
                     >
                       RECOMMENDED
                     </span>
-                    <strong style={{ fontSize: "0.92rem", color: "#ffffff" }}>
+                    <strong style={{ fontSize: "0.92rem", color: "var(--foreground)" }}>
                       Method A — Via Whizan CLI (1-Click Auto Detector)
                     </strong>
                   </div>
@@ -648,8 +650,8 @@ export default function McpAndCliDocsPage() {
 
                 <div
                   style={{
-                    background: "#06080e",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
                     borderRadius: 8,
                     padding: "0.75rem 1rem",
                     marginBottom: "0.75rem",
@@ -660,16 +662,16 @@ export default function McpAndCliDocsPage() {
                   </code>
                 </div>
 
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
-                  <strong style={{ color: "#e2e8f0" }}>Description:</strong> Scans your operating system, automatically detects config paths for Cursor, Claude Desktop, Antigravity IDE, and Windsurf, and injects your Whizan API key. Requires <code style={{ color: "#a5b4fc" }}>npm install -g @whizan/cli</code>.
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--foreground)" }}>Description:</strong> Scans your operating system, automatically detects config paths for Cursor, Claude Desktop, Antigravity IDE, and Windsurf, and injects your Whizan API key. Requires <code style={{ color: "var(--accent)" }}>npm install -g @whizan/cli</code>.
                 </p>
               </div>
 
               {/* Method B: Direct NPX */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem 1.25rem",
                 }}
@@ -680,16 +682,16 @@ export default function McpAndCliDocsPage() {
                       style={{
                         fontSize: "0.72rem",
                         fontWeight: 700,
-                        color: "#a5b4fc",
-                        background: "rgba(165, 180, 252, 0.1)",
-                        border: "1px solid rgba(165, 180, 252, 0.2)",
+                        color: "var(--accent)",
+                        background: "rgba(99, 102, 241, 0.08)",
+                        border: "1px solid rgba(99, 102, 241, 0.2)",
                         padding: "0.15rem 0.5rem",
                         borderRadius: 9999,
                       }}
                     >
                       ZERO INSTALL
                     </span>
-                    <strong style={{ fontSize: "0.92rem", color: "#ffffff" }}>
+                    <strong style={{ fontSize: "0.92rem", color: "var(--foreground)" }}>
                       Method B — Direct NPX Installer Wizard
                     </strong>
                   </div>
@@ -705,8 +707,8 @@ export default function McpAndCliDocsPage() {
 
                 <div
                   style={{
-                    background: "#06080e",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
                     borderRadius: 8,
                     padding: "0.75rem 1rem",
                     marginBottom: "0.75rem",
@@ -717,16 +719,16 @@ export default function McpAndCliDocsPage() {
                   </code>
                 </div>
 
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
-                  <strong style={{ color: "#e2e8f0" }}>Description:</strong> Interactive wizard that runs directly via Node.js without globally installing the CLI. Prompts you to select your editor and writes the configuration.
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--foreground)" }}>Description:</strong> Interactive wizard that runs directly via Node.js without globally installing the CLI. Prompts you to select your editor and writes the configuration.
                 </p>
               </div>
 
               {/* Method C: Claude Code */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem 1.25rem",
                 }}
@@ -737,16 +739,16 @@ export default function McpAndCliDocsPage() {
                       style={{
                         fontSize: "0.72rem",
                         fontWeight: 700,
-                        color: "#f59e0b",
+                        color: "#d97706",
                         background: "rgba(245, 158, 11, 0.1)",
-                        border: "1px solid rgba(245, 158, 11, 0.2)",
+                        border: "1px solid rgba(245, 158, 11, 0.25)",
                         padding: "0.15rem 0.5rem",
                         borderRadius: 9999,
                       }}
                     >
                       CLAUDE CODE
                     </span>
-                    <strong style={{ fontSize: "0.92rem", color: "#ffffff" }}>
+                    <strong style={{ fontSize: "0.92rem", color: "var(--foreground)" }}>
                       Method C — Claude Code CLI Native Add
                     </strong>
                   </div>
@@ -762,8 +764,8 @@ export default function McpAndCliDocsPage() {
 
                 <div
                   style={{
-                    background: "#06080e",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
                     borderRadius: 8,
                     padding: "0.75rem 1rem",
                     marginBottom: "0.75rem",
@@ -774,8 +776,8 @@ export default function McpAndCliDocsPage() {
                   </code>
                 </div>
 
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
-                  <strong style={{ color: "#e2e8f0" }}>Description:</strong> If you use Anthropic&apos;s Claude Code terminal assistant, this command registers Whizan MCP as a permanent tool provider in your Claude session.
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+                  <strong style={{ color: "var(--foreground)" }}>Description:</strong> If you use Anthropic&apos;s Claude Code terminal assistant, this command registers Whizan MCP as a permanent tool provider in your Claude session.
                 </p>
               </div>
             </div>
@@ -784,8 +786,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 2: Manual Editor Configuration */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -797,8 +800,9 @@ export default function McpAndCliDocsPage() {
                     width: 28,
                     height: 28,
                     borderRadius: "50%",
-                    background: "rgba(255, 255, 255, 0.12)",
-                    color: "#ffffff",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
+                    color: "var(--foreground)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -808,7 +812,7 @@ export default function McpAndCliDocsPage() {
                 >
                   2
                 </div>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+                <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                   Manual Editor Configuration
                 </h2>
               </div>
@@ -827,9 +831,9 @@ export default function McpAndCliDocsPage() {
                       border: "1px solid",
                       cursor: "pointer",
                       transition: "all 0.15s ease",
-                      borderColor: activeIde === tab ? "#6366f1" : "rgba(255, 255, 255, 0.1)",
-                      background: activeIde === tab ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.03)",
-                      color: activeIde === tab ? "#38bdf8" : "#94a3b8",
+                      borderColor: activeIde === tab ? "var(--accent)" : "var(--border)",
+                      background: activeIde === tab ? "rgba(99, 102, 241, 0.08)" : "var(--bg-inset)",
+                      color: activeIde === tab ? "var(--accent)" : "var(--muted)",
                     }}
                   >
                     {ideConfigs[tab].label}
@@ -838,7 +842,7 @@ export default function McpAndCliDocsPage() {
               </div>
             </div>
 
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1rem", marginLeft: "2.5rem" }}>
               If you prefer to configure manually, paste this JSON block into your editor&apos;s configuration file:
             </p>
 
@@ -848,18 +852,18 @@ export default function McpAndCliDocsPage() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
                 borderRadius: 8,
                 padding: "0.35rem 0.75rem",
                 fontSize: "0.78rem",
-                color: "#cbd5e1",
+                color: "var(--foreground)",
                 marginBottom: "0.85rem",
               }}
             >
-              <FileCode2 size={13} style={{ color: "#818cf8" }} />
+              <FileCode2 size={13} style={{ color: "var(--accent)" }} />
               <span>Target File:</span>
-              <code style={{ color: "#38bdf8", fontFamily: "var(--font-mono), monospace" }}>
+              <code style={{ color: "var(--accent)", fontFamily: "var(--font-mono), monospace" }}>
                 {ideConfigs[activeIde].location}
               </code>
             </div>
@@ -868,8 +872,8 @@ export default function McpAndCliDocsPage() {
             <div
               style={{
                 position: "relative",
-                background: "#05070a",
-                border: "1px solid rgba(255, 255, 255, 0.1)",
+                background: "#0f172a",
+                border: "1px solid #1e293b",
                 borderRadius: 12,
                 overflow: "hidden",
               }}
@@ -880,7 +884,7 @@ export default function McpAndCliDocsPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   padding: "0.6rem 1rem",
-                  background: "rgba(255, 255, 255, 0.03)",
+                  background: "#1e293b",
                   borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
                 }}
               >
@@ -921,8 +925,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 3: Verification & How to Prompt your AI */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -933,8 +938,9 @@ export default function McpAndCliDocsPage() {
                   width: 28,
                   height: 28,
                   borderRadius: "50%",
-                  background: "rgba(255, 255, 255, 0.12)",
-                  color: "#ffffff",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
+                  color: "var(--foreground)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -944,11 +950,11 @@ export default function McpAndCliDocsPage() {
               >
                 3
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Verify &amp; Ready-to-Use Agent Prompts
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Restart your editor. Then open any repository and copy one of these prompts to test:
             </p>
 
@@ -957,8 +963,8 @@ export default function McpAndCliDocsPage() {
                 <div
                   key={idx}
                   style={{
-                    background: "rgba(10, 13, 22, 0.6)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
                     borderRadius: 12,
                     padding: "1.1rem 1.25rem",
                     display: "flex",
@@ -972,7 +978,7 @@ export default function McpAndCliDocsPage() {
                         style={{
                           fontSize: "0.72rem",
                           fontWeight: 700,
-                          color: "#818cf8",
+                          color: "var(--accent)",
                           textTransform: "uppercase",
                           letterSpacing: "0.06em",
                         }}
@@ -988,10 +994,10 @@ export default function McpAndCliDocsPage() {
                         {copiedId === `prompt-${idx}` ? "Copied" : "Copy Prompt"}
                       </button>
                     </div>
-                    <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "#ffffff", marginBottom: "0.5rem" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--foreground)", marginBottom: "0.5rem" }}>
                       {p.title}
                     </div>
-                    <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
+                    <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
                       &ldquo;{p.prompt}&rdquo;
                     </p>
                   </div>
@@ -1035,10 +1041,10 @@ export default function McpAndCliDocsPage() {
               <Terminal size={18} />
             </div>
             <div>
-              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "#f8fafc" }}>
+              <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.25rem 0", color: "var(--foreground)" }}>
                 Whizan Cloud CLI (`@whizan/cli`)
               </h3>
-              <p style={{ fontSize: "0.85rem", color: "#cbd5e1", margin: 0, lineHeight: 1.55 }}>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0, lineHeight: 1.55 }}>
                 Deploy frontends and backends directly from your terminal, stream live build worker output, launch the interactive real-time dashboard (<code style={{ color: "#38bdf8" }}>whizan top</code>), and troubleshoot issues with AI-assisted log diagnostics.
               </p>
             </div>
@@ -1047,8 +1053,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 1: Installation */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -1070,11 +1077,11 @@ export default function McpAndCliDocsPage() {
               >
                 1
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Install Whizan CLI
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Install the CLI globally on your system using your package manager of choice:
             </p>
 
@@ -1082,14 +1089,14 @@ export default function McpAndCliDocsPage() {
               {/* NPM */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600 }}>npm</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>npm</span>
                   <button
                     onClick={() => copyToClipboard("npm install -g @whizan/cli", "cli-npm-install")}
                     className="btn btn-secondary btn-sm"
@@ -1098,7 +1105,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cli-npm-install" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontFamily: "var(--font-mono), monospace" }}>
+                <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontFamily: "var(--font-mono), monospace" }}>
                   npm install -g @whizan/cli
                 </code>
               </div>
@@ -1106,14 +1113,14 @@ export default function McpAndCliDocsPage() {
               {/* PNPM */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600 }}>pnpm</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>pnpm</span>
                   <button
                     onClick={() => copyToClipboard("pnpm add -g @whizan/cli", "cli-pnpm-install")}
                     className="btn btn-secondary btn-sm"
@@ -1122,7 +1129,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cli-pnpm-install" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontFamily: "var(--font-mono), monospace" }}>
+                <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontFamily: "var(--font-mono), monospace" }}>
                   pnpm add -g @whizan/cli
                 </code>
               </div>
@@ -1130,14 +1137,14 @@ export default function McpAndCliDocsPage() {
               {/* NPX Zero Install */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 600 }}>npx (Zero Install)</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>npx (Zero Install)</span>
                   <button
                     onClick={() => copyToClipboard("npx @whizan/cli --help", "cli-npx-install")}
                     className="btn btn-secondary btn-sm"
@@ -1146,7 +1153,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cli-npx-install" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontFamily: "var(--font-mono), monospace" }}>
+                <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontFamily: "var(--font-mono), monospace" }}>
                   npx @whizan/cli &lt;command&gt;
                 </code>
               </div>
@@ -1156,8 +1163,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 2: Authentication */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -1168,8 +1176,9 @@ export default function McpAndCliDocsPage() {
                   width: 28,
                   height: 28,
                   borderRadius: "50%",
-                  background: "rgba(255, 255, 255, 0.12)",
-                  color: "#ffffff",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
+                  color: "var(--foreground)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1179,11 +1188,11 @@ export default function McpAndCliDocsPage() {
               >
                 2
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Login &amp; Authenticate
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Connect your terminal session to your Whizan Cloud account:
             </p>
 
@@ -1191,14 +1200,14 @@ export default function McpAndCliDocsPage() {
               {/* Browser Login */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <strong style={{ fontSize: "0.9rem", color: "#ffffff" }}>Interactive Browser Login</strong>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--foreground)" }}>Interactive Browser Login</strong>
                   <button
                     onClick={() => copyToClipboard("whizan login", "cmd-cli-login")}
                     className="btn btn-secondary btn-sm"
@@ -1207,25 +1216,25 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-login" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <div style={{ background: "#06080e", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
+                <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
                   <code style={{ fontSize: "0.88rem", color: "#38bdf8" }}>whizan login</code>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
-                  Launches your default browser to authorize your terminal. Token is saved to <code style={{ color: "#a5b4fc" }}>~/.whizan/config.json</code>.
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
+                  Launches your default browser to authorize your terminal. Token is saved to <code style={{ color: "var(--accent)" }}>~/.whizan/config.json</code>.
                 </p>
               </div>
 
               {/* Headless Token Login */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <strong style={{ fontSize: "0.9rem", color: "#ffffff" }}>Headless / CI/CD Token Login</strong>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--foreground)" }}>Headless / CI/CD Token Login</strong>
                   <button
                     onClick={() => copyToClipboard("whizan login -t whz_live_YOUR_API_KEY", "cmd-cli-token")}
                     className="btn btn-secondary btn-sm"
@@ -1234,10 +1243,10 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-token" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <div style={{ background: "#06080e", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
+                <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
                   <code style={{ fontSize: "0.88rem", color: "#38bdf8" }}>whizan login -t &lt;API_KEY&gt;</code>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   Non-interactive login using an API key from your dashboard. Ideal for GitHub Actions and automation scripts.
                 </p>
               </div>
@@ -1245,14 +1254,14 @@ export default function McpAndCliDocsPage() {
               {/* Whoami */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <strong style={{ fontSize: "0.9rem", color: "#ffffff" }}>Check Active Session</strong>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--foreground)" }}>Check Active Session</strong>
                   <button
                     onClick={() => copyToClipboard("whizan whoami", "cmd-cli-whoami")}
                     className="btn btn-secondary btn-sm"
@@ -1261,10 +1270,10 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-whoami" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <div style={{ background: "#06080e", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
+                <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
                   <code style={{ fontSize: "0.88rem", color: "#38bdf8" }}>whizan whoami</code>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   Prints your email, user role, subscription tier, and counts of active services and databases.
                 </p>
               </div>
@@ -1272,14 +1281,14 @@ export default function McpAndCliDocsPage() {
               {/* Logout */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   padding: "1.2rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <strong style={{ fontSize: "0.9rem", color: "#ffffff" }}>Sign Out</strong>
+                  <strong style={{ fontSize: "0.9rem", color: "var(--foreground)" }}>Sign Out</strong>
                   <button
                     onClick={() => copyToClipboard("whizan logout", "cmd-cli-logout")}
                     className="btn btn-secondary btn-sm"
@@ -1288,10 +1297,10 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-logout" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <div style={{ background: "#06080e", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
+                <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.6rem" }}>
                   <code style={{ fontSize: "0.88rem", color: "#38bdf8" }}>whizan logout</code>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   Securely purges the local credentials file from your home directory.
                 </p>
               </div>
@@ -1301,8 +1310,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 3: Deploying Projects */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -1313,8 +1323,9 @@ export default function McpAndCliDocsPage() {
                   width: 28,
                   height: 28,
                   borderRadius: "50%",
-                  background: "rgba(255, 255, 255, 0.12)",
-                  color: "#ffffff",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
+                  color: "var(--foreground)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1324,11 +1335,11 @@ export default function McpAndCliDocsPage() {
               >
                 3
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Initialize, Link &amp; Deploy
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Three simple commands to take any local code repository straight to production:
             </p>
 
@@ -1336,15 +1347,15 @@ export default function McpAndCliDocsPage() {
               {/* whizan init */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem 1.25rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#ffffff" }}>
-                    1. <code style={{ color: "#38bdf8" }}>whizan init</code>
+                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "var(--foreground)" }}>
+                    1. <code style={{ color: "var(--accent)" }}>whizan init</code>
                   </span>
                   <button
                     onClick={() => copyToClipboard("whizan init", "cmd-whizan-init")}
@@ -1354,23 +1365,23 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-whizan-init" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
-                  Inspects your repository files, detects runtime (Node, Python, Go, Dockerfile), discovers internal HTTP ports, and creates a local <code style={{ color: "#a5b4fc" }}>.whizan.json</code> manifest.
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+                  Inspects your repository files, detects runtime (Node, Python, Go, Dockerfile), discovers internal HTTP ports, and creates a local <code style={{ color: "var(--accent)" }}>.whizan.json</code> manifest.
                 </p>
               </div>
 
               {/* whizan link */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem 1.25rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#ffffff" }}>
-                    2. <code style={{ color: "#38bdf8" }}>whizan link</code>
+                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "var(--foreground)" }}>
+                    2. <code style={{ color: "var(--accent)" }}>whizan link</code>
                   </span>
                   <button
                     onClick={() => copyToClipboard("whizan link", "cmd-whizan-link")}
@@ -1380,7 +1391,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-whizan-link" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
                   Interactively binds the local directory to an existing cloud project or backend microservice. Future deployments will automatically update this resource.
                 </p>
               </div>
@@ -1388,15 +1399,15 @@ export default function McpAndCliDocsPage() {
               {/* whizan deploy */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.8)",
-                  border: "1px solid rgba(99, 102, 241, 0.3)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem 1.25rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "#ffffff" }}>
-                    3. <code style={{ color: "#38bdf8" }}>whizan deploy</code>
+                  <span style={{ fontSize: "0.92rem", fontWeight: 700, color: "var(--foreground)" }}>
+                    3. <code style={{ color: "var(--accent)" }}>whizan deploy</code>
                   </span>
                   <button
                     onClick={() => copyToClipboard("whizan deploy", "cmd-whizan-deploy")}
@@ -1407,8 +1418,8 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-whizan-deploy" ? "Copied" : "Copy Command"}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.82rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
-                  Compresses the directory (respects <code style={{ color: "#a5b4fc" }}>.gitignore</code>, skips node_modules), uploads to the build worker, streams live Docker compilation logs in your terminal, and prints the live <code style={{ color: "#38bdf8" }}>*.nip.io</code> URL upon completion.
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
+                  Compresses the directory (respects <code style={{ color: "var(--accent)" }}>.gitignore</code>, skips node_modules), uploads to the build worker, streams live Docker compilation logs in your terminal, and prints the live <code style={{ color: "var(--accent)" }}>*.nip.io</code> URL upon completion.
                 </p>
               </div>
             </div>
@@ -1417,8 +1428,9 @@ export default function McpAndCliDocsPage() {
           {/* STEP 4: Live Telemetry & Monitoring */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
@@ -1429,8 +1441,9 @@ export default function McpAndCliDocsPage() {
                   width: 28,
                   height: 28,
                   borderRadius: "50%",
-                  background: "rgba(255, 255, 255, 0.12)",
-                  color: "#ffffff",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
+                  color: "var(--foreground)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -1440,11 +1453,11 @@ export default function McpAndCliDocsPage() {
               >
                 4
               </div>
-              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "#ffffff" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
                 Monitoring, Logs &amp; Diagnostics
               </h2>
             </div>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.25rem", marginLeft: "2.5rem" }}>
               Inspect live performance and debug container issues:
             </p>
 
@@ -1452,14 +1465,14 @@ export default function McpAndCliDocsPage() {
               {/* whizan top */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontWeight: 700 }}>whizan top</code>
+                  <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontWeight: 700 }}>whizan top</code>
                   <button
                     onClick={() => copyToClipboard("whizan top", "cmd-cli-top")}
                     className="btn btn-secondary btn-sm"
@@ -1468,7 +1481,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-top" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   Interactive full-terminal dashboard displaying real-time CPU %, RAM usage, container active/sleep states, and network I/O across your entire cluster.
                 </p>
               </div>
@@ -1476,14 +1489,14 @@ export default function McpAndCliDocsPage() {
               {/* whizan logs */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontWeight: 700 }}>whizan logs</code>
+                  <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontWeight: 700 }}>whizan logs</code>
                   <button
                     onClick={() => copyToClipboard("whizan logs", "cmd-cli-logs")}
                     className="btn btn-secondary btn-sm"
@@ -1492,22 +1505,22 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-logs" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
-                  Streams live build worker stdout/stderr or tailing runtime container logs. Add <code style={{ color: "#a5b4fc" }}>-f</code> for continuous streaming.
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
+                  Streams live build worker stdout/stderr or tailing runtime container logs. Add <code style={{ color: "var(--accent)" }}>-f</code> for continuous streaming.
                 </p>
               </div>
 
               {/* whizan logs --ai */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.8)",
-                  border: "1px solid rgba(99, 102, 241, 0.25)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontWeight: 700 }}>whizan logs --ai</code>
+                  <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontWeight: 700 }}>whizan logs --ai</code>
                   <button
                     onClick={() => copyToClipboard("whizan logs --ai", "cmd-cli-logs-ai")}
                     className="btn btn-secondary btn-sm"
@@ -1516,7 +1529,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-logs-ai" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   AI-assisted root cause analyzer. Automatically feeds compilation crash traces to Gemini 3.5 Flash Lite to diagnose the fatal error and print the code fix.
                 </p>
               </div>
@@ -1524,14 +1537,14 @@ export default function McpAndCliDocsPage() {
               {/* whizan ps */}
               <div
                 style={{
-                  background: "rgba(10, 13, 22, 0.6)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
                   borderRadius: 10,
                   padding: "1rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                  <code style={{ fontSize: "0.88rem", color: "#38bdf8", fontWeight: 700 }}>whizan ps</code>
+                  <code style={{ fontSize: "0.88rem", color: "var(--accent)", fontWeight: 700 }}>whizan ps</code>
                   <button
                     onClick={() => copyToClipboard("whizan ps", "cmd-cli-ps")}
                     className="btn btn-secondary btn-sm"
@@ -1540,7 +1553,7 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "cmd-cli-ps" ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
                   </button>
                 </div>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0 }}>
                   Prints a formatted table of all running projects, backend microservices, and databases with their active ports, status, and public URLs.
                 </p>
               </div>
@@ -1557,19 +1570,20 @@ export default function McpAndCliDocsPage() {
           {/* Header Card */}
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
               <div>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "#ffffff" }}>
+                <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "var(--foreground)" }}>
                   API Keys &amp; Machine Tokens
                 </h2>
-                <p style={{ fontSize: "0.85rem", color: "#94a3b8", margin: 0 }}>
-                  API keys authorize the Whizan MCP server and Whizan CLI to act on your account. Keys are prefixed with <code style={{ color: "#38bdf8" }}>whz_live_</code>.
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: 0 }}>
+                  API keys authorize the Whizan MCP server and Whizan CLI to act on your account. Keys are prefixed with <code style={{ color: "var(--accent)" }}>whz_live_</code>.
                 </p>
               </div>
 
@@ -1580,14 +1594,11 @@ export default function McpAndCliDocsPage() {
                   placeholder="Key label (e.g. Cursor MacBook)"
                   value={keyName}
                   onChange={(e) => setKeyName(e.target.value)}
+                  className="input"
                   style={{
                     padding: "0.45rem 0.85rem",
-                    borderRadius: 8,
-                    background: "rgba(0,0,0,0.4)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    color: "#ffffff",
                     fontSize: "0.82rem",
-                    minWidth: 200,
+                    minWidth: 220,
                   }}
                 />
                 <button
@@ -1606,15 +1617,15 @@ export default function McpAndCliDocsPage() {
             {newKey && (
               <div
                 style={{
-                  background: "rgba(16, 185, 129, 0.1)",
-                  border: "1px solid rgba(16, 185, 129, 0.35)",
+                  background: "rgba(16, 185, 129, 0.08)",
+                  border: "1px solid rgba(16, 185, 129, 0.25)",
                   borderRadius: 10,
                   padding: "1rem 1.25rem",
                   marginBottom: "1.5rem",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
-                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#059669", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
                     <CheckCircle2 size={16} /> New API Key Generated
                   </span>
                   <button
@@ -1626,12 +1637,12 @@ export default function McpAndCliDocsPage() {
                     {copiedId === "copy-new-key" ? "Copied Secret!" : "Copy Full Secret"}
                   </button>
                 </div>
-                <div style={{ background: "#05070a", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.35rem" }}>
+                <div style={{ background: "#0f172a", border: "1px solid #1e293b", padding: "0.6rem 0.85rem", borderRadius: 6, marginBottom: "0.35rem" }}>
                   <code style={{ fontSize: "0.85rem", color: "#38bdf8", wordBreak: "break-all" }}>
                     {newKey.key}
                   </code>
                 </div>
-                <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: 0 }}>
+                <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
                   Make sure to copy this key now. For security purposes, full secret strings cannot be recovered after this session.
                 </p>
               </div>
@@ -1639,9 +1650,9 @@ export default function McpAndCliDocsPage() {
 
             {/* Keys Table */}
             {loadingKeys ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>Loading active keys...</div>
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>Loading active keys...</div>
             ) : keys.length === 0 ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>
                 No active API keys found. Generate one above to connect your AI editor or terminal.
               </div>
             ) : (
@@ -1650,8 +1661,8 @@ export default function McpAndCliDocsPage() {
                   <div
                     key={k.id}
                     style={{
-                      background: "rgba(10, 13, 22, 0.6)",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
+                      background: "var(--bg-inset)",
+                      border: "1px solid var(--border)",
                       borderRadius: 10,
                       padding: "0.85rem 1.15rem",
                       display: "flex",
@@ -1663,12 +1674,12 @@ export default function McpAndCliDocsPage() {
                   >
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#ffffff" }}>{k.name}</span>
-                        <code style={{ fontSize: "0.75rem", color: "#818cf8", background: "rgba(99, 102, 241, 0.12)", padding: "0.1rem 0.4rem", borderRadius: 4 }}>
+                        <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--foreground)" }}>{k.name}</span>
+                        <code style={{ fontSize: "0.75rem", color: "var(--accent)", background: "rgba(99, 102, 241, 0.08)", border: "1px solid rgba(99, 102, 241, 0.15)", padding: "0.1rem 0.4rem", borderRadius: 4 }}>
                           {k.keyPrefix}••••••••
                         </code>
                       </div>
-                      <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
                         Created: {new Date(k.createdAt).toLocaleDateString()}
                       </span>
                     </div>
@@ -1696,16 +1707,17 @@ export default function McpAndCliDocsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
           <div
             style={{
-              background: "rgba(18, 22, 36, 0.65)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
+              background: "#ffffff",
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
               borderRadius: 16,
               padding: "1.75rem",
             }}
           >
-            <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "#ffffff" }}>
+            <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: "0 0 0.35rem 0", color: "var(--foreground)" }}>
               Automated AI Agent Tools Reference
             </h2>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8", marginBottom: "1.5rem" }}>
+            <p style={{ fontSize: "0.88rem", color: "var(--muted)", marginBottom: "1.5rem" }}>
               When connected via MCP, your AI assistant autonomously decides when to invoke these tools to satisfy your prompts:
             </p>
 
@@ -1714,21 +1726,22 @@ export default function McpAndCliDocsPage() {
                 <div
                   key={idx}
                   style={{
-                    background: "rgba(10, 13, 22, 0.6)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--border)",
                     borderRadius: 12,
                     padding: "1.1rem 1.25rem",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                    <code style={{ fontSize: "0.85rem", color: "#38bdf8", fontWeight: 700 }}>
+                    <code style={{ fontSize: "0.85rem", color: "var(--accent)", fontWeight: 700 }}>
                       {t.name}
                     </code>
                     <span
                       style={{
                         fontSize: "0.7rem",
-                        color: "#a5b4fc",
-                        background: "rgba(165, 180, 252, 0.1)",
+                        color: "var(--muted)",
+                        background: "var(--card)",
+                        border: "1px solid var(--border)",
                         padding: "0.15rem 0.45rem",
                         borderRadius: 4,
                       }}
@@ -1736,7 +1749,7 @@ export default function McpAndCliDocsPage() {
                       {t.group}
                     </span>
                   </div>
-                  <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
+                  <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
                     {t.desc}
                   </p>
                 </div>

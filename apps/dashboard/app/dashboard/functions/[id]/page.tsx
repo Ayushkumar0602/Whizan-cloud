@@ -1196,12 +1196,12 @@ export default function FunctionDetailPage() {
               </div>
             </div>
 
-            <div style={{ borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--border)", background: "#080b11" }}>
+            <div style={{ borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid #1e293b", background: "#0f172a" }}>
               <div
                 style={{
                   padding: "0.5rem 1rem",
-                  background: "#0e131d",
-                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  background: "#1e293b",
+                  borderBottom: "1px solid rgba(255,255,255,0.08)",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
@@ -1370,8 +1370,8 @@ export default function FunctionDetailPage() {
               <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
                 <div
                   style={{
-                    background: "#080b11",
-                    border: "1px solid var(--border)",
+                    background: "#0f172a",
+                    border: "1px solid #1e293b",
                     borderRadius: "var(--radius-sm)",
                     padding: "1rem",
                     flex: 1,
@@ -1591,12 +1591,12 @@ export default function FunctionDetailPage() {
 
       {/* ─── TAB 7: LIVE LOGS ─────────────────────────────────────────────────── */}
       {activeTab === "logs" && (
-        <div style={{ background: "#080b11", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden" }}>
+        <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: "var(--radius)", overflow: "hidden" }}>
           <div
             style={{
               padding: "0.75rem 1.25rem",
-              background: "#0e131d",
-              borderBottom: "1px solid rgba(255,255,255,0.06)",
+              background: "#1e293b",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",

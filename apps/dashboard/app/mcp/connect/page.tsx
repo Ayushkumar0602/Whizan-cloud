@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { BrandMark } from "@/components/brand";
 
 function ConnectContent() {
   const searchParams = useSearchParams();
@@ -77,7 +78,7 @@ function ConnectContent() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#06090e" }}>
+      <div className="aurora-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <RefreshCw size={28} className="spin text-accent" />
       </div>
     );
@@ -85,12 +86,12 @@ function ConnectContent() {
 
   if (!user) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#06090e", padding: "1rem" }}>
-        <div style={{ maxWidth: 440, width: "100%", background: "#0c1017", border: "1px solid rgba(99, 102, 241, 0.25)", borderRadius: 16, padding: "2.5rem 2rem", textAlign: "center", boxShadow: "0 24px 48px rgba(0,0,0,0.6)" }}>
-          <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(99, 102, 241, 0.15)", color: "#818cf8", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem" }}>
+      <div className="aurora-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+        <div style={{ maxWidth: 440, width: "100%", background: "#ffffff", border: "1px solid var(--border)", borderRadius: 16, padding: "2.5rem 2rem", textAlign: "center", boxShadow: "var(--shadow-lg)" }}>
+          <div style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(79, 70, 229, 0.08)", color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.25rem" }}>
             <Terminal size={26} />
           </div>
-          <h1 style={{ fontSize: "1.35rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+          <h1 style={{ fontSize: "1.35rem", fontWeight: 700, marginBottom: "0.5rem", color: "var(--foreground)" }}>
             Sign in to Connect Whizan MCP
           </h1>
           <p style={{ color: "var(--muted)", fontSize: "0.9rem", lineHeight: 1.5, marginBottom: "1.75rem" }}>
@@ -109,38 +110,35 @@ function ConnectContent() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#06090e", padding: "1.5rem" }}>
-      <div style={{ maxWidth: 480, width: "100%", background: "#0c1017", border: "1px solid rgba(99, 102, 241, 0.3)", borderRadius: 20, padding: "2.5rem 2rem", boxShadow: "0 24px 60px rgba(0,0,0,0.7)", position: "relative", overflow: "hidden" }}>
-        {/* Glow accent */}
-        <div style={{ position: "absolute", top: -80, left: -80, width: 220, height: 220, background: "rgba(99, 102, 241, 0.18)", filter: "blur(60px)", borderRadius: "50%", pointerEvents: "none" }} />
-
+    <div className="aurora-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+      <div style={{ maxWidth: 480, width: "100%", background: "#ffffff", border: "1px solid var(--border)", borderRadius: 20, padding: "2.5rem 2rem", boxShadow: "var(--shadow-lg)", position: "relative", overflow: "hidden" }}>
         {/* Brand Header */}
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #6366f1, #38bdf8)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: "0 4px 14px rgba(99, 102, 241, 0.4)" }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg, #4f46e5, #06b6d4)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", boxShadow: "0 4px 12px rgba(79, 70, 229, 0.25)" }}>
             <Sparkles size={22} />
           </div>
           <div>
             <h1 style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0, color: "var(--foreground)" }}>
               Authorize Whizan DevOps MCP
             </h1>
-            <span style={{ fontSize: "0.75rem", color: "#38bdf8", fontWeight: 600 }}>
+            <span style={{ fontSize: "0.75rem", color: "var(--accent)", fontWeight: 600 }}>
               Autonomous In-IDE Deployment Engine
             </span>
           </div>
         </div>
 
         {/* User Card */}
-        <div style={{ background: "rgba(255, 255, 255, 0.03)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ background: "var(--bg-inset)", border: "1px solid var(--border)", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
-            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(99, 102, 241, 0.2)", color: "#818cf8", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem" }}>
+            <div style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(79, 70, 229, 0.1)", color: "var(--accent)", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem" }}>
               {(user.name || user.email)[0].toUpperCase()}
             </div>
             <div>
-              <div style={{ fontSize: "0.88rem", fontWeight: 600 }}>{user.email}</div>
+              <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--foreground)" }}>{user.email}</div>
               <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Role: {user.role || "USER"}</div>
             </div>
           </div>
-          <span style={{ fontSize: "0.72rem", background: "rgba(16, 185, 129, 0.15)", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)", padding: "0.2rem 0.5rem", borderRadius: 9999, fontWeight: 600 }}>
+          <span className="badge badge-ready">
             Active
           </span>
         </div>
@@ -149,11 +147,11 @@ function ConnectContent() {
         <p style={{ color: "var(--muted)", fontSize: "0.88rem", lineHeight: 1.55, marginBottom: "1.5rem" }}>
           {port ? (
             <>
-              A local terminal session on <strong>port {port}</strong> is requesting permission to authenticate Whizan Cloud MCP tools on this machine.
+              A local terminal session on <strong className="text-slate-900">port {port}</strong> is requesting permission to authenticate Whizan Cloud MCP tools on this machine.
             </>
           ) : (
             <>
-              Connect your local machine to Whizan Cloud. Once authorized, your AI coding assistants in <strong>Antigravity IDE, Cursor, Windsurf, VS Code, and Claude</strong> can deploy services without manual API key entry.
+              Connect your local machine to Whizan Cloud. Once authorized, your AI coding assistants in <strong className="text-slate-900">Antigravity IDE, Cursor, Windsurf, VS Code, and Claude</strong> can deploy services without manual API key entry.
             </>
           )}
         </p>
@@ -174,7 +172,7 @@ function ConnectContent() {
             <div style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)", marginBottom: "0.45rem", textTransform: "uppercase" }}>
               Run Once in Your Terminal
             </div>
-            <div style={{ background: "#05070a", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: 10, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
+            <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 10, padding: "0.85rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
               <code style={{ fontSize: "0.78rem", color: "#38bdf8", wordBreak: "break-all" }}>
                 npx @whizan/mcp-devops login {token ? `--token ${token.slice(0, 16)}...` : ""}
               </code>
@@ -191,54 +189,33 @@ function ConnectContent() {
         )}
 
         {statusText && (
-          <div style={{ fontSize: "0.8rem", color: "#38bdf8", textAlign: "center", marginBottom: "1rem" }}>
+          <div style={{ fontSize: "0.8rem", color: "var(--accent)", textAlign: "center", marginBottom: "1rem" }}>
             {statusText}
           </div>
         )}
 
         {/* Zero-Config IDE snippet preview */}
-        <div style={{ borderTop: "1px solid rgba(255, 255, 255, 0.08)", paddingTop: "1rem" }}>
-          <div style={{ fontSize: "0.76rem", color: "var(--muted)", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-            <Terminal size={12} /> Zero-Key IDE Configuration (Antigravity / Cursor):
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--muted)" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+              <ShieldCheck size={14} className="text-emerald-600" />
+              Direct TLS API Handshake
+            </span>
+            <Link href="/dashboard/mcp" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 600 }}>
+              View MCP Config
+            </Link>
           </div>
-          <pre
-            style={{
-              background: "#05070a",
-              padding: "0.75rem",
-              borderRadius: 8,
-              border: "1px solid rgba(255, 255, 255, 0.06)",
-              fontSize: "0.74rem",
-              color: "#94a3b8",
-              fontFamily: "var(--font-geist-mono), monospace",
-              margin: 0,
-            }}
-          >
-{`{
-  "mcpServers": {
-    "whizan": {
-      "command": "npx",
-      "args": ["-y", "@whizan/mcp-devops"]
-    }
-  }
-}`}
-          </pre>
-        </div>
-
-        <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
-          <Link href="/dashboard" style={{ fontSize: "0.8rem", color: "var(--muted)", textDecoration: "none" }}>
-            ← Return to Console
-          </Link>
         </div>
       </div>
     </div>
   );
 }
 
-export default function McpConnectPage() {
+export default function ConnectPage() {
   return (
     <Suspense
       fallback={
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#06090e" }}>
+        <div className="aurora-bg" style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <RefreshCw size={28} className="spin text-accent" />
         </div>
       }

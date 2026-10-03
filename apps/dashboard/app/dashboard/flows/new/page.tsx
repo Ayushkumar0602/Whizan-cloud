@@ -188,8 +188,9 @@ export default function NewWorkflowPage() {
                           fontWeight: 600,
                           padding: "0.1rem 0.4rem",
                           borderRadius: 4,
-                          background: "rgba(255, 255, 255, 0.08)",
-                          color: "var(--muted)",
+                          background: "#f1f5f9",
+                          border: "1px solid var(--border)",
+                          color: "var(--foreground)",
                         }}
                       >
                         {tmpl.badge}
@@ -232,8 +233,9 @@ export default function NewWorkflowPage() {
                       fontWeight: 600,
                       padding: "0.1rem 0.4rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.08)",
-                      color: "var(--muted)",
+                      background: "#f1f5f9",
+                      border: "1px solid var(--border)",
+                      color: "var(--foreground)",
                     }}
                   >
                     SCRATCH
