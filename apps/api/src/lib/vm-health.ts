@@ -1,7 +1,7 @@
 import { redisClient } from "./redis.js";
 
 let cachedStatus: { online: boolean; timestamp: number } | null = null;
-const CACHE_TTL_MS = 15_000; // 15 seconds cache
+const CACHE_TTL_MS = 25_000; // 25 seconds cache
 
 /**
  * Checks if the Azure VM (Edge Router + Build Worker + Redis) is currently running.

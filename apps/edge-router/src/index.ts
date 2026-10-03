@@ -64,7 +64,7 @@ interface CachedDeployment {
   timestamp: number;
 }
 const deploymentCache = new Map<string, CachedDeployment>();
-const DEPLOYMENT_CACHE_TTL = 30_000; // 30 seconds
+const DEPLOYMENT_CACHE_TTL = 60_000; // 60 seconds
 
 async function lookupDeployment(slug: string): Promise<DeploymentInfo | null> {
   const cached = deploymentCache.get(slug);
@@ -91,8 +91,8 @@ const lastAccessMap = new Map<string, number>();
 function trackAccess(deploymentId: string) {
   const now = Date.now();
   const last = lastAccessMap.get(deploymentId) || 0;
-  // Scale-to-zero threshold is 10-20 minutes, so updating Redis once every 60s is plenty
-  if (now - last > 60_000) {
+  // Scale-to-zero threshold is 10-20 minutes, so updating Redis once every 120s is plenty
+  if (now - last > 120_000) {
     lastAccessMap.set(deploymentId, now);
     redis.set(`access:${deploymentId}`, now).catch(() => {});
   }

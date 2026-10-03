@@ -61,7 +61,7 @@ export class FlowStreamConsumer {
           "COUNT",
           5,
           "BLOCK",
-          30000,
+          60000,
           "STREAMS",
           streamName,
           ">"

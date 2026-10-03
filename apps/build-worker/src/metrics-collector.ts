@@ -25,7 +25,7 @@ redisPub.on("error", (err) => {
 const prevSnapshots = new Map<string, MetricSnapshot>();
 
 export function startMetricsCollector(): () => void {
-  console.log("[Metrics Collector] Started optimized container metrics collector (45s interval, pipelined)...");
+  console.log("[Metrics Collector] Started optimized container metrics collector (90s interval, pipelined)...");
 
   const interval = setInterval(async () => {
     try {
@@ -47,8 +47,8 @@ export function startMetricsCollector(): () => void {
           // Pipeline all Redis operations into a single network roundtrip
           const pipe = redisPub.pipeline();
           pipe.lpush(`metrics:service:${serviceId}`, JSON.stringify(metric));
-          pipe.ltrim(`metrics:service:${serviceId}`, 0, 59);
-          pipe.expire(`metrics:service:${serviceId}`, 3600);
+          pipe.ltrim(`metrics:service:${serviceId}`, 0, 29); // Retain 30 samples
+          pipe.expire(`metrics:service:${serviceId}`, 7200);
           pipe.set(
             `service:status:${serviceId}`,
             JSON.stringify({
@@ -57,7 +57,7 @@ export function startMetricsCollector(): () => void {
               updatedAt: Date.now(),
             }),
             "EX",
-            120
+            240
           );
           pipe.publish(
             `metrics:tick:${serviceId}`,
@@ -78,7 +78,7 @@ export function startMetricsCollector(): () => void {
         console.warn("[Metrics Collector] Warning:", err?.message || err);
       }
     }
-  }, 45_000);
+  }, 90_000);
 
   return () => {
     clearInterval(interval);
