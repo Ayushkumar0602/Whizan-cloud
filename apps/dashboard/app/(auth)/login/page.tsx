@@ -1,23 +1,36 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
-export default function LoginPage() {
-  const { login } = useAuth();
+function LoginForm() {
+  const { user, login } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectParam = searchParams.get("redirect");
+  const destination = getSafeRedirectUrl(redirectParam, "/dashboard");
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // If already authenticated, redirect straight to destination
+  useEffect(() => {
+    if (user) {
+      router.replace(destination);
+    }
+  }, [user, destination, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push(destination);
     } catch (err: any) {
       toast.error(err.message || "Login failed");
     } finally {
@@ -25,14 +38,38 @@ export default function LoginPage() {
     }
   }
 
+  const registerHref = redirectParam
+    ? `/register?redirect=${encodeURIComponent(redirectParam)}`
+    : "/register";
+
   return (
     <>
       <h1 style={{ fontSize: "1.4rem", fontWeight: 700, letterSpacing: "-0.03em" }}>
         Welcome back
       </h1>
       <p style={{ color: "var(--muted)", margin: "0.4rem 0 1.5rem", fontSize: "0.9rem" }}>
-        Sign in to the Whizan Cloud Services console
+        {redirectParam ? "Sign in to continue to your requested page" : "Sign in to the Whizan Cloud Services console"}
       </p>
+
+      {redirectParam && (
+        <div
+          style={{
+            background: "rgba(99, 102, 241, 0.08)",
+            border: "1px solid rgba(99, 102, 241, 0.25)",
+            borderRadius: "8px",
+            padding: "0.6rem 0.85rem",
+            marginBottom: "1.25rem",
+            fontSize: "0.8rem",
+            color: "var(--foreground)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+          }}
+        >
+          <span style={{ color: "var(--accent)", fontWeight: 600 }}>Destination:</span>
+          <code style={{ fontSize: "0.78rem", color: "#38bdf8" }}>{destination}</code>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div>
@@ -73,7 +110,7 @@ export default function LoginPage() {
 
       <p style={{ marginTop: "1.35rem", textAlign: "center", fontSize: "0.875rem", color: "var(--muted)" }}>
         New here?{" "}
-        <Link href="/register" style={{ color: "var(--accent)", textDecoration: "none" }}>
+        <Link href={registerHref} style={{ color: "var(--accent)", textDecoration: "none" }}>
           Create a free account
         </Link>
       </p>
@@ -84,5 +121,19 @@ export default function LoginPage() {
         }
       `}</style>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ display: "flex", justifyContent: "center", padding: "2rem" }}>
+          <div className="spinner" />
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }

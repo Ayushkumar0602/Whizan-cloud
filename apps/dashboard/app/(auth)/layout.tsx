@@ -5,13 +5,20 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { BrandMark } from "@/components/brand";
 import { Globe, Server, Database, ShieldCheck, Zap } from "lucide-react";
+import { getSafeRedirectUrl } from "@/lib/redirect";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && user) router.replace("/dashboard");
+    if (!loading && user) {
+      const search = typeof window !== "undefined" ? window.location.search : "";
+      const params = new URLSearchParams(search);
+      const redirectParam = params.get("redirect");
+      const destination = getSafeRedirectUrl(redirectParam, "/dashboard");
+      router.replace(destination);
+    }
   }, [user, loading, router]);
 
   if (loading) {

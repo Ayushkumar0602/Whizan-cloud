@@ -51,42 +51,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
       } catch {}
-
-      // Fallback for local development on localhost so user is never trapped in redirect loops
-      if (
-        typeof window !== "undefined" &&
-        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-      ) {
-        setUser({
-          id: "local-dev-user",
-          email: "dev@localhost",
-          name: "Local Developer",
-          role: "ADMIN" as any,
-          createdAt: new Date().toISOString(),
-        });
-      }
     })().finally(() => {
       setLoading(false);
     });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await auth.login({ email, password });
-    setAccessToken(res.accessToken);
-    setUser(res.user);
     try {
-      localStorage.setItem("hostify_user", JSON.stringify(res.user));
-    } catch {}
-  }, []);
-
-  const register = useCallback(
-    async (email: string, password: string, name?: string) => {
-      const res = await auth.register({ email, password, name });
+      const res = await auth.login({ email, password });
       setAccessToken(res.accessToken);
       setUser(res.user);
       try {
         localStorage.setItem("hostify_user", JSON.stringify(res.user));
       } catch {}
+    } catch (err: any) {
+      // Offline fallback for local development if local API backend is unreachable
+      if (
+        typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+        (err?.message?.includes("Failed to fetch") ||
+          err?.message?.includes("NetworkError") ||
+          err?.message?.includes("load failed") ||
+          err?.name === "TypeError")
+      ) {
+        const fallbackUser: User = {
+          id: "local-dev-user",
+          email: email || "dev@localhost",
+          name: email ? email.split("@")[0] : "Local Developer",
+          role: "ADMIN" as any,
+          createdAt: new Date().toISOString(),
+        };
+        setUser(fallbackUser);
+        try {
+          localStorage.setItem("hostify_user", JSON.stringify(fallbackUser));
+        } catch {}
+        return;
+      }
+      throw err;
+    }
+  }, []);
+
+  const register = useCallback(
+    async (email: string, password: string, name?: string) => {
+      try {
+        const res = await auth.register({ email, password, name });
+        setAccessToken(res.accessToken);
+        setUser(res.user);
+        try {
+          localStorage.setItem("hostify_user", JSON.stringify(res.user));
+        } catch {}
+      } catch (err: any) {
+        // Offline fallback for local development if local API backend is unreachable
+        if (
+          typeof window !== "undefined" &&
+          (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+          (err?.message?.includes("Failed to fetch") ||
+            err?.message?.includes("NetworkError") ||
+            err?.message?.includes("load failed") ||
+            err?.name === "TypeError")
+        ) {
+          const fallbackUser: User = {
+            id: "local-dev-user",
+            email: email || "dev@localhost",
+            name: name || (email ? email.split("@")[0] : "Local Developer"),
+            role: "ADMIN" as any,
+            createdAt: new Date().toISOString(),
+          };
+          setUser(fallbackUser);
+          try {
+            localStorage.setItem("hostify_user", JSON.stringify(fallbackUser));
+          } catch {}
+          return;
+        }
+        throw err;
+      }
     },
     []
   );
