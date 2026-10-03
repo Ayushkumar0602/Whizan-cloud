@@ -1674,14 +1674,14 @@ const statsInterval = setInterval(async () => {
     };
 
     if (redisPub.status === "ready") {
-      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 180);
+      await redisPub.set("vm:stats", JSON.stringify(stats), "EX", 45);
     }
   } catch (err: any) {
     if (!err?.message?.includes("Connection is closed")) {
       console.warn("[Stats] Notice:", err?.message || err);
     }
   }
-}, 60_000);
+}, 15_000);
 
 // ─── Startup ─────────────────────────────────────────────────────────────────
 

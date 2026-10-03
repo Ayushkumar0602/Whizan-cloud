@@ -285,7 +285,7 @@ export class ZeroIdleScheduler {
           "COUNT",
           10,
           "BLOCK",
-          60000,
+          8000,
           "STREAMS",
           "cron:dispatch:stream",
           ">"
