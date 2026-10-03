@@ -161,7 +161,7 @@ proxy.on("error", (err, req, res) => {
     const isHtml = req.headers.accept?.includes("text/html");
     if (isHtml) {
       res.writeHead(502, { "Content-Type": "text/html" });
-      res.end(loadingScreenHtml("Starting Application...", "Your app is spinning up. This page will auto-refresh."));
+      res.end(loadingScreenHtml("Starting Application", "Your service is spinning up. This page will auto-refresh.", slug));
     } else {
       res.writeHead(502);
       res.end("Bad Gateway - Application Starting");
@@ -724,200 +724,247 @@ async function handleWakeupAndProxy(deployment: DeploymentInfo, req: http.Incomi
   const isHtml = req.headers.accept?.includes("text/html");
   if (isHtml) {
     res.writeHead(202, { "Content-Type": "text/html" });
-    res.end(loadingScreenHtml("Waking up...", "Your app was asleep to save resources. It is spinning up now..."));
+    res.end(loadingScreenHtml("Awakening Application", "Your service was in eco-standby to save compute resources. Warming up memory & edge routing now...", slug));
   } else {
     res.writeHead(202);
     res.end("Application is waking up. Please retry in a few seconds.");
   }
 }
 
-function loadingScreenHtml(title: string, message: string) {
-  return `
-    <html>
-      <head>
-        <title>${title}</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap');
-          
-          * { box-sizing: border-box; }
-          body { 
-            font-family: 'Inter', sans-serif; 
-            margin: 0; 
-            padding: 0; 
-            min-height: 100vh; 
-            background: #000; 
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-          }
-          
-          .bg-grid {
-            position: absolute;
-            width: 200vw;
-            height: 200vh;
-            background-size: 50px 50px;
-            background-image: 
-              linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-            transform: perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px);
-            animation: pan 20s linear infinite;
-            z-index: 0;
-          }
+function loadingScreenHtml(title: string, message: string, slug?: string) {
+  const displaySlug = slug ? `${slug}.20.2.136.11.nip.io` : "";
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title || "Waking up"} • Whizan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      background: #000000;
+      color: #ffffff;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+      -webkit-font-smoothing: antialiased;
+    }
 
-          @keyframes pan {
-            0% { transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px); }
-            100% { transform: perspective(500px) rotateX(60deg) translateY(50px) translateZ(-200px); }
-          }
+    /* Ambient Aurora Glow */
+    .aurora-bg {
+      position: fixed;
+      inset: -20%;
+      overflow: hidden;
+      pointer-events: none;
+      filter: blur(110px);
+      opacity: 0.7;
+    }
 
-          .container {
-            position: relative;
-            z-index: 10;
-            text-align: center;
-            padding: 3rem;
-            background: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 24px;
-            box-shadow: 0 0 40px rgba(56, 189, 248, 0.1), inset 0 0 20px rgba(255, 255, 255, 0.02);
-            max-width: 500px;
-            width: 90%;
-          }
+    .aurora-blob {
+      position: absolute;
+      border-radius: 50%;
+      mix-blend-mode: screen;
+      will-change: transform;
+      animation: auroraMove 18s ease-in-out infinite alternate;
+    }
 
-          .glowing-orb {
-            position: absolute;
-            top: -50px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 150px;
-            height: 150px;
-            background: radial-gradient(circle, rgba(56, 189, 248, 0.4) 0%, transparent 70%);
-            border-radius: 50%;
-            z-index: -1;
-            animation: pulse 3s ease-in-out infinite alternate;
-          }
+    .blob-1 {
+      width: 50vw;
+      height: 50vw;
+      max-width: 580px;
+      max-height: 580px;
+      background: radial-gradient(circle, rgba(16, 185, 129, 0.45) 0%, rgba(6, 182, 212, 0.2) 55%, transparent 75%);
+      top: 15%;
+      left: 18%;
+      animation-duration: 20s;
+    }
 
-          @keyframes pulse {
-            0% { opacity: 0.5; transform: translateX(-50%) scale(1); }
-            100% { opacity: 1; transform: translateX(-50%) scale(1.2); }
-          }
+    .blob-2 {
+      width: 55vw;
+      height: 55vw;
+      max-width: 620px;
+      max-height: 620px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.45) 0%, rgba(139, 92, 246, 0.2) 55%, transparent 75%);
+      bottom: 12%;
+      right: 18%;
+      animation-duration: 24s;
+      animation-delay: -6s;
+    }
 
-          .loader {
-            position: relative;
-            width: 64px;
-            height: 64px;
-            margin: 0 auto 2rem;
-          }
+    .blob-3 {
+      width: 42vw;
+      height: 42vw;
+      max-width: 480px;
+      max-height: 480px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.35) 0%, rgba(59, 130, 246, 0.15) 55%, transparent 75%);
+      top: 38%;
+      left: 42%;
+      animation-duration: 22s;
+      animation-delay: -10s;
+    }
 
-          .loader svg {
-            animation: spin 2s linear infinite;
-            width: 100%;
-            height: 100%;
-            stroke: #38bdf8;
-            stroke-width: 2;
-            fill: none;
-            stroke-linecap: round;
-          }
+    @keyframes auroraMove {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(45px, -35px) scale(1.08); }
+      100% { transform: translate(-35px, 45px) scale(0.96); }
+    }
 
-          @keyframes spin {
-            100% { transform: rotate(360deg); }
-          }
+    /* Content Center */
+    .content {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      max-width: 420px;
+      padding: 2.5rem 1.5rem;
+    }
 
-          h1 {
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin: 0 0 1rem;
-            background: linear-gradient(to right, #fff, #94a3b8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: -0.025em;
-          }
+    /* Breathing Light Ring */
+    .pulse-ring {
+      width: 52px;
+      height: 52px;
+      margin: 0 auto 2.2rem;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-          p {
-            color: #94a3b8;
-            font-size: 1rem;
-            line-height: 1.6;
-            margin: 0 0 2rem;
-          }
+    .pulse-ring::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, #10b981, #06b6d4, #8b5cf6, #10b981);
+      animation: spin 3.5s linear infinite;
+      filter: blur(5px);
+      opacity: 0.85;
+    }
 
-          .terminal {
-            background: #050505;
-            border: 1px solid #1e293b;
-            border-radius: 12px;
-            padding: 1rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
-            color: #10b981;
-            text-align: left;
-            position: relative;
-            overflow: hidden;
-          }
+    .pulse-ring::after {
+      content: '';
+      position: absolute;
+      inset: 2.5px;
+      border-radius: 50%;
+      background: #000000;
+    }
 
-          .terminal::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0; height: 3px;
-            background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-            animation: scan 2s linear infinite;
-          }
+    .pulse-core {
+      position: relative;
+      z-index: 2;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 16px #10b981;
+      animation: breathe 2.6s ease-in-out infinite alternate;
+    }
 
-          @keyframes scan {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
-          }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
 
-          .blink { animation: blink 1s step-end infinite; }
-          @keyframes blink { 50% { opacity: 0; } }
-        </style>
-      </head>
-      <body>
-        <div class="bg-grid"></div>
-        <div class="container">
-          <div class="glowing-orb"></div>
-          <div class="loader">
-            <svg viewBox="0 0 50 50">
-              <circle cx="25" cy="25" r="20" stroke-dasharray="31.4 100" />
-              <circle cx="25" cy="25" r="12" stroke-dasharray="18.8 100" style="stroke: #818cf8; animation-direction: reverse;" />
-            </svg>
-          </div>
-          <h1>${title}</h1>
-          <p>${message}</p>
-          <div class="terminal">
-            <span style="color:#64748b">></span> [System] Connecting to container...<br/>
-            <span style="color:#64748b">></span> [Docker] Restoring memory state...<br/>
-            <span style="color:#64748b">></span> [Edge] Awaiting HTTP readiness<span class="blink">_</span>
-          </div>
-        </div>
-        <script>
-          // Exponential backoff polling
-          let attempts = 0;
-          const maxDelay = 2000;
-          
-          function checkHealth() {
-            attempts++;
-            const delay = Math.min(500 * Math.pow(1.2, attempts), maxDelay);
-            
-            setTimeout(() => {
-              fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
-                .then(res => {
-                  if (res.status !== 502 && res.status !== 202 && res.status !== 503) {
-                    document.querySelector('.terminal').innerHTML += '<br/><span style="color:#64748b">></span> [Network] 200 OK. Reloading...';
-                    setTimeout(() => window.location.reload(true), 300);
-                  } else {
-                    checkHealth();
-                  }
-                }).catch(() => checkHealth());
-            }, delay);
+    @keyframes breathe {
+      0% { transform: scale(0.85); opacity: 0.55; box-shadow: 0 0 8px #10b981; }
+      100% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 22px #34d399, 0 0 36px #06b6d4; }
+    }
+
+    h1 {
+      font-size: 1.55rem;
+      font-weight: 500;
+      letter-spacing: -0.025em;
+      color: #ffffff;
+      margin-bottom: 0.55rem;
+    }
+
+    p {
+      font-size: 0.92rem;
+      color: rgba(255, 255, 255, 0.45);
+      line-height: 1.55;
+      font-weight: 400;
+      margin-bottom: 2.2rem;
+    }
+
+    /* Minimal Glowing Pulse Bar */
+    .bar {
+      width: 130px;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      margin: 0 auto;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bar-line {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 45%;
+      background: linear-gradient(90deg, transparent, #10b981, #06b6d4, transparent);
+      border-radius: 2px;
+      animation: sweep 2.2s ease-in-out infinite;
+    }
+
+    @keyframes sweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(250%); }
+    }
+
+    .endpoint {
+      margin-top: 2rem;
+      font-size: 0.78rem;
+      color: rgba(255, 255, 255, 0.22);
+      font-family: -apple-system, BlinkMacSystemFont, monospace;
+      letter-spacing: 0.02em;
+    }
+  </style>
+</head>
+<body>
+  <div class="aurora-bg">
+    <div class="aurora-blob blob-1"></div>
+    <div class="aurora-blob blob-2"></div>
+    <div class="aurora-blob blob-3"></div>
+  </div>
+
+  <div class="content">
+    <div class="pulse-ring">
+      <div class="pulse-core"></div>
+    </div>
+    <h1>Waking up...</h1>
+    <p>Your application is spinning up. It will be ready in a moment.</p>
+    <div class="bar">
+      <div class="bar-line"></div>
+    </div>
+    ${displaySlug ? `<div class="endpoint">${displaySlug}</div>` : ""}
+  </div>
+
+  <script>
+    function check() {
+      fetch(window.location.href, { method: 'HEAD', cache: 'no-store' })
+        .then(function(r) {
+          if (r.status !== 502 && r.status !== 202 && r.status !== 503) {
+            window.location.reload(true);
+          } else {
+            setTimeout(check, 800);
           }
-          
-          // Start polling
-          checkHealth();
-        </script>
-      </body>
-    </html>
-  `;
+        })
+        .catch(function() {
+          setTimeout(check, 800);
+        });
+    }
+    setTimeout(check, 600);
+  </script>
+</body>
+</html>`;
 }
 
 // ─── WebSocket Support (Upgrade Event) ────────────────────────────────────────
