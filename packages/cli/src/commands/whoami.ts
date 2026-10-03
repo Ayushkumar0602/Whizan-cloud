@@ -7,7 +7,7 @@ import { printBanner, colors, printKV } from "../utils/terminal-ui.js";
 const c = colors;
 
 export async function whoamiCommand() {
-  printBanner("1.0.0");
+  printBanner();
 
   const status = await client.getAuthStatus();
 

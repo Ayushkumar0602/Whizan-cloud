@@ -46,4 +46,6 @@ packages/db/node_modules/.prisma/
 .volumes/
 apps/build-worker/.volumes/
 opencode-workspace/
+.cursor/
+.vscode/
 
