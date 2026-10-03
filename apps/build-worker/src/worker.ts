@@ -213,11 +213,38 @@ const worker = new Worker<BuildJob>(
               await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
               await log("✓ Persistent source archive extracted successfully");
             } else {
-              const existing = await fs.readdir(buildDir).catch(() => []);
-              if (existing.length === 0) {
-                throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
+              let recoveredFromPrevious = false;
+              const prevDeployments = await prisma.deployment.findMany({
+                where: { projectId, status: "READY" },
+                orderBy: { createdAt: "desc" },
+                take: 5,
+              });
+              for (const prev of prevDeployments) {
+                const prevDir = path.join(BUILD_BASE_DIR, prev.id);
+                const prevFiles = await fs.readdir(prevDir).catch(() => []);
+                if (prevFiles.length > 0) {
+                  await log(`📦 Recovered source files from previous deployment (${prev.id.slice(0, 8)})...`);
+                  const { execFile } = await import("child_process");
+                  const { promisify } = await import("util");
+                  const execFileAsync = promisify(execFile);
+                  await execFileAsync("cp", ["-rT", `${prevDir}/`, `${buildDir}/`]).catch(async () => {
+                    await execFileAsync("cp", ["-r", `${prevDir}/.`, `${buildDir}/`]);
+                  });
+                  await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+                  await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+                  await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+                  recoveredFromPrevious = true;
+                  break;
+                }
               }
-              await log("✓ Using existing direct upload files on disk");
+
+              if (!recoveredFromPrevious) {
+                const existing = await fs.readdir(buildDir).catch(() => []);
+                if (existing.length === 0) {
+                  throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
+                }
+                await log("✓ Using existing direct upload files on disk");
+              }
             }
           }
         } else {
@@ -473,17 +500,28 @@ redisSub.subscribe("wakeup", "admin:commands").catch(() => {});
 redisSub.on("message", async (channel, message) => {
   if (channel === "wakeup") {
     let dId = message;
+    let slug = "";
     try {
       const parsed = JSON.parse(message);
       if (parsed.type === "service" || parsed.type === "SERVICE") return; // Handled by service-worker.ts
       dId = parsed.deploymentId || message;
+      slug = parsed.slug || "";
     } catch {
       // Raw string ID
     }
-    const d = await prisma.deployment.findUnique({
+    let d = dId ? await prisma.deployment.findUnique({
       where: { id: dId },
       include: { project: true }
-    });
+    }).catch(() => null) : null;
+
+    if (!d && slug) {
+      d = await prisma.deployment.findFirst({
+        where: { project: { slug }, status: "READY" },
+        orderBy: { createdAt: "desc" },
+        include: { project: true }
+      }).catch(() => null);
+    }
+
     // If it's already READY, it just needs its container started (SSR/services only)
     if (d && (d.status === "READY" || d.status === "PAUSED")) {
       if (d.deploymentType === "STATIC") {
@@ -1689,7 +1727,7 @@ console.log("[Worker] Build worker started — waiting for jobs...");
 initRemoteExec().catch((e) => console.error("[Remote Exec Error]", e));
 startMetricsCollector();
 
-// ── Database Reconciliation on VM Startup ──────────────────────────────────
+// ── Database & Services Reconciliation on VM Startup ────────────────────────
 (async () => {
   try {
     const runningDbs = await prisma.databaseService.findMany({
@@ -1714,6 +1752,116 @@ startMetricsCollector();
     }
   } catch (err: any) {
     console.warn("[Reconciler] Database startup check notice:", err.message);
+  }
+
+  // Reconcile Backend Services
+  try {
+    const activeServices = await prisma.backendService.findMany({
+      include: {
+        deployments: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    const Docker = (await import("dockerode")).default;
+    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+
+    for (const s of activeServices) {
+      const dep = s.deployments[0];
+      if (!dep) continue;
+
+      const match = allContainers.find((c) =>
+        c.Labels?.["deploymentId"] === dep.id ||
+        c.Labels?.["slug"] === s.slug ||
+        c.Names?.some((n) => n.includes(`service-${s.slug}`))
+      );
+
+      let containerPort: number | undefined;
+      let containerName = `service-${s.slug}-${dep.id.slice(0, 8)}`;
+
+      if (match) {
+        containerName = match.Names?.[0]?.replace(/^\//, "") || containerName;
+        const inspect = await docker.getContainer(match.Id).inspect().catch(() => null);
+        const exposedKey = Object.keys(inspect?.HostConfig?.PortBindings || {})[0] || `${s.internalPort || 3000}/tcp`;
+        const mappedPortStr = inspect?.HostConfig?.PortBindings?.[exposedKey]?.[0]?.HostPort;
+        if (mappedPortStr) containerPort = parseInt(mappedPortStr, 10);
+
+        // If service is always-on (autoSleep: false) and stopped, restart it
+        if (!s.autoSleep && match.State !== "running") {
+          console.log(`[Reconciler] Auto-resuming always-on service ${s.slug}...`);
+          await docker.getContainer(match.Id).start().catch(() => {});
+        }
+      }
+
+      const routeInfo: Record<string, any> = {
+        type: "service",
+        deploymentId: dep.id,
+        serviceId: s.id,
+        containerName,
+      };
+      if (containerPort && match?.State === "running") {
+        routeInfo.containerPort = containerPort;
+      }
+
+      await redisPub.set(`deployment:${s.slug}`, JSON.stringify(routeInfo)).catch(() => {});
+      console.log(`[Reconciler] Synchronized route for service ${s.slug} (dep: ${dep.id.slice(0, 8)}, port: ${containerPort || "sleep"})`);
+    }
+  } catch (svcErr: any) {
+    console.warn("[Reconciler] Service startup check notice:", svcErr.message);
+  }
+
+  // Reconcile Web Projects
+  try {
+    const activeProjects = await prisma.project.findMany({
+      include: {
+        deployments: { where: { status: "READY" }, orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    const Docker = (await import("dockerode")).default;
+    const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+
+    for (const pr of activeProjects) {
+      const dep = pr.deployments[0];
+      if (!dep) continue;
+
+      if (dep.deploymentType === "STATIC") {
+        const staticDir = path.join(BUILD_BASE_DIR, dep.id, pr.outputDir || "dist");
+        await redisPub.set(`deployment:${pr.slug}`, JSON.stringify({
+          type: "static",
+          staticDir,
+          deploymentId: dep.id,
+          projectId: pr.id,
+        })).catch(() => {});
+        console.log(`[Reconciler] Synchronized static route for ${pr.slug} -> ${staticDir}`);
+      } else {
+        const match = allContainers.find((c) =>
+          c.Labels?.["deploymentId"] === dep.id ||
+          c.Labels?.["slug"] === pr.slug ||
+          c.Names?.some((n) => n.includes(`app-${pr.slug}`))
+        );
+        let containerPort: number | undefined;
+        if (match) {
+          const inspect = await docker.getContainer(match.Id).inspect().catch(() => null);
+          const exposedKey = Object.keys(inspect?.HostConfig?.PortBindings || {})[0] || "3000/tcp";
+          const mappedPortStr = inspect?.HostConfig?.PortBindings?.[exposedKey]?.[0]?.HostPort;
+          if (mappedPortStr) containerPort = parseInt(mappedPortStr, 10);
+        }
+
+        const routeInfo: Record<string, any> = {
+          type: "ssr",
+          deploymentId: dep.id,
+          projectId: pr.id,
+        };
+        if (containerPort && match?.State === "running") {
+          routeInfo.containerPort = containerPort;
+        }
+
+        await redisPub.set(`deployment:${pr.slug}`, JSON.stringify(routeInfo)).catch(() => {});
+        console.log(`[Reconciler] Synchronized SSR route for ${pr.slug} (dep: ${dep.id.slice(0, 8)}, port: ${containerPort || "sleep"})`);
+      }
+    }
+  } catch (projErr: any) {
+    console.warn("[Reconciler] Project startup check notice:", projErr.message);
   }
 })();
 

@@ -156,11 +156,38 @@ const worker = new Worker<ServiceBuildJob>(
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
             await log("✓ Persistent source archive extracted successfully.");
           } else {
-            const existing = await fs.readdir(buildDir).catch(() => []);
-            if (existing.length === 0) {
-              throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
+            let recoveredFromPrevious = false;
+            const prevDeployments = await prisma.serviceDeployment.findMany({
+              where: { serviceId, status: "READY" },
+              orderBy: { createdAt: "desc" },
+              take: 5,
+            });
+            for (const prev of prevDeployments) {
+              const prevDir = path.join(BUILD_BASE_DIR, prev.id);
+              const prevFiles = await fs.readdir(prevDir).catch(() => []);
+              if (prevFiles.length > 0) {
+                await log(`📦 Recovered source files from previous deployment (${prev.id.slice(0, 8)})...`);
+                const { execFile } = await import("child_process");
+                const { promisify } = await import("util");
+                const execFileAsync = promisify(execFile);
+                await execFileAsync("cp", ["-rT", `${prevDir}/`, `${buildDir}/`]).catch(async () => {
+                  await execFileAsync("cp", ["-r", `${prevDir}/.`, `${buildDir}/`]);
+                });
+                await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
+                await fs.mkdir(persistentSourceDir, { recursive: true }).catch(() => {});
+                await execFileAsync("tar", ["-czf", persistentArchive, "-C", buildDir, "."]).catch(() => {});
+                recoveredFromPrevious = true;
+                break;
+              }
             }
-            await log("✓ Using existing direct upload files on disk.");
+
+            if (!recoveredFromPrevious) {
+              const existing = await fs.readdir(buildDir).catch(() => []);
+              if (existing.length === 0) {
+                throw new Error("Direct upload archive was not found in persistent storage or on disk. Please upload files or link a GitHub repository to redeploy.");
+              }
+              await log("✓ Using existing direct upload files on disk.");
+            }
           }
         }
       } else {
@@ -463,12 +490,26 @@ redisSub.on("message", async (channel, message) => {
       console.log(`[Service Wakeup] Starting cold-boot for backend ${slug}...`);
       await publishLog(redisPub, deploymentId, `⚡ [Wakeup] Cold-booting service ${slug} from auto-sleep...`);
       
-      const dep = await prisma.serviceDeployment.findUnique({
-        where: { id: deploymentId },
-        include: { service: { include: { envVariables: true } } }
-      });
+      let dep = deploymentId
+        ? await prisma.serviceDeployment.findUnique({
+            where: { id: deploymentId },
+            include: { service: { include: { envVariables: true } } }
+          }).catch(() => null)
+        : null;
+
+      if (!dep && slug) {
+        dep = await prisma.serviceDeployment.findFirst({
+          where: { service: { slug }, status: "READY" },
+          orderBy: { createdAt: "desc" },
+          include: { service: { include: { envVariables: true } } }
+        }).catch(() => null);
+        if (dep) {
+          deploymentId = dep.id;
+        }
+      }
+
       if (!dep) {
-        console.error(`[Service Wakeup] Deployment ${deploymentId} not found in database.`);
+        console.error(`[Service Wakeup] Deployment ${deploymentId} (slug: ${slug}) not found in database.`);
         return;
       }
 
