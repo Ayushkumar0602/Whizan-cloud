@@ -1,6 +1,6 @@
 {
   "name": "@whizan/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Whizan Cloud CLI — Deploy fullstack apps, backends, databases, and edge functions from your terminal",
   "type": "module",
   "main": "dist/index.js",
