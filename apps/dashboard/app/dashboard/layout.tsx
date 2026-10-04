@@ -434,6 +434,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           display: flex;
           align-items: center;
           justify-content: space-between;
+          gap: 0.5rem;
+          padding: 0.6rem 0.35rem 0.5rem 0.35rem;
+          margin-bottom: 0.25rem;
+        }
+
+        .sidebar-brand-row .brand-mark {
+          display: flex;
+          align-items: center;
+          flex: 1;
+          padding: 0.2rem 0;
+        }
+
+        .sidebar-brand-row .brand-logo-img {
+          width: 100%;
+          max-width: 205px;
+          height: auto;
+          max-height: 52px;
+          object-fit: contain;
+          object-position: left center;
         }
 
         .sidebar-top {

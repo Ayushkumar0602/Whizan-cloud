@@ -15,14 +15,14 @@ export function BrandMark({
   return (
     <Link
       href={href}
-      className={`brand-mark ${className}`}
+      className={`brand-mark ${compact ? "brand-mark-compact" : ""} ${className}`}
       aria-label="Whizan Cloud Services"
     >
       <Image
         src="/whizan_logo.png"
         alt="Whizan Cloud Services"
-        width={compact ? 120 : 136}
-        height={compact ? 28 : 32}
+        width={compact ? 130 : 205}
+        height={compact ? 34 : 52}
         priority
         className={`brand-logo-img ${compact ? "brand-logo-compact" : ""}`}
       />

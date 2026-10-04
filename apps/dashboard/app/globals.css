@@ -738,6 +738,7 @@ input:checked + .slider:before {
   text-decoration: none;
   flex-shrink: 0;
   line-height: 1;
+  padding: 0.35rem 0.25rem;
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
@@ -746,16 +747,17 @@ input:checked + .slider:before {
 }
 
 .brand-logo-img {
-  height: 32px;
-  width: auto;
-  max-height: 34px;
+  height: auto;
+  width: 185px;
+  max-width: 100%;
+  max-height: 48px;
   object-fit: contain;
   display: block;
 }
 
 .brand-logo-compact {
-  height: 28px;
-  max-height: 28px;
+  width: 130px;
+  max-height: 34px;
 }
 
 /* Tab Navigation Utility */
