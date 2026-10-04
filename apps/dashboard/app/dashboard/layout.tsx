@@ -76,32 +76,36 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       heading: "Overview",
       items: [
         { href: "/dashboard", icon: LayoutDashboard, label: "Console", match: (p: string) => p === "/dashboard" },
+        { href: "/dashboard/services", icon: Layers, label: "Services Catalog", match: (p: string) => p === "/dashboard/services" },
       ]
     },
     {
-      heading: "Compute & Apps",
+      heading: "Compute & Storage",
       items: [
-        { href: "/dashboard/hosting",   icon: Globe,       label: "Frontend Hosting",  match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
-        { href: "/dashboard/backend",   icon: Server,      label: "Backend Services",  match: (p: string) => p.startsWith("/dashboard/backend") },
-        { href: "/dashboard/mcp",       icon: Bot,         label: "MCP & AI DevOps",   match: (p: string) => p.startsWith("/dashboard/mcp"), badge: "AI" },
-        { href: "/dashboard/functions", icon: Zap,         label: "Edge Functions",    match: (p: string) => p.startsWith("/dashboard/functions"), badge: "EDGE" },
-        { href: "/dashboard/cron",      icon: Clock,       label: "Cron & Schedules",  match: (p: string) => p.startsWith("/dashboard/cron"), badge: "0-IDLE" },
-        { href: "/dashboard/flows",     icon: WorkflowIcon,label: "Whizan Flow",       match: (p: string) => p.startsWith("/dashboard/flows"), badge: "FLOW" },
-        { href: "/dashboard/databases", icon: Database,    label: "Databases",         match: (p: string) => p.startsWith("/dashboard/databases") },
-        { href: "/dashboard/services",  icon: Layers,      label: "Services Catalog",  match: (p: string) => p === "/dashboard/services" },
+        { href: "/dashboard/hosting", icon: Globe, label: "Frontend Hosting", match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
+        { href: "/dashboard/backend", icon: Server, label: "Backend Services", match: (p: string) => p.startsWith("/dashboard/backend") },
+        { href: "/dashboard/functions", icon: Zap, label: "Edge Functions", match: (p: string) => p.startsWith("/dashboard/functions") },
+        { href: "/dashboard/databases", icon: Database, label: "Databases", match: (p: string) => p.startsWith("/dashboard/databases") },
       ]
     },
     {
-      heading: isIamOrRootAdmin(user) ? "Platform & Admin" : "Settings",
+      heading: "Automation & AI",
+      items: [
+        { href: "/dashboard/flows", icon: WorkflowIcon, label: "Whizan Flow", match: (p: string) => p.startsWith("/dashboard/flows") },
+        { href: "/dashboard/cron", icon: Clock, label: "Cron Jobs", match: (p: string) => p.startsWith("/dashboard/cron") },
+        { href: "/dashboard/mcp", icon: Bot, label: "MCP & AI DevOps", match: (p: string) => p.startsWith("/dashboard/mcp") },
+      ]
+    },
+    {
+      heading: isIamOrRootAdmin(user) ? "Platform & Admin" : "Preferences",
       items: [
         ...(isIamOrRootAdmin(user) ? [{
           href: "/dashboard/admin",
           icon: ShieldAlert,
           label: "Platform Monitor",
           match: (p: string) => p.startsWith("/dashboard/admin"),
-          badge: (user?.role === "ROOT_ADMIN" || user?.email === "aj0892829122@gmail.com") ? "ROOT" : "IAM"
         }] : []),
-        { href: "/dashboard/settings", icon: Settings,    label: "Settings",          match: (p: string) => p.startsWith("/dashboard/settings") },
+        { href: "/dashboard/settings", icon: Settings, label: "Settings", match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
     }
   ];
@@ -464,37 +468,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           display: flex;
           align-items: center;
           gap: 0.5rem;
-          background: rgba(16, 185, 129, 0.08);
-          border: 1px solid rgba(16, 185, 129, 0.22);
-          border-radius: 9999px;
-          padding: 0.28rem 0.65rem;
-          margin-top: 0.9rem;
-          font-size: 0.72rem;
-          color: #065f46;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          padding: 0.35rem 0.65rem;
+          margin-top: 0.75rem;
+          font-size: 0.73rem;
+          color: #475569;
+          transition: all 0.15s ease;
+        }
+        .mesh-indicator-pill:hover {
+          border-color: #cbd5e1;
+          background: #f1f5f9;
         }
         .mesh-pulse-dot {
-          width: 6px;
-          height: 6px;
+          width: 7px;
+          height: 7px;
           border-radius: 50%;
           background: #10b981;
-          box-shadow: 0 0 6px #10b981;
+          box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
           animation: pulseGlow 2s infinite ease-in-out;
           flex-shrink: 0;
         }
         .mesh-pill-text {
           font-size: 0.73rem;
-          font-weight: 550;
-          color: #047857;
+          font-weight: 500;
+          color: #334155;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
           flex: 1;
         }
         .mesh-pill-tag {
-          font-size: 0.62rem;
-          font-weight: 700;
-          color: #047857;
-          letter-spacing: 0.04em;
+          font-size: 0.64rem;
+          font-weight: 600;
+          color: #059669;
+          letter-spacing: 0.03em;
         }
 
         .quick-deploy-btn {
@@ -503,70 +512,73 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           justify-content: center;
           gap: 0.45rem;
           width: 100%;
-          padding: 0.58rem 0.85rem;
-          border-radius: 8px;
-          background: var(--foreground);
+          padding: 0.52rem 0.85rem;
+          border-radius: 7px;
+          background: #0f172a;
           color: #ffffff;
           font-size: 0.82rem;
           font-weight: 600;
           text-decoration: none;
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
           transition: all 0.15s ease;
         }
         .quick-deploy-btn:hover {
           background: #1e293b;
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+          box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
         }
 
         .sidebar-nav {
           display: flex;
           flex-direction: column;
           gap: 1.15rem;
-          margin-top: 1.35rem;
+          margin-top: 1.15rem;
         }
         .nav-group {
           display: flex;
           flex-direction: column;
-          gap: 0.2rem;
+          gap: 0.15rem;
         }
         .nav-group-label {
           font-size: 0.68rem;
-          font-weight: 650;
+          font-weight: 600;
           text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--muted-fg);
+          letter-spacing: 0.06em;
+          color: #94a3b8;
           padding: 0 0.65rem;
-          margin-bottom: 0.3rem;
+          margin-bottom: 0.25rem;
         }
         .nav-link {
           display: flex;
           align-items: center;
           gap: 0.65rem;
-          padding: 0.52rem 0.75rem;
+          padding: 0.48rem 0.7rem;
           border-radius: 7px;
           font-size: 0.835rem;
           font-weight: 500;
-          color: var(--muted);
+          color: #475569;
           text-decoration: none;
-          transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+          transition: all 0.12s ease;
         }
         .nav-link:hover {
-          background: var(--bg-inset);
-          color: var(--foreground);
+          background: #f1f5f9;
+          color: #0f172a;
         }
         .nav-link-active {
-          background: rgba(79, 70, 229, 0.08);
-          color: var(--accent);
+          background: #eef2ff;
+          color: #4f46e5;
           font-weight: 600;
         }
         .nav-icon {
           flex-shrink: 0;
-          opacity: 0.85;
+          color: #64748b;
+          transition: color 0.12s ease;
+        }
+        .nav-link:hover .nav-icon {
+          color: #0f172a;
         }
         .nav-link-active .nav-icon {
-          opacity: 1;
-          color: var(--accent);
+          color: #4f46e5;
         }
         .nav-label {
           flex: 1;
@@ -586,12 +598,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         .sidebar-bottom {
-          padding-top: 1rem;
+          padding-top: 0.85rem;
           border-top: 1px solid var(--border);
           display: flex;
           flex-direction: column;
-          gap: 0.6rem;
-          margin-top: 1.25rem;
+          gap: 0.5rem;
+          margin-top: 1.15rem;
         }
         .user-profile-card {
           display: flex;
