@@ -733,46 +733,29 @@ input:checked + .slider:before {
 
 /* Brand Mark Component */
 .brand-mark {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
   text-decoration: none;
   flex-shrink: 0;
-}
-
-.brand-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  filter: drop-shadow(0 2px 6px rgba(61, 139, 255, 0.25));
-  transition: filter 0.2s ease;
-}
-.brand-mark:hover .brand-glyph {
-  filter: drop-shadow(0 3px 10px rgba(61, 139, 255, 0.4));
-}
-
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
-}
-
-.brand-name {
-  font-size: 1.05rem;
-  font-weight: 750;
-  letter-spacing: -0.02em;
-  color: var(--foreground);
-  line-height: 1.2;
-}
-
-.brand-sub {
-  font-size: 0.65rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
   line-height: 1;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.brand-mark:hover {
+  opacity: 0.92;
+}
+
+.brand-logo-img {
+  height: 32px;
+  width: auto;
+  max-height: 34px;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-logo-compact {
+  height: 28px;
+  max-height: 28px;
 }
 
 /* Tab Navigation Utility */
