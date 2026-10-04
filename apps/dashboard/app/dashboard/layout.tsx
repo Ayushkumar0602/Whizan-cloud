@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Server, Menu, X, Plus,
   PanelLeftClose, PanelLeftOpen, Database, Zap, Clock, Workflow as WorkflowIcon,
-  Bot
+  Bot, BookOpen, Terminal
 } from "lucide-react";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -75,12 +75,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Overview",
       items: [
-        { href: "/dashboard", icon: LayoutDashboard, label: "Console", match: (p: string) => p === "/dashboard" },
+        { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard", match: (p: string) => p === "/dashboard" },
         { href: "/dashboard/services", icon: Layers, label: "Services Catalog", match: (p: string) => p === "/dashboard/services" },
       ]
     },
     {
-      heading: "Compute & Storage",
+      heading: "Compute & Applications",
       items: [
         { href: "/dashboard/hosting", icon: Globe, label: "Frontend Hosting", match: (p: string) => p.startsWith("/dashboard/hosting") || p.startsWith("/dashboard/projects") },
         { href: "/dashboard/backend", icon: Server, label: "Backend Services", match: (p: string) => p.startsWith("/dashboard/backend") },
@@ -89,20 +89,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ]
     },
     {
-      heading: "Automation & AI",
+      heading: "Developer Tools",
       items: [
+        { href: "/docs", icon: BookOpen, label: "Documentation", match: (p: string) => p.startsWith("/docs") },
+        { href: "/dashboard/cli", icon: Terminal, label: "CLI & SDK", match: (p: string) => p.startsWith("/dashboard/cli") },
         { href: "/dashboard/flows", icon: WorkflowIcon, label: "Whizan Flow", match: (p: string) => p.startsWith("/dashboard/flows") },
         { href: "/dashboard/cron", icon: Clock, label: "Cron Jobs", match: (p: string) => p.startsWith("/dashboard/cron") },
         { href: "/dashboard/mcp", icon: Bot, label: "MCP & AI DevOps", match: (p: string) => p.startsWith("/dashboard/mcp") },
       ]
     },
     {
-      heading: isIamOrRootAdmin(user) ? "Platform & Admin" : "Preferences",
+      heading: isIamOrRootAdmin(user) ? "Platform & Admin" : "Platform",
       items: [
         ...(isIamOrRootAdmin(user) ? [{
           href: "/dashboard/admin",
           icon: ShieldAlert,
-          label: "Platform Monitor",
+          label: "Monitoring",
           match: (p: string) => p.startsWith("/dashboard/admin"),
         }] : []),
         { href: "/dashboard/settings", icon: Settings, label: "Settings", match: (p: string) => p.startsWith("/dashboard/settings") },

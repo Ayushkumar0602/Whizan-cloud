@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { projects, services, functionsApi, type ProjectWithLatestDeploy, type ServiceWithLatestDeploy, type FunctionServiceItem } from "@/lib/api";
-import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl, getFunctionIngressUrl } from "@/lib/domains";
+import { useEffect, useState, useMemo } from "react";
+import {
+  projects,
+  services,
+  functionsApi,
+  databases,
+  type ProjectWithLatestDeploy,
+  type ServiceWithLatestDeploy,
+  type FunctionServiceItem,
+  type ManagedDatabase,
+} from "@/lib/api";
+import {
+  formatDeployedUrl,
+  getBaseRouterDomain,
+  getServiceIngressUrl,
+  getFunctionIngressUrl,
+} from "@/lib/domains";
 import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
@@ -14,24 +28,48 @@ import {
   ExternalLink,
   Clock,
   Layers,
-  ShieldCheck,
   Zap,
   Radio,
   Terminal,
   Database,
-  ArrowUpRight
+  Search,
+  Copy,
+  Check,
+  BookOpen,
+  Bot,
+  ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+
+type ResourceType = "all" | "frontends" | "backends" | "functions" | "databases";
+
+interface UnifiedResource {
+  id: string;
+  name: string;
+  slug: string;
+  kind: "FRONTEND" | "BACKEND" | "FUNCTION" | "DATABASE";
+  frameworkOrRuntime: string;
+  branch?: string;
+  status: string;
+  liveUrl?: string;
+  href: string;
+  updatedAt: string;
+}
 
 export default function ConsolePage() {
   const { user } = useAuth();
   const [frontendList, setFrontendList] = useState<ProjectWithLatestDeploy[]>([]);
   const [backendList, setBackendList] = useState<ServiceWithLatestDeploy[]>([]);
   const [functionList, setFunctionList] = useState<FunctionServiceItem[]>([]);
+  const [databaseList, setDatabaseList] = useState<ManagedDatabase[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const firstName = (user?.name || user?.email || "Developer").split(" ")[0];
+  const [activeTab, setActiveTab] = useState<ResourceType>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
   const baseDomain = getBaseRouterDomain();
 
   useEffect(() => {
@@ -39,19 +77,24 @@ export default function ConsolePage() {
       projects.list().catch(() => []),
       services.list().catch(() => []),
       functionsApi.list().catch(() => []),
+      databases.list().catch(() => []),
     ])
-      .then(([fList, bList, fnList]) => {
+      .then(([fList, bList, fnList, dbList]) => {
         setFrontendList(fList);
         setBackendList(bList);
         setFunctionList(fnList);
+        setDatabaseList(dbList);
       })
       .catch(() => toast.error("Could not load cloud assets"))
       .finally(() => setLoading(false));
   }, []);
 
-  const totalDeployments =
-    frontendList.reduce((acc, p) => acc + p.deployments.length, 0) +
-    backendList.reduce((acc, s) => acc + s.deployments.length, 0);
+  function copyToClipboard(text: string, key: string, label: string) {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    toast.success(`Copied ${label}`);
+    setTimeout(() => setCopiedKey(null), 2000);
+  }
 
   const activeBackends = backendList.filter(
     s => s.deployments[0]?.status === "READY" && !!s.deployments[0]?.containerPort
@@ -61,662 +104,1768 @@ export default function ConsolePage() {
     p => p.deployments[0]?.status === "READY"
   ).length;
 
+  // Unify all resources into a single indexable collection
+  const allResources = useMemo<UnifiedResource[]>(() => {
+    const list: UnifiedResource[] = [];
+
+    frontendList.forEach(p => {
+      const latest = p.deployments[0];
+      const liveUrl = formatDeployedUrl(latest?.url, p.slug, p.customDomain);
+      list.push({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        kind: "FRONTEND",
+        frameworkOrRuntime: p.framework || "WEB",
+        branch: p.branch,
+        status: latest?.status || "NO_DEPLOYS",
+        liveUrl: latest?.status === "READY" ? liveUrl : undefined,
+        href: `/dashboard/projects/${p.id}`,
+        updatedAt: p.updatedAt,
+      });
+    });
+
+    backendList.forEach(s => {
+      const latest = s.deployments[0];
+      const liveUrl = getServiceIngressUrl(s.slug);
+      let statusStr: string = latest?.status || "NO_DEPLOYS";
+      if (latest?.status === "READY" && !latest.containerPort) {
+        statusStr = "ASLEEP";
+      }
+      list.push({
+        id: s.id,
+        name: s.name,
+        slug: s.slug,
+        kind: "BACKEND",
+        frameworkOrRuntime: s.language || "DOCKER",
+        branch: s.branch,
+        status: statusStr,
+        liveUrl: latest?.status === "READY" && !!latest.containerPort ? liveUrl : undefined,
+        href: `/dashboard/backend/${s.id}`,
+        updatedAt: latest?.createdAt || s.createdAt,
+      });
+    });
+
+    functionList.forEach(fn => {
+      const latest = fn.deployments?.[0];
+      const liveUrl = getFunctionIngressUrl(fn.slug);
+      list.push({
+        id: fn.id,
+        name: fn.name,
+        slug: fn.slug,
+        kind: "FUNCTION",
+        frameworkOrRuntime: fn.runtime ? fn.runtime.replace("_", " ") : "V8 EDGE",
+        status: latest ? "READY" : "NO_DEPLOYS",
+        liveUrl,
+        href: `/dashboard/functions/${fn.id}`,
+        updatedAt: fn.updatedAt || fn.createdAt,
+      });
+    });
+
+    databaseList.forEach(db => {
+      list.push({
+        id: db.id,
+        name: db.name,
+        slug: db.id.slice(0, 8),
+        kind: "DATABASE",
+        frameworkOrRuntime: db.type || "POSTGRESQL",
+        status: db.status || "ONLINE",
+        href: `/dashboard/databases/${db.id}`,
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [frontendList, backendList, functionList, databaseList]);
+
+  const filteredResources = useMemo(() => {
+    return allResources.filter(res => {
+      const matchesTab =
+        activeTab === "all" ||
+        (activeTab === "frontends" && res.kind === "FRONTEND") ||
+        (activeTab === "backends" && res.kind === "BACKEND") ||
+        (activeTab === "functions" && res.kind === "FUNCTION") ||
+        (activeTab === "databases" && res.kind === "DATABASE");
+
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !query ||
+        res.name.toLowerCase().includes(query) ||
+        res.slug.toLowerCase().includes(query) ||
+        res.frameworkOrRuntime.toLowerCase().includes(query);
+
+      return matchesTab && matchesSearch;
+    });
+  }, [allResources, activeTab, searchQuery]);
+
   return (
-    <div className="page">
-      {/* Premium Welcome Header with subtle Aurora glow */}
-      <div className="console-hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <span className="live-dot-pulse" />
-            <span>Whizan Cloud Platform</span>
+    <div className="page console-page">
+      {/* ── 1. Elevated Platform Header ───────────────────────────────────────── */}
+      <header className="console-header-section">
+        <div className="console-header-content">
+          <div className="console-system-badge">
+            <span className="sys-status-dot" />
+            <span className="sys-region-text">Azure East US (20.2.136.11)</span>
+            <span className="sys-divider">•</span>
+            <span className="sys-active-label">Zero-Downtime Mesh</span>
+            <span className="sys-divider">•</span>
+            <button
+              onClick={() => copyToClipboard("20.2.136.11", "hdr-ip", "Ingress IP")}
+              className="sys-ip-chip"
+              title="Click to copy Edge Ingress IP"
+            >
+              {copiedKey === "hdr-ip" ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+              <span>20.2.136.11</span>
+            </button>
           </div>
-          <h1 className="hero-title">
-            Welcome back, <span className="hero-name-gradient">{firstName}</span>
-          </h1>
-          <p className="hero-subtitle">
-            Deploy frontend applications, containerized backend services, and manage edge routing from a unified developer console.
+
+          <h1 className="console-main-heading">Developer Console</h1>
+          <p className="console-sub-desc">
+            Centralized control plane for edge-routed frontends, containerized microservices, serverless V8 functions, and managed clusters.
           </p>
         </div>
 
-        <div className="hero-actions">
-          <Link href="/dashboard/projects/new" className="btn btn-primary" id="deploy-frontend-btn">
-            <Globe size={15} /> Deploy Frontend
+        <div className="console-header-actions">
+          <Link href="/docs" className="btn btn-secondary btn-header">
+            <BookOpen size={15} />
+            <span>Docs</span>
           </Link>
-          <Link href="/dashboard/backend/new" className="btn btn-secondary" id="deploy-backend-btn">
-            <Server size={15} /> Deploy Service
+          <Link href="/dashboard/projects/new" className="btn btn-secondary btn-header">
+            <Globe size={15} />
+            <span>Deploy Frontend</span>
           </Link>
-          <Link
-            href="/dashboard/functions/new"
-            className="btn btn-secondary"
-            id="deploy-function-btn"
-            style={{
-              background: "rgba(79, 70, 229, 0.06)",
-              color: "var(--accent)",
-              borderColor: "rgba(79, 70, 229, 0.2)",
-            }}
-          >
-            <Zap size={15} /> Edge Function
+          <Link href="/dashboard/backend/new" className="btn btn-primary btn-header">
+            <Plus size={15} />
+            <span>Deploy Service</span>
           </Link>
         </div>
-      </div>
+      </header>
 
-      {/* High-Signal Telemetry Cards */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-label">
-            <Globe size={14} className="text-sky-600" /> Frontend Apps
-          </div>
-          <div className="stat-value">{frontendList.length}</div>
-          <div className="stat-sub text-emerald-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            {liveFrontends} live on Edge CDN
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">
-            <Server size={14} className="text-indigo-600" /> Backend Services
-          </div>
-          <div className="stat-value">{backendList.length}</div>
-          <div className="stat-sub text-slate-500">
-            {activeBackends} active / {backendList.length - activeBackends} asleep
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">
-            <Zap size={14} className="text-violet-600" /> Edge Functions
-          </div>
-          <div className="stat-value">{functionList.length}</div>
-          <div className="stat-sub text-violet-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-            Sub-5ms Serverless V8
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-label">
-            <Radio size={14} className="text-sky-600" /> Cloud Ingress
-          </div>
-          <div className="stat-value mono text-sm font-semibold truncate" title={baseDomain}>
-            20.2.136.11
-          </div>
-          <div className="stat-sub text-emerald-700">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Port 80 • nip.io mesh
-          </div>
-        </div>
-      </div>
-
-      {/* Main Console Split Layout */}
-      <div className="console-split-layout">
-        {/* Left Column: Active Frontends & Services */}
-        <div className="console-main-col">
-          {/* Frontend Applications Snippet */}
-          <div className="card">
-            <div className="section-card-header">
-              <div>
-                <h2 className="section-card-title">Frontend Applications</h2>
-                <p className="section-card-desc">Production web applications with live edge domain routing</p>
-              </div>
-              <Link href="/dashboard/hosting" className="view-all-link">
-                View all ({frontendList.length}) <ArrowRight size={13} />
-              </Link>
+      {/* ── 2. Unified Infrastructure Telemetry Strip ───────────────────────── */}
+      <section className="telemetry-bar-grid">
+        <Link href="/dashboard/hosting" className="telemetry-tile">
+          <div className="tile-top-row">
+            <div className="tile-icon-wrapper tile-icon-sky">
+              <Globe size={18} />
             </div>
-
-            {loading ? (
-              <div className="skeleton" style={{ height: 140 }} />
-            ) : frontendList.length === 0 ? (
-              <div className="empty-inner">
-                <Globe size={28} className="text-slate-400" />
-                <div style={{ fontWeight: 650, marginTop: "0.5rem", color: "var(--foreground)" }}>No frontend applications deployed</div>
-                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem", maxWidth: 360 }}>
-                  Connect your repository to deploy Next.js, Vite, or React apps in seconds.
-                </p>
-                <Link href="/dashboard/projects/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
-                  <Plus size={14} /> Deploy Frontend App
-                </Link>
-              </div>
-            ) : (
-              <div className="items-list">
-                {frontendList.slice(0, 4).map(p => {
-                  const latest = p.deployments[0];
-                  const liveUrl = formatDeployedUrl(latest?.url, p.slug, p.customDomain);
-                  const isReady = latest?.status === "READY";
-
-                  return (
-                    <div key={p.id} className="item-row">
-                      <Link href={`/dashboard/projects/${p.id}`} className="item-details-link">
-                        <div className="item-icon-box text-sky-600 bg-sky-50/70 border-sky-100">
-                          <Globe size={18} />
-                        </div>
-                        <div className="item-details">
-                          <div className="item-name-row">
-                            <span className="item-name">{p.name}</span>
-                            <span className="item-mesh-alias mono">/{p.slug}</span>
-                          </div>
-                          <div className="item-sub-row">
-                            <span className="font-medium text-slate-700">{p.framework}</span>
-                            <span>•</span>
-                            <span>branch: {p.branch}</span>
-                            <span>•</span>
-                            <span className="item-time">
-                              {formatDistanceToNow(new Date(p.updatedAt), { addSuffix: true })}
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-
-                      <div className="item-status-col">
-                        {latest ? <StatusBadge status={latest.status} /> : <span className="badge badge-queued">No deploys</span>}
-                        {isReady && (
-                          <a
-                            href={liveUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="live-external-btn"
-                            title={`Open live site: ${liveUrl}`}
-                          >
-                            <span>Live</span>
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <span className="tile-numeric-stat">{frontendList.length}</span>
           </div>
+          <div className="tile-label-text">Frontend Applications</div>
+          <div className="tile-subtext text-emerald-700">
+            <span className="pulse-indicator-emerald" />
+            <span>{liveFrontends} live on Edge CDN</span>
+          </div>
+        </Link>
 
-          {/* Backend Services Snippet */}
-          <div className="card" style={{ marginTop: "1.5rem" }}>
-            <div className="section-card-header">
-              <div>
-                <h2 className="section-card-title">Backend Services</h2>
-                <p className="section-card-desc">Containerized APIs, microservices, and background queue workers</p>
-              </div>
-              <Link href="/dashboard/backend" className="view-all-link">
-                View all ({backendList.length}) <ArrowRight size={13} />
-              </Link>
+        <Link href="/dashboard/backend" className="telemetry-tile">
+          <div className="tile-top-row">
+            <div className="tile-icon-wrapper tile-icon-indigo">
+              <Server size={18} />
             </div>
+            <span className="tile-numeric-stat">{backendList.length}</span>
+          </div>
+          <div className="tile-label-text">Backend Services</div>
+          <div className="tile-subtext text-slate-600">
+            <span className="static-bullet-dot" />
+            <span>{activeBackends} active / {backendList.length - activeBackends} asleep</span>
+          </div>
+        </Link>
 
-            {loading ? (
-              <div className="skeleton" style={{ height: 140 }} />
-            ) : backendList.length === 0 ? (
-              <div className="empty-inner">
-                <Server size={28} className="text-slate-400" />
-                <div style={{ fontWeight: 650, marginTop: "0.5rem", color: "var(--foreground)" }}>No backend services deployed</div>
-                <p style={{ fontSize: "0.825rem", color: "var(--muted)", marginTop: "0.25rem", maxWidth: 360 }}>
-                  Deploy your Node.js, Python, or Go services with automated health checks.
-                </p>
-                <Link href="/dashboard/backend/new" className="btn btn-primary btn-sm" style={{ marginTop: "0.85rem" }}>
-                  <Plus size={14} /> Deploy Backend Service
-                </Link>
-              </div>
+        <Link href="/dashboard/functions" className="telemetry-tile">
+          <div className="tile-top-row">
+            <div className="tile-icon-wrapper tile-icon-violet">
+              <Zap size={18} />
+            </div>
+            <span className="tile-numeric-stat">{functionList.length}</span>
+          </div>
+          <div className="tile-label-text">Edge Functions</div>
+          <div className="tile-subtext text-violet-700">
+            <span className="pulse-indicator-violet" />
+            <span>Sub-5ms Serverless V8</span>
+          </div>
+        </Link>
+
+        <div
+          className="telemetry-tile cursor-pointer"
+          onClick={() => copyToClipboard("20.2.136.11", "card-ip", "Ingress IP")}
+          title="Click to copy Edge Ingress IP"
+        >
+          <div className="tile-top-row">
+            <div className="tile-icon-wrapper tile-icon-emerald">
+              <Radio size={18} />
+            </div>
+            <span className="tile-port-chip">PORT 80</span>
+          </div>
+          <div className="tile-label-text">Edge Ingress IP</div>
+          <div className="tile-subtext text-slate-800 font-mono">
+            <span>20.2.136.11</span>
+            {copiedKey === "card-ip" ? (
+              <Check size={12} className="text-emerald-600" />
             ) : (
-              <div className="items-list">
-                {backendList.slice(0, 4).map(s => {
-                  const latest = s.deployments[0];
-                  const isActive = latest?.status === "READY" && !!latest.containerPort;
-                  const isAsleep = latest?.status === "READY" && !latest.containerPort;
-                  const liveUrl = getServiceIngressUrl(s.slug);
-
-                  return (
-                    <div key={s.id} className="item-row">
-                      <Link href={`/dashboard/backend/${s.id}`} className="item-details-link">
-                        <div className="item-icon-box text-indigo-600 bg-indigo-50/70 border-indigo-100">
-                          <Server size={18} />
-                        </div>
-                        <div className="item-details">
-                          <div className="item-name-row">
-                            <span className="item-name">{s.name}</span>
-                            <span className="item-mesh-alias mono">/{s.slug}</span>
-                          </div>
-                          <div className="item-sub-row">
-                            <span className="mono font-semibold text-slate-700">{s.language}</span>
-                            <span>•</span>
-                            <span>branch: {s.branch}</span>
-                            <span>•</span>
-                            <span className="item-time">
-                              {latest?.createdAt ? formatDistanceToNow(new Date(latest.createdAt), { addSuffix: true }) : "recent"}
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-
-                      <div className="item-status-col">
-                        {isActive && (
-                          <span className="badge badge-ready">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            ACTIVE
-                          </span>
-                        )}
-                        {isAsleep && (
-                          <span className="badge badge-queued">
-                            <Clock size={11} />
-                            ASLEEP (0.1 vCPU)
-                          </span>
-                        )}
-                        {!latest ? (
-                          <span className="badge badge-queued">No deploys</span>
-                        ) : (
-                          !isActive && !isAsleep && <StatusBadge status={latest.status} />
-                        )}
-
-                        {isActive && (
-                          <a
-                            href={liveUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="live-external-btn"
-                            title={`Open live endpoint: ${liveUrl}`}
-                          >
-                            <span>Live</span>
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <Copy size={12} className="text-slate-400" />
             )}
           </div>
         </div>
+      </section>
 
-        {/* Right Column: Platform Navigation & Endpoints */}
-        <div className="console-side-col">
-          <div className="card">
-            <h3 className="section-card-title" style={{ marginBottom: "1rem" }}>
-              Quick Actions
-            </h3>
-            <div className="quick-actions-stack">
-              <Link href="/dashboard/projects/new" className="quick-card">
-                <div className="quick-card-icon bg-sky-50 text-sky-600 border border-sky-100">
-                  <Globe size={17} />
-                </div>
-                <div>
-                  <div className="quick-card-title">New Frontend Application</div>
-                  <div className="quick-card-sub">Next.js, Vite, React on Edge CDN</div>
-                </div>
-              </Link>
-
-              <Link href="/dashboard/backend/new" className="quick-card">
-                <div className="quick-card-icon bg-indigo-50 text-indigo-600 border border-indigo-100">
-                  <Server size={17} />
-                </div>
-                <div>
-                  <div className="quick-card-title">New Backend Service</div>
-                  <div className="quick-card-sub">Docker, Node.js, Python, or Go</div>
-                </div>
-              </Link>
-
-              <Link href="/dashboard/functions/new" className="quick-card">
-                <div className="quick-card-icon bg-violet-50 text-violet-600 border border-violet-100">
-                  <Zap size={17} />
-                </div>
-                <div>
-                  <div className="quick-card-title">New Edge Function</div>
-                  <div className="quick-card-sub">Serverless V8 isolated micro-APIs</div>
-                </div>
-              </Link>
-
-              <Link href="/dashboard/databases" className="quick-card">
-                <div className="quick-card-icon bg-emerald-50 text-emerald-600 border border-emerald-100">
-                  <Database size={17} />
-                </div>
-                <div>
-                  <div className="quick-card-title">Managed Databases</div>
-                  <div className="quick-card-sub">PostgreSQL & Redis clusters</div>
-                </div>
-              </Link>
-
-              <Link href="/dashboard/mcp" className="quick-card">
-                <div className="quick-card-icon bg-purple-50 text-purple-600 border border-purple-100">
-                  <Terminal size={17} />
-                </div>
-                <div>
-                  <div className="quick-card-title">DevOps Agent MCP</div>
-                  <div className="quick-card-sub">AI autonomous deployment protocol</div>
-                </div>
-              </Link>
-            </div>
-          </div>
-
-          {/* Cloud Ingress & Edge Router Status */}
-          <div className="card" style={{ marginTop: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.85rem" }}>
-              <h3 className="section-card-title" style={{ margin: 0 }}>
-                Cloud Ingress
-              </h3>
-              <span className="badge badge-ready">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Operational
-              </span>
-            </div>
-
-            <div className="ingress-info-stack">
-              <div className="ingress-info-row">
-                <span className="ingress-key">Edge Ingress IP</span>
-                <span className="ingress-val mono text-xs font-semibold">20.2.136.11</span>
-              </div>
-              <div className="ingress-info-row">
-                <span className="ingress-key">Wildcard Gateway</span>
-                <span className="ingress-val mono text-xs">*.{baseDomain}</span>
-              </div>
-              <div className="ingress-info-row">
-                <span className="ingress-key">Traffic Protocol</span>
-                <span className="ingress-val text-xs">HTTP / Port 80</span>
-              </div>
-              <div className="ingress-info-row">
-                <span className="ingress-key">Zero-Downtime Cutover</span>
-                <span className="ingress-val text-xs text-emerald-700 font-semibold">Enabled</span>
-              </div>
-            </div>
-          </div>
+      {/* ── 3. Main Workstation Experience ──────────────────────────────────── */}
+      {loading ? (
+        <div className="workspace-loading-card">
+          <div className="skeleton-row-bar" />
+          <div className="skeleton-row-bar" />
+          <div className="skeleton-row-bar" />
         </div>
-      </div>
+      ) : allResources.length === 0 ? (
+        /* ZERO-STATE ONBOARDING LAUNCHPAD: Highly polished starter experience */
+        <section className="onboarding-launchpad-card">
+          <div className="launchpad-intro-banner">
+            <div className="launchpad-pill-tag">
+              <Sparkles size={13} className="text-indigo-600" />
+              <span>Getting Started</span>
+            </div>
+            <h2 className="launchpad-headline">Deploy your first cloud workload</h2>
+            <p className="launchpad-subline">
+              Select a workload architecture below to get started, or orchestrate deployments directly from your terminal with Whizan CLI and DevOps MCP.
+            </p>
+          </div>
 
+          {/* 4 Workload Cards Grid */}
+          <div className="launchpad-tiles-grid">
+            {/* Frontend Web App */}
+            <Link href="/dashboard/projects/new" className="launchpad-action-card">
+              <div className="launchpad-card-header">
+                <div className="launchpad-icon-box tile-icon-sky">
+                  <Globe size={22} />
+                </div>
+                <span className="launchpad-type-badge type-sky">Edge CDN</span>
+              </div>
+              <h3 className="launchpad-card-name">Frontend Web Application</h3>
+              <p className="launchpad-card-summary">
+                Next.js SSR, Vite, React, and Astro applications with edge asset caching, automatic SSL, and instant preview routing.
+              </p>
+              <div className="framework-chips-row">
+                <span className="fw-chip">Next.js</span>
+                <span className="fw-chip">Vite</span>
+                <span className="fw-chip">React</span>
+                <span className="fw-chip">Astro</span>
+              </div>
+              <div className="launchpad-card-cta">
+                <span>Deploy Frontend</span>
+                <ArrowRight size={14} className="cta-arrow" />
+              </div>
+            </Link>
+
+            {/* Backend Microservice */}
+            <Link href="/dashboard/backend/new" className="launchpad-action-card">
+              <div className="launchpad-card-header">
+                <div className="launchpad-icon-box tile-icon-indigo">
+                  <Server size={22} />
+                </div>
+                <span className="launchpad-type-badge type-indigo">Containerized</span>
+              </div>
+              <h3 className="launchpad-card-name">Backend Microservice</h3>
+              <p className="launchpad-card-summary">
+                Node.js, Python FastAPI/Django, Go, or raw Docker containers with auto-sleep, zero-downtime mesh, and live streaming logs.
+              </p>
+              <div className="framework-chips-row">
+                <span className="fw-chip">Node.js</span>
+                <span className="fw-chip">Python</span>
+                <span className="fw-chip">Go</span>
+                <span className="fw-chip">Docker</span>
+              </div>
+              <div className="launchpad-card-cta">
+                <span>Deploy Service</span>
+                <ArrowRight size={14} className="cta-arrow" />
+              </div>
+            </Link>
+
+            {/* Serverless Edge Function */}
+            <Link href="/dashboard/functions/new" className="launchpad-action-card">
+              <div className="launchpad-card-header">
+                <div className="launchpad-icon-box tile-icon-violet">
+                  <Zap size={22} />
+                </div>
+                <span className="launchpad-type-badge type-violet">Sub-5ms V8</span>
+              </div>
+              <h3 className="launchpad-card-name">Serverless Edge Function</h3>
+              <p className="launchpad-card-summary">
+                Execute lightweight event-driven APIs, webhooks, and database mutations on isolated V8 runtimes with 0 exposed host ports.
+              </p>
+              <div className="framework-chips-row">
+                <span className="fw-chip">TypeScript</span>
+                <span className="fw-chip">JavaScript</span>
+                <span className="fw-chip">Webhooks</span>
+              </div>
+              <div className="launchpad-card-cta">
+                <span>Create Function</span>
+                <ArrowRight size={14} className="cta-arrow" />
+              </div>
+            </Link>
+
+            {/* Managed Database */}
+            <Link href="/dashboard/databases" className="launchpad-action-card">
+              <div className="launchpad-card-header">
+                <div className="launchpad-icon-box tile-icon-emerald">
+                  <Database size={22} />
+                </div>
+                <span className="launchpad-type-badge type-emerald">Persistence</span>
+              </div>
+              <h3 className="launchpad-card-name">Managed Persistence</h3>
+              <p className="launchpad-card-summary">
+                Provision dedicated PostgreSQL database clusters and high-throughput Redis instances with instant connection strings.
+              </p>
+              <div className="framework-chips-row">
+                <span className="fw-chip">PostgreSQL</span>
+                <span className="fw-chip">Redis</span>
+                <span className="fw-chip">TLS</span>
+              </div>
+              <div className="launchpad-card-cta">
+                <span>Provision Database</span>
+                <ArrowRight size={14} className="cta-arrow" />
+              </div>
+            </Link>
+          </div>
+
+          {/* Launchpad Bottom Utilities (Terminal & Cloud Architecture) */}
+          <div className="launchpad-auxiliary-grid">
+            <div className="aux-info-card">
+              <div className="aux-card-header">
+                <div className="flex items-center gap-2">
+                  <Terminal size={17} className="text-slate-700" />
+                  <h4 className="aux-card-title">Terminal & AI DevOps</h4>
+                </div>
+                <Link href="/dashboard/cli" className="aux-card-link">
+                  CLI Docs →
+                </Link>
+              </div>
+              <p className="aux-card-desc">
+                Deploy applications directly from your terminal or pair-program with AI coding agents using the MCP server.
+              </p>
+              <div className="cli-snippets-stack">
+                <div className="code-copy-row">
+                  <span className="code-pill-tag">CLI</span>
+                  <code className="code-line">npm install -g @whizan/cli</code>
+                  <button
+                    onClick={() => copyToClipboard("npm install -g @whizan/cli", "z-cli", "CLI Command")}
+                    className="copy-snippet-btn"
+                    title="Copy command"
+                  >
+                    {copiedKey === "z-cli" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                  </button>
+                </div>
+                <div className="code-copy-row">
+                  <span className="code-pill-tag tag-mcp-badge">MCP</span>
+                  <code className="code-line">npx @whizan/mcp-devops login</code>
+                  <button
+                    onClick={() => copyToClipboard("npx @whizan/mcp-devops login", "z-mcp", "MCP Command")}
+                    className="copy-snippet-btn"
+                    title="Copy command"
+                  >
+                    {copiedKey === "z-mcp" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="aux-info-card">
+              <div className="aux-card-header">
+                <div className="flex items-center gap-2">
+                  <Radio size={17} className="text-emerald-600" />
+                  <h4 className="aux-card-title">Network & Ingress Gateway</h4>
+                </div>
+                <span className="badge badge-ready">
+                  <span className="pulse-indicator-emerald" />
+                  Operational
+                </span>
+              </div>
+              <div className="network-specs-table">
+                <div className="spec-item-row">
+                  <span className="spec-item-name">Edge Ingress Gateway</span>
+                  <span className="spec-item-val font-mono">http://*.20.2.136.11.nip.io</span>
+                </div>
+                <div className="spec-item-row">
+                  <span className="spec-item-name">Ingress Traffic Port</span>
+                  <span className="spec-item-val">HTTP / Port 80 (Fastify Edge Router)</span>
+                </div>
+                <div className="spec-item-row">
+                  <span className="spec-item-name">Private Bridge Network</span>
+                  <span className="spec-item-val text-emerald-700 font-semibold">172.18.0.0/16 Mesh</span>
+                </div>
+                <div className="spec-item-row">
+                  <span className="spec-item-name">Deployment Strategy</span>
+                  <span className="spec-item-val text-slate-800 font-medium">Atomic Zero-Downtime</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : (
+        /* ACTIVE WORKSPACE: Deployed Cloud Resources Table + Sidebar */
+        <div className="console-active-layout">
+          {/* Main Column */}
+          <main className="active-primary-col">
+            <div className="resources-card-panel">
+              <div className="panel-controls-header">
+                <div className="panel-title-row">
+                  <div>
+                    <h2 className="panel-heading">Deployed Cloud Resources</h2>
+                    <p className="panel-subheading">
+                      Active web frontends, containerized microservices, and serverless functions
+                    </p>
+                  </div>
+                  <Link href="/dashboard/services" className="catalog-direct-link">
+                    <span>View All Catalog</span>
+                    <ArrowRight size={13} />
+                  </Link>
+                </div>
+
+                {/* Filter Tabs & Search Bar */}
+                <div className="filter-search-toolbar">
+                  <div className="tab-segmented-group" role="tablist">
+                    <button
+                      onClick={() => setActiveTab("all")}
+                      className={`tab-btn ${activeTab === "all" ? "tab-btn-active" : ""}`}
+                      role="tab"
+                      aria-selected={activeTab === "all"}
+                    >
+                      All <span className="tab-count-pill">{allResources.length}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("frontends")}
+                      className={`tab-btn ${activeTab === "frontends" ? "tab-btn-active" : ""}`}
+                      role="tab"
+                      aria-selected={activeTab === "frontends"}
+                    >
+                      Frontends <span className="tab-count-pill">{frontendList.length}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("backends")}
+                      className={`tab-btn ${activeTab === "backends" ? "tab-btn-active" : ""}`}
+                      role="tab"
+                      aria-selected={activeTab === "backends"}
+                    >
+                      Backends <span className="tab-count-pill">{backendList.length}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("functions")}
+                      className={`tab-btn ${activeTab === "functions" ? "tab-btn-active" : ""}`}
+                      role="tab"
+                      aria-selected={activeTab === "functions"}
+                    >
+                      Functions <span className="tab-count-pill">{functionList.length}</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("databases")}
+                      className={`tab-btn ${activeTab === "databases" ? "tab-btn-active" : ""}`}
+                      role="tab"
+                      aria-selected={activeTab === "databases"}
+                    >
+                      Databases <span className="tab-count-pill">{databaseList.length}</span>
+                    </button>
+                  </div>
+
+                  <div className="search-box-wrapper">
+                    <Search size={14} className="search-lead-icon" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="Filter by name, slug, framework..."
+                      className="search-box-input"
+                      aria-label="Filter resources"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="clear-search-btn"
+                        aria-label="Clear search query"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Resource List Stack */}
+              <div className="resources-list-body">
+                {filteredResources.length === 0 ? (
+                  <div className="empty-search-state">
+                    <div className="empty-search-icon">
+                      <Search size={24} className="text-slate-400" />
+                    </div>
+                    <h3 className="empty-search-title">No matching resources found</h3>
+                    <p className="empty-search-desc">
+                      No deployments matching &ldquo;{searchQuery}&rdquo;. Try refining your search query or selecting a different tab.
+                    </p>
+                    <button onClick={() => setSearchQuery("")} className="btn btn-secondary btn-sm">
+                      Clear Search Filter
+                    </button>
+                  </div>
+                ) : (
+                  <div className="resource-items-table">
+                    {filteredResources.map(res => {
+                      const isFrontend = res.kind === "FRONTEND";
+                      const isBackend = res.kind === "BACKEND";
+                      const isFunction = res.kind === "FUNCTION";
+                      const isDatabase = res.kind === "DATABASE";
+
+                      return (
+                        <div key={`${res.kind}-${res.id}`} className="resource-item-row">
+                          <Link href={res.href} className="resource-item-primary">
+                            <div
+                              className={`resource-type-avatar ${
+                                isFrontend
+                                  ? "tile-icon-sky"
+                                  : isBackend
+                                  ? "tile-icon-indigo"
+                                  : isFunction
+                                  ? "tile-icon-violet"
+                                  : "tile-icon-emerald"
+                              }`}
+                            >
+                              {isFrontend && <Globe size={18} />}
+                              {isBackend && <Server size={18} />}
+                              {isFunction && <Zap size={18} />}
+                              {isDatabase && <Database size={18} />}
+                            </div>
+
+                            <div className="resource-item-info">
+                              <div className="resource-name-line">
+                                <span className="resource-main-name">{res.name}</span>
+                                <span className="resource-slug-chip mono">/{res.slug}</span>
+                                <span className="resource-runtime-chip">{res.frameworkOrRuntime}</span>
+                              </div>
+
+                              <div className="resource-details-line">
+                                {res.branch && (
+                                  <>
+                                    <span className="branch-meta mono">branch: {res.branch}</span>
+                                    <span className="meta-dot-sep">•</span>
+                                  </>
+                                )}
+                                <span className="timestamp-meta">
+                                  {formatDistanceToNow(new Date(res.updatedAt), { addSuffix: true })}
+                                </span>
+                              </div>
+                            </div>
+                          </Link>
+
+                          <div className="resource-item-actions">
+                            <div className="resource-status-badge">
+                              {res.status === "READY" || res.status === "ONLINE" ? (
+                                <span className="badge badge-ready">
+                                  <span className="pulse-indicator-emerald" />
+                                  {isBackend ? "ACTIVE" : "READY"}
+                                </span>
+                              ) : res.status === "ASLEEP" ? (
+                                <span className="badge badge-queued" title="Compute scaled to zero">
+                                  <Clock size={11} />
+                                  ASLEEP
+                                </span>
+                              ) : (
+                                <StatusBadge status={res.status} />
+                              )}
+                            </div>
+
+                            {res.liveUrl && (
+                              <a
+                                href={res.liveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="live-link-button"
+                                title={`Open live URL: ${res.liveUrl}`}
+                              >
+                                <span>Live</span>
+                                <ExternalLink size={12} />
+                              </a>
+                            )}
+
+                            <Link href={res.href} className="inspect-link-chevron" title="Inspect service console">
+                              <ChevronRight size={16} />
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+
+          {/* Secondary Column */}
+          <aside className="active-sidebar-col">
+            <div className="side-widget-card">
+              <h3 className="side-widget-title">Quick Actions</h3>
+              <p className="side-widget-desc">Provision cloud infrastructure and apps</p>
+
+              <div className="quick-deploy-stack">
+                <Link href="/dashboard/projects/new" className="quick-deploy-entry">
+                  <div className="entry-icon tile-icon-sky">
+                    <Globe size={16} />
+                  </div>
+                  <div className="entry-texts">
+                    <div className="entry-title">Deploy Frontend</div>
+                    <div className="entry-sub">Next.js, Vite, React with edge routing</div>
+                  </div>
+                  <ChevronRight size={14} className="entry-chevron" />
+                </Link>
+
+                <Link href="/dashboard/backend/new" className="quick-deploy-entry">
+                  <div className="entry-icon tile-icon-indigo">
+                    <Server size={16} />
+                  </div>
+                  <div className="entry-texts">
+                    <div className="entry-title">Deploy Microservice</div>
+                    <div className="entry-sub">Node.js, Python, Go, Docker API</div>
+                  </div>
+                  <ChevronRight size={14} className="entry-chevron" />
+                </Link>
+
+                <Link href="/dashboard/functions/new" className="quick-deploy-entry">
+                  <div className="entry-icon tile-icon-violet">
+                    <Zap size={16} />
+                  </div>
+                  <div className="entry-texts">
+                    <div className="entry-title">Create Edge Function</div>
+                    <div className="entry-sub">Serverless V8 isolated endpoint</div>
+                  </div>
+                  <ChevronRight size={14} className="entry-chevron" />
+                </Link>
+
+                <Link href="/dashboard/databases" className="quick-deploy-entry">
+                  <div className="entry-icon tile-icon-emerald">
+                    <Database size={16} />
+                  </div>
+                  <div className="entry-texts">
+                    <div className="entry-title">Managed Persistence</div>
+                    <div className="entry-sub">PostgreSQL & Redis clusters</div>
+                  </div>
+                  <ChevronRight size={14} className="entry-chevron" />
+                </Link>
+              </div>
+            </div>
+
+            <div className="side-widget-card">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="side-widget-title">Developer Tooling</h3>
+                <Link href="/docs" className="tooling-docs-anchor">
+                  Docs →
+                </Link>
+              </div>
+              <p className="side-widget-desc">Connect local terminal or AI coding agents</p>
+
+              <div className="tooling-snippets-stack">
+                <div className="tool-snippet-box">
+                  <div className="tool-box-label">
+                    <div className="flex items-center gap-1.5">
+                      <Bot size={13} className="text-indigo-600" />
+                      <span className="font-semibold text-xs text-slate-800">DevOps Agent (MCP)</span>
+                    </div>
+                    <Link href="/dashboard/mcp" className="tool-box-link">
+                      Config →
+                    </Link>
+                  </div>
+                  <div className="tool-box-code">
+                    <code>npx @whizan/mcp-devops login</code>
+                    <button
+                      onClick={() => copyToClipboard("npx @whizan/mcp-devops login", "mcp-side", "MCP Command")}
+                      className="tool-copy-icon"
+                      title="Copy command"
+                    >
+                      {copiedKey === "mcp-side" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="tool-snippet-box">
+                  <div className="tool-box-label">
+                    <div className="flex items-center gap-1.5">
+                      <Terminal size={13} className="text-slate-700" />
+                      <span className="font-semibold text-xs text-slate-800">Whizan CLI</span>
+                    </div>
+                    <Link href="/dashboard/cli" className="tool-box-link">
+                      Help →
+                    </Link>
+                  </div>
+                  <div className="tool-box-code">
+                    <code>npm i -g @whizan/cli</code>
+                    <button
+                      onClick={() => copyToClipboard("npm i -g @whizan/cli", "cli-side", "CLI Command")}
+                      className="tool-copy-icon"
+                      title="Copy command"
+                    >
+                      {copiedKey === "cli-side" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="side-widget-card">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="side-widget-title">Edge Ingress Specs</h3>
+                <span className="badge badge-ready">
+                  <span className="pulse-indicator-emerald" />
+                  Live
+                </span>
+              </div>
+              <div className="specs-list-stack">
+                <div className="spec-row-item">
+                  <span className="spec-row-lbl">Ingress IP</span>
+                  <span className="spec-row-val mono">20.2.136.11</span>
+                </div>
+                <div className="spec-row-item">
+                  <span className="spec-row-lbl">Gateway Domain</span>
+                  <span className="spec-row-val mono">*.{baseDomain}</span>
+                </div>
+                <div className="spec-row-item">
+                  <span className="spec-row-lbl">Router Port</span>
+                  <span className="spec-row-val">Port 80 (HTTP)</span>
+                </div>
+                <div className="spec-row-item">
+                  <span className="spec-row-lbl">Mesh Subnet</span>
+                  <span className="spec-row-val text-emerald-700 font-semibold">172.18.0.0/16</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* ── Scoped CSS with Complete Media Queries ──────────────────────────── */}
       <style>{`
-        /* Hero Banner with Daylight Aurora Glow */
-        .console-hero {
-          background:
-            radial-gradient(900px 300px at 10% 0%, rgba(224, 231, 255, 0.7), transparent 60%),
-            radial-gradient(800px 250px at 90% 100%, rgba(207, 250, 254, 0.5), transparent 60%),
-            #ffffff;
+        /* Root Page Overrides & Reset */
+        .console-page {
+          overflow-x: hidden;
+          width: 100%;
+        }
+
+        /* ── 1. Header Section ────────────────────────────────── */
+        .console-header-section {
+          background: #ffffff;
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 2.25rem 2.5rem;
-          margin-bottom: 2rem;
+          padding: 1.75rem 2rem;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 2rem;
-          box-shadow: var(--shadow-sm);
+          gap: 1.75rem;
+          margin-bottom: 1.5rem;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
         }
-
-        .hero-content {
-          position: relative;
-          z-index: 1;
+        .console-header-content {
+          flex: 1;
+          min-width: 0;
         }
-        .hero-badge {
+        .console-system-badge {
           display: inline-flex;
           align-items: center;
           gap: 0.5rem;
-          padding: 0.25rem 0.7rem;
-          background: rgba(79, 70, 229, 0.08);
-          border: 1px solid rgba(79, 70, 229, 0.2);
+          padding: 0.25rem 0.65rem;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
           border-radius: 9999px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: var(--accent);
-          margin-bottom: 0.85rem;
+          font-size: 0.73rem;
+          margin-bottom: 0.75rem;
+          flex-wrap: wrap;
         }
-        .live-dot-pulse {
+        .sys-status-dot {
           width: 7px;
           height: 7px;
           border-radius: 50%;
           background: #10b981;
-          box-shadow: 0 0 6px #10b981;
+          box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+          animation: pulseGlow 2s infinite ease-in-out;
         }
-        .hero-title {
-          font-size: 2rem;
-          font-weight: 800;
-          letter-spacing: -0.035em;
-          color: var(--foreground);
-          line-height: 1.15;
+        .sys-region-text {
+          font-weight: 500;
+          color: #334155;
         }
-        .hero-name-gradient {
-          background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 40%, #0284c7 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
+        .sys-divider {
+          color: #cbd5e1;
         }
-        .hero-subtitle {
-          color: var(--muted);
-          font-size: 0.92rem;
-          max-width: 44rem;
-          margin-top: 0.5rem;
-          line-height: 1.55;
+        .sys-active-label {
+          font-weight: 600;
+          color: #059669;
         }
-        .hero-actions {
-          display: flex;
-          gap: 0.65rem;
-          flex-shrink: 0;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-
-        /* 2-Column Console Layout */
-        .console-split-layout {
-          display: grid;
-          grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
-          gap: 2rem;
-          align-items: start;
-        }
-
-        .section-card-header {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 1rem;
-          margin-bottom: 1.25rem;
-        }
-        .section-card-title {
-          font-size: 1.125rem;
-          font-weight: 700;
-          letter-spacing: -0.02em;
-          color: var(--foreground);
-        }
-        .section-card-desc {
-          font-size: 0.8125rem;
-          color: var(--muted);
-          margin-top: 0.2rem;
-        }
-
-        .view-all-link {
+        .sys-ip-chip {
           display: inline-flex;
           align-items: center;
           gap: 0.35rem;
-          font-size: 0.8125rem;
-          color: var(--accent);
+          background: #ffffff;
+          border: 1px solid #cbd5e1;
+          border-radius: 4px;
+          padding: 0.1rem 0.4rem;
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.7rem;
           font-weight: 600;
-          transition: opacity 0.15s ease;
+          color: #0f172a;
+          cursor: pointer;
+          transition: all 0.12s ease;
+        }
+        .sys-ip-chip:hover {
+          background: #f1f5f9;
+          border-color: #94a3b8;
+        }
+        .console-main-heading {
+          font-size: 1.75rem;
+          font-weight: 800;
+          letter-spacing: -0.03em;
+          color: var(--foreground);
+          line-height: 1.2;
+        }
+        .console-sub-desc {
+          font-size: 0.88rem;
+          color: var(--muted);
+          line-height: 1.5;
+          margin-top: 0.35rem;
+          max-width: 48rem;
+        }
+        .console-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          flex-shrink: 0;
+        }
+        .btn-header {
+          padding: 0.55rem 1rem;
+          font-size: 0.835rem;
           white-space: nowrap;
         }
-        .view-all-link:hover {
-          opacity: 0.8;
-        }
 
-        .items-list {
+        /* ── 2. Telemetry Cards Strip ─────────────────────────── */
+        .telemetry-bar-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 1.15rem;
+          margin-bottom: 1.75rem;
+        }
+        .telemetry-tile {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 1.2rem 1.35rem;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+          text-decoration: none;
           display: flex;
           flex-direction: column;
-          gap: 0.65rem;
+          transition: all 0.15s ease;
         }
-
-        .item-row {
+        .telemetry-tile:hover {
+          border-color: var(--card-border-hover);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+          transform: translateY(-1.5px);
+        }
+        .tile-top-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 1rem;
-          padding: 0.85rem 1rem;
-          background: #ffffff;
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          transition: all 0.15s ease;
+          margin-bottom: 0.75rem;
         }
-        .item-row:hover {
-          border-color: var(--card-border-hover);
-          background: var(--bg-inset);
-          transform: translateX(1px);
-        }
-
-        .item-details-link {
-          display: flex;
-          align-items: center;
-          gap: 0.85rem;
-          flex: 1;
-          min-width: 0;
-          text-decoration: none;
-          color: inherit;
-        }
-
-        .item-icon-box {
-          width: 38px;
-          height: 38px;
-          border-radius: 8px;
-          border-width: 1px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-        }
-
-        .item-details {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .item-name-row {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-        .item-name {
-          font-weight: 650;
-          font-size: 0.925rem;
-          color: var(--foreground);
-        }
-        .item-mesh-alias {
-          font-size: 0.73rem;
-          color: var(--muted);
-          background: #f1f5f9;
-          padding: 0.12rem 0.4rem;
-          border-radius: 4px;
-          border: 1px solid #e2e8f0;
-        }
-
-        .item-sub-row {
-          display: flex;
-          align-items: center;
-          gap: 0.45rem;
-          font-size: 0.78rem;
-          color: var(--muted);
-          margin-top: 0.2rem;
-        }
-
-        .item-status-col {
-          display: flex;
-          align-items: center;
-          gap: 0.65rem;
-          flex-shrink: 0;
-        }
-
-        .live-external-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.3rem;
-          padding: 0.22rem 0.55rem;
-          border-radius: 6px;
-          background: var(--success-bg);
-          border: 1px solid var(--success-border);
-          color: #047857;
-          font-size: 0.72rem;
-          font-weight: 600;
-          text-decoration: none;
-          transition: all 0.15s ease;
-        }
-        .live-external-btn:hover {
-          background: rgba(16, 185, 129, 0.15);
-          transform: translateY(-1px);
-        }
-
-        .empty-inner {
-          padding: 2.5rem 1rem;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-        }
-
-        /* Quick cards */
-        .quick-actions-stack {
-          display: flex;
-          flex-direction: column;
-          gap: 0.65rem;
-        }
-
-        .quick-card {
-          display: flex;
-          align-items: center;
-          gap: 0.85rem;
-          padding: 0.75rem 0.85rem;
-          border-radius: 10px;
-          background: var(--bg-inset);
-          border: 1px solid var(--border);
-          text-decoration: none;
-          color: inherit;
-          transition: all 0.15s ease;
-        }
-        .quick-card:hover {
-          border-color: var(--card-border-hover);
-          background: #ffffff;
-          transform: translateX(2px);
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
-        }
-        .quick-card-icon {
+        .tile-icon-wrapper {
           width: 36px;
           height: 36px;
           border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
-          flex-shrink: 0;
         }
-        .quick-card-title {
-          font-size: 0.875rem;
-          font-weight: 650;
+        .tile-icon-sky {
+          background: #f0f9ff;
+          color: #0284c7;
+          border: 1px solid #e0f2fe;
+        }
+        .tile-icon-indigo {
+          background: #eef2ff;
+          color: #4f46e5;
+          border: 1px solid #e0e7ff;
+        }
+        .tile-icon-violet {
+          background: #f5f3ff;
+          color: #7c3aed;
+          border: 1px solid #ede9fe;
+        }
+        .tile-icon-emerald {
+          background: #ecfdf5;
+          color: #059669;
+          border: 1px solid #d1fae5;
+        }
+        .tile-numeric-stat {
+          font-size: 1.75rem;
+          font-weight: 750;
           color: var(--foreground);
+          letter-spacing: -0.03em;
+          line-height: 1;
         }
-        .quick-card-sub {
-          font-size: 0.74rem;
-          color: var(--muted);
-          margin-top: 0.15rem;
+        .tile-port-chip {
+          font-size: 0.7rem;
+          font-weight: 700;
+          padding: 0.2rem 0.5rem;
+          background: #ecfdf5;
+          color: #059669;
+          border: 1px solid #a7f3d0;
+          border-radius: 4px;
+          letter-spacing: 0.04em;
+        }
+        .tile-label-text {
+          font-size: 0.84rem;
+          font-weight: 600;
+          color: #1e293b;
+          margin-bottom: 0.35rem;
+        }
+        .tile-subtext {
+          font-size: 0.75rem;
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+        }
+        .pulse-indicator-emerald {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #10b981;
+          box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+          animation: pulseGlow 2s infinite ease-in-out;
+        }
+        .pulse-indicator-violet {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: #8b5cf6;
+          box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+          animation: pulseGlow 2s infinite ease-in-out;
+        }
+        .static-bullet-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: #94a3b8;
         }
 
-        /* Ingress details */
-        .ingress-info-stack {
+        /* ── 3. Onboarding Launchpad (Zero-State) ──────────────── */
+        .onboarding-launchpad-card {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          padding: 2.25rem 2.5rem;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+        .launchpad-intro-banner {
+          margin-bottom: 2rem;
+          max-width: 48rem;
+        }
+        .launchpad-pill-tag {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          font-size: 0.74rem;
+          font-weight: 650;
+          color: #4f46e5;
+          background: #eef2ff;
+          border: 1px solid #e0e7ff;
+          padding: 0.25rem 0.65rem;
+          border-radius: 9999px;
+          margin-bottom: 0.85rem;
+        }
+        .launchpad-headline {
+          font-size: 1.55rem;
+          font-weight: 750;
+          color: var(--foreground);
+          letter-spacing: -0.025em;
+          line-height: 1.25;
+        }
+        .launchpad-subline {
+          font-size: 0.9rem;
+          color: var(--muted);
+          line-height: 1.55;
+          margin-top: 0.45rem;
+        }
+
+        .launchpad-tiles-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1.35rem;
+          margin-bottom: 2rem;
+        }
+        .launchpad-action-card {
+          background: #fafbfc;
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 1.5rem;
+          text-decoration: none;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          transition: all 0.18s ease;
+          position: relative;
+        }
+        .launchpad-action-card:hover {
+          background: #ffffff;
+          border-color: #cbd5e1;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+          transform: translateY(-2px);
+        }
+        .launchpad-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 1rem;
+        }
+        .launchpad-icon-box {
+          width: 44px;
+          height: 44px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .launchpad-type-badge {
+          font-size: 0.7rem;
+          font-weight: 650;
+          padding: 0.2rem 0.55rem;
+          border-radius: 5px;
+          letter-spacing: 0.02em;
+        }
+        .type-sky {
+          background: #f0f9ff;
+          color: #0284c7;
+          border: 1px solid #bae6fd;
+        }
+        .type-indigo {
+          background: #eef2ff;
+          color: #4f46e5;
+          border: 1px solid #c7d2fe;
+        }
+        .type-violet {
+          background: #f5f3ff;
+          color: #7c3aed;
+          border: 1px solid #ddd6fe;
+        }
+        .type-emerald {
+          background: #ecfdf5;
+          color: #059669;
+          border: 1px solid #a7f3d0;
+        }
+        .launchpad-card-name {
+          font-size: 1.05rem;
+          font-weight: 700;
+          color: var(--foreground);
+          letter-spacing: -0.015em;
+          margin-bottom: 0.4rem;
+        }
+        .launchpad-card-summary {
+          font-size: 0.835rem;
+          color: var(--muted);
+          line-height: 1.5;
+          margin-bottom: 1.15rem;
+        }
+        .framework-chips-row {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          flex-wrap: wrap;
+          margin-bottom: 1.25rem;
+        }
+        .fw-chip {
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: #475569;
+          background: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 4px;
+          padding: 0.15rem 0.45rem;
+        }
+        .launchpad-card-cta {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          font-size: 0.84rem;
+          font-weight: 650;
+          color: var(--foreground);
+          padding-top: 0.85rem;
+          border-top: 1px solid #f1f5f9;
+        }
+        .cta-arrow {
+          transition: transform 0.15s ease;
+        }
+        .launchpad-action-card:hover .cta-arrow {
+          transform: translateX(3px);
+          color: var(--accent);
+        }
+
+        /* Launchpad Auxiliary (Terminal & Specs) */
+        .launchpad-auxiliary-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1.35rem;
+          padding-top: 1.75rem;
+          border-top: 1px solid #f1f5f9;
+        }
+        .aux-info-card {
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: var(--radius);
+          padding: 1.35rem 1.5rem;
+        }
+        .aux-card-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 0.5rem;
+        }
+        .aux-card-title {
+          font-size: 0.88rem;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+        .aux-card-link {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--accent);
+          text-decoration: none;
+        }
+        .aux-card-link:hover {
+          text-decoration: underline;
+        }
+        .aux-card-desc {
+          font-size: 0.79rem;
+          color: var(--muted);
+          line-height: 1.45;
+          margin-bottom: 0.95rem;
+        }
+        .cli-snippets-stack {
           display: flex;
           flex-direction: column;
           gap: 0.55rem;
         }
-        .ingress-info-row {
+        .code-copy-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.45rem 0;
-          border-bottom: 1px solid #f1f5f9;
-          font-size: 0.8125rem;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          padding: 0.45rem 0.65rem;
+          font-family: var(--font-geist-mono), monospace;
+          font-size: 0.76rem;
         }
-        .ingress-info-row:last-child {
+        .code-pill-tag {
+          font-size: 0.65rem;
+          font-weight: 700;
+          padding: 0.1rem 0.35rem;
+          border-radius: 3px;
+          background: #f1f5f9;
+          color: #475569;
+          border: 1px solid #e2e8f0;
+          margin-right: 0.65rem;
+        }
+        .tag-mcp-badge {
+          background: #eef2ff;
+          color: #4f46e5;
+          border-color: #c7d2fe;
+        }
+        .code-line {
+          flex: 1;
+          color: #1e293b;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .copy-snippet-btn {
+          border: none;
+          background: transparent;
+          color: #94a3b8;
+          cursor: pointer;
+          padding: 0.2rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.12s ease;
+        }
+        .copy-snippet-btn:hover {
+          color: #0f172a;
+        }
+
+        .network-specs-table {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+        }
+        .spec-item-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.35rem 0;
+          border-bottom: 1px solid #f1f5f9;
+          font-size: 0.78rem;
+        }
+        .spec-item-row:last-child {
           border-bottom: none;
         }
-        .ingress-key {
+        .spec-item-name {
           color: var(--muted);
         }
-        .ingress-val {
+        .spec-item-val {
           font-weight: 550;
           color: var(--foreground);
         }
 
-        @media (max-width: 1024px) {
-          .console-split-layout {
+        /* ── 4. Active Workspace Layout (Resources exist) ─────── */
+        .console-active-layout {
+          display: grid;
+          grid-template-columns: 1fr 340px;
+          gap: 1.5rem;
+          align-items: start;
+        }
+        .active-primary-col {
+          min-width: 0;
+        }
+        .resources-card-panel {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+        .panel-controls-header {
+          padding: 1.5rem 1.75rem;
+          border-bottom: 1px solid var(--border);
+        }
+        .panel-title-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          margin-bottom: 1.25rem;
+        }
+        .panel-heading {
+          font-size: 1.15rem;
+          font-weight: 750;
+          color: var(--foreground);
+          letter-spacing: -0.02em;
+        }
+        .panel-subheading {
+          font-size: 0.81rem;
+          color: var(--muted);
+          margin-top: 0.2rem;
+        }
+        .catalog-direct-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--accent);
+          text-decoration: none;
+          white-space: nowrap;
+        }
+        .catalog-direct-link:hover {
+          text-decoration: underline;
+        }
+
+        .filter-search-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .tab-segmented-group {
+          display: inline-flex;
+          background: #f1f5f9;
+          padding: 0.22rem;
+          border-radius: 7px;
+          gap: 0.2rem;
+        }
+        .tab-btn {
+          border: none;
+          background: transparent;
+          padding: 0.35rem 0.7rem;
+          border-radius: 5px;
+          font-size: 0.78rem;
+          font-weight: 550;
+          color: #64748b;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.4rem;
+          transition: all 0.12s ease;
+        }
+        .tab-btn:hover {
+          color: #0f172a;
+        }
+        .tab-btn-active {
+          background: #ffffff;
+          color: #0f172a;
+          font-weight: 650;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .tab-count-pill {
+          font-size: 0.68rem;
+          font-weight: 700;
+          padding: 0.05rem 0.35rem;
+          border-radius: 9999px;
+          background: rgba(0, 0, 0, 0.06);
+          color: inherit;
+        }
+
+        .search-box-wrapper {
+          position: relative;
+          display: flex;
+          align-items: center;
+          flex: 1;
+          max-width: 320px;
+          min-width: 200px;
+        }
+        .search-lead-icon {
+          position: absolute;
+          left: 0.65rem;
+          color: #94a3b8;
+          pointer-events: none;
+        }
+        .search-box-input {
+          width: 100%;
+          padding: 0.42rem 1.75rem 0.42rem 2rem;
+          font-size: 0.8rem;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          outline: none;
+          transition: all 0.15s ease;
+        }
+        .search-box-input:focus {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        .clear-search-btn {
+          position: absolute;
+          right: 0.5rem;
+          border: none;
+          background: transparent;
+          color: #94a3b8;
+          cursor: pointer;
+          font-size: 0.7rem;
+        }
+        .clear-search-btn:hover {
+          color: #0f172a;
+        }
+
+        /* Resource Rows */
+        .resources-list-body {
+          display: flex;
+          flex-direction: column;
+        }
+        .resource-items-table {
+          display: flex;
+          flex-direction: column;
+        }
+        .resource-item-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1rem 1.75rem;
+          border-bottom: 1px solid #f1f5f9;
+          transition: background-color 0.12s ease;
+        }
+        .resource-item-row:last-child {
+          border-bottom: none;
+        }
+        .resource-item-row:hover {
+          background: #f8fafc;
+        }
+        .resource-item-primary {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          text-decoration: none;
+          flex: 1;
+          min-width: 0;
+        }
+        .resource-type-avatar {
+          width: 38px;
+          height: 38px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .resource-item-info {
+          min-width: 0;
+          flex: 1;
+        }
+        .resource-name-line {
+          display: flex;
+          align-items: center;
+          gap: 0.55rem;
+          flex-wrap: wrap;
+        }
+        .resource-main-name {
+          font-size: 0.88rem;
+          font-weight: 650;
+          color: var(--foreground);
+        }
+        .resource-slug-chip {
+          font-size: 0.72rem;
+          color: var(--muted);
+          background: #f1f5f9;
+          padding: 0.1rem 0.4rem;
+          border-radius: 4px;
+        }
+        .resource-runtime-chip {
+          font-size: 0.68rem;
+          font-weight: 700;
+          color: #475569;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          padding: 0.1rem 0.4rem;
+          border-radius: 4px;
+          text-transform: uppercase;
+        }
+        .resource-details-line {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          margin-top: 0.25rem;
+          font-size: 0.74rem;
+          color: var(--muted);
+        }
+        .meta-dot-sep {
+          color: #cbd5e1;
+        }
+        .resource-item-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          flex-shrink: 0;
+        }
+        .live-link-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.3rem 0.6rem;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 5px;
+          font-size: 0.74rem;
+          font-weight: 600;
+          color: #334155;
+          text-decoration: none;
+          transition: all 0.12s ease;
+        }
+        .live-link-button:hover {
+          background: #f1f5f9;
+          border-color: #cbd5e1;
+          color: #0f172a;
+        }
+        .inspect-link-chevron {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          border-radius: 6px;
+          color: #94a3b8;
+          text-decoration: none;
+          transition: all 0.12s ease;
+        }
+        .inspect-link-chevron:hover {
+          background: #f1f5f9;
+          color: #0f172a;
+        }
+
+        /* Empty Search State */
+        .empty-search-state {
+          padding: 3.5rem 1.5rem;
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+        .empty-search-icon {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          background: #f1f5f9;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-bottom: 0.85rem;
+        }
+        .empty-search-title {
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+        .empty-search-desc {
+          font-size: 0.82rem;
+          color: var(--muted);
+          max-width: 24rem;
+          margin: 0.35rem 0 1.25rem 0;
+          line-height: 1.45;
+        }
+
+        /* ── Active Sidebar Column ────────────────────────────── */
+        .active-sidebar-col {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+        .side-widget-card {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          padding: 1.35rem 1.5rem;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+        }
+        .side-widget-title {
+          font-size: 0.88rem;
+          font-weight: 700;
+          color: var(--foreground);
+        }
+        .side-widget-desc {
+          font-size: 0.74rem;
+          color: var(--muted);
+          margin-top: 0.15rem;
+          margin-bottom: 0.95rem;
+        }
+        .quick-deploy-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+        }
+        .quick-deploy-entry {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          padding: 0.55rem 0.65rem;
+          border-radius: 7px;
+          background: #f8fafc;
+          border: 1px solid #f1f5f9;
+          text-decoration: none;
+          transition: all 0.12s ease;
+        }
+        .quick-deploy-entry:hover {
+          background: #ffffff;
+          border-color: #cbd5e1;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+          transform: translateY(-1px);
+        }
+        .entry-icon {
+          width: 30px;
+          height: 30px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .entry-texts {
+          flex: 1;
+          min-width: 0;
+        }
+        .entry-title {
+          font-size: 0.81rem;
+          font-weight: 600;
+          color: var(--foreground);
+        }
+        .entry-sub {
+          font-size: 0.7rem;
+          color: var(--muted);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .entry-chevron {
+          color: #94a3b8;
+          transition: transform 0.12s ease;
+        }
+        .quick-deploy-entry:hover .entry-chevron {
+          color: var(--foreground);
+          transform: translateX(1px);
+        }
+
+        .tooling-docs-anchor {
+          font-size: 0.73rem;
+          font-weight: 600;
+          color: var(--accent);
+          text-decoration: none;
+        }
+        .tooling-docs-anchor:hover {
+          text-decoration: underline;
+        }
+        .tooling-snippets-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 0.65rem;
+        }
+        .tool-snippet-box {
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 7px;
+          padding: 0.6rem 0.75rem;
+        }
+        .tool-box-label {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 0.4rem;
+        }
+        .tool-box-link {
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: var(--accent);
+          text-decoration: none;
+        }
+        .tool-box-code {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 5px;
+          padding: 0.35rem 0.55rem;
+          font-size: 0.74rem;
+          font-family: var(--font-geist-mono), monospace;
+          color: #1e293b;
+        }
+        .tool-copy-icon {
+          border: none;
+          background: transparent;
+          color: #94a3b8;
+          cursor: pointer;
+          padding: 0.15rem;
+          display: flex;
+          align-items: center;
+        }
+        .tool-copy-icon:hover {
+          color: #0f172a;
+        }
+
+        .specs-list-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+        }
+        .spec-row-item {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.35rem 0;
+          border-bottom: 1px solid #f1f5f9;
+          font-size: 0.76rem;
+        }
+        .spec-row-item:last-child {
+          border-bottom: none;
+        }
+        .spec-row-lbl {
+          color: var(--muted);
+        }
+        .spec-row-val {
+          font-weight: 550;
+          color: var(--foreground);
+        }
+
+        /* Loading Skeleton */
+        .workspace-loading-card {
+          background: #ffffff;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-lg);
+          padding: 2.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .skeleton-row-bar {
+          height: 38px;
+          background: #f1f5f9;
+          border-radius: 6px;
+          animation: pulse 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 0.25; }
+        }
+
+        /* ── 5. Comprehensive Responsive Media Queries ────────── */
+        @media (max-width: 1200px) {
+          .console-active-layout {
             grid-template-columns: 1fr;
           }
-          .console-hero {
+          .active-sidebar-col {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1.25rem;
+          }
+        }
+
+        @media (max-width: 992px) {
+          .telemetry-bar-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .launchpad-tiles-grid {
+            grid-template-columns: 1fr;
+          }
+          .launchpad-auxiliary-grid {
+            grid-template-columns: 1fr;
+          }
+          .active-sidebar-col {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .console-header-section {
             flex-direction: column;
             align-items: flex-start;
+            padding: 1.5rem;
+            gap: 1.25rem;
+          }
+          .console-header-actions {
+            width: 100%;
+          }
+          .console-header-actions .btn {
+            flex: 1;
+            justify-content: center;
+          }
+          .onboarding-launchpad-card {
+            padding: 1.5rem;
+          }
+          .filter-search-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .search-box-wrapper {
+            max-width: 100%;
+          }
+          .tab-segmented-group {
+            overflow-x: auto;
+            width: 100%;
+          }
+          .resource-item-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.85rem;
+            padding: 1.15rem 1.25rem;
+          }
+          .resource-item-actions {
+            width: 100%;
+            justify-content: space-between;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .telemetry-bar-grid {
+            grid-template-columns: 1fr;
+          }
+          .console-header-actions {
+            flex-direction: column;
+          }
+          .console-header-actions .btn {
+            width: 100%;
           }
         }
       `}</style>
