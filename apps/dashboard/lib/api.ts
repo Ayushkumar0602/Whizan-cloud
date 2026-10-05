@@ -46,9 +46,13 @@ async function refreshAccessToken(): Promise<string | null> {
   return accessToken;
 }
 
-async function request<T>(
+import { apiCache, type CacheOptions } from "./cache";
+
+export interface RequestOptions extends RequestInit, CacheOptions {}
+
+async function executeNetworkFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestOptions = {}
 ): Promise<T> {
   const headers: Record<string, string> = {
     ...(options.body ? { "Content-Type": "application/json" } : {}),
@@ -90,6 +94,84 @@ async function request<T>(
   if (res.status === 204) return undefined as T;
   return res.json();
 }
+
+export async function request<T>(
+  path: string,
+  options: RequestOptions = {}
+): Promise<T> {
+  const method = (options.method || "GET").toUpperCase();
+
+  // For non-GET requests (mutations: POST, PUT, PATCH, DELETE)
+  if (method !== "GET") {
+    const result = await executeNetworkFetch<T>(path, options);
+    // Invalidate relevant query caches
+    apiCache.handleMutation(path);
+    return result;
+  }
+
+  // For GET requests: apply in-flight coalescing and caching
+  const cacheKey = apiCache.generateKey(method, path);
+
+  // 1. Check if cached data exists (unless forced refresh or bypassing cache)
+  if (!options.bypassCache && !options.forceRefresh) {
+    const cached = apiCache.get<T>(cacheKey);
+    if (cached) {
+      if (!cached.isStale) {
+        // Fresh hit: 0ms response, 0 network socket
+        return cached.data;
+      }
+
+      // Stale hit (within SWR window): return stale data immediately, revalidate in background
+      if (!apiCache.getInFlight(cacheKey)) {
+        const bgRevalidate = executeNetworkFetch<T>(path, options)
+          .then((fresh) => {
+            apiCache.set(cacheKey, fresh, options.ttlMs);
+            return fresh;
+          })
+          .catch((err) => {
+            console.warn(`[Cache] Background revalidation failed for ${path}:`, err);
+          })
+          .finally(() => {
+            apiCache.clearInFlight(cacheKey);
+          });
+        apiCache.setInFlight(cacheKey, bgRevalidate);
+      }
+
+      return cached.data;
+    }
+  }
+
+  // 2. In-flight request deduplication: return existing promise if already requesting
+  const existingInFlight = apiCache.getInFlight<T>(cacheKey);
+  if (existingInFlight && !options.forceRefresh) {
+    return existingInFlight;
+  }
+
+  // 3. Dispatch fresh network request
+  const fetchPromise = executeNetworkFetch<T>(path, options)
+    .then((data) => {
+      if (!options.bypassCache) {
+        apiCache.set(cacheKey, data, options.ttlMs);
+      }
+      return data;
+    })
+    .catch((err) => {
+      // Offline fallback: if network request failed, see if we have ANY cached data
+      const fallback = apiCache.get<T>(cacheKey);
+      if (fallback) {
+        return fallback.data;
+      }
+      throw err;
+    })
+    .finally(() => {
+      apiCache.clearInFlight(cacheKey);
+    });
+
+  apiCache.setInFlight(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+export { apiCache };
 
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
@@ -151,10 +233,10 @@ export const github = {
 // ─── Projects ──────────────────────────────────────────────────────────────
 
 export const projects = {
-  list: () => request<ProjectWithLatestDeploy[]>("/api/projects"),
+  list: (opts?: RequestOptions) => request<ProjectWithLatestDeploy[]>("/api/projects", opts),
 
-  get: (id: string) => request<ProjectWithDeployments>(`/api/projects/${id}`),
-  getAnalytics: (id: string) => request<any[]>(`/api/projects/${id}/analytics`),
+  get: (id: string, opts?: RequestOptions) => request<ProjectWithDeployments>(`/api/projects/${id}`, opts),
+  getAnalytics: (id: string, opts?: RequestOptions) => request<any[]>(`/api/projects/${id}/analytics`, opts),
 
   create: (data: CreateProjectData) =>
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
@@ -500,8 +582,8 @@ export type AiAnalysisResponse = {
 };
 
 export const services = {
-  list: () => request<ServiceWithLatestDeploy[]>("/api/services"),
-  get: (id: string) => request<ServiceWithDetails>(`/api/services/${id}`),
+  list: (opts?: RequestOptions) => request<ServiceWithLatestDeploy[]>("/api/services", opts),
+  get: (id: string, opts?: RequestOptions) => request<ServiceWithDetails>(`/api/services/${id}`, opts),
   create: (data: CreateServiceData) => request<BackendService>("/api/services", { method: "POST", body: JSON.stringify(data) }),
   update: (id: string, data: Partial<CreateServiceData>) => request<BackendService>(`/api/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) => request(`/api/services/${id}`, { method: "DELETE" }),
@@ -511,12 +593,12 @@ export const services = {
   setEnv: (id: string, key: string, value: string, isSecret = true) => request<{id:string}>(`/api/services/${id}/env`, { method: "POST", body: JSON.stringify({ key, value, isSecret }) }),
   setBulkEnv: (id: string, envVars: Record<string, any>, isSecret = true) => request<{ success: boolean; count: number; keys: string[] }>(`/api/services/${id}/env/bulk`, { method: "POST", body: JSON.stringify({ envVars, isSecret }) }),
   deleteEnv: (id: string, key: string) => request(`/api/services/${id}/env/${key}`, { method: "DELETE" }),
-  getMetrics: (id: string) => request<ServiceMetricsResponse>(`/api/services/${id}/metrics`),
+  getMetrics: (id: string, opts?: RequestOptions) => request<ServiceMetricsResponse>(`/api/services/${id}/metrics`, opts),
   streamMetrics: (id: string): EventSource => {
     const token = getAccessToken();
     return new EventSource(`${API_BASE}/api/services/${id}/metrics/stream?token=${token}`);
   },
-  getMeshCatalog: () => request<MeshServiceItem[]>("/api/services/mesh/catalog"),
+  getMeshCatalog: (opts?: RequestOptions) => request<MeshServiceItem[]>("/api/services/mesh/catalog", opts),
   pingMesh: (data: MeshPingRequest) => request<MeshPingResponse>("/api/services/mesh/ping", { method: "POST", body: JSON.stringify(data) }),
   analyze: (data: { githubRepoUrl?: string; branch?: string; readme?: string }) => request<AiAnalysisResponse>("/api/services/analyze", { method: "POST", body: JSON.stringify(data) }),
 };
@@ -706,8 +788,8 @@ export type UrlDatabaseTable = {
 };
 
 export const databases = {
-  list: () => request<ManagedDatabase[]>("/api/databases"),
-  get: (id: string) => request<ManagedDatabase>(`/api/databases/${id}`),
+  list: (opts?: RequestOptions) => request<ManagedDatabase[]>("/api/databases", opts),
+  get: (id: string, opts?: RequestOptions) => request<ManagedDatabase>(`/api/databases/${id}`, opts),
   create: (data: CreateDatabaseData) =>
     request<ManagedDatabase>("/api/databases", { method: "POST", body: JSON.stringify(data) }),
   restart: (id: string) =>
@@ -874,7 +956,7 @@ export interface CreatedApiKey extends ApiKeyItem {
 }
 
 export const apiKeysApi = {
-  list: () => request<ApiKeyItem[]>("/api/auth/api-keys"),
+  list: (opts?: RequestOptions) => request<ApiKeyItem[]>("/api/auth/api-keys", opts),
   create: (name?: string) =>
     request<CreatedApiKey>("/api/auth/api-keys", {
       method: "POST",
@@ -1001,9 +1083,9 @@ export interface FunctionMetrics {
 }
 
 export const functionsApi = {
-  list: () => request<FunctionServiceItem[]>("/api/functions"),
+  list: (opts?: RequestOptions) => request<FunctionServiceItem[]>("/api/functions", opts),
   
-  get: (id: string) => request<FunctionServiceItem>(`/api/functions/${id}`),
+  get: (id: string, opts?: RequestOptions) => request<FunctionServiceItem>(`/api/functions/${id}`, opts),
 
   create: (data: {
     name: string;
@@ -1237,8 +1319,8 @@ export interface CronDeadLetterItem {
 }
 
 export const cronApi = {
-  list: () => request<{ ok: boolean; cronJobs: CronJobItem[] }>("/api/crons").then((r) => r.cronJobs || []),
-  get: (id: string) => request<{ ok: boolean; cronJob: CronJobItem }>(`/api/crons/${id}`).then((r) => r.cronJob),
+  list: (opts?: RequestOptions) => request<{ ok: boolean; cronJobs: CronJobItem[] }>("/api/crons", opts).then((r) => r.cronJobs || []),
+  get: (id: string, opts?: RequestOptions) => request<{ ok: boolean; cronJob: CronJobItem }>(`/api/crons/${id}`, opts).then((r) => r.cronJob),
   create: (data: any) =>
     request<{ ok: boolean; cronJob: CronJobItem }>("/api/crons", {
       method: "POST",
@@ -1365,8 +1447,8 @@ export interface WorkflowStepRunItem {
 }
 
 export const flowsApi = {
-  list: () => request<{ ok: boolean; workflows: WorkflowItem[] }>("/api/flows").then((r) => r.workflows || []),
-  get: (id: string) => request<{ ok: boolean; workflow: WorkflowItem }>(`/api/flows/${id}`).then((r) => r.workflow),
+  list: (opts?: RequestOptions) => request<{ ok: boolean; workflows: WorkflowItem[] }>("/api/flows", opts).then((r) => r.workflows || []),
+  get: (id: string, opts?: RequestOptions) => request<{ ok: boolean; workflow: WorkflowItem }>(`/api/flows/${id}`, opts).then((r) => r.workflow),
   create: (data: any) =>
     request<{ ok: boolean; workflow: WorkflowItem }>("/api/flows", {
       method: "POST",

@@ -39,6 +39,7 @@ import {
   Bot,
   ChevronRight,
   Sparkles,
+  RefreshCw,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -65,6 +66,7 @@ export default function ConsolePage() {
   const [functionList, setFunctionList] = useState<FunctionServiceItem[]>([]);
   const [databaseList, setDatabaseList] = useState<ManagedDatabase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [activeTab, setActiveTab] = useState<ResourceType>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -72,21 +74,30 @@ export default function ConsolePage() {
 
   const baseDomain = getBaseRouterDomain();
 
-  useEffect(() => {
+  const fetchAssets = (force = false) => {
+    if (force) setRefreshing(true);
     Promise.all([
-      projects.list().catch(() => []),
-      services.list().catch(() => []),
-      functionsApi.list().catch(() => []),
-      databases.list().catch(() => []),
+      projects.list({ forceRefresh: force }).catch(() => []),
+      services.list({ forceRefresh: force }).catch(() => []),
+      functionsApi.list({ forceRefresh: force }).catch(() => []),
+      databases.list({ forceRefresh: force }).catch(() => []),
     ])
       .then(([fList, bList, fnList, dbList]) => {
         setFrontendList(fList);
         setBackendList(bList);
         setFunctionList(fnList);
         setDatabaseList(dbList);
+        if (force) toast.success("Live assets refreshed");
       })
       .catch(() => toast.error("Could not load cloud assets"))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  };
+
+  useEffect(() => {
+    fetchAssets();
   }, []);
 
   function copyToClipboard(text: string, key: string, label: string) {
@@ -210,6 +221,15 @@ export default function ConsolePage() {
         </div>
 
         <div className="console-header-actions">
+          <button
+            onClick={() => fetchAssets(true)}
+            disabled={refreshing}
+            className="btn btn-secondary btn-header"
+            title="Refresh live cloud assets"
+          >
+            <RefreshCw size={14} className={refreshing ? "animate-spin text-indigo-600" : ""} />
+            <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
+          </button>
           <Link href="/docs" className="btn btn-secondary btn-header">
             <BookOpen size={15} />
             <span>Docs</span>
