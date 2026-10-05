@@ -2,50 +2,104 @@
 import { useAuth } from "@/lib/auth";
 import { useState, useEffect } from "react";
 import { getApiBase, apiKeysApi, auth, type ApiKeyItem, type CreatedApiKey } from "@/lib/api";
-import { getBaseRouterDomain } from "@/lib/domains";
 import { PageHeader } from "@/components/page-header";
 import {
   User,
   Shield,
-  Server,
-  Globe,
-  Database,
-  Radio,
   Copy,
   Check,
   Calendar,
   Lock,
-  ExternalLink,
-  Key,
   Plus,
   Trash2,
   Bot,
-  Sparkles
+  Sparkles,
+  Edit3,
+  Building,
+  Mail,
+  X,
+  Save,
+  CheckCircle2,
+  Tag
 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const productionApiUrl = "https://whizan-cloud-service.onrender.com";
-  const edgeDomain = getBaseRouterDomain();
-  const dashboardUrl = typeof window !== "undefined" && !window.location.hostname.includes("localhost")
-    ? window.location.origin
-    : "https://whizan-cloud-service-dashboard.vercel.app";
 
-  const endpoints = [
-    { label: "API Control Plane", value: productionApiUrl, desc: "REST & SSE Control Plane" },
-    { label: "Dashboard Console", value: dashboardUrl, desc: "Production Management Console" },
-    { label: "Edge Ingress Gateway", value: `http://${edgeDomain}`, desc: "Azure VM Edge Router (20.2.136.11)" },
-    { label: "PostgreSQL Database Pooler", value: "aws-0-ap-northeast-1.pooler.supabase.com:6543", desc: "Enterprise PgBouncer Connection Pooler" },
-    { label: "Distributed Redis Cache", value: "Upstash Redis (TLS)", desc: "Low-latency Cache & Queue Broker" },
-  ];
+  // ─── User Profile Editable State ─────────────────────────────────────────
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileName, setProfileName] = useState(user?.name || "");
+  const [profileEmail, setProfileEmail] = useState(user?.email || "");
+  const [profileOrg, setProfileOrg] = useState("Whizan Engineering");
+  const [profileTitle, setProfileTitle] = useState("Cloud DevOps Engineer");
+  const [savingProfile, setSavingProfile] = useState(false);
 
-  function copyValue(val: string, key: string) {
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.name || "");
+      setProfileEmail(user.email || "");
+      try {
+        const savedMeta = localStorage.getItem("whizan_user_meta");
+        if (savedMeta) {
+          const parsed = JSON.parse(savedMeta);
+          if (parsed.org) setProfileOrg(parsed.org);
+          if (parsed.title) setProfileTitle(parsed.title);
+        }
+      } catch {}
+    }
+  }, [user]);
+
+  function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    if (!profileName.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      if (updateUser) {
+        updateUser({
+          name: profileName.trim(),
+          email: profileEmail.trim() || user?.email,
+        });
+      }
+      try {
+        localStorage.setItem("whizan_user_meta", JSON.stringify({
+          org: profileOrg.trim(),
+          title: profileTitle.trim(),
+        }));
+      } catch {}
+      toast.success("Profile updated successfully");
+      setIsEditingProfile(false);
+    } catch {
+      toast.error("Failed to update profile");
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
+  function handleCancelEdit() {
+    setProfileName(user?.name || "");
+    setProfileEmail(user?.email || "");
+    try {
+      const savedMeta = localStorage.getItem("whizan_user_meta");
+      if (savedMeta) {
+        const parsed = JSON.parse(savedMeta);
+        if (parsed.org) setProfileOrg(parsed.org);
+        if (parsed.title) setProfileTitle(parsed.title);
+      }
+    } catch {}
+    setIsEditingProfile(false);
+  }
+
+  function copyValue(val: string, key: string, label: string = "Value") {
     navigator.clipboard.writeText(val);
     setCopiedKey(key);
-    toast.success("Endpoint copied to clipboard");
+    toast.success(`${label} copied to clipboard`);
     setTimeout(() => setCopiedKey(null), 2000);
   }
 
@@ -66,6 +120,9 @@ export default function SettingsPage() {
     try {
       await auth.updateSubscription(tier);
       setCurrentTier(tier);
+      if (updateUser) {
+        updateUser({ subscriptionTier: tier });
+      }
       toast.success(`Subscription switched to ${tier === "HOBBY" ? "Hobby Plan" : "Professional Plan"}`);
     } catch (err: any) {
       toast.error(err.message || "Failed to update subscription tier");
@@ -144,42 +201,195 @@ export default function SettingsPage() {
   );
 
   return (
-    <div className="page" style={{ maxWidth: 840 }}>
+    <div className="page" style={{ maxWidth: 880 }}>
       <PageHeader
         title="Settings & Workspace"
-        subtitle="Manage your developer profile, workspace preferences, and cloud infrastructure endpoints."
+        subtitle="Manage your developer profile, workspace preferences, and AI DevOps configuration."
       />
 
       <div className="settings-stack">
-        {/* Profile Card */}
+        {/* ── 1. User Profile Card ────────────────────────────────────── */}
         <div className="card">
-          <h2 className="card-title" style={{ fontSize: "1.05rem", marginBottom: "1.25rem" }}>
-            User Profile
-          </h2>
-
-          <div className="profile-hero-row">
-            <div className="user-avatar-xl">
-              {initials}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+            <div>
+              <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+                Developer Profile
+              </h2>
+              <p className="card-sub" style={{ marginTop: "0.2rem" }}>
+                Personal identity and developer workspace credentials
+              </p>
             </div>
-            <div className="profile-details-group">
-              <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexWrap: "wrap" }}>
-                <h3 className="profile-name">{user?.name || "Developer"}</h3>
-                <span className="role-pill">
-                  <Shield size={11} /> Workspace Owner
-                </span>
-              </div>
-              <div className="profile-email mono">{user?.email}</div>
-              <div className="profile-date">
-                <Calendar size={13} />
-                <span>
-                  Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : "2026"}
-                </span>
-              </div>
-            </div>
+            {!isEditingProfile && (
+              <button
+                type="button"
+                onClick={() => setIsEditingProfile(true)}
+                className="btn btn-secondary btn-sm"
+                style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.8rem" }}
+              >
+                <Edit3 size={13} />
+                <span>Edit Profile</span>
+              </button>
+            )}
           </div>
+
+          {isEditingProfile ? (
+            /* Editing Profile Form */
+            <form onSubmit={handleSaveProfile} className="profile-edit-form">
+              <div className="form-fields-grid">
+                <div className="form-field-group">
+                  <label className="field-label">Full Name</label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    placeholder="Your Full Name"
+                    className="input field-input"
+                    required
+                  />
+                </div>
+
+                <div className="form-field-group">
+                  <label className="field-label">Email Address</label>
+                  <input
+                    type="email"
+                    value={profileEmail}
+                    onChange={(e) => setProfileEmail(e.target.value)}
+                    placeholder="developer@example.com"
+                    className="input field-input"
+                    required
+                  />
+                </div>
+
+                <div className="form-field-group">
+                  <label className="field-label">Organization / Team</label>
+                  <input
+                    type="text"
+                    value={profileOrg}
+                    onChange={(e) => setProfileOrg(e.target.value)}
+                    placeholder="Company or Team Name"
+                    className="input field-input"
+                  />
+                </div>
+
+                <div className="form-field-group">
+                  <label className="field-label">Professional Role / Title</label>
+                  <input
+                    type="text"
+                    value={profileTitle}
+                    onChange={(e) => setProfileTitle(e.target.value)}
+                    placeholder="e.g. Lead DevOps Engineer, Full-Stack Developer"
+                    className="input field-input"
+                  />
+                </div>
+              </div>
+
+              <div className="form-actions-row">
+                <button
+                  type="submit"
+                  disabled={savingProfile}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+                >
+                  <Save size={14} />
+                  <span>{savingProfile ? "Saving..." : "Save Changes"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+                >
+                  <X size={14} />
+                  <span>Cancel</span>
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Read-only Profile Display */
+            <div>
+              <div className="profile-hero-row">
+                <div className="user-avatar-xl">
+                  {initials}
+                </div>
+                <div className="profile-details-group">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", flexWrap: "wrap" }}>
+                    <h3 className="profile-name">{user?.name || profileName || "Developer"}</h3>
+                    <span className="role-pill">
+                      <Shield size={11} /> {user?.role || "Workspace Owner"}
+                    </span>
+                  </div>
+                  <div className="profile-sub-title text-slate-600" style={{ fontSize: "0.835rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span>{profileTitle}</span>
+                    <span style={{ color: "#cbd5e1" }}>•</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
+                      <Building size={12} className="text-slate-400" />
+                      {profileOrg}
+                    </span>
+                  </div>
+                  <div className="profile-date">
+                    <Calendar size={13} />
+                    <span>
+                      Member since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : "2026"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Profile Details Matrix */}
+              <div className="profile-matrix-grid">
+                <div className="matrix-item">
+                  <span className="matrix-label">Email Address</span>
+                  <div className="matrix-val-row">
+                    <span className="matrix-val font-mono">{user?.email || profileEmail}</span>
+                    <button
+                      onClick={() => copyValue(user?.email || profileEmail, "email-copy", "Email")}
+                      className="matrix-copy-btn"
+                      title="Copy Email"
+                    >
+                      {copiedKey === "email-copy" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="matrix-item">
+                  <span className="matrix-label">Workspace User ID</span>
+                  <div className="matrix-val-row">
+                    <span className="matrix-val font-mono">{user?.id || "local-dev-user"}</span>
+                    <button
+                      onClick={() => copyValue(user?.id || "local-dev-user", "uid-copy", "User ID")}
+                      className="matrix-copy-btn"
+                      title="Copy User ID"
+                    >
+                      {copiedKey === "uid-copy" ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="matrix-item">
+                  <span className="matrix-label">Compute Subscription</span>
+                  <div className="matrix-val-row">
+                    <span className="badge badge-ready">
+                      <CheckCircle2 size={11} />
+                      {currentTier === "PROFESSIONAL" ? "Professional Plan" : "Hobby Plan (Free Tier)"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="matrix-item">
+                  <span className="matrix-label">Security Tier</span>
+                  <div className="matrix-val-row">
+                    <span className="matrix-val" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                      <Lock size={12} className="text-indigo-600" />
+                      HttpOnly JWT Sessions
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Subscription & Compute Policy Card */}
+        {/* ── 2. Subscription & Compute Policy Card ─────────────────── */}
         <div className="card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
             <div>
@@ -193,7 +403,7 @@ export default function SettingsPage() {
                 Enforces strict compute limits for AI agents and developer deployments.
               </p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(255,255,255,0.04)", padding: "4px", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", background: "rgba(0,0,0,0.03)", padding: "4px", borderRadius: "8px", border: "1px solid var(--border)" }}>
               <button
                 type="button"
                 onClick={() => handleTierChange("HOBBY")}
@@ -220,17 +430,17 @@ export default function SettingsPage() {
               style={{
                 padding: "1rem",
                 borderRadius: "8px",
-                border: currentTier === "HOBBY" ? "1px solid rgba(56, 189, 248, 0.4)" : "1px solid rgba(255,255,255,0.06)",
-                background: currentTier === "HOBBY" ? "rgba(56, 189, 248, 0.05)" : "rgba(255,255,255,0.02)",
+                border: currentTier === "HOBBY" ? "1px solid rgba(14, 165, 233, 0.4)" : "1px solid var(--border)",
+                background: currentTier === "HOBBY" ? "rgba(14, 165, 233, 0.04)" : "var(--bg-inset)",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "HOBBY" ? "#38bdf8" : "#fff" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "HOBBY" ? "#0284c7" : "var(--foreground)" }}>
                   Hobby Tier (Free Compute)
                 </span>
-                {currentTier === "HOBBY" && <span className="badge badge-blue">Active</span>}
+                {currentTier === "HOBBY" && <span className="badge badge-ready">Active</span>}
               </div>
-              <ul style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
+              <ul style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
                 <li><strong>Backend Microservices:</strong> Strictly locked to Free Tier (0.1 vCPU, 512MB RAM, Auto-Sleep after 15m).</li>
                 <li><strong>Databases:</strong> Starter Tier with PgBouncer connection pooler (512MB RAM).</li>
                 <li><strong>Frontend Web Apps:</strong> Edge CDN & Static Hosting.</li>
@@ -242,17 +452,17 @@ export default function SettingsPage() {
               style={{
                 padding: "1rem",
                 borderRadius: "8px",
-                border: currentTier === "PROFESSIONAL" ? "1px solid rgba(168, 85, 247, 0.4)" : "1px solid rgba(255,255,255,0.06)",
-                background: currentTier === "PROFESSIONAL" ? "rgba(168, 85, 247, 0.05)" : "rgba(255,255,255,0.02)",
+                border: currentTier === "PROFESSIONAL" ? "1px solid rgba(168, 85, 247, 0.4)" : "1px solid var(--border)",
+                background: currentTier === "PROFESSIONAL" ? "rgba(168, 85, 247, 0.04)" : "var(--bg-inset)",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "PROFESSIONAL" ? "#c084fc" : "#fff" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.92rem", color: currentTier === "PROFESSIONAL" ? "#9333ea" : "var(--foreground)" }}>
                   Professional Tier (Custom Compute)
                 </span>
                 {currentTier === "PROFESSIONAL" && <span className="badge badge-purple">Active</span>}
               </div>
-              <ul style={{ fontSize: "0.8rem", color: "var(--text-muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
+              <ul style={{ fontSize: "0.8rem", color: "var(--muted)", margin: 0, paddingLeft: "1.2rem", lineHeight: 1.6 }}>
                 <li><strong>Custom Compute:</strong> Choose between Starter, Standard, Pro (up to 4 vCPUs / 4GB RAM).</li>
                 <li><strong>Always-On:</strong> Dedicated containers with zero cold-starts and no auto-sleep.</li>
                 <li><strong>High Performance Databases:</strong> Dedicated multi-core Postgres & Redis.</li>
@@ -262,11 +472,11 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* IDE DevOps MCP & API Keys */}
+        {/* ── 3. IDE DevOps MCP & API Keys ──────────────────────────── */}
         <div className="card">
           <div style={{ marginBottom: "1.25rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <Bot size={18} style={{ color: "#38bdf8" }} />
+              <Bot size={18} style={{ color: "#0284c7" }} />
               <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
                 IDE DevOps MCP & API Keys
               </h2>
@@ -299,19 +509,19 @@ export default function SettingsPage() {
                 <code
                   style={{
                     flex: 1,
-                    background: "rgba(0,0,0,0.4)",
+                    background: "rgba(0,0,0,0.06)",
                     padding: "0.5rem 0.75rem",
                     borderRadius: "6px",
                     fontSize: "0.82rem",
                     wordBreak: "break-all",
-                    color: "#38bdf8",
+                    color: "#0f172a",
                   }}
                   className="mono"
                 >
                   {newKey.key}
                 </code>
                 <button
-                  onClick={() => copyValue(newKey.key, "new-api-key")}
+                  onClick={() => copyValue(newKey.key, "new-api-key", "API Key")}
                   className="btn btn-secondary"
                   style={{ padding: "0.5rem 0.85rem", fontSize: "0.8rem", display: "flex", gap: "0.35rem", alignItems: "center" }}
                 >
@@ -405,11 +615,11 @@ export default function SettingsPage() {
           <div style={{ borderTop: "1px solid var(--card-border)", paddingTop: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
               <span style={{ fontSize: "0.82rem", fontWeight: 650, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <Sparkles size={13} style={{ color: "#38bdf8" }} />
+                <Sparkles size={13} style={{ color: "#0284c7" }} />
                 IDE MCP Configuration (.cursor/mcp.json)
               </span>
               <button
-                onClick={() => copyValue(mcpConfigSnippet, "mcp-config")}
+                onClick={() => copyValue(mcpConfigSnippet, "mcp-config", "MCP Config")}
                 className="btn btn-secondary"
                 style={{ padding: "3px 8px", fontSize: "0.72rem", display: "flex", gap: "0.3rem", alignItems: "center" }}
               >
@@ -425,7 +635,7 @@ export default function SettingsPage() {
                 border: "1px solid var(--card-border)",
                 fontSize: "0.74rem",
                 overflowX: "auto",
-                color: "#94a3b8",
+                color: "#334155",
                 lineHeight: "1.4",
               }}
               className="mono"
@@ -435,41 +645,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Local Infrastructure & Gateway Endpoints */}
-        <div className="card">
-          <div style={{ marginBottom: "1.25rem" }}>
-            <h2 className="card-title" style={{ fontSize: "1.05rem" }}>
-              Cloud & Mesh Endpoints
-            </h2>
-            <p className="card-sub">
-              Network targets for local development, CLI tooling, and edge routing
-            </p>
-          </div>
-
-          <div className="endpoints-list">
-            {endpoints.map((ep) => (
-              <div key={ep.label} className="endpoint-row">
-                <div className="endpoint-meta">
-                  <span className="endpoint-label">{ep.label}</span>
-                  <span className="endpoint-desc">{ep.desc}</span>
-                </div>
-
-                <div className="endpoint-right">
-                  <code className="endpoint-value mono">{ep.value}</code>
-                  <button
-                    onClick={() => copyValue(ep.value, ep.label)}
-                    className="copy-icon-btn"
-                    title="Copy connection string"
-                  >
-                    {copiedKey === ep.label ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Security & Access */}
+        {/* ── 4. Security & Access ──────────────────────────────────── */}
         <div className="card">
           <h2 className="card-title" style={{ fontSize: "1.05rem", marginBottom: "0.5rem" }}>
             Security & Authentication
@@ -485,7 +661,7 @@ export default function SettingsPage() {
                 Secure HTTP-Only Session Active
               </div>
               <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "2px" }}>
-                Session tokens are automatically rotated and encrypted at the edge.
+                Session tokens are automatically rotated and cryptographically signed.
               </div>
             </div>
           </div>
@@ -510,19 +686,21 @@ export default function SettingsPage() {
           align-items: center;
           gap: 1.5rem;
           flex-wrap: wrap;
+          padding-bottom: 1.5rem;
+          border-bottom: 1px solid var(--card-border);
         }
         .user-avatar-xl {
           width: 68px;
           height: 68px;
           border-radius: 50%;
-          background: var(--accent-gradient);
+          background: linear-gradient(135deg, #4f46e5, #06b6d4);
           color: #ffffff;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 1.75rem;
           font-weight: 800;
-          box-shadow: 0 4px 16px var(--accent-glow);
+          box-shadow: 0 4px 16px rgba(79, 70, 229, 0.15);
           flex-shrink: 0;
         }
         .profile-details-group {
@@ -541,15 +719,11 @@ export default function SettingsPage() {
           gap: 0.35rem;
           font-size: 0.72rem;
           font-weight: 650;
-          color: #10b981;
+          color: #059669;
           background: rgba(16, 185, 129, 0.1);
           border: 1px solid rgba(16, 185, 129, 0.25);
           padding: 0.15rem 0.5rem;
           border-radius: 9999px;
-        }
-        .profile-email {
-          font-size: 0.84rem;
-          color: var(--muted);
         }
         .profile-date {
           display: flex;
@@ -560,68 +734,94 @@ export default function SettingsPage() {
           margin-top: 0.2rem;
         }
 
-        /* Endpoints List */
-        .endpoints-list {
+        /* Profile Matrix Grid */
+        .profile-matrix-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1.25rem;
+          padding-top: 1.5rem;
+        }
+        .matrix-item {
           display: flex;
           flex-direction: column;
+          gap: 0.35rem;
+          padding: 0.75rem 1rem;
+          background: var(--bg-inset);
           border: 1px solid var(--card-border);
           border-radius: 8px;
-          overflow: hidden;
         }
-        .endpoint-row {
+        .matrix-label {
+          font-size: 0.72rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: var(--muted);
+        }
+        .matrix-val-row {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.85rem 1.15rem;
-          border-bottom: 1px solid var(--card-border);
-          background: var(--bg-inset);
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-        .endpoint-row:last-child {
-          border-bottom: none;
-        }
-        .endpoint-meta {
-          display: flex;
-          flex-direction: column;
-          gap: 0.15rem;
-        }
-        .endpoint-label {
-          font-size: 0.84rem;
-          font-weight: 650;
-          color: var(--foreground);
-        }
-        .endpoint-desc {
-          font-size: 0.74rem;
-          color: var(--muted);
-        }
-        .endpoint-right {
-          display: flex;
-          align-items: center;
           gap: 0.5rem;
         }
-        .endpoint-value {
-          font-size: 0.8125rem;
+        .matrix-val {
+          font-size: 0.84rem;
+          font-weight: 600;
           color: var(--foreground);
-          background: var(--card);
-          padding: 0.25rem 0.55rem;
-          border-radius: 6px;
-          border: 1px solid var(--card-border);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
-        .copy-icon-btn {
-          background: transparent;
+        .matrix-copy-btn {
           border: none;
-          color: var(--muted);
+          background: transparent;
+          color: #94a3b8;
           cursor: pointer;
-          padding: 0.3rem;
-          border-radius: 4px;
+          padding: 0.2rem;
           display: flex;
           align-items: center;
-          transition: all 0.15s ease;
         }
-        .copy-icon-btn:hover {
+        .matrix-copy-btn:hover {
           color: var(--foreground);
-          background: #f1f5f9;
+        }
+
+        /* Profile Edit Form */
+        .profile-edit-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+        .form-fields-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 1rem;
+        }
+        .form-field-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.4rem;
+        }
+        .field-label {
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--foreground);
+        }
+        .field-input {
+          padding: 0.55rem 0.85rem;
+          font-size: 0.835rem;
+          border: 1px solid var(--border);
+          border-radius: 7px;
+          background: #ffffff;
+        }
+        .field-input:focus {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 2px var(--accent-glow);
+          outline: none;
+        }
+        .form-actions-row {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+          padding-top: 0.5rem;
         }
 
         /* Security Box */
@@ -636,13 +836,11 @@ export default function SettingsPage() {
         }
 
         @media (max-width: 640px) {
-          .endpoint-row {
-            flex-direction: column;
-            align-items: flex-start;
+          .profile-matrix-grid {
+            grid-template-columns: 1fr;
           }
-          .endpoint-right {
-            width: 100%;
-            justify-content: space-between;
+          .form-fields-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>

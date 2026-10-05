@@ -203,22 +203,6 @@ export default function ConsolePage() {
       {/* ── 1. Elevated Platform Header ───────────────────────────────────────── */}
       <header className="console-header-section">
         <div className="console-header-content">
-          <div className="console-system-badge">
-            <span className="sys-status-dot" />
-            <span className="sys-region-text">Azure East US (20.2.136.11)</span>
-            <span className="sys-divider">•</span>
-            <span className="sys-active-label">Zero-Downtime Mesh</span>
-            <span className="sys-divider">•</span>
-            <button
-              onClick={() => copyToClipboard("20.2.136.11", "hdr-ip", "Ingress IP")}
-              className="sys-ip-chip"
-              title="Click to copy Edge Ingress IP"
-            >
-              {copiedKey === "hdr-ip" ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
-              <span>20.2.136.11</span>
-            </button>
-          </div>
-
           <h1 className="console-main-heading">Developer Console</h1>
           <p className="console-sub-desc">
             Centralized control plane for edge-routed frontends, containerized microservices, serverless V8 functions, and managed clusters.
@@ -859,56 +843,7 @@ export default function ConsolePage() {
           flex: 1;
           min-width: 0;
         }
-        .console-system-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.25rem 0.65rem;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          border-radius: 9999px;
-          font-size: 0.73rem;
-          margin-bottom: 0.75rem;
-          flex-wrap: wrap;
-        }
-        .sys-status-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: #10b981;
-          box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-          animation: pulseGlow 2s infinite ease-in-out;
-        }
-        .sys-region-text {
-          font-weight: 500;
-          color: #334155;
-        }
-        .sys-divider {
-          color: #cbd5e1;
-        }
-        .sys-active-label {
-          font-weight: 600;
-          color: #059669;
-        }
-        .sys-ip-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          background: #ffffff;
-          border: 1px solid #cbd5e1;
-          border-radius: 4px;
-          padding: 0.1rem 0.4rem;
-          font-family: var(--font-geist-mono), monospace;
-          font-size: 0.7rem;
-          font-weight: 600;
-          color: #0f172a;
-          cursor: pointer;
-          transition: all 0.12s ease;
-        }
-        .sys-ip-chip:hover {
-          background: #f1f5f9;
-          border-color: #94a3b8;
-        }
+
         .console-main-heading {
           font-size: 1.75rem;
           font-weight: 800;
