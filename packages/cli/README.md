@@ -159,14 +159,14 @@ Whizan CLI supports zero-config deployment for:
 
 ## 🤖 AI Self-Healing & MCP Handshake (`whizan mcp setup`)
 
-When a deployment fails (e.g. build error, syntax error, missing dependencies on Azure VM), Whizan CLI saves a failure snapshot to `.whizan.json` and renders an AI Agent Self-Healing banner with a ready-to-paste prompt.
+When a deployment fails (e.g. build error, syntax error, missing dependencies on cloud builders), Whizan CLI saves a failure snapshot to `.whizan.json` and renders an AI Agent Self-Healing banner with a ready-to-paste prompt.
 
 Run:
 ```bash
 whizan mcp setup
 ```
 This automatically links **Cursor**, **Antigravity IDE**, **Claude Code**, and **Windsurf** to Whizan Cloud. Your AI assistant can now:
-1. Automatically inspect Azure VM failure logs with `whizan_get_build_logs`.
+1. Automatically inspect cloud build failure logs with `whizan_get_build_logs`.
 2. Edit and fix your broken code files directly in the editor.
 3. Redeploy to the **SAME** cloud target with zero duplicate services via `whizan_deploy_direct`.
 

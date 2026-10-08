@@ -469,8 +469,8 @@ export class WhizanClient {
       }
     }
 
-    // Azure VM Edge Router listens on Port 80 (HTTP). Port 443 (HTTPS) is not bound.
-    // If the client supplies https:// for a nip.io domain or VM IP, automatically normalize to http://.
+    // Whizan Cloud Edge Router listens on Port 80 (HTTP). Port 443 (HTTPS) is not bound.
+    // If the client supplies https:// for a nip.io domain or cluster IP, automatically normalize to http://.
     if (url.startsWith("https://") && (url.includes(".nip.io") || url.includes("20.2.136.11"))) {
       url = url.replace(/^https:\/\//i, "http://");
     }

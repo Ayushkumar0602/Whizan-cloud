@@ -27,7 +27,7 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
   const [copied, setCopied] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [subjectCategory, setSubjectCategory] = useState("Request Infrastructure Reactivation (Azure VM)");
+  const [subjectCategory, setSubjectCategory] = useState("Request Infrastructure Reactivation");
   const [message, setMessage] = useState("");
 
   const effectiveEmail = contactEmail || "ayushkumarjais0602@gmail.com";
@@ -79,8 +79,8 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
             </div>
             <div style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "2px" }}>
               {vmOnline
-                ? "The Azure VM worker nodes and Edge Router are running normally. Deployments are active."
-                : "The Azure VM is currently powered down by administration. New deployments and serving are paused."}
+                ? "The cloud compute nodes and Edge Router are running normally. Deployments are active."
+                : "The compute cluster is currently powered down by administration. New deployments and serving are paused."}
             </div>
           </div>
         </div>
@@ -107,7 +107,7 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
                 background: vmOnline ? "var(--success)" : "var(--warning)",
               }}
             />
-            {vmOnline ? "ALL SYSTEMS GO" : "AZURE VM OFFLINE"}
+            {vmOnline ? "ALL SYSTEMS GO" : "COMPUTE OFFLINE"}
           </span>
         </div>
       </div>
@@ -143,7 +143,7 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
           Contact & Infrastructure Inquiries
         </h1>
         <p style={{ fontSize: "1.05rem", color: "var(--muted)", maxWidth: 680, lineHeight: 1.6 }}>
-          Have questions regarding Whizan Cloud Service, request reactivation of the Azure VM host for testing, or need
+          Have questions regarding Whizan Cloud Service, request reactivation of the compute cluster for testing, or need
           technical assistance with your deployments? Contact the administration directly.
         </p>
       </div>
@@ -187,7 +187,7 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
             </div>
 
             <p style={{ fontSize: "0.9rem", color: "var(--muted)", lineHeight: 1.5, marginBottom: "1.25rem" }}>
-              For deployment requests, cloud instance provisioning, or reactivation of Azure VM compute nodes, email us
+              For deployment requests, cloud instance provisioning, or reactivation of compute nodes, email us
               directly.
             </p>
 
@@ -267,15 +267,15 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
               <Server size={17} style={{ color: "var(--accent)" }} /> Infrastructure Management Policy
             </h3>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", lineHeight: 1.55 }}>
-              Whizan Cloud Service is a developer project. To prevent excessive cloud charges when not in active use, the
-              Azure VM host (which runs Docker, build workers, and the edge router) is scheduled to sleep.
+              Whizan Cloud Service is an optimized cloud platform. To prevent excessive cloud charges when not in active use, the
+              cloud compute cluster (which runs Docker, build workers, and the edge router) is scheduled to sleep.
             </p>
             <div style={{ marginTop: "1rem", padding: "0.75rem", borderRadius: "var(--radius)", background: "var(--bg-inset)", border: "1px solid var(--border-light)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.82rem", fontWeight: 600, color: "var(--foreground)" }}>
                 <Clock size={14} style={{ color: "var(--accent)" }} /> Typical Reactivation Time
               </div>
               <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "3px" }}>
-                Send an email with the subject <em>"Reactivate Azure VM"</em> and the host will be turned on promptly for
+                Send an email with the subject <em>"Reactivate Compute Cluster"</em> and the host will be turned on promptly for
                 your testing session.
               </div>
             </div>
@@ -365,8 +365,8 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
                   outline: "none",
                 }}
               >
-                <option value="Request Infrastructure Reactivation (Azure VM)">
-                  Request Infrastructure Reactivation (Azure VM)
+                <option value="Request Infrastructure Reactivation">
+                  Request Infrastructure Reactivation
                 </option>
                 <option value="Deployment Question or Failure Assistance">
                   Deployment Question or Failure Assistance
@@ -459,7 +459,7 @@ export function ContactContent({ isInsideDashboard = false }: { isInsideDashboar
               Why is deployment blocked when VM is off?
             </div>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", lineHeight: 1.5 }}>
-              The build worker, Docker daemon, and edge router execute directly on the Azure VM. When the VM is offline,
+              The build worker, Docker daemon, and edge router execute directly on dedicated compute nodes. When compute is offline,
               new builds cannot compile or start. Blocking the action immediately avoids stuck jobs.
             </p>
           </div>

@@ -53,7 +53,7 @@ export default function SelectDeployTypePage() {
               New Deployments Temporarily Paused
             </div>
             <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: "4px", lineHeight: 1.5 }}>
-              The administration has temporarily stopped new deployments and serving existing applications until further notice. The Azure VM build-worker is currently powered down for scheduled maintenance.
+              The administration has temporarily stopped new deployments and serving existing applications until further notice. The cloud build-worker is currently powered down for scheduled maintenance.
             </div>
             <div style={{ marginTop: "0.75rem" }}>
               <Link

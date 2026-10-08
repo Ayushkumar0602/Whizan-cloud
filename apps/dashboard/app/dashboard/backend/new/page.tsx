@@ -261,7 +261,7 @@ export default function NewServicePage() {
 
       <PageHeader
         title="Deploy a Backend Service"
-        subtitle="Connect any Git repository to automatically build, isolate, and host your Node.js, Python, Go, Rust, Java, or Docker API on Azure VM."
+        subtitle="Connect any Git repository to automatically build, isolate, and host your Node.js, Python, Go, Rust, Java, or Docker API on Whizan Cloud."
       />
 
       <form onSubmit={handleSubmit} className="form-stack">

@@ -1,5 +1,5 @@
 // ─── Whizan Cloud CLI — Maintenance Notice ──────────────────────────────────
-// Displays a friendly, polite notification when the Azure VM / compute host is paused.
+// Displays a friendly, polite notification when the cloud compute host is paused.
 
 import { colors } from "./terminal-ui.js";
 
@@ -30,7 +30,7 @@ export function printVmMaintenanceNotice(options: VmNoticeOptions = {}) {
   ${c.yellow}The administration has temporarily stopped new deployments and serving${c.reset}
   ${c.yellow}existing applications until further notice.${c.reset}
 
-  ${c.dim}Our cloud compute nodes (Azure VM build-worker & edge-router) are currently${c.reset}
+  ${c.dim}Our cloud compute nodes (build-worker & edge-router) are currently${c.reset}
   ${c.dim}powered down for scheduled maintenance. All your source code, databases, and${c.reset}
   ${c.dim}project settings remain permanently and securely preserved.${c.reset}
 

@@ -597,7 +597,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Potential host candidates to connect to:
     // 1. Host from env / BASE_DOMAIN
-    // 2. 20.2.136.11 (Azure VM public IP)
+    // 2. 20.2.136.11 (Cluster public IP)
     // 3. 127.0.0.1 (local connection on the VM)
     // 4. db.slug (internal docker mesh network)
     const hostCandidates = [

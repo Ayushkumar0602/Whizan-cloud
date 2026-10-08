@@ -59,7 +59,7 @@ export default function AdminTerminalPage() {
   const [remoteConfig, setRemoteConfig] = useState<RemoteVMConfig>({
     host: "",
     port: 22,
-    username: "azureuser",
+    username: "whizan",
     password: "",
     privateKey: "",
   });
@@ -76,7 +76,7 @@ export default function AdminTerminalPage() {
       {
         id: "init",
         command: "uname -a && uptime",
-        stdout: `Linux ${vmHostname} 6.8.0-1017-azure #20-Ubuntu SMP x86_64\nSystem operational • Host: ${vmIp} (Default Azure VM)`,
+        stdout: `Linux ${vmHostname} 6.8.0-1017-cloud #20-Ubuntu SMP x86_64\nSystem operational • Host: ${vmIp} (Whizan Cloud Host)`,
         stderr: "",
         exitCode: 0,
         cwd: "/opt/whizan",
@@ -348,7 +348,7 @@ export default function AdminTerminalPage() {
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem", color: "rgba(255,255,255,0.6)" }}>
             <span className="mono">
-              {targetType === "local" ? `azureuser@${vmHostname}:${currentCwd}` : `${remoteConfig.username || "user"}@${remoteConfig.host || "remote"}:${currentCwd}`}
+              {targetType === "local" ? `whizan@${vmHostname}:${currentCwd}` : `${remoteConfig.username || "user"}@${remoteConfig.host || "remote"}:${currentCwd}`}
             </span>
           </div>
 
@@ -363,7 +363,7 @@ export default function AdminTerminalPage() {
             <div key={log.id} className="terminal-log-block">
               {/* Command Prompt Line */}
               <div className="terminal-prompt-line">
-                <span className="terminal-user mono">azureuser@{vmHostname}</span>
+                <span className="terminal-user mono">whizan@{vmHostname}</span>
                 <span className="terminal-colon">:</span>
                 <span className="terminal-path mono">{log.cwd}</span>
                 <span className="terminal-dollar">$</span>
@@ -409,7 +409,7 @@ export default function AdminTerminalPage() {
 
           {/* Live Executing Prompt Line */}
           <div className="terminal-input-row">
-            <span className="terminal-user mono">azureuser@{vmHostname}</span>
+            <span className="terminal-user mono">whizan@{vmHostname}</span>
             <span className="terminal-colon">:</span>
             <span className="terminal-path mono">{currentCwd}</span>
             <span className="terminal-dollar">$</span>
@@ -506,7 +506,7 @@ export default function AdminTerminalPage() {
                 <input
                   type="text"
                   className="input mono"
-                  placeholder="azureuser / ubuntu / root"
+                  placeholder="whizan / ubuntu / root"
                   value={remoteConfig.username}
                   onChange={(e) => setRemoteConfig({ ...remoteConfig, username: e.target.value })}
                 />
@@ -544,7 +544,7 @@ export default function AdminTerminalPage() {
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
-                  setRemoteConfig({ host: "", port: 22, username: "azureuser", password: "", privateKey: "" });
+                  setRemoteConfig({ host: "", port: 22, username: "whizan", password: "", privateKey: "" });
                   setTargetType("local");
                   setShowRemoteModal(false);
                   toast.info("Switched to Local Host VM");

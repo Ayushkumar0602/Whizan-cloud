@@ -750,7 +750,7 @@ redisSub.on("message", async (channel, message) => {
         try {
           if (remote && remote.host) {
             const port = remote.port || 22;
-            const user = remote.username || "azureuser";
+            const user = remote.username || "whizan";
             const escapedCmd = (command || "").replace(/"/g, '\\"');
             let sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 -p ${port} ${user}@${remote.host} "${escapedCmd}"`;
             if (remote.password) {

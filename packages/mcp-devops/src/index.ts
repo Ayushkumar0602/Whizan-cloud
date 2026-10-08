@@ -169,7 +169,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_deploy_direct",
-    description: "PHASE 4: Packs the workspace and uploads directly to Whizan Cloud. NOTE: Uploading enqueues the build job on Azure VM. Agents MUST capture the returned deploymentId and proceed to Phase 5 (whizan_get_build_logs).",
+    description: "PHASE 4: Packs the workspace and uploads directly to Whizan Cloud. NOTE: Uploading enqueues the build job on the cloud builder cluster. Agents MUST capture the returned deploymentId and proceed to Phase 5 (whizan_get_build_logs).",
     inputSchema: {
       type: "object",
       properties: {
@@ -196,7 +196,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_get_build_logs",
-    description: "PHASE 5 (MANDATORY): Retrieves execution logs and build status from the Azure VM worker. Agents MUST poll this every 5-10s until status reaches READY/ACTIVE or FAILED. Never declare completion before build finishes.",
+    description: "PHASE 5 (MANDATORY): Retrieves execution logs and build status from the cloud build worker. Agents MUST poll this every 5-10s until status reaches READY/ACTIVE or FAILED. Never declare completion before build finishes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -220,7 +220,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_check_health",
-    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200), or verifies process liveness via targetId for background queue workers (internalPort: 0). Note: Use http:// (not https://) for *.nip.io domains since the Azure VM Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
+    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200), or verifies process liveness via targetId for background queue workers (internalPort: 0). Note: Use http:// (not https://) for *.nip.io domains since the Whizan Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -261,7 +261,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_delete_resource",
-    description: "Deletes a service or project completely, cleanly stopping and removing all Docker containers and wiping build/source files from the Azure VM.",
+    description: "Deletes a service or project completely, cleanly stopping and removing all Docker containers and wiping build/source files from the compute cluster.",
     inputSchema: {
       type: "object",
       properties: {
@@ -311,12 +311,12 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_exec_vm_command",
-    description: "Executes an administrative or operational command on the Azure host VM (e.g. 'pm2 status', 'pm2 restart all', 'git pull origin main', 'free -m', 'df -h', 'docker ps'). Allows developers and agents to maintain the VM infrastructure directly.",
+    description: "Executes an administrative or operational command on the host compute node (e.g. 'pm2 status', 'pm2 restart all', 'git pull origin main', 'free -m', 'df -h', 'docker ps'). Allows developers and agents to maintain the compute infrastructure directly.",
     inputSchema: {
       type: "object",
       properties: {
-        command: { type: "string", description: "The shell command to run on the Azure VM host (e.g. 'pm2 restart all', 'git pull origin main && npm run build')" },
-        cwd: { type: "string", default: "/opt/whizan", description: "Working directory on the VM host (default: /opt/whizan)" },
+        command: { type: "string", description: "The shell command to run on the compute node host (e.g. 'pm2 restart all', 'git pull origin main && npm run build')" },
+        cwd: { type: "string", default: "/opt/whizan", description: "Working directory on the node host (default: /opt/whizan)" },
       },
       required: ["command"],
     },
@@ -632,7 +632,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function handleToolExecution(name: string, args: any) {
-  // Guard tools requiring active compute infrastructure when Azure VM is powered down
+  // Guard tools requiring active compute infrastructure when cloud compute node is powered down
   const VM_REQUIRING_TOOLS = new Set([
     "whizan_deploy_direct",
     "whizan_redeploy",
@@ -657,18 +657,18 @@ async function handleToolExecution(name: string, args: any) {
             type: "text",
             text: `⚠️ REQUEST CANNOT BE FULFILLED TEMPORARILY FROM OUR SIDE RIGHT NOW
 
-The tool "${name}" cannot be fulfilled at this moment because cloud compute infrastructure (Azure VM worker nodes and container runtimes) is currently offline for scheduled maintenance.
+The tool "${name}" cannot be fulfilled at this moment because cloud compute infrastructure (dedicated worker nodes and container runtimes) is currently offline for scheduled maintenance.
 
 The administration has temporarily stopped new deployments and serving existing applications until further notice.
 
 IMPORTANT INSTRUCTION FOR AI AGENT:
 Please gently inform the user of this situation:
-1. Explain that Whizan Cloud compute nodes (Azure VM) are temporarily powered down under administrative notice.
-2. Active deployments, builds, live health checks, and container executions cannot proceed until the administration reactivates the VM.
+1. Explain that Whizan Cloud compute nodes are temporarily powered down under administrative notice.
+2. Active deployments, builds, live health checks, and container executions cannot proceed until the administration reactivates the compute cluster.
 3. Provide the user with direct contact options for inquiries, updates, or to request reactivation:
    - 📧 Contact Email: ${email}
    - 🌐 Contact Page: ${url}
-4. DO NOT attempt to redeploy or loop call this tool while the VM is offline.`,
+4. DO NOT attempt to redeploy or loop call this tool while the compute cluster is offline.`,
           },
         ],
       };
@@ -885,7 +885,7 @@ Please gently inform the user of this situation:
           const rawError =
             localConfig.lastFailureReason ||
             failureLogs?.errorMessage ||
-            "Build or container startup failed on Azure VM";
+            "Build or container startup failed on cloud cluster";
 
           const recentLogsList: string[] = (failureLogs?.logs || [])
             .map((l: any) => (typeof l === "string" ? l : l.message || JSON.stringify(l)))
@@ -904,7 +904,7 @@ Please gently inform the user of this situation:
           const logSnippet = recentLogsList.length > 0 ? recentLogsList.map((l) => `  ${l}`).join("\n") : "  (Check local application logs or environment)";
 
           report.recommendations.unshift(
-            `🚨 [URGENT: PREVIOUS CLI DEPLOYMENT FAILED — SELF-HEALING DIAGNOSIS]:\nDeployment ID: ${localConfig.lastDeploymentId || "unknown"}\nTarget ID:     ${localConfig.targetId} (${localTargetType || targetType})\nStatus:        ${localConfig.lastDeploymentStatus || "FAILED"}\nFailure Error: ${rawError}\n\nRecent Build Logs from Azure VM Worker:\n${logSnippet}\n\n🛑 MANDATORY AI AGENT INSTRUCTIONS FOR REDEPLOYMENT:\n1. The cloud target '${localConfig.targetId}' ALREADY EXISTS. DO NOT call 'whizan_create_service' or 'whizan_create_project'!\n2. Analyze the build failure reason and logs above, and edit the local project files to fix the error.\n3. Ensure the app binds to '0.0.0.0' and uses 'process.env.PORT || 8000'.\n4. Call 'whizan_deploy_direct' with targetId: "${localConfig.targetId}" and targetType: "${localTargetType || targetType}" to redeploy the fixed code.\n5. Call 'whizan_check_health' to verify live status once build reaches READY/ACTIVE.`
+            `🚨 [URGENT: PREVIOUS CLI DEPLOYMENT FAILED — SELF-HEALING DIAGNOSIS]:\nDeployment ID: ${localConfig.lastDeploymentId || "unknown"}\nTarget ID:     ${localConfig.targetId} (${localTargetType || targetType})\nStatus:        ${localConfig.lastDeploymentStatus || "FAILED"}\nFailure Error: ${rawError}\n\nRecent Build Logs from Cloud Build Worker:\n${logSnippet}\n\n🛑 MANDATORY AI AGENT INSTRUCTIONS FOR REDEPLOYMENT:\n1. The cloud target '${localConfig.targetId}' ALREADY EXISTS. DO NOT call 'whizan_create_service' or 'whizan_create_project'!\n2. Analyze the build failure reason and logs above, and edit the local project files to fix the error.\n3. Ensure the app binds to '0.0.0.0' and uses 'process.env.PORT || 8000'.\n4. Call 'whizan_deploy_direct' with targetId: "${localConfig.targetId}" and targetType: "${localTargetType || targetType}" to redeploy the fixed code.\n5. Call 'whizan_check_health' to verify live status once build reaches READY/ACTIVE.`
           );
         }
 
@@ -922,7 +922,7 @@ Please gently inform the user of this situation:
         const sysStatus = await client.getSystemStatus().catch(() => null);
         if (sysStatus && !sysStatus.vmOnline) {
           (report as any).vmOnline = false;
-          (report as any).maintenanceNotice = `⚠️ NOTICE: Cloud compute infrastructure (Azure VM) is currently powered down by administration. New deployments cannot proceed until reactivated. Contact: ${sysStatus.contactEmail}`;
+          (report as any).maintenanceNotice = `⚠️ NOTICE: Cloud compute infrastructure is currently powered down by administration. New deployments cannot proceed until reactivated. Contact: ${sysStatus.contactEmail}`;
           report.recommendations.unshift(
             `⚠️ Cloud compute infrastructure is temporarily paused by administration. New deployments cannot proceed until reactivation. For inquiries or reactivation, please contact: ${sysStatus.contactEmail}`
           );
@@ -1275,7 +1275,7 @@ Please gently inform the user of this situation:
               text: JSON.stringify(
                 {
                   success: true,
-                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on Azure VM. Old packages and previous container resources will be automatically decommissioned upon build completion with zero redundancy.`,
+                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on cloud worker. Old packages and previous container resources will be automatically decommissioned upon build completion with zero redundancy.`,
                   deploymentId: deploymentResult.id,
                   status: deploymentResult.status,
                   expectedLiveUrl,
@@ -1323,7 +1323,7 @@ Please gently inform the user of this situation:
         } else if (result.status === "CANCELLED") {
           guidance = `Deployment was cancelled.`;
         } else {
-          guidance = `Deployment is in progress (Status: ${result.status}). The build worker on Azure VM is executing your build. Wait 5-10 seconds and call whizan_get_build_logs again. DO NOT assume deployment is finished until status is READY/ACTIVE or FAILED.`;
+          guidance = `Deployment is in progress (Status: ${result.status}). The cloud build worker is executing your build. Wait 5-10 seconds and call whizan_get_build_logs again. DO NOT assume deployment is finished until status is READY/ACTIVE or FAILED.`;
         }
 
         return {

@@ -140,7 +140,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard/contact" style={{ textDecoration: "none" }}>
           <div className="mesh-indicator-pill" style={{ borderColor: vmOnline ? undefined : "rgba(245, 158, 11, 0.4)" }}>
             <div className="mesh-pulse-dot" style={{ background: vmOnline ? undefined : "var(--warning)" }} />
-            <span className="mesh-pill-text">Azure Compute</span>
+            <span className="mesh-pill-text">Cloud Compute</span>
             <span
               className="mesh-pill-tag"
               style={{

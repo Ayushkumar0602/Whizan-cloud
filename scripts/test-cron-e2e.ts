@@ -81,7 +81,7 @@ async function runEndToEndTests() {
   const executionId = triggerRes.executionId;
 
   // Step 5: Wait and Poll Execution History & 64KB Ring Buffer Logs
-  console.log("\n[Step 5] Waiting 4 seconds for Azure VM scheduler to dispatch & buffer telemetry...");
+  console.log("\n[Step 5] Waiting 4 seconds for cloud scheduler to dispatch & buffer telemetry...");
   await new Promise((r) => setTimeout(r, 4000));
 
   console.log(`[Step 6] Inspecting Execution History for Job ${edgeJob.id}...`);

@@ -81,7 +81,7 @@ export async function openCommand(args: string[] = []) {
       contactEmail: sysStatus.contactEmail,
       contactUrl: sysStatus.contactUrl,
     });
-    console.error(`  ${c.amber}⚠ Notice: The Azure VM edge router is offline. Live URL ${liveUrl} is unreachable until reactivated.${c.reset}\n`);
+    console.error(`  ${c.amber}⚠ Notice: The Whizan Cloud edge router is temporarily offline. Live URL ${liveUrl} is unreachable until reactivated.${c.reset}\n`);
     return;
   }
 

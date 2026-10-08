@@ -303,7 +303,7 @@ export default function DeploymentPage() {
               {isActive || streaming ? (
                 <>
                   <Loader2 size={16} className="spin-icon text-accent" />
-                  <span>Waiting for Azure build-worker to clone and execute steps...</span>
+                  <span>Waiting for cloud build-worker to clone and execute steps...</span>
                 </>
               ) : (
                 <span style={{ color: "var(--muted)" }}>No logs recorded for this deployment.</span>

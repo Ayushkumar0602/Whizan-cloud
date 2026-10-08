@@ -112,7 +112,7 @@ export default function StoragePage() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <HardDrive size={16} className={isHighDisk ? "text-danger" : "text-accent"} />
-              <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>Azure VM Root Partition (/)</span>
+              <span style={{ fontWeight: 650, fontSize: "0.85rem" }}>Cloud Host Root Partition (/)</span>
             </div>
             {isHighDisk && (
               <span className="badge" style={{ background: "rgba(239, 68, 68, 0.15)", color: "#ef4444", borderColor: "rgba(239, 68, 68, 0.3)" }}>

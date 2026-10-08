@@ -67,13 +67,13 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
 5. **Loopback Binding Trap**: For backends, the application must bind to `0.0.0.0`, NOT `127.0.0.1` or `localhost`. If `127.0.0.1` is detected, patch it to `0.0.0.0` before deployment.
 
 6. **Phase 4 & 5: Upload, Zero-Redundancy Cleanup & Log Polling**:
-   - `whizan_deploy_direct` uploads the source archive and enqueues the build job on Azure VM.
+   - `whizan_deploy_direct` uploads the source archive and enqueues the build job on Whizan Cloud build worker.
    - **Zero Redundancy**: Upon new deployment cutover, previous Docker containers, obsolete build packages, node_modules, Redis chunks, and old deployment database records are automatically purged.
    - You MUST extract the `deploymentId` and call `whizan_get_build_logs` every 5-10 seconds until `status` is `READY` / `ACTIVE` or `FAILED`. Never declare completion early.
 
 7. **Phase 6: Live Health Check**:
    - Once build finishes with `READY` or `ACTIVE`, call `whizan_check_health`.
-   - **Protocol rule**: Always use `http://<slug>.20.2.136.11.nip.io` (never `https://`, because the Azure VM Edge Router operates on Port 80 HTTP).
+   - **Protocol rule**: Always use `http://<slug>.20.2.136.11.nip.io` (never `https://`, because the Whizan Edge Router operates on Port 80 HTTP).
    - Only declare success after `whizan_check_health` returns `ok: true` (HTTP 200/204). Background workers are verified by continuous process running status.
 
 8. **Phase 7: Live Diagnostics, Container Exec, Inspection & Analytics (Post-Deployment Tooling)**:
@@ -99,7 +99,7 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
        * *Tier 1 (Disk)*: Compiled bundle in `/opt/whizan/apps/function-runtime/functions-storage/<id>/v<ver>/bundle.mjs`.
        * *Tier 2 (Redis)*: In-memory source cache `fn:source:<id>:v<ver>`.
        * *Tier 3 (PostgreSQL)*: Persistent source code in Render Control Plane database (`FunctionDeployment.source_code`).
-     - **Edge Case: VM Turn-Off & Reboot**: If the Azure VM restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
+     - **Edge Case: Node Maintenance & Reboot**: If the compute worker restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
    - **Invocation Format**: Always invoke via `http://<slug>.fn.20.2.136.11.nip.io/<path>`. Verify responses using `whizan_invoke_function`.
 
 10. **Enterprise Cron & Scheduled Compute (`whizan_create_cron_job`, `whizan_list_cron_jobs`, `whizan_trigger_cron_job`, `whizan_get_cron_history`)**:
@@ -115,7 +115,7 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
      * `SERVICE`: Dispatches internal requests across private Docker network mesh (`http://service-<id>:port`).
      * `WEBHOOK`: Sends signed HMAC-SHA256 HTTPS requests to external endpoints.
    - **Disaster Recovery & Reboot Self-Healing**:
-     * If the Azure VM is powered off and turned back on, the scheduler automatically recovers overdue jobs and applies the configured `misfirePolicy`:
+     * If the compute node is powered off and turned back on, the scheduler automatically recovers overdue jobs and applies the configured `misfirePolicy`:
        - `SKIP`: Discards missed runs to avoid thundering herd crashes on boot (recommended for high-frequency crons).
        - `FIRE_LATEST_ONCE`: Fires 1 catchup execution immediately on boot (recommended for daily backups/rollups).
        - `CATCH_UP_ALL`: Sequentially replays missed intervals with rate-limited intervals (for financial audits).

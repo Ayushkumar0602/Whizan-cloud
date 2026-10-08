@@ -230,7 +230,7 @@ async function infoMcp() {
 
   console.log(`  ${c.bold}Available MCP Tools:${c.reset}`);
   console.log(`    • ${c.whizanCyan}whizan_analyze_workspace${c.reset}     Detect stack, check failures, evaluate guardrails`);
-  console.log(`    • ${c.whizanCyan}whizan_get_build_logs${c.reset}        Fetch live/failed Azure VM build worker logs`);
+  console.log(`    • ${c.whizanCyan}whizan_get_build_logs${c.reset}        Fetch live/failed cloud builder logs`);
   console.log(`    • ${c.whizanCyan}whizan_deploy_direct${c.reset}         Upload source archive & redeploy to existing target`);
   console.log(`    • ${c.whizanCyan}whizan_check_health${c.reset}          Probe live HTTP endpoint readiness`);
   console.log(`    • ${c.whizanCyan}whizan_exec_container_command${c.reset} Run diagnostic commands inside live container`);

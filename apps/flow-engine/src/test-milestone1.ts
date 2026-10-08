@@ -291,7 +291,7 @@ async function runTestSuite() {
         { nodeKey: "trigger", name: "Git Push", type: "TRIGGER_GIT", config: {} },
         { nodeKey: "test", name: "Run Unit Tests", type: "ACTION_NOTIFICATION", config: {} },
         { nodeKey: "approval_gate", name: "Manager Approval", type: "CONTROL_APPROVAL", config: { title: "Approve Production Release" } },
-        { nodeKey: "deploy_prod", name: "Deploy to Azure VM", type: "ACTION_ROUTER_CUTOVER", config: {} },
+        { nodeKey: "deploy_prod", name: "Deploy to Whizan Cloud", type: "ACTION_ROUTER_CUTOVER", config: {} },
       ],
       edges: [
         { sourceNodeKey: "trigger", targetNodeKey: "test" },

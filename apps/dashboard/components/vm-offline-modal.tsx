@@ -100,16 +100,16 @@ export function VmOfflineModal({
           {isDeploy ? (
             <>
               The administration has temporarily stopped new deployments and serving existing applications until
-              further notice. The Azure VM build-worker is currently powered down for resource optimization.
+              further notice. The cloud build-worker cluster is currently powered down for resource optimization.
             </>
           ) : isVisit ? (
             <>
-              <strong>{targetName || "This application"}</strong> is hosted on our Azure VM edge router and container
-              engine, which is currently powered down by administration. The URL will be temporarily unreachable.
+              <strong>{targetName || "This application"}</strong> is hosted on our cloud edge router and container
+              engine, which is currently paused by administration. The URL will be temporarily unreachable.
             </>
           ) : (
             <>
-              This action requires our cloud compute host (Azure VM), which is currently paused by administration until
+              This action requires our cloud compute cluster, which is currently paused by administration until
               further notice.
             </>
           )}

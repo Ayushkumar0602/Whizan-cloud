@@ -74,7 +74,7 @@ export const RESTRICTED_COMMAND_RULES: SecurityRule[] = [
     reason: "Reverse shells and unauthorized network listener backdoors are blocked by container security policies.",
   },
 
-  // 8. Cloud Provider Metadata Service Probing (AWS/GCP/Azure/DO IAM credential protection)
+  // 8. Cloud Provider Metadata Service Probing (Cloud metadata & IAM credential protection)
   {
     id: "cloud-metadata-probe",
     name: "Cloud Provider Metadata Probing",

@@ -18,13 +18,13 @@ export const DEFAULT_CONTACT_URL =
     : "https://whizan-cloud-service-dashboard.vercel.app/contact";
 
 /**
- * Checks whether the Azure VM worker node is actively reporting telemetry to Redis.
+ * Checks whether the cloud compute worker node is actively reporting telemetry to Redis.
  * The build-worker publishes `vm:stats` every 15s with a 45s TTL.
  */
 export async function checkVmOnline(): Promise<VmStatusResult> {
   const contactUrl = DEFAULT_CONTACT_URL;
   let vmOnline = false;
-  let vmHost = "azure-vm";
+  let vmHost = "compute-cluster-1";
   let lastSeenMs: number | undefined;
 
   try {

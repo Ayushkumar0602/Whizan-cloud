@@ -1224,7 +1224,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // 4b. Remote Exec Bridge to Azure VM Worker via Redis Pub/Sub
+    // 4b. Remote Exec Bridge to Compute Worker via Redis Pub/Sub
     const sessionId = `exec_${randomUUID()}`;
     const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
     const sessionSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
@@ -1361,7 +1361,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       cleanupBridge();
     });
 
-    // Send open session request to Azure VM Worker
+    // Send open session request to Compute Worker
     await redisClient.publish("exec:open", JSON.stringify({
       sessionId,
       serviceId: service.id,

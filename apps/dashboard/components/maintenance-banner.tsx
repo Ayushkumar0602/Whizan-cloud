@@ -42,7 +42,7 @@ export function MaintenanceBanner() {
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           <AlertTriangle size={17} style={{ color: "#d97706", flexShrink: 0 }} />
           <span>
-            <strong style={{ fontWeight: 600, color: "#78350f" }}>Platform Notice:</strong> Cloud compute nodes (Azure VM)
+            <strong style={{ fontWeight: 600, color: "#78350f" }}>Platform Notice:</strong> Cloud compute nodes
             are currently powered down. Administration has paused new deployments and serving until further notice.
           </span>
         </div>

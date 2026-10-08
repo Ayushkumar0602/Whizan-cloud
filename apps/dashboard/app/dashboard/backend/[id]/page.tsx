@@ -836,7 +836,7 @@ export default function BackendServicePage() {
                     <Server size={32} style={{ color: "#f59e0b", margin: "0 auto 1rem", opacity: 0.8 }} />
                     <h3 style={{ fontSize: "1rem", color: "var(--foreground)", marginBottom: "0.4rem" }}>Interactive Web Shell Paused</h3>
                     <p style={{ fontSize: "0.85rem", maxWidth: "420px", margin: "0 auto 1.25rem", lineHeight: 1.5 }}>
-                      Azure VM compute is currently offline under scheduled administrative maintenance. Real-time container shells are suspended until the host resumes.
+                      Cloud compute cluster is currently offline under scheduled administrative maintenance. Real-time container shells are suspended until the host resumes.
                     </p>
                     <Link href="/dashboard/contact" className="btn btn-secondary btn-sm" style={{ display: "inline-flex" }}>
                       Contact Administration

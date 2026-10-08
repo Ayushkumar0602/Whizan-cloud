@@ -63,7 +63,7 @@ export function printAiHandoffBanner(info: {
   const depId = info.deploymentId || "unknown";
   const promptLines = [
     `Fix the Whizan Cloud deployment failure for deployment "${depId}" (target "${info.targetId}").`,
-    `1. Use Whizan MCP tools (whizan_analyze_workspace or whizan_get_build_logs with deploymentId "${depId}") to inspect the Azure VM build failure logs.`,
+    `1. Use Whizan MCP tools (whizan_analyze_workspace or whizan_get_build_logs with deploymentId "${depId}") to inspect the build failure logs.`,
     `2. Fix the code according to Whizan Cloud rules (bind to 0.0.0.0, use process.env.PORT || 8000, resolve missing modules, build errors, or syntax issues).`,
     `3. DO NOT call whizan_create_service or whizan_create_project! The target ID '${info.targetId}' already exists.`,
     `4. Redeploy directly to the SAME deployment target using 'whizan_deploy_direct' with targetId: "${info.targetId}" and targetType: "${info.targetType}".`,
@@ -71,13 +71,13 @@ export function printAiHandoffBanner(info: {
   ].join("\n");
 
   console.error(`
-  ${c.bgRed}${c.white}${c.bold} ✖ DEPLOYMENT FAILED ON AZURE VM ${c.reset}
+  ${c.bgRed}${c.white}${c.bold} ✖ DEPLOYMENT FAILED ON CLOUD COMPUTE CLUSTER ${c.reset}
   ${c.dim}Target ID:${c.reset}     ${c.whizanCyan}${info.targetId}${c.reset} (${info.targetType})
   ${c.dim}Deployment ID:${c.reset} ${c.whizanBlue}${depId}${c.reset}
   ${c.dim}Failure Reason:${c.reset} ${c.red}${info.failureReason}${c.reset}
 
   ${c.whizanCyan}${c.bold}🤖 Self-Heal with Whizan MCP & Your AI Assistant (Cursor / Antigravity / Claude / Windsurf):${c.reset}
-  Whizan MCP empowers your AI agent to inspect Azure VM build logs, patch your broken files,
+  Whizan MCP empowers your AI agent to inspect build logs, patch your broken files,
   and redeploy to the SAME cloud target with ZERO duplicate services.
 
   ${c.bold}Step 1: Install & configure Whizan MCP in your editor:${c.reset}
@@ -156,7 +156,7 @@ export async function deployCommand(args: string[] = []) {
   const userPlan = user?.plan || "Hobby";
   authSpinner?.succeed(`Logged in as ${c.bold}${user?.email || "User"}${c.reset} (${c.whizanCyan}${userPlan} plan${c.reset})`);
 
-  // Check Cloud Compute / Azure VM Reachability
+  // Check Cloud Compute Reachability
   const sysStatus = await client.getSystemStatus();
   if (!sysStatus.vmOnline) {
     printVmMaintenanceNotice({
@@ -374,7 +374,7 @@ export async function deployCommand(args: string[] = []) {
       });
     }
 
-    deploySpinner?.update("Uploading archive payload to Azure VM...");
+    deploySpinner?.update("Uploading archive payload to Whizan Cloud...");
     const uploadRes = await client.uploadArchive(targetType, targetId!, archiveBuffer);
     const deploymentId = uploadRes.deploymentId || uploadRes.id || uploadRes.deployment?.id;
 
@@ -385,7 +385,7 @@ export async function deployCommand(args: string[] = []) {
     // ═════════════════════════════════════════════════════════════════════
     // PHASE 5: Build Logs Polling & Streaming
     // ═════════════════════════════════════════════════════════════════════
-    if (!opts.json) step(5, 6, "🛠️", "Building container image on Azure VM...");
+    if (!opts.json) step(5, 6, "🛠️", "Building container image on cloud builder...");
     const buildSpinner = opts.json ? null : new Spinner("Waiting for build worker to initialize...").start();
 
     let seenLogs = 0;
@@ -417,8 +417,8 @@ export async function deployCommand(args: string[] = []) {
       }
 
       if (buildStatus === "FAILED" || buildStatus === "ERROR") {
-        buildSpinner?.fail(`Build failed on Azure VM`);
-        const failureReason = logData.errorMessage || "Container image synthesis failed on Azure VM";
+        buildSpinner?.fail(`Build failed on cloud builder`);
+        const failureReason = logData.errorMessage || "Container image synthesis failed on cloud builder";
 
         // Persist failure snapshot into .whizan.json for MCP handoff
         await saveDeploymentConfig(configPath, {

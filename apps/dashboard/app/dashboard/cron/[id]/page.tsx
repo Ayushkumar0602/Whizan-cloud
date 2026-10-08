@@ -523,7 +523,7 @@ export default function CronJobDetailPage() {
       <div className="page" style={{ maxWidth: 1320, margin: "0 auto", padding: "4rem 1.5rem", textAlign: "center", color: "var(--muted)" }}>
         <RefreshCw size={32} className="animate-spin" style={{ margin: "0 auto 1.5rem", opacity: 0.6 }} />
         <h3 style={{ fontSize: "1.2rem", fontWeight: 700, color: "var(--foreground)" }}>Loading Cron Service Metrics...</h3>
-        <p style={{ fontSize: "0.88rem", marginTop: "0.5rem" }}>Querying telemetry from Azure Host VM & PostgreSQL</p>
+        <p style={{ fontSize: "0.88rem", marginTop: "0.5rem" }}>Querying telemetry from Whizan Cloud Host & PostgreSQL</p>
       </div>
     );
   }
@@ -981,7 +981,7 @@ export default function CronJobDetailPage() {
                 <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--foreground)", marginTop: "0.2rem" }}>{job.misfirePolicy}</div>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted-fg)", marginTop: "0.2rem" }}>
                   {job.misfirePolicy === "SKIP"
-                    ? "Discards missed executions during Azure VM downtime to avoid thundering herd crashes."
+                    ? "Discards missed executions during compute host downtime to avoid thundering herd crashes."
                     : job.misfirePolicy === "FIRE_LATEST_ONCE"
                     ? "Fires 1 catchup execution immediately upon boot, then resumes normal intervals."
                     : "Sequentially replays all missed executions."}
