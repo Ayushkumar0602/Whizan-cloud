@@ -30,7 +30,7 @@ export const colors = {
 
 const c = colors;
 
-export const CLI_VERSION = "1.0.6";
+export const CLI_VERSION = "1.0.7";
 
 /**
  * Print the branded Whizan ASCII banner to stderr

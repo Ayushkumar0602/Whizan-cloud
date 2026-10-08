@@ -1,6 +1,6 @@
 {
   "name": "@whizan/mcp-devops",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Whizan Cloud DevOps MCP Server for Autonomous In-IDE Deployments",
   "main": "dist/index.js",
   "type": "module",
