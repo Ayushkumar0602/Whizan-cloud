@@ -174,6 +174,8 @@ High-density V8 serverless isolate engine running on an internal gateway:
 
 ## 🚀 Hosting Primitives
 
+> 📖 *For the complete specification and service matrix, explore the [Official Services Catalog](docs/SERVICES_OFFERED.md).*
+
 Whizan Cloud provides six purpose-built hosting primitives designed to accommodate any modern software architecture:
 
 ```

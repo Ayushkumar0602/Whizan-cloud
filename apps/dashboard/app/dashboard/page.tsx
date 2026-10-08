@@ -20,6 +20,8 @@ import {
 import { useAuth } from "@/lib/auth";
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 import {
   ArrowRight,
   Plus,
@@ -61,12 +63,15 @@ interface UnifiedResource {
 
 export default function ConsolePage() {
   const { user } = useAuth();
+  const { vmOnline } = useSystemStatus();
   const [frontendList, setFrontendList] = useState<ProjectWithLatestDeploy[]>([]);
   const [backendList, setBackendList] = useState<ServiceWithLatestDeploy[]>([]);
   const [functionList, setFunctionList] = useState<FunctionServiceItem[]>([]);
   const [databaseList, setDatabaseList] = useState<ManagedDatabase[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | undefined>(undefined);
 
   const [activeTab, setActiveTab] = useState<ResourceType>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -675,12 +680,19 @@ export default function ConsolePage() {
                             {res.liveUrl && (
                               <a
                                 href={res.liveUrl}
-                                target="_blank"
+                                target={vmOnline ? "_blank" : undefined}
                                 rel="noopener noreferrer"
                                 className="live-link-button"
-                                title={`Open live URL: ${res.liveUrl}`}
+                                title={vmOnline ? `Open live URL: ${res.liveUrl}` : "Compute host paused (click for details)"}
+                                onClick={(e) => {
+                                  if (!vmOnline) {
+                                    e.preventDefault();
+                                    setSelectedTarget(res.name);
+                                    setOfflineModalOpen(true);
+                                  }
+                                }}
                               >
-                                <span>Live</span>
+                                <span>{vmOnline ? "Live" : "Paused"}</span>
                                 <ExternalLink size={12} />
                               </a>
                             )}
@@ -1824,6 +1836,13 @@ export default function ConsolePage() {
           }
         }
       `}</style>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="visit"
+        targetName={selectedTarget}
+      />
     </div>
   );
 }

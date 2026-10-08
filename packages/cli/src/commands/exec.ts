@@ -43,6 +43,20 @@ export async function execCommand(args: string[] = []) {
     process.exit(1);
   }
 
+  const sysStatus = await client.getSystemStatus();
+  if (!sysStatus.vmOnline) {
+    const auth = await client.getAuthStatus();
+    const userName = auth.user?.name || auth.user?.email?.split("@")[0] || "Developer";
+    const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+    printVmMaintenanceNotice({
+      userName,
+      operationName: "Container Exec",
+      contactEmail: sysStatus.contactEmail,
+      contactUrl: sysStatus.contactUrl,
+    });
+    process.exit(0);
+  }
+
   const spinner = new Spinner(`Executing "${commandStr}" inside ${targetId}...`).start();
 
   try {

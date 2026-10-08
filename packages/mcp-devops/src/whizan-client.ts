@@ -97,6 +97,34 @@ export class WhizanClient {
     }
   }
 
+  async getSystemStatus(): Promise<{
+    vmOnline: boolean;
+    status: string;
+    message: string;
+    contactEmail: string;
+    contactUrl: string;
+  }> {
+    await this.loadConfig();
+    const fallback = {
+      vmOnline: false,
+      status: "MAINTENANCE",
+      message: "The administration has temporarily stopped new deployments and serving existing applications until further notice.",
+      contactEmail: "ayushkumarjais0602@gmail.com",
+      contactUrl: "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact",
+    };
+    try {
+      const res = await fetch(`${this.config.apiUrl}/api/system/status`, {
+        headers: this.getHeaders(),
+      });
+      if (res.ok) {
+        return (await res.json()) as any;
+      }
+      return fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   async listProjects(): Promise<any[]> {
     await this.loadConfig();
     try {

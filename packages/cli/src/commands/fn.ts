@@ -36,6 +36,20 @@ export async function fnCommand(args: string[] = []) {
     }
 
     case "deploy": {
+      const sysStatus = await client.getSystemStatus();
+      if (!sysStatus.vmOnline) {
+        const auth = await client.getAuthStatus();
+        const userName = auth.user?.name || auth.user?.email?.split("@")[0] || "Developer";
+        const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+        printVmMaintenanceNotice({
+          userName,
+          operationName: "Edge Function Deployment",
+          contactEmail: sysStatus.contactEmail,
+          contactUrl: sysStatus.contactUrl,
+        });
+        process.exit(0);
+      }
+
       const filePath = subArgs.find((a) => !a.startsWith("-"));
       if (!filePath) {
         printError("Usage: whizan fn deploy <entry-file> [--name <name>] [--public] [--memory <mb>] [--timeout <sec>]");
@@ -122,6 +136,20 @@ export async function fnCommand(args: string[] = []) {
     }
 
     case "invoke": {
+      const sysStatus = await client.getSystemStatus();
+      if (!sysStatus.vmOnline) {
+        const auth = await client.getAuthStatus();
+        const userName = auth.user?.name || auth.user?.email?.split("@")[0] || "Developer";
+        const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+        printVmMaintenanceNotice({
+          userName,
+          operationName: "Edge Function Invocation",
+          contactEmail: sysStatus.contactEmail,
+          contactUrl: sysStatus.contactUrl,
+        });
+        process.exit(0);
+      }
+
       const slug = subArgs.find((a) => !a.startsWith("-"));
       if (!slug) {
         printError("Usage: whizan fn invoke <slug> [--path /route] [--method POST] [--data '{\"key\":\"val\"}'] [--key <api-key>]");

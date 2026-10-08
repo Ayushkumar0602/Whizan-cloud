@@ -69,6 +69,22 @@ export async function openCommand(args: string[] = []) {
     liveUrl = liveUrl.replace(/^https:\/\//i, "http://");
   }
 
+  const sysStatus = await client.getSystemStatus();
+  if (!sysStatus.vmOnline) {
+    spinner.stop();
+    const auth = await client.getAuthStatus();
+    const userName = auth.user?.name || auth.user?.email?.split("@")[0] || "Developer";
+    const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+    printVmMaintenanceNotice({
+      userName,
+      operationName: `Open URL (${liveUrl})`,
+      contactEmail: sysStatus.contactEmail,
+      contactUrl: sysStatus.contactUrl,
+    });
+    console.error(`  ${c.amber}⚠ Notice: The Azure VM edge router is offline. Live URL ${liveUrl} is unreachable until reactivated.${c.reset}\n`);
+    return;
+  }
+
   spinner.succeed(`Opening ${c.whizanCyan}${liveUrl}${c.reset} in browser...`);
   openBrowser(liveUrl);
 }

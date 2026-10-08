@@ -214,12 +214,22 @@ await app.register(functionRoutes, { prefix: "/api/functions" });
 await app.register(cronRoutes, { prefix: "/api/crons" });
 await app.register(flowRoutes, { prefix: "/api/flows" });
 
+import { checkVmOnline } from "./lib/vm-status.js";
+
 // ─── Health Check & Root ──────────────────────────────────────────────────────
 
 app.route({
   method: ["GET", "POST", "HEAD"],
   url: "/health",
   handler: async () => ({ status: "ok", ts: Date.now() }),
+});
+
+app.route({
+  method: ["GET", "HEAD"],
+  url: "/api/system/status",
+  handler: async () => {
+    return checkVmOnline();
+  },
 });
 
 app.route({

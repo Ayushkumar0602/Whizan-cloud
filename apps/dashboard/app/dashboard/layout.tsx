@@ -9,11 +9,14 @@ import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Server, Menu, X, Plus,
   PanelLeftClose, PanelLeftOpen, Database, Zap, Clock, Workflow as WorkflowIcon,
-  Bot, BookOpen, Terminal
+  Bot, BookOpen, Terminal, Mail
 } from "lucide-react";
+import { MaintenanceBanner } from "@/components/maintenance-banner";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
+  const { vmOnline } = useSystemStatus();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -107,6 +110,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           label: "Monitoring",
           match: (p: string) => p.startsWith("/dashboard/admin"),
         }] : []),
+        { href: "/dashboard/contact", icon: Mail, label: "Contact Support", match: (p: string) => p.startsWith("/dashboard/contact") },
         { href: "/dashboard/settings", icon: Settings, label: "Settings", match: (p: string) => p.startsWith("/dashboard/settings") },
       ]
     }
@@ -133,11 +137,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Cloud Health Status */}
-        <div className="mesh-indicator-pill">
-          <div className="mesh-pulse-dot" />
-          <span className="mesh-pill-text">Whizan Edge Network</span>
-          <span className="mesh-pill-tag">ACTIVE</span>
-        </div>
+        <Link href="/dashboard/contact" style={{ textDecoration: "none" }}>
+          <div className="mesh-indicator-pill" style={{ borderColor: vmOnline ? undefined : "rgba(245, 158, 11, 0.4)" }}>
+            <div className="mesh-pulse-dot" style={{ background: vmOnline ? undefined : "var(--warning)" }} />
+            <span className="mesh-pill-text">Azure Compute</span>
+            <span
+              className="mesh-pill-tag"
+              style={{
+                background: vmOnline ? undefined : "rgba(245, 158, 11, 0.15)",
+                color: vmOnline ? undefined : "var(--warning)",
+              }}
+            >
+              {vmOnline ? "ACTIVE" : "PAUSED"}
+            </span>
+          </div>
+        </Link>
 
         {/* Quick Deploy CTA */}
         <div style={{ marginTop: "1rem" }}>
@@ -281,6 +295,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main Container with subtle Aurora Background */}
       <main className="dash-main aurora-bg">
+        <MaintenanceBanner />
         {children}
       </main>
 

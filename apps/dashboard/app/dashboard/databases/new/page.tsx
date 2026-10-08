@@ -16,9 +16,12 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { databases } from "@/lib/api";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function NewDatabasePage() {
   const router = useRouter();
+  const { vmOnline } = useSystemStatus();
 
   // Engine selection
   const [engine, setEngine] = useState<"POSTGRESQL" | "REDIS">("POSTGRESQL");
@@ -33,12 +36,17 @@ export default function NewDatabasePage() {
   // Submission state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
 
   // Auto slug preview
   const slug = `db-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "db"}`;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!vmOnline) {
+      setOfflineModalOpen(true);
+      return;
+    }
     if (!name.trim()) {
       setError("Please enter a database name");
       return;
@@ -510,6 +518,13 @@ export default function NewDatabasePage() {
           </button>
         </div>
       </form>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="deploy"
+        targetName="Managed Database"
+      />
     </div>
   );
 }

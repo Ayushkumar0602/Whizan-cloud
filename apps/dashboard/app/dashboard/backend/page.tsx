@@ -27,14 +27,19 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function BackendHostingPage() {
   const router = useRouter();
+  const { vmOnline } = useSystemStatus();
   const [list, setList] = useState<ServiceWithLatestDeploy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "ASLEEP">("ALL");
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     services.list()
@@ -108,9 +113,9 @@ export default function BackendHostingPage() {
           <div className="stat-value" style={{ fontSize: "1.15rem", fontFamily: "var(--font-geist-mono), monospace" }}>
             {getBaseRouterDomain()}
           </div>
-          <div className="stat-sub" style={{ color: "var(--success)" }}>
+          <div className="stat-sub" style={{ color: vmOnline ? "var(--success)" : "#f59e0b" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />
-            Port 80 Routing Ready
+            {vmOnline ? "Port 80 Routing Ready" : "Host Offline / Paused"}
           </div>
         </div>
       </div>
@@ -264,10 +269,17 @@ export default function BackendHostingPage() {
                     {isActive && (
                       <a
                         href={publicUrl}
-                        target="_blank"
+                        target={vmOnline ? "_blank" : undefined}
                         rel="noopener noreferrer"
                         className="copy-chip-btn"
-                        title="Open live service in new tab"
+                        title={vmOnline ? "Open live service in new tab" : "Compute host paused (click for details)"}
+                        onClick={(e) => {
+                          if (!vmOnline) {
+                            e.preventDefault();
+                            setSelectedTarget(s.name);
+                            setOfflineModalOpen(true);
+                          }
+                        }}
                       >
                         <ExternalLink size={12} />
                       </a>
@@ -620,6 +632,13 @@ export default function BackendHostingPage() {
           }
         }
       `}</style>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="visit"
+        targetName={selectedTarget}
+      />
     </div>
   );
 }

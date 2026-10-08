@@ -16,6 +16,8 @@ import { ServiceLogs } from "@/components/service-logs";
 import { ServiceShell } from "@/components/service-shell";
 import { ServiceMetrics } from "@/components/service-metrics";
 import { formatDeployedUrl, getServiceIngressUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 const INSTANCE_PLANS = [
   { id: "starter",  name: "Starter",  cpu: 0.5, memory: 512,  desc: "0.5 vCPU • 512MB" },
@@ -27,11 +29,14 @@ const INSTANCE_PLANS = [
 export default function BackendServicePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { vmOnline } = useSystemStatus();
   const [service, setService] = useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [analyzingAi, setAnalyzingAi] = useState(false);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [offlineAction, setOfflineAction] = useState<"deploy" | "visit" | "general">("general");
 
   // Service configuration editable fields
   const [configOpen, setConfigOpen] = useState(false);
@@ -300,7 +305,18 @@ export default function BackendServicePage() {
             </div>
           </div>
           <div className="detail-hero-actions">
-            <button className="btn btn-primary btn-lg" onClick={() => triggerDeploy()} disabled={deploying || isBuilding}>
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={() => {
+                if (!vmOnline) {
+                  setOfflineAction("deploy");
+                  setOfflineModalOpen(true);
+                  return;
+                }
+                triggerDeploy();
+              }}
+              disabled={deploying || isBuilding}
+            >
               {deploying || isBuilding
                 ? <><Loader2 size={16} className="spin-icon" /> Deploying...</>
                 : <><Play size={16} fill="currentColor" /> Deploy Now</>}
@@ -315,8 +331,25 @@ export default function BackendServicePage() {
           <div className="ingress-ribbon">
             <div className="ingress-info">
               <div className="ingress-label">Production Cloud Ingress</div>
-              <a href={ingressUrl} target="_blank" rel="noreferrer" className="ingress-link mono">
+              <a
+                href={ingressUrl}
+                target={vmOnline ? "_blank" : undefined}
+                rel="noreferrer"
+                className="ingress-link mono"
+                onClick={(e) => {
+                  if (!vmOnline) {
+                    e.preventDefault();
+                    setOfflineAction("visit");
+                    setOfflineModalOpen(true);
+                  }
+                }}
+              >
                 {ingressUrl} <ExternalLink size={13} />
+                {!vmOnline && (
+                  <span style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", marginLeft: "0.5rem" }}>
+                    Service Paused
+                  </span>
+                )}
               </a>
             </div>
             <button onClick={copyIngressUrl} className="btn btn-secondary btn-sm">
@@ -597,7 +630,14 @@ export default function BackendServicePage() {
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      onClick={() => handleSaveConfig(true)}
+                      onClick={() => {
+                        if (!vmOnline) {
+                          setOfflineAction("deploy");
+                          setOfflineModalOpen(true);
+                          return;
+                        }
+                        handleSaveConfig(true);
+                      }}
                       disabled={savingConfig || deploying}
                       style={{ flex: 1.3, justifyContent: "center" }}
                     >
@@ -791,7 +831,20 @@ export default function BackendServicePage() {
                   ? <ServiceLogs dId={selectedDId} serviceId={id} />
                   : <div style={{ color: "var(--muted)", padding: "3rem", textAlign: "center", fontSize: "0.85rem" }}>Select a deployment above to stream logs.</div>
               ) : bottomTab === "shell" ? (
-                service && <ServiceShell serviceId={id} slug={service.slug} />
+                !vmOnline ? (
+                  <div style={{ padding: "3rem 1.5rem", textAlign: "center", color: "var(--muted)" }}>
+                    <Server size={32} style={{ color: "#f59e0b", margin: "0 auto 1rem", opacity: 0.8 }} />
+                    <h3 style={{ fontSize: "1rem", color: "var(--foreground)", marginBottom: "0.4rem" }}>Interactive Web Shell Paused</h3>
+                    <p style={{ fontSize: "0.85rem", maxWidth: "420px", margin: "0 auto 1.25rem", lineHeight: 1.5 }}>
+                      Azure VM compute is currently offline under scheduled administrative maintenance. Real-time container shells are suspended until the host resumes.
+                    </p>
+                    <Link href="/dashboard/contact" className="btn btn-secondary btn-sm" style={{ display: "inline-flex" }}>
+                      Contact Administration
+                    </Link>
+                  </div>
+                ) : (
+                  service && <ServiceShell serviceId={id} slug={service.slug} />
+                )
               ) : (
                 service && <ServiceMetrics serviceId={id} slug={service.slug} isPublic={service.isPublic} autoSleep={service.autoSleep} instanceType={service.instanceType} cpuLimit={service.cpuLimit} memoryLimit={service.memoryLimit} />
               )}
@@ -994,6 +1047,13 @@ export default function BackendServicePage() {
           .detail-meta-row { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
         }
       `}</style>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType={offlineAction}
+        targetName={service.name}
+      />
     </div>
   );
 }

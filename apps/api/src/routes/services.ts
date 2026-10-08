@@ -9,6 +9,7 @@ import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { parseDockerStats } from "../lib/container-metrics.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
+import { checkVmOnline } from "../lib/vm-status.js";
 
 const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -406,6 +407,18 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       });
     }
 
+    const vmStatus = await checkVmOnline();
+    if (!vmStatus.vmOnline) {
+      const userName = (request.user as any)?.name || request.user?.email?.split("@")[0] || "Developer";
+      return reply.code(503).send({
+        error: "VM_OFFLINE_MAINTENANCE",
+        code: "MAINTENANCE_PAUSED",
+        message: `Dear ${userName}, the request cannot be processed because the administration has temporarily stopped new deployments and serving existing applications until further notice.`,
+        contactEmail: vmStatus.contactEmail,
+        contactUrl: vmStatus.contactUrl,
+      });
+    }
+
     const inProgress = await prisma.serviceDeployment.findFirst({
       where: { serviceId: id, status: { in: ["QUEUED", "BUILDING"] } },
       orderBy: { createdAt: "desc" },
@@ -465,6 +478,18 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
     const service = await prisma.backendService.findFirst({ where: { id, userId } });
     if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const vmStatus = await checkVmOnline();
+    if (!vmStatus.vmOnline) {
+      const userName = (request.user as any)?.name || request.user?.email?.split("@")[0] || "Developer";
+      return reply.code(503).send({
+        error: "VM_OFFLINE_MAINTENANCE",
+        code: "MAINTENANCE_PAUSED",
+        message: `Dear ${userName}, the request cannot be processed because the administration has temporarily stopped new deployments and serving existing applications until further notice.`,
+        contactEmail: vmStatus.contactEmail,
+        contactUrl: vmStatus.contactUrl,
+      });
+    }
 
     const inProgress = await prisma.serviceDeployment.findFirst({
       where: { serviceId: id, status: { in: ["QUEUED", "BUILDING"] } },

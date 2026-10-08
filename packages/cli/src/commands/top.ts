@@ -48,6 +48,19 @@ export async function topCommand() {
   }
 
   const user = auth.user;
+  const sysStatus = await client.getSystemStatus();
+  if (!sysStatus.vmOnline) {
+    const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+    const userName = user?.name || user?.email?.split("@")[0] || "Developer";
+    printVmMaintenanceNotice({
+      userName,
+      operationName: "Live Resource Monitor (top)",
+      contactEmail: sysStatus.contactEmail,
+      contactUrl: sysStatus.contactUrl,
+    });
+    process.exit(0);
+  }
+
   let items: ResourceItem[] = [];
   let selectedIndex = 0;
   let isRunning = true;

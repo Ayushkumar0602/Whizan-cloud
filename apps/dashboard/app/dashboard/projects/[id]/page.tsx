@@ -24,6 +24,8 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
 import { formatDeployedUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 function buildDuration(d: Deployment) {
   if (!d.buildStartedAt) return null;
@@ -35,11 +37,14 @@ function buildDuration(d: Deployment) {
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { vmOnline } = useSystemStatus();
   const [project, setProject] = useState<ProjectWithDeployments | null>(null);
   const [loading, setLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [offlineAction, setOfflineAction] = useState<"deploy" | "visit" | "general">("general");
 
   async function load() {
     try {
@@ -151,12 +156,19 @@ export default function ProjectPage() {
             {latestDeploy?.status === "READY" && (
               <a
                 href={liveUrl}
-                target="_blank"
+                target={vmOnline ? "_blank" : undefined}
                 rel="noopener noreferrer"
                 className="btn btn-secondary btn-lg"
                 id="visit-site-btn"
+                onClick={(e) => {
+                  if (!vmOnline) {
+                    e.preventDefault();
+                    setOfflineAction("visit");
+                    setOfflineModalOpen(true);
+                  }
+                }}
               >
-                <Globe size={15} /> Visit Site <ExternalLink size={13} />
+                <Globe size={15} /> Visit Site {vmOnline ? <ExternalLink size={13} /> : <span style={{ fontSize: "0.75rem", color: "#f59e0b", marginLeft: 4 }}>(Paused)</span>}
               </a>
             )}
             <Link href={`/dashboard/projects/${id}/analytics`} className="btn btn-secondary btn-lg">
@@ -168,7 +180,14 @@ export default function ProjectPage() {
             <button
               id="deploy-btn"
               className="btn btn-primary btn-lg"
-              onClick={triggerDeploy}
+              onClick={() => {
+                if (!vmOnline) {
+                  setOfflineAction("deploy");
+                  setOfflineModalOpen(true);
+                  return;
+                }
+                triggerDeploy();
+              }}
               disabled={deploying || isActive}
             >
               {deploying || isActive ? (
@@ -198,8 +217,25 @@ export default function ProjectPage() {
           <div className="proj-url-bar">
             <div className="proj-url-info">
               <span className="proj-url-label">Production Domain</span>
-              <a href={liveUrl} target="_blank" rel="noreferrer" className="proj-url-link mono">
+              <a
+                href={liveUrl}
+                target={vmOnline ? "_blank" : undefined}
+                rel="noreferrer"
+                className="proj-url-link mono"
+                onClick={(e) => {
+                  if (!vmOnline) {
+                    e.preventDefault();
+                    setOfflineAction("visit");
+                    setOfflineModalOpen(true);
+                  }
+                }}
+              >
                 {liveUrl} <ExternalLink size={13} />
+                {!vmOnline && (
+                  <span style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", marginLeft: "0.5rem" }}>
+                    Host Paused
+                  </span>
+                )}
               </a>
             </div>
             <button onClick={copyUrl} className="btn btn-secondary btn-sm">
@@ -577,6 +613,13 @@ export default function ProjectPage() {
           }
         }
       `}</style>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType={offlineAction}
+        targetName={project.name}
+      />
     </div>
   );
 }

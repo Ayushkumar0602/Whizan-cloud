@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { signAdminPayload } from "../lib/auth-utils.js";
+import { checkVmOnline } from "../lib/vm-status.js";
 
 const ExecSchema = z.object({
   targetType: z.enum(["project", "service"]),
@@ -21,6 +22,18 @@ export async function containerRoutes(fastify: FastifyInstance) {
 
     const { userId, role } = request.user;
     const { targetType, targetId, command } = body.data;
+
+    const vmStatus = await checkVmOnline();
+    if (!vmStatus.vmOnline) {
+      const userName = (request.user as any)?.name || request.user?.email?.split("@")[0] || "Developer";
+      return reply.code(503).send({
+        error: "VM_OFFLINE_MAINTENANCE",
+        code: "MAINTENANCE_PAUSED",
+        message: `Dear ${userName}, the request cannot be processed because the administration has temporarily stopped new deployments and serving existing applications until further notice.`,
+        contactEmail: vmStatus.contactEmail,
+        contactUrl: vmStatus.contactUrl,
+      });
+    }
 
     // 1. Guardrail validation
     const securityCheck = evaluateCommandSecurity(command);

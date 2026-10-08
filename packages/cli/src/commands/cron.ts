@@ -94,6 +94,20 @@ export async function cronCommand(args: string[] = []) {
     }
 
     case "trigger": {
+      const sysStatus = await client.getSystemStatus();
+      if (!sysStatus.vmOnline) {
+        const auth = await client.getAuthStatus();
+        const userName = auth.user?.name || auth.user?.email?.split("@")[0] || "Developer";
+        const { printVmMaintenanceNotice } = await import("../utils/maintenance-notice.js");
+        printVmMaintenanceNotice({
+          userName,
+          operationName: "Cron Job Trigger",
+          contactEmail: sysStatus.contactEmail,
+          contactUrl: sysStatus.contactUrl,
+        });
+        process.exit(0);
+      }
+
       const id = subArgs.find((a) => !a.startsWith("-"));
       if (!id) {
         printError("Usage: whizan cron trigger <cron-job-id>");

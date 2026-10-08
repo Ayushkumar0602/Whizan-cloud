@@ -12,10 +12,17 @@ import {
   ShieldCheck,
   Cpu,
   Layers,
-  Sparkles
+  Sparkles,
+  AlertTriangle,
+  Mail,
 } from "lucide-react";
+import { useState } from "react";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function SelectDeployTypePage() {
+  const { vmOnline } = useSystemStatus();
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
   return (
     <div className="page" style={{ maxWidth: 900 }}>
       <Link href="/dashboard" className="breadcrumb">
@@ -27,9 +34,58 @@ export default function SelectDeployTypePage() {
         subtitle="Select whether you are deploying a frontend web application or an isolated backend microservice from GitHub."
       />
 
+      {!vmOnline && (
+        <div
+          style={{
+            marginTop: "1.25rem",
+            padding: "1.25rem 1.5rem",
+            borderRadius: "var(--radius)",
+            background: "var(--warning-bg)",
+            border: "1px solid var(--warning-border)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "1rem",
+          }}
+        >
+          <AlertTriangle size={22} style={{ color: "var(--warning)", flexShrink: 0, marginTop: "2px" }} />
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--foreground)" }}>
+              New Deployments Temporarily Paused
+            </div>
+            <div style={{ fontSize: "0.88rem", color: "var(--muted)", marginTop: "4px", lineHeight: 1.5 }}>
+              The administration has temporarily stopped new deployments and serving existing applications until further notice. The Azure VM build-worker is currently powered down for scheduled maintenance.
+            </div>
+            <div style={{ marginTop: "0.75rem" }}>
+              <Link
+                href="/dashboard/contact"
+                className="btn btn-secondary btn-sm"
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <Mail size={14} /> Contact Administration for Reactivation
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="deploy"
+      />
+
       <div className="deploy-type-grid" style={{ marginTop: "1.5rem" }}>
         {/* Frontend Web App Option */}
-        <Link href="/dashboard/projects/new" className="deploy-type-card card-glow-indigo">
+        <Link
+          href={vmOnline ? "/dashboard/projects/new" : "#"}
+          onClick={(e) => {
+            if (!vmOnline) {
+              e.preventDefault();
+              setOfflineModalOpen(true);
+            }
+          }}
+          className="deploy-type-card card-glow-indigo"
+        >
           <div className="card-top-icon icon-indigo">
             <Globe size={28} />
           </div>
@@ -64,7 +120,16 @@ export default function SelectDeployTypePage() {
         </Link>
 
         {/* Backend Container Service Option */}
-        <Link href="/dashboard/backend/new" className="deploy-type-card card-glow-emerald">
+        <Link
+          href={vmOnline ? "/dashboard/backend/new" : "#"}
+          onClick={(e) => {
+            if (!vmOnline) {
+              e.preventDefault();
+              setOfflineModalOpen(true);
+            }
+          }}
+          className="deploy-type-card card-glow-emerald"
+        >
           <div className="card-top-icon icon-emerald">
             <Server size={28} />
           </div>

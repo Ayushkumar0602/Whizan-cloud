@@ -32,14 +32,19 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { functionsApi, type FunctionServiceItem } from "@/lib/api";
 import { getFunctionIngressUrl, getFunctionPathUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function EdgeFunctionsPage() {
   const router = useRouter();
+  const { vmOnline } = useSystemStatus();
   const [list, setList] = useState<FunctionServiceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"ALL" | "PUBLIC" | "SECURED">("ALL");
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | undefined>(undefined);
 
   const fetchFunctions = async () => {
     try {
@@ -154,10 +159,10 @@ export default function EdgeFunctionsPage() {
           <div className="stat-label">
             <Globe size={15} style={{ color: "var(--accent)" }} /> Edge Routing
           </div>
-          <div className="stat-value" style={{ color: "#10b981" }}>
-            ACTIVE
+          <div className="stat-value" style={{ color: vmOnline ? "#10b981" : "#f59e0b" }}>
+            {vmOnline ? "ACTIVE" : "PAUSED"}
           </div>
-          <div className="stat-sub">Port 80 mesh • 0 host port overhead</div>
+          <div className="stat-sub">{vmOnline ? "Port 80 mesh • 0 host port overhead" : "Compute host paused"}</div>
         </div>
       </div>
 
@@ -503,6 +508,13 @@ export default function EdgeFunctionsPage() {
           })}
         </div>
       )}
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="visit"
+        targetName={selectedTarget}
+      />
     </div>
   );
 }

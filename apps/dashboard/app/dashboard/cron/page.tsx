@@ -47,6 +47,8 @@ import {
   type CronExecutionItem,
   type CronDeadLetterItem,
 } from "@/lib/api";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 const PRESET_SCHEDULES = [
   { label: "Every Minute", value: "* * * * *", desc: "Runs at start of every minute" },
@@ -177,6 +179,9 @@ export default function CronDashboardPage() {
   const [executions, setExecutions] = useState<CronExecutionItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedExecution, setSelectedExecution] = useState<CronExecutionItem | null>(null);
+  const { vmOnline } = useSystemStatus();
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | undefined>(undefined);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [deadLetters, setDeadLetters] = useState<CronDeadLetterItem[]>([]);
   const [loadingDlq, setLoadingDlq] = useState(false);
@@ -238,6 +243,11 @@ export default function CronDashboardPage() {
 
   const handleTrigger = async (job: CronJobItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!vmOnline) {
+      setSelectedTarget(job.name);
+      setOfflineModalOpen(true);
+      return;
+    }
     setTriggeringId(job.id);
     try {
       const res = await cronApi.trigger(job.id);
@@ -2258,6 +2268,13 @@ export default function CronDashboardPage() {
           </div>
         </div>
       )}
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="general"
+        targetName={selectedTarget}
+      />
     </div>
   );
 }

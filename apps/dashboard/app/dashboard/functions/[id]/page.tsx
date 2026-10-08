@@ -54,15 +54,20 @@ import {
   type FunctionMetrics,
 } from "@/lib/api";
 import { getFunctionIngressUrl, getFunctionPathUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function FunctionDetailPage() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const functionId = params?.id as string;
+  const { vmOnline } = useSystemStatus();
 
   const [service, setService] = useState<FunctionServiceItem | null>(null);
   const [loading, setLoading] = useState(true);
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [offlineAction, setOfflineAction] = useState<"deploy" | "visit" | "general">("general");
   const [activeTab, setActiveTab] = useState<
     "overview" | "functions" | "env" | "code" | "test" | "monitoring" | "logs" | "keys" | "settings"
   >("overview");
@@ -305,6 +310,11 @@ export default function FunctionDetailPage() {
 
   // Deploy Code
   const handleDeployCode = async () => {
+    if (!vmOnline) {
+      setOfflineAction("deploy");
+      setOfflineModalOpen(true);
+      return;
+    }
     if (!code.trim()) return toast.error("Code cannot be empty");
     setDeploying(true);
     try {
@@ -444,6 +454,11 @@ export default function FunctionDetailPage() {
 
   // Run Live Edge Benchmark Probe
   const handleRunBenchmark = async () => {
+    if (!vmOnline) {
+      setOfflineAction("general");
+      setOfflineModalOpen(true);
+      return;
+    }
     setBenchmarkRunning(true);
     try {
       const result: any = await functionsApi.test(functionId, {
@@ -467,6 +482,11 @@ export default function FunctionDetailPage() {
 
   // Test Runner Execution
   const handleExecuteTest = async () => {
+    if (!vmOnline) {
+      setOfflineAction("general");
+      setOfflineModalOpen(true);
+      return;
+    }
     setTesting(true);
     setTestResult(null);
 
@@ -2350,6 +2370,13 @@ export default function FunctionDetailPage() {
           </div>
         </div>
       )}
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType={offlineAction}
+        targetName={service?.name}
+      />
     </div>
   );
 }

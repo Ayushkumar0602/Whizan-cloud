@@ -20,6 +20,7 @@ import {
   prompt,
   confirm,
 } from "../utils/terminal-ui.js";
+import { printVmMaintenanceNotice } from "../utils/maintenance-notice.js";
 
 const c = colors;
 
@@ -151,8 +152,21 @@ export async function deployCommand(args: string[] = []) {
   }
 
   const user = auth.user;
+  const userName = user?.name || user?.email?.split("@")[0] || "Developer";
   const userPlan = user?.plan || "Hobby";
   authSpinner?.succeed(`Logged in as ${c.bold}${user?.email || "User"}${c.reset} (${c.whizanCyan}${userPlan} plan${c.reset})`);
+
+  // Check Cloud Compute / Azure VM Reachability
+  const sysStatus = await client.getSystemStatus();
+  if (!sysStatus.vmOnline) {
+    printVmMaintenanceNotice({
+      userName,
+      operationName: "Deployment",
+      contactEmail: sysStatus.contactEmail,
+      contactUrl: sysStatus.contactUrl,
+    });
+    process.exit(0);
+  }
 
   // ═════════════════════════════════════════════════════════════════════════
   // PHASE 2: Workspace Analysis & Context Sync

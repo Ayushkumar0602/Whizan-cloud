@@ -632,6 +632,49 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function handleToolExecution(name: string, args: any) {
+  // Guard tools requiring active compute infrastructure when Azure VM is powered down
+  const VM_REQUIRING_TOOLS = new Set([
+    "whizan_deploy_direct",
+    "whizan_redeploy",
+    "whizan_check_health",
+    "whizan_exec_container_command",
+    "whizan_exec_vm_command",
+    "whizan_deploy_function",
+    "whizan_invoke_function",
+    "whizan_trigger_cron_job",
+    "whizan_trigger_workflow",
+    "whizan_provision_database",
+  ]);
+
+  if (VM_REQUIRING_TOOLS.has(name)) {
+    const sysStatus = await client.getSystemStatus().catch(() => null);
+    if (sysStatus && !sysStatus.vmOnline) {
+      const email = sysStatus.contactEmail || "ayushkumarjais0602@gmail.com";
+      const url = sysStatus.contactUrl || "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `⚠️ REQUEST CANNOT BE FULFILLED TEMPORARILY FROM OUR SIDE RIGHT NOW
+
+The tool "${name}" cannot be fulfilled at this moment because cloud compute infrastructure (Azure VM worker nodes and container runtimes) is currently offline for scheduled maintenance.
+
+The administration has temporarily stopped new deployments and serving existing applications until further notice.
+
+IMPORTANT INSTRUCTION FOR AI AGENT:
+Please gently inform the user of this situation:
+1. Explain that Whizan Cloud compute nodes (Azure VM) are temporarily powered down under administrative notice.
+2. Active deployments, builds, live health checks, and container executions cannot proceed until the administration reactivates the VM.
+3. Provide the user with direct contact options for inquiries, updates, or to request reactivation:
+   - 📧 Contact Email: ${email}
+   - 🌐 Contact Page: ${url}
+4. DO NOT attempt to redeploy or loop call this tool while the VM is offline.`,
+          },
+        ],
+      };
+    }
+  }
+
   switch (name) {
       case "whizan_auth_status": {
         const status = await client.getAuthStatus();
@@ -874,6 +917,15 @@ async function handleToolExecution(name: string, args: any) {
               },
             ],
           };
+        }
+
+        const sysStatus = await client.getSystemStatus().catch(() => null);
+        if (sysStatus && !sysStatus.vmOnline) {
+          (report as any).vmOnline = false;
+          (report as any).maintenanceNotice = `⚠️ NOTICE: Cloud compute infrastructure (Azure VM) is currently powered down by administration. New deployments cannot proceed until reactivated. Contact: ${sysStatus.contactEmail}`;
+          report.recommendations.unshift(
+            `⚠️ Cloud compute infrastructure is temporarily paused by administration. New deployments cannot proceed until reactivation. For inquiries or reactivation, please contact: ${sysStatus.contactEmail}`
+          );
         }
 
         return {

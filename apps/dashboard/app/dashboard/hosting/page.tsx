@@ -21,11 +21,16 @@ import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { DeployPipeline } from "@/components/deploy-pipeline";
 import { formatDeployedUrl } from "@/lib/domains";
+import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 export default function HostingPage() {
+  const { vmOnline } = useSystemStatus();
   const [list, setList] = useState<ProjectWithLatestDeploy[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [offlineModalOpen, setOfflineModalOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     projects.list()
@@ -78,9 +83,9 @@ export default function HostingPage() {
           <div className="stat-label">
             <Zap size={14} className="text-accent" /> Edge Routing
           </div>
-          <div className="stat-value">Active</div>
-          <div className="stat-sub" style={{ color: "var(--success)" }}>
-            Wildcard domain ready
+          <div className="stat-value">{vmOnline ? "Active" : "Paused"}</div>
+          <div className="stat-sub" style={{ color: vmOnline ? "var(--success)" : "#f59e0b" }}>
+            {vmOnline ? "Wildcard domain ready" : "Compute host paused"}
           </div>
         </div>
       </div>
@@ -166,14 +171,25 @@ export default function HostingPage() {
                 {isReady && (
                   <a
                     href={liveUrl}
-                    target="_blank"
+                    target={vmOnline ? "_blank" : undefined}
                     rel="noopener noreferrer"
                     className="frontend-url-ribbon"
-                    title={`Open live site: ${liveUrl}`}
+                    title={vmOnline ? `Open live site: ${liveUrl}` : "Compute host paused (click for details)"}
+                    onClick={(e) => {
+                      if (!vmOnline) {
+                        e.preventDefault();
+                        setSelectedTarget(p.name);
+                        setOfflineModalOpen(true);
+                      }
+                    }}
                   >
                     <Globe size={13} style={{ flexShrink: 0 }} />
                     <span className="frontend-url-text mono">{liveUrl.replace(/^https?:\/\//, "")}</span>
-                    <ExternalLink size={12} style={{ flexShrink: 0 }} />
+                    {vmOnline ? (
+                      <ExternalLink size={12} style={{ flexShrink: 0 }} />
+                    ) : (
+                      <span style={{ fontSize: "0.68rem", color: "#f59e0b", marginLeft: "auto" }}>Paused</span>
+                    )}
                   </a>
                 )}
               </div>
@@ -353,6 +369,13 @@ export default function HostingPage() {
           }
         }
       `}</style>
+
+      <VmOfflineModal
+        isOpen={offlineModalOpen}
+        onClose={() => setOfflineModalOpen(false)}
+        actionType="visit"
+        targetName={selectedTarget}
+      />
     </div>
   );
 }

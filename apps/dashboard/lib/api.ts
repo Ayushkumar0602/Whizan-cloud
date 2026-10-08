@@ -1486,5 +1486,20 @@ export const flowsApi = {
     }),
 };
 
+export interface SystemStatusResponse {
+  vmOnline: boolean;
+  status: "ONLINE" | "MAINTENANCE";
+  message: string;
+  contactEmail: string;
+  contactUrl: string;
+  vmHost?: string;
+  timestamp: number;
+}
+
+export const system = {
+  getStatus: (opts?: RequestOptions) =>
+    request<SystemStatusResponse>("/api/system/status", { ...opts, ttlMs: 15_000 }),
+};
+
 
 

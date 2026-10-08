@@ -6,6 +6,7 @@ import fs from "fs";
 import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
+import { checkVmOnline } from "../lib/vm-status.js";
 
 import os from "os";
 
@@ -788,6 +789,18 @@ export async function functionRoutes(fastify: FastifyInstance) {
         envVariables: true,
       },
     });
+
+    const vmStatus = await checkVmOnline();
+    if (!vmStatus.vmOnline) {
+      const userName = (request.user as any)?.name || request.user?.email?.split("@")[0] || "Developer";
+      return reply.code(503).send({
+        error: "VM_OFFLINE_MAINTENANCE",
+        code: "MAINTENANCE_PAUSED",
+        message: `Dear ${userName}, the request cannot be processed because the administration has temporarily stopped new deployments and serving existing applications until further notice.`,
+        contactEmail: vmStatus.contactEmail,
+        contactUrl: vmStatus.contactUrl,
+      });
+    }
 
     if (!fn) {
       return reply.code(404).send({ error: "Function not found" });
