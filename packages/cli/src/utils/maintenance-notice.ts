@@ -16,7 +16,7 @@ export function printVmMaintenanceNotice(options: VmNoticeOptions = {}) {
   const name = options.userName || "Developer";
   const op = options.operationName ? ` (${options.operationName})` : "";
   const email = options.contactEmail || "ayushkumarjais0602@gmail.com";
-  const url = options.contactUrl || "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact";
+  const url = options.contactUrl || "https://whizan-cloud-service-dashboard.vercel.app/contact";
 
   console.error(`
   ${c.amber}${c.bold}┌─────────────────────────────────────────────────────────────────────────────┐${c.reset}

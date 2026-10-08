@@ -15,7 +15,7 @@ export const ADMIN_CONTACT_EMAIL = "ayushkumarjais0602@gmail.com";
 export const DEFAULT_CONTACT_URL =
   process.env.DASHBOARD_URL
     ? `${process.env.DASHBOARD_URL.replace(/\/+$/, "")}/contact`
-    : "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact";
+    : "https://whizan-cloud-service-dashboard.vercel.app/contact";
 
 /**
  * Checks whether the Azure VM worker node is actively reporting telemetry to Redis.

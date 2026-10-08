@@ -185,11 +185,11 @@ export async function githubRoutes(fastify: FastifyInstance) {
       });
 
       // Redirect back to frontend dashboard with token in URL hash/query
-      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app";
+      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard.vercel.app";
       return reply.redirect(`${dashboardUrl}/dashboard?github=connected&token=${jwtToken}`);
     } catch (err: any) {
       fastify.log.error(err, "GitHub OAuth error");
-      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app";
+      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard.vercel.app";
       return reply.redirect(`${dashboardUrl}/dashboard?error=github_failed`);
     }
   });

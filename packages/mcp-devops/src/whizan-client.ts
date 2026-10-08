@@ -110,7 +110,7 @@ export class WhizanClient {
       status: "MAINTENANCE",
       message: "The administration has temporarily stopped new deployments and serving existing applications until further notice.",
       contactEmail: "ayushkumarjais0602@gmail.com",
-      contactUrl: "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact",
+      contactUrl: "https://whizan-cloud-service-dashboard.vercel.app/contact",
     };
     try {
       const res = await fetch(`${this.config.apiUrl}/api/system/status`, {

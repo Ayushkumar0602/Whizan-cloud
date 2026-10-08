@@ -279,7 +279,7 @@ const server = http.createServer(async (req, res) => {
       <html><body style="font-family:sans-serif;text-align:center;padding:4rem">
         <h1>404 — Not Found</h1>
         <p>No deployment found for <strong>${slug}</strong></p>
-        <p><a href="${process.env.DASHBOARD_URL || 'https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app'}">Back to Dashboard</a></p>
+        <p><a href="${process.env.DASHBOARD_URL || 'https://whizan-cloud-service-dashboard.vercel.app'}">Back to Dashboard</a></p>
       </body></html>
     `);
     return;

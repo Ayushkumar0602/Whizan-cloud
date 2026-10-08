@@ -650,7 +650,7 @@ async function handleToolExecution(name: string, args: any) {
     const sysStatus = await client.getSystemStatus().catch(() => null);
     if (sysStatus && !sysStatus.vmOnline) {
       const email = sysStatus.contactEmail || "ayushkumarjais0602@gmail.com";
-      const url = sysStatus.contactUrl || "https://whizan-cloud-service-dashboard-pzb235rqo.vercel.app/contact";
+      const url = sysStatus.contactUrl || "https://whizan-cloud-service-dashboard.vercel.app/contact";
       return {
         content: [
           {
