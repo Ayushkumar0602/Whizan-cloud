@@ -146,6 +146,40 @@ export function buildExpressiveVocalPrompt(spokenText: string): string {
 }
 
 /**
+ * Determines whether TTS audio should be generated for this response.
+ * Prevents audio on simple acknowledgments, navigations, HITL prompts, and short follow-ups.
+ * Only substantive task completion summaries get voiced.
+ */
+export function shouldGenerateAudio(text: string, toolExecutions?: any[]): boolean {
+  if (!text) return false;
+
+  // Don't speak very short acknowledgments
+  if (text.length < 50) return false;
+
+  const lower = text.toLowerCase();
+
+  // Don't speak navigation confirmations
+  if (lower.includes("navigating to") && text.length < 120) return false;
+
+  // Don't speak HITL approval prompts (the user needs to read and decide)
+  if (
+    (lower.includes("approve") || lower.includes("confirm")) &&
+    (lower.includes("review") || lower.includes("parameters"))
+  ) {
+    return false;
+  }
+
+  // Don't speak if it's just a follow-up question
+  if (lower.endsWith("?") && text.length < 100) return false;
+
+  // Don't speak simple one-liners with no tool executions
+  if (!toolExecutions?.length && text.length < 80) return false;
+
+  // Speak substantive task completions, fleet overviews, diagnostic results
+  return true;
+}
+
+/**
  * Synthesizes female audio using gemini-3.8-flash-tts with Aoede prebuilt voice
  * Uses intelligent voice summarization and sticky key rotation
  */

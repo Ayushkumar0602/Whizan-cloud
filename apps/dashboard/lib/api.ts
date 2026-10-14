@@ -1543,6 +1543,78 @@ export const agentApi = {
       body: JSON.stringify(payload),
     }),
 
+  /**
+   * SSE streaming chat endpoint. Returns the raw Response so the caller
+   * can consume the ReadableStream and parse SSE events in real-time.
+   */
+  streamChat: async (
+    payload: {
+      message: string;
+      sessionId?: string;
+      context?: { pathname?: string; targetId?: string; targetType?: "service" | "project" };
+      enableTts?: boolean;
+    },
+    signal?: AbortSignal
+  ): Promise<Response> => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    let token = getAccessToken();
+    if (!token) {
+      // Attempt a refresh before streaming
+      const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAccessToken(data.accessToken);
+        token = data.accessToken;
+      }
+    }
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${getApiBase()}/api/agent/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      credentials: "include",
+      signal,
+    });
+
+    if (response.status === 401) {
+      // Try refresh once
+      const refreshRes = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        setAccessToken(data.accessToken);
+        headers["Authorization"] = `Bearer ${data.accessToken}`;
+
+        return fetch(`${getApiBase()}/api/agent/chat/stream`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          credentials: "include",
+          signal,
+        });
+      }
+      throw new Error("UNAUTHORIZED");
+    }
+
+    if (!response.ok) {
+      throw new Error(`Stream error: HTTP ${response.status}`);
+    }
+
+    return response;
+  },
+
   approveAction: (payload: {
     actionId: string;
     decision: "APPROVE" | "REJECT";
@@ -1570,7 +1642,3 @@ export const agentApi = {
       body: JSON.stringify({ text }),
     }),
 };
-
-
-
-

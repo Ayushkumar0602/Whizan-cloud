@@ -2,9 +2,11 @@ import { prisma } from "../../lib/prisma.js";
 import { checkVmOnline } from "../../lib/vm-status.js";
 import { evaluateToolCall } from "./guardrails.js";
 import { SUMMER_TOOL_DEFINITIONS, executeAgentTool } from "./tools-registry.js";
-import { generateSpeechAudio, type TtsResult } from "./tts-service.js";
-
+import { generateSpeechAudio, shouldGenerateAudio, type TtsResult } from "./tts-service.js";
 import { getActiveKey, rotateToNextKey, getKeyCount } from "./key-pool.js";
+import { buildSystemPrompt, type PromptContext } from "./prompt-engine.js";
+
+// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface AgentChatInput {
   userId: string;
@@ -18,6 +20,20 @@ export interface AgentChatInput {
   enableTts?: boolean;
 }
 
+export type AgentStreamEvent =
+  | { type: "session"; sessionId: string }
+  | { type: "step"; message: string }
+  | { type: "tool_start"; name: string; parameters: any }
+  | { type: "tool_result"; name: string; result?: any; error?: string; durationMs: number }
+  | { type: "text"; content: string }
+  | { type: "hitl"; actionId: string; toolName: string; parameters: any; riskTier: string; explanation: string }
+  | { type: "navigate"; path: string; label?: string }
+  | { type: "open_url"; url: string }
+  | { type: "done"; fullText: string; toolExecutions: any[]; sessionId: string }
+  | { type: "audio"; audioBase64?: string; format?: string; spokenText: string; fallbackToBrowserSpeech?: boolean }
+  | { type: "error"; message: string };
+
+/** Legacy synchronous response shape (kept for backward compatibility) */
 export interface AgentChatResponse {
   sessionId: string;
   message: string;
@@ -42,305 +58,398 @@ export interface AgentChatResponse {
   audio?: TtsResult | null;
 }
 
-const SYSTEM_INSTRUCTION = `You are Summer, the brilliant, friendly, and autonomous DevOps Copilot embedded inside Whizan Cloud Service.
-Your mission is to help developers manage, deploy, troubleshoot, inspect, and automate their cloud applications in natural language.
+// ─── Constants ──────────────────────────────────────────────────────────────
 
-Key Principles:
-1. Identity: Warm, concise, highly competent, proactive. Speak as Summer ("I checked your payment service...", "I've prepared a plan...").
-2. 3-Tier Safety Guardrails:
-   - Informational queries (listing services, inspecting logs, reading metrics) execute automatically.
-   - Mutating actions (redeploying, changing environment variables, provisioning databases, restarting containers, in-container exec) require Human-in-the-Loop (HITL) approval. Clearly explain what you plan to do.
-   - Destructive commands (rm -rf, DROP DATABASE, crypto miners, reverse shells) are strictly prohibited and auto-blocked.
-3. VM Offline Autonomy:
-   - When the cloud compute worker VM is offline or in maintenance, you STILL remain 100% operational.
-   - You can inspect database records, review past logs, configure environment variables, create cron schedules, and design workflows.
-   - If the user asks you to redeploy or run live container commands while the VM is offline, explain the maintenance state calmly and offer to stage the action for when the host is resumed.
-4. Presentation:
-   - Keep answers crisp, clear, and actionable.
-   - Use clean Markdown tables or bullet points for structured data.
-   - Never output raw passwords or unmasked secret keys.`;
+const MAX_REACT_TURNS = 6;
+const LLM_TIMEOUT_MS = 20000;
+
+const THINKING_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.7-flash",
+  "gemini-3.5-flash",
+];
+
+const VM_DEPENDENT = new Set([
+  "run_diagnostic_command",
+  "restart_service",
+  "redeploy_resource",
+]);
+
+// ─── Gemini API Call with Model Fallback & Key Rotation ─────────────────────
+
+async function callGeminiWithFallback(payload: any): Promise<any | null> {
+  const totalKeys = getKeyCount();
+
+  for (const model of THINKING_MODELS) {
+    for (let attempt = 0; attempt < Math.min(totalKeys, 3); attempt++) {
+      const key = getActiveKey();
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+        });
+
+        if (res.ok) return await res.json();
+
+        if (res.status === 429 || res.status === 401 || res.status === 403) {
+          rotateToNextKey(`LLM ${res.status}`);
+          continue;
+        }
+
+        if (res.status === 503) {
+          console.warn(`[Gemini ${model}] 503 — trying next model`);
+          break; // move to next model
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini ${model}] Error: ${err.message}`);
+        rotateToNextKey("LLM error");
+      }
+    }
+  }
+
+  return null;
+}
+
+// ─── Primary SSE Streaming Handler ──────────────────────────────────────────
 
 /**
- * Main conversational ReAct loop for Summer
+ * Executes the full ReAct agent loop, emitting fine-grained SSE events
+ * at each step so the client can render live execution telemetry.
  */
-export async function handleAgentChat(input: AgentChatInput): Promise<AgentChatResponse> {
+export async function handleAgentChatStream(
+  input: AgentChatInput,
+  emit: (event: AgentStreamEvent) => void
+): Promise<void> {
   const { userId, message, context, enableTts = true } = input;
 
-  // 1. Get or create session
-  let session = input.sessionId
-    ? await prisma.agentSession.findFirst({
-        where: { id: input.sessionId, userId },
-        include: {
-          messages: {
-            orderBy: { createdAt: "desc" },
-            take: 12,
+  try {
+    // ── 1. Session Management ─────────────────────────────────────────────
+    let session = input.sessionId
+      ? await prisma.agentSession.findFirst({
+          where: { id: input.sessionId, userId },
+          include: {
+            messages: {
+              orderBy: { createdAt: "desc" },
+              take: 20,
+            },
           },
-        },
-      })
-    : null;
+        })
+      : null;
 
-  if (!session) {
-    const title = message.slice(0, 40) + (message.length > 40 ? "..." : "");
-    session = await prisma.agentSession.create({
-      data: {
-        userId,
-        title,
-        context: context ? JSON.stringify(context) : undefined,
-      },
-      include: { messages: true },
+    if (!session) {
+      const title = message.slice(0, 40) + (message.length > 40 ? "…" : "");
+      session = await prisma.agentSession.create({
+        data: {
+          userId,
+          title,
+          context: context ? JSON.stringify(context) : undefined,
+        },
+        include: { messages: true },
+      });
+    }
+
+    emit({ type: "session", sessionId: session.id });
+
+    // ── 2. Persist User Message ───────────────────────────────────────────
+    await prisma.agentMessage.create({
+      data: { sessionId: session.id, role: "user", content: message },
     });
-  }
 
-  // 2. Save user message to database
-  await prisma.agentMessage.create({
-    data: {
-      sessionId: session.id,
-      role: "user",
-      content: message,
-    },
-  });
-
-  // 3. Format history for Gemini
-  const recentMessages = (session.messages || []).slice().reverse();
-  const vmStatus = await checkVmOnline();
-
-  const contents: any[] = [];
-  for (const m of recentMessages) {
-    if (m.role === "user") {
-      contents.push({ role: "user", parts: [{ text: m.content }] });
-    } else if (m.role === "assistant") {
-      contents.push({ role: "model", parts: [{ text: m.content }] });
+    // ── 3. Build Conversation History ─────────────────────────────────────
+    const recent = (session.messages || []).slice().reverse();
+    const contents: any[] = [];
+    for (const m of recent) {
+      if (m.role === "user") {
+        contents.push({ role: "user", parts: [{ text: m.content }] });
+      } else if (m.role === "assistant") {
+        contents.push({ role: "model", parts: [{ text: m.content }] });
+      }
     }
-  }
 
-  // Append current user message with context
-  let enrichedPrompt = message;
-  if (context?.pathname) {
-    enrichedPrompt += `\n[Context: User is currently viewing ${context.pathname}${context.targetId ? `, Target: ${context.targetId}` : ""}. Compute VM status: ${vmStatus.status}]`;
-  }
-  contents.push({ role: "user", parts: [{ text: enrichedPrompt }] });
-
-  const toolExecutions: AgentChatResponse["toolExecutions"] = [];
-  let pendingAction: AgentChatResponse["pendingAction"] = null;
-  let clientAction: AgentChatResponse["clientAction"] = null;
-  let finalAssistantText = "";
-
-  // 4. Multi-turn ReAct Loop (Up to 4 iterations)
-  const MAX_TURNS = 4;
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const geminiPayload = {
-      systemInstruction: {
-        parts: [{ text: SYSTEM_INSTRUCTION }],
-      },
-      contents,
-      tools: [
-        {
-          functionDeclarations: SUMMER_TOOL_DEFINITIONS.map((t) => ({
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-          })),
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-      },
+    // ── 4. Dynamic System Prompt & VM Check ───────────────────────────────
+    const vmStatus = await checkVmOnline();
+    const promptCtx: PromptContext = {
+      vmOnline: vmStatus.vmOnline,
+      vmHost: vmStatus.vmHost,
+      pathname: context?.pathname,
+      targetId: context?.targetId,
+      targetType: context?.targetType,
     };
+    const systemPrompt = buildSystemPrompt(promptCtx);
 
-    let geminiResponse: any = null;
-    const thinkingModels = [
-      "gemini-3.8-flash",
-      "gemini-3.5-flash-lite",
-      "gemini-3.1-flash-lite",
-      "gemini-3.7-flash",
-      "gemini-3.5-flash",
-    ];
-
-    const totalKeys = getKeyCount();
-
-    for (const model of thinkingModels) {
-      if (geminiResponse) break;
-
-      for (let attempt = 0; attempt < Math.min(totalKeys, 4); attempt++) {
-        const key = getActiveKey();
-
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(geminiPayload),
-            signal: AbortSignal.timeout(10000),
-          });
-
-          if (res.ok) {
-            geminiResponse = await res.json();
-            // Sticky: current key succeeded, remains sticky
-            break;
-          }
-
-          // If rate-limited or auth failed, advance to next key and stick with it
-          if (res.status === 429 || res.status === 401 || res.status === 403) {
-            rotateToNextKey(`LLM HTTP ${res.status}`);
-            continue;
-          }
-
-          // If the model itself is temporarily overloaded (503), transition to fallback model
-          if (res.status === 503) {
-            console.warn(`[Agent LLM ${model}] Model overloaded (503), transitioning to fallback...`);
-            break;
-          }
-        } catch (err: any) {
-          console.warn(`[Agent LLM ${model}] Attempt failed:`, err.message);
-          rotateToNextKey(`LLM error: ${err.message}`);
-        }
-      }
+    // Enrich current message with lightweight context annotation
+    let enriched = message;
+    if (context?.pathname) {
+      enriched += `\n[Page: ${context.pathname}${context.targetId ? `, Target: ${context.targetId}` : ""}. VM: ${vmStatus.status}]`;
     }
+    contents.push({ role: "user", parts: [{ text: enriched }] });
 
-    if (!geminiResponse) {
-      finalAssistantText = "I encountered a momentary connection timeout while processing your request. Please try asking again.";
-      break;
-    }
+    // Filter tool definitions (hide VM-dependent tools when offline)
+    const activeTools = SUMMER_TOOL_DEFINITIONS.filter(
+      (t) => vmStatus.vmOnline || !VM_DEPENDENT.has(t.name)
+    );
 
-    const candidate = geminiResponse.candidates?.[0];
-    const candidateParts = candidate?.content?.parts || [];
+    // ── 5. ReAct Loop ─────────────────────────────────────────────────────
+    const toolExecutions: AgentChatResponse["toolExecutions"] = [];
+    let finalText = "";
 
-    // Extract text
-    const textParts = candidateParts.filter((p: any) => p.text).map((p: any) => p.text);
-    if (textParts.length > 0) {
-      finalAssistantText = textParts.join("\n");
-    }
+    emit({ type: "step", message: "Analyzing your request…" });
 
-    // Extract function calls
-    const functionCalls = candidateParts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall);
-
-    if (functionCalls.length === 0) {
-      // LLM has finished thinking and answered
-      break;
-    }
-
-    // Add model's turn to conversation history
-    contents.push({ role: "model", parts: candidateParts });
-
-    // Handle tool calls
-    const toolResponses: any[] = [];
-    let hitlHalted = false;
-
-    for (const call of functionCalls) {
-      const { name, args } = call;
-
-      // Evaluate guardrails
-      const guardrail = await evaluateToolCall(name, args);
-
-      // Tier 3: Blocked
-      if (!guardrail.allowed) {
-        toolExecutions.push({
-          name,
-          parameters: args,
-          error: `BLOCKED BY SECURITY POLICY: ${guardrail.reason}`,
-        });
-        toolResponses.push({
-          functionResponse: {
-            name,
-            response: { error: `Command blocked by security guardrails: ${guardrail.reason}` },
+    for (let turn = 0; turn < MAX_REACT_TURNS; turn++) {
+      const geminiPayload = {
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        tools: [
+          {
+            functionDeclarations: activeTools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              parameters: t.parameters,
+            })),
           },
+        ],
+        generationConfig: { temperature: 0.2 },
+      };
+
+      const geminiRes = await callGeminiWithFallback(geminiPayload);
+
+      if (!geminiRes) {
+        emit({
+          type: "error",
+          message: "Unable to reach the AI service right now. Please try again in a moment.",
         });
-        continue;
-      }
-
-      // Tier 2: Human-in-the-Loop Required
-      if (guardrail.requiresHitl) {
-        // Create pending action in database
-        const action = await prisma.agentAction.create({
-          data: {
-            sessionId: session.id,
-            toolName: name,
-            parameters: args || {},
-            riskTier: guardrail.riskTier,
-            status: "PENDING",
-          },
-        });
-
-        pendingAction = {
-          actionId: action.id,
-          toolName: name,
-          parameters: args,
-          riskTier: guardrail.riskTier,
-          explanation: `I have prepared a plan to execute "${name}". Please review the parameters and confirm.`,
-        };
-
-        if (!finalAssistantText) {
-          finalAssistantText = `I've prepared the parameters to run **${name}**. Because this action modifies resources, please review the confirmation card below and click **Approve** to proceed.`;
-        }
-
-        toolExecutions.push({
-          name,
-          parameters: args,
-          result: { status: "AWAITING_HUMAN_APPROVAL", actionId: action.id },
-        });
-
-        hitlHalted = true;
+        finalText = "I encountered a connection issue while processing your request. Please try again.";
         break;
       }
 
-      // Tier 1: Informational - Execute immediately
-      const result = await executeAgentTool(name, args || {}, userId);
-      toolExecutions.push({
-        name,
-        parameters: args,
-        result: result.data,
-        error: result.error,
-      });
+      const candidate = geminiRes.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
 
-      if (result.clientAction) {
-        clientAction = result.clientAction;
+      // Extract text parts
+      const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text);
+      if (textParts.length > 0) {
+        finalText = textParts.join("\n");
+        emit({ type: "text", content: finalText });
       }
 
-      toolResponses.push({
-        functionResponse: {
+      // Extract function calls
+      const fnCalls = parts
+        .filter((p: any) => p.functionCall)
+        .map((p: any) => p.functionCall);
+
+      if (fnCalls.length === 0) {
+        break; // LLM finished reasoning
+      }
+
+      // Append model turn to history for next iteration
+      contents.push({ role: "model", parts });
+
+      // Process each tool call
+      const toolResponses: any[] = [];
+      let hitlHalted = false;
+
+      for (const call of fnCalls) {
+        const { name, args } = call;
+
+        // ── Guardrail Evaluation ────────────────────────────────────────
+        const guardrail = await evaluateToolCall(name, args);
+
+        // Tier 3: Blocked
+        if (!guardrail.allowed) {
+          const error = `BLOCKED BY SECURITY POLICY: ${guardrail.reason}`;
+          emit({ type: "tool_result", name, error, durationMs: 0 });
+          toolExecutions.push({ name, parameters: args, error });
+          toolResponses.push({
+            functionResponse: { name, response: { error } },
+          });
+          continue;
+        }
+
+        // Tier 2: HITL Required
+        if (guardrail.requiresHitl) {
+          const action = await prisma.agentAction.create({
+            data: {
+              sessionId: session.id,
+              toolName: name,
+              parameters: args || {},
+              riskTier: guardrail.riskTier,
+              status: "PENDING",
+            },
+          });
+
+          const explanation = `I need your approval to execute **${name}**. This action modifies live resources.`;
+          emit({
+            type: "hitl",
+            actionId: action.id,
+            toolName: name,
+            parameters: args,
+            riskTier: guardrail.riskTier,
+            explanation,
+          });
+
+          toolExecutions.push({
+            name,
+            parameters: args,
+            result: { status: "AWAITING_HUMAN_APPROVAL", actionId: action.id },
+          });
+
+          if (!finalText) {
+            finalText = `I've prepared the parameters to run **${name}**. Please review and approve below.`;
+            emit({ type: "text", content: finalText });
+          }
+
+          hitlHalted = true;
+          break;
+        }
+
+        // Tier 1: Execute immediately
+        emit({ type: "tool_start", name, parameters: args || {} });
+        const t0 = Date.now();
+
+        const result = await executeAgentTool(name, args || {}, userId);
+        const durationMs = Date.now() - t0;
+
+        emit({
+          type: "tool_result",
           name,
-          response: { output: result.data || result.error },
-        },
-      });
+          result: result.data,
+          error: result.error,
+          durationMs,
+        });
+
+        toolExecutions.push({
+          name,
+          parameters: args,
+          result: result.data,
+          error: result.error,
+        });
+
+        // Client-side navigation or external URL
+        if (result.clientAction?.type === "NAVIGATE") {
+          emit({ type: "navigate", path: result.clientAction.path, label: result.data?.label });
+        } else if (result.clientAction?.type === "OPEN_URL") {
+          emit({ type: "open_url", url: result.clientAction.url });
+        }
+
+        toolResponses.push({
+          functionResponse: {
+            name,
+            response: { output: result.data || result.error },
+          },
+        });
+      }
+
+      if (hitlHalted) break;
+
+      // Feed tool observations back for next reasoning turn
+      if (toolResponses.length > 0) {
+        contents.push({ role: "user", parts: toolResponses });
+        if (turn < MAX_REACT_TURNS - 1) {
+          emit({ type: "step", message: "Processing results…" });
+        }
+      }
     }
 
-    if (hitlHalted) {
-      break;
-    }
-
-    // Append tool observations for next turn
-    contents.push({ role: "user", parts: toolResponses });
-  }
-
-  // 5. Generate Voice Audio (Gemini 3.8 Flash TTS)
-  let audioResult: TtsResult | null = null;
-  if (enableTts && finalAssistantText) {
-    try {
-      audioResult = await generateSpeechAudio(finalAssistantText);
-    } catch (err: any) {
-      console.warn("[Agent TTS] Failed:", err.message);
-    }
-  }
-
-  // 6. Save assistant message to database
-  await prisma.agentMessage.create({
-    data: {
+    // ── 6. Emit Done ──────────────────────────────────────────────────────
+    emit({
+      type: "done",
+      fullText: finalText,
+      toolExecutions,
       sessionId: session.id,
-      role: "assistant",
-      content: finalAssistantText,
-      toolCalls: toolExecutions.length > 0 ? JSON.stringify(toolExecutions) : undefined,
-    },
-  });
+    });
+
+    // ── 7. Persist Assistant Message ──────────────────────────────────────
+    await prisma.agentMessage.create({
+      data: {
+        sessionId: session.id,
+        role: "assistant",
+        content: finalText,
+        toolCalls:
+          toolExecutions.length > 0 ? JSON.stringify(toolExecutions) : undefined,
+      },
+    });
+
+    // ── 8. TTS — Generate & Emit Asynchronously (Non-Blocking) ────────────
+    if (enableTts && finalText && shouldGenerateAudio(finalText, toolExecutions)) {
+      try {
+        const audio = await generateSpeechAudio(finalText);
+        if (audio) {
+          emit({
+            type: "audio",
+            audioBase64: audio.audioBase64,
+            format: audio.format,
+            spokenText: audio.spokenText,
+            fallbackToBrowserSpeech: audio.fallbackToBrowserSpeech,
+          });
+        }
+      } catch (err: any) {
+        console.warn("[Agent TTS Stream] Failed:", err.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Agent Stream Error]", err);
+    emit({
+      type: "error",
+      message: err.message || "An unexpected error occurred.",
+    });
+  }
+}
+
+// ─── Legacy Synchronous Handler (Backward Compatibility) ────────────────────
+
+/**
+ * Wraps the streaming handler into a single JSON response.
+ * Kept for the existing POST /api/agent/chat endpoint.
+ */
+export async function handleAgentChat(
+  input: AgentChatInput
+): Promise<AgentChatResponse> {
+  const events: AgentStreamEvent[] = [];
+  await handleAgentChatStream(input, (evt) => events.push(evt));
+
+  const sessionEvt = events.find((e) => e.type === "session") as Extract<AgentStreamEvent, { type: "session" }> | undefined;
+  const doneEvt = events.find((e) => e.type === "done") as Extract<AgentStreamEvent, { type: "done" }> | undefined;
+  const hitlEvt = events.find((e) => e.type === "hitl") as Extract<AgentStreamEvent, { type: "hitl" }> | undefined;
+  const navEvt = events.find((e) => e.type === "navigate") as Extract<AgentStreamEvent, { type: "navigate" }> | undefined;
+  const urlEvt = events.find((e) => e.type === "open_url") as Extract<AgentStreamEvent, { type: "open_url" }> | undefined;
+  const audioEvt = events.find((e) => e.type === "audio") as Extract<AgentStreamEvent, { type: "audio" }> | undefined;
+  const errorEvt = events.find((e) => e.type === "error") as Extract<AgentStreamEvent, { type: "error" }> | undefined;
 
   return {
-    sessionId: session.id,
-    message: finalAssistantText,
-    toolExecutions,
-    pendingAction,
-    clientAction,
-    audio: audioResult,
+    sessionId: sessionEvt?.sessionId || "",
+    message: doneEvt?.fullText || errorEvt?.message || "",
+    toolExecutions: doneEvt?.toolExecutions || [],
+    pendingAction: hitlEvt
+      ? {
+          actionId: hitlEvt.actionId,
+          toolName: hitlEvt.toolName,
+          parameters: hitlEvt.parameters,
+          riskTier: hitlEvt.riskTier,
+          explanation: hitlEvt.explanation,
+        }
+      : null,
+    clientAction: navEvt
+      ? { type: "NAVIGATE" as const, path: navEvt.path }
+      : urlEvt
+        ? { type: "OPEN_URL" as const, url: urlEvt.url }
+        : null,
+    audio: audioEvt
+      ? {
+          success: true,
+          audioBase64: audioEvt.audioBase64,
+          format: audioEvt.format,
+          spokenText: audioEvt.spokenText || "",
+          fallbackToBrowserSpeech: audioEvt.fallbackToBrowserSpeech,
+        }
+      : null,
   };
 }
+
+// ─── HITL Action Decision Handler ───────────────────────────────────────────
 
 /**
  * Handles user Human-in-the-Loop decision (Approve / Reject) for a pending action
@@ -390,9 +499,14 @@ export async function handleActionDecision(
   }
 
   // User Approved
-  const paramsToExecute = modifiedParameters || (action.parameters as Record<string, any>);
+  const paramsToExecute =
+    modifiedParameters || (action.parameters as Record<string, any>);
 
-  const execution = await executeAgentTool(action.toolName, paramsToExecute, userId);
+  const execution = await executeAgentTool(
+    action.toolName,
+    paramsToExecute,
+    userId
+  );
 
   await prisma.agentAction.update({
     where: { id: actionId },

@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { handleAgentChat, handleActionDecision } from "../services/agent/agent-service.js";
+import {
+  handleAgentChat,
+  handleAgentChatStream,
+  handleActionDecision,
+} from "../services/agent/agent-service.js";
 import { generateSpeechAudio } from "../services/agent/tts-service.js";
 
 const ChatSchema = z.object({
@@ -44,6 +48,37 @@ export async function agentRoutes(fastify: FastifyInstance) {
     });
 
     return reply.send(response);
+  });
+
+  // POST /api/agent/chat/stream — Real-time SSE streaming endpoint
+  fastify.post("/chat/stream", async (request, reply) => {
+    const parse = ChatSchema.safeParse(request.body);
+    if (!parse.success) {
+      return reply.code(400).send({ error: parse.error.format() });
+    }
+
+    const { userId } = request.user;
+
+    // Set SSE headers (disable Fastify serialization, write raw)
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no", // Prevent Nginx buffering
+    });
+
+    await handleAgentChatStream(
+      { userId, ...parse.data },
+      (event) => {
+        try {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        } catch {
+          // Client disconnected — silently ignore
+        }
+      }
+    );
+
+    reply.raw.end();
   });
 
   // POST /api/agent/approve
