@@ -14,7 +14,7 @@ export interface TtsResult {
  * Keeps screen text unchanged while formatting voice output
  */
 export function sanitizeForSpeech(rawText: string): string {
-  let cleaned = rawText
+  return rawText
     // Remove markdown code blocks
     .replace(/```[\s\S]*?```/g, "Code block omitted.")
     // Remove markdown inline code
@@ -28,23 +28,81 @@ export function sanitizeForSpeech(rawText: string): string {
     // Remove bold/italics
     .replace(/[*_]{1,3}/g, "")
     // Remove markdown tables
-    .replace(/\|[^\n]+\|\n\|[-:| ]+\|\n(?:\|[^\n]+\|\n)*/g, "A summary table has been rendered on your screen. ")
+    .replace(/\|[^\n]+\|\n\|[-:| ]+\|\n(?:\|[^\n]+\|\n)*/g, "A detailed summary table is displayed on your screen. ")
+    // Remove list dashes
+    .replace(/^\s*[-*]\s+/gm, "")
     // Remove excessive newlines
     .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, ". ")
     .replace(/\s+/g, " ")
     .trim();
+}
 
-  // If text is excessively long for voice, truncate to first 2-3 sentences (first 320 chars)
-  if (cleaned.length > 320) {
-    const periodIdx = cleaned.indexOf(".", 200);
-    if (periodIdx !== -1 && periodIdx < 350) {
-      cleaned = cleaned.slice(0, periodIdx + 1);
-    } else {
-      cleaned = cleaned.slice(0, 300) + "...";
-    }
+/**
+ * Intelligently generates a natural, concise 1-2 sentence spoken summary for voice narration.
+ * Prevents audio cutoffs, eliminates rambling over raw tables, and sounds completely natural.
+ */
+export async function summarizeForSpokenVoice(rawText: string): Promise<string> {
+  const isComplex =
+    rawText.includes("|") ||
+    rawText.includes("```") ||
+    rawText.length > 180 ||
+    (rawText.match(/\n[-*]/g) || []).length > 2;
+
+  if (!isComplex) {
+    const cleaned = sanitizeForSpeech(rawText);
+    return cleaned.length > 0 ? cleaned : "Here is the information you requested.";
   }
 
-  return cleaned;
+  // Fast micro-summarization using gemini-3.5-flash-lite (<800ms)
+  try {
+    const key = getActiveKey();
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${key}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `You are Summer, a smart and friendly cloud DevOps AI copilot on Whizan Cloud.
+Summarize the following cloud response into 1 or 2 natural, conversational spoken sentences for voice narration.
+Highlight the primary status, action taken, or outcome concisely and warmly.
+Do NOT read tables, markdown pipes, code, or bullet points. Keep it under 35 words.
+
+Response to summarize:
+${rawText}`,
+                },
+              ],
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(3500),
+      }
+    );
+
+    if (res.ok) {
+      const data: any = await res.json();
+      const summary = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (summary && summary.length > 10) {
+        return sanitizeForSpeech(summary);
+      }
+    }
+  } catch (err: any) {
+    console.warn("[TTS Summarizer] Fast micro-summary fallback:", err.message);
+  }
+
+  // Graceful grammatical sentence boundary extraction (never cut off mid-sentence)
+  const cleaned = sanitizeForSpeech(rawText);
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g);
+  if (sentences && sentences.length > 0) {
+    const firstTwo = sentences.slice(0, 2).join(" ").trim();
+    if (firstTwo.length > 15) return firstTwo;
+  }
+
+  return cleaned.slice(0, 220).trim();
 }
 
 /**
@@ -89,10 +147,10 @@ export function buildExpressiveVocalPrompt(spokenText: string): string {
 
 /**
  * Synthesizes female audio using gemini-3.8-flash-tts with Aoede prebuilt voice
- * Uses sticky key rotation: current key is used until it fails, then advances and sticks to the new key.
+ * Uses intelligent voice summarization and sticky key rotation
  */
 export async function generateSpeechAudio(text: string): Promise<TtsResult> {
-  const spokenText = sanitizeForSpeech(text);
+  const spokenText = await summarizeForSpokenVoice(text);
   if (!spokenText) {
     return { success: false, spokenText: "", error: "No text to speak" };
   }

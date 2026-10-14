@@ -58,6 +58,7 @@ export function SummerDrawer() {
   ]);
   const [inputPrompt, setInputPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
@@ -66,6 +67,55 @@ export function SummerDrawer() {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechRecognitionRef = useRef<any>(null);
+
+  // 1. Restore persistent session & drawer open state from localStorage across page navigation
+  useEffect(() => {
+    try {
+      const savedOpen = localStorage.getItem("whizan_summer_is_open");
+      if (savedOpen === "true") {
+        setIsOpen(true);
+      }
+
+      const savedSessionId = localStorage.getItem("whizan_summer_session_id");
+      if (savedSessionId) {
+        setCurrentSessionId(savedSessionId);
+        agentApi
+          .getSession(savedSessionId)
+          .then((data) => {
+            if (data && data.messages && data.messages.length > 0) {
+              setMessages(
+                data.messages.map((m: any) => ({
+                  id: m.id,
+                  role: m.role,
+                  content: m.content,
+                  toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
+                  createdAt: m.createdAt,
+                }))
+              );
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {}
+  }, []);
+
+  // Sync drawer open state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("whizan_summer_is_open", isOpen ? "true" : "false");
+    } catch {}
+  }, [isOpen]);
+
+  // Sync currentSessionId to localStorage
+  useEffect(() => {
+    try {
+      if (currentSessionId) {
+        localStorage.setItem("whizan_summer_session_id", currentSessionId);
+      } else {
+        localStorage.removeItem("whizan_summer_session_id");
+      }
+    } catch {}
+  }, [currentSessionId]);
 
   // Keyboard shortcut listener (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -79,12 +129,12 @@ export function SummerDrawer() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Scroll to bottom on new messages
+  // Smooth scroll to bottom on new messages or streaming
   useEffect(() => {
     if (!showHistory) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isLoading, showHistory]);
+  }, [messages, isLoading, isStreaming, showHistory]);
 
   // Load user sessions when opened
   useEffect(() => {
@@ -175,7 +225,7 @@ export function SummerDrawer() {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.05;
       utterance.pitch = 1.15; // Natural female pitch
-      
+
       // Select female browser voice if available
       const voices = window.speechSynthesis.getVoices();
       const femaleVoice = voices.find(
@@ -253,10 +303,10 @@ export function SummerDrawer() {
     }
   }
 
-  // Send Message
+  // Send Message with Progressive Word-by-Word Streaming Effect
   async function handleSendMessage(textToSend?: string) {
     const text = (textToSend || inputPrompt).trim();
-    if (!text || isLoading) return;
+    if (!text || isLoading || isStreaming) return;
 
     stopAudio();
     setInputPrompt("");
@@ -290,30 +340,64 @@ export function SummerDrawer() {
         loadSessions();
       }
 
-      const assistantMsg: Message = {
-        id: `ast-${Date.now()}`,
+      setIsLoading(false);
+      setIsStreaming(true);
+
+      const assistantMsgId = `ast-${Date.now()}`;
+      const fullText = res.message || "";
+
+      // Initialize assistant placeholder message
+      const initialAssistantMsg: Message = {
+        id: assistantMsgId,
         role: "assistant",
-        content: res.message,
+        content: "",
         toolCalls: res.toolExecutions,
         pendingAction: res.pendingAction,
         audioData: res.audio,
         createdAt: new Date().toISOString(),
       };
 
-      setMessages([...newMessages, assistantMsg]);
+      setMessages([...newMessages, initialAssistantMsg]);
 
-      // Play female speech
+      // Progressive Streaming: stream words smoothly onto the screen
+      const tokens = fullText.split(/(\s+)/);
+      let streamedContent = "";
+
+      for (let i = 0; i < tokens.length; i++) {
+        streamedContent += tokens[i];
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantMsgId ? { ...m, content: streamedContent } : m))
+        );
+
+        // Word cadence: 12-16ms interval
+        if (i % 2 === 0 && tokens.length > 10) {
+          await new Promise((r) => setTimeout(r, 14));
+        }
+      }
+
+      // Final complete set
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMsgId ? { ...m, content: fullText } : m))
+      );
+      setIsStreaming(false);
+
+      // Play female speech summary once stream completes
       if (res.audio) {
         playSpeech(res.audio);
       }
 
-      // Handle Client Navigation Directive
+      // Handle Client Navigation Directive safely (keep drawer open and state preserved)
       if (res.clientAction?.type === "NAVIGATE" && res.clientAction.path) {
+        try {
+          localStorage.setItem("whizan_summer_is_open", "true");
+        } catch {}
         router.push(res.clientAction.path);
       } else if (res.clientAction?.type === "OPEN_URL" && res.clientAction.url) {
         window.open(res.clientAction.url, "_blank");
       }
     } catch (err: any) {
+      setIsLoading(false);
+      setIsStreaming(false);
       setMessages([
         ...newMessages,
         {
@@ -323,8 +407,6 @@ export function SummerDrawer() {
           createdAt: new Date().toISOString(),
         },
       ]);
-    } finally {
-      setIsLoading(false);
     }
   }
 
@@ -332,6 +414,9 @@ export function SummerDrawer() {
     stopAudio();
     setCurrentSessionId(null);
     setShowHistory(false);
+    try {
+      localStorage.removeItem("whizan_summer_session_id");
+    } catch {}
     setMessages([
       {
         id: `welcome-${Date.now()}`,
@@ -684,7 +769,7 @@ export function SummerDrawer() {
                     key={idx}
                     type="button"
                     onClick={() => handleSendMessage(chip.prompt)}
-                    disabled={isLoading}
+                    disabled={isLoading || isStreaming}
                     style={{
                       padding: "4px 10px",
                       borderRadius: "6px",
@@ -693,7 +778,7 @@ export function SummerDrawer() {
                       color: "#475569",
                       fontSize: "0.72rem",
                       fontWeight: 500,
-                      cursor: isLoading ? "not-allowed" : "pointer",
+                      cursor: isLoading || isStreaming ? "not-allowed" : "pointer",
                       boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
                     }}
                   >
@@ -804,88 +889,112 @@ export function SummerDrawer() {
                   background: "#fcfdfe",
                 }}
               >
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: m.role === "user" ? "flex-end" : "flex-start",
-                    }}
-                  >
-                    {m.role === "user" ? (
-                      <div
-                        style={{
-                          maxWidth: "85%",
-                          borderRadius: "12px 12px 2px 12px",
-                          padding: "10px 14px",
-                          fontSize: "0.85rem",
-                          lineHeight: 1.5,
-                          background: "#0f172a",
-                          color: "#ffffff",
-                          boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        {m.content}
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          maxWidth: "94%",
-                          borderRadius: "10px",
-                          padding: "12px 16px",
-                          fontSize: "0.85rem",
-                          background: "#ffffff",
-                          border: "1px solid #e2e8f0",
-                          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
-                          color: "#1e293b",
-                        }}
-                      >
-                        {/* Message Card Header with Replay & Copy */}
+                {messages.map((m, idx) => {
+                  const isLastAssistant =
+                    m.role === "assistant" && idx === messages.length - 1 && isStreaming;
+
+                  return (
+                    <div
+                      key={m.id}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: m.role === "user" ? "flex-end" : "flex-start",
+                      }}
+                    >
+                      {m.role === "user" ? (
                         <div
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            marginBottom: "8px",
-                            paddingBottom: "6px",
-                            borderBottom: "1px solid #f1f5f9",
+                            maxWidth: "85%",
+                            borderRadius: "12px 12px 2px 12px",
+                            padding: "10px 14px",
+                            fontSize: "0.85rem",
+                            lineHeight: 1.5,
+                            background: "#0f172a",
+                            color: "#ffffff",
+                            boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
+                            wordBreak: "break-word",
                           }}
                         >
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <div
-                              style={{
-                                width: "18px",
-                                height: "18px",
-                                borderRadius: "4px",
-                                background: "linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                color: "#ffffff",
-                              }}
-                            >
-                              <Sparkles size={10} />
+                          {m.content}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            maxWidth: "94%",
+                            borderRadius: "10px",
+                            padding: "12px 16px",
+                            fontSize: "0.85rem",
+                            background: "#ffffff",
+                            border: "1px solid #e2e8f0",
+                            boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                            color: "#1e293b",
+                          }}
+                        >
+                          {/* Message Card Header with Replay & Copy */}
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              marginBottom: "8px",
+                              paddingBottom: "6px",
+                              borderBottom: "1px solid #f1f5f9",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <div
+                                style={{
+                                  width: "18px",
+                                  height: "18px",
+                                  borderRadius: "4px",
+                                  background: "linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: "#ffffff",
+                                }}
+                              >
+                                <Sparkles size={10} />
+                              </div>
+                              <span style={{ fontSize: "0.74rem", fontWeight: 700, color: "#0f172a" }}>
+                                Summer
+                              </span>
+                              <span style={{ fontSize: "0.65rem", color: "#94a3b8" }}>
+                                {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
                             </div>
-                            <span style={{ fontSize: "0.74rem", fontWeight: 700, color: "#0f172a" }}>
-                              Summer
-                            </span>
-                            <span style={{ fontSize: "0.65rem", color: "#94a3b8" }}>
-                              {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            {m.audioData && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              {m.audioData && (
+                                <button
+                                  type="button"
+                                  onClick={() => playSpeech(m.audioData)}
+                                  title="Replay Voice Summary (Female Aoede)"
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    color: "#64748b",
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                    fontSize: "0.68rem",
+                                  }}
+                                >
+                                  <Volume2 size={12} />
+                                  <span>Replay Voice</span>
+                                </button>
+                              )}
+
                               <button
                                 type="button"
-                                onClick={() => playSpeech(m.audioData)}
-                                title="Replay Voice (Female Aoede)"
+                                onClick={() => copyMessage(m.id, m.content)}
+                                title="Copy response"
                                 style={{
                                   background: "transparent",
                                   border: "none",
-                                  color: "#64748b",
+                                  color: copiedMsgId === m.id ? "#10b981" : "#64748b",
                                   cursor: "pointer",
                                   display: "flex",
                                   alignItems: "center",
@@ -893,63 +1002,57 @@ export function SummerDrawer() {
                                   fontSize: "0.68rem",
                                 }}
                               >
-                                <Volume2 size={12} />
-                                <span>Replay</span>
+                                {copiedMsgId === m.id ? <Check size={12} /> : <Copy size={12} />}
+                                <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
                               </button>
-                            )}
+                            </div>
+                          </div>
 
-                            <button
-                              type="button"
-                              onClick={() => copyMessage(m.id, m.content)}
-                              title="Copy response"
+                          {/* Rich Markdown Output with Streaming Cursor */}
+                          <MarkdownView content={m.content} />
+                          {isLastAssistant && (
+                            <span
                               style={{
-                                background: "transparent",
-                                border: "none",
-                                color: copiedMsgId === m.id ? "#10b981" : "#64748b",
-                                cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "3px",
-                                fontSize: "0.68rem",
-                              }}
-                            >
-                              {copiedMsgId === m.id ? <Check size={12} /> : <Copy size={12} />}
-                              <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Rich Markdown Output */}
-                        <MarkdownView content={m.content} />
-
-                        {/* Tool Executions */}
-                        {m.toolCalls && m.toolCalls.length > 0 && (
-                          <div style={{ marginTop: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
-                            {m.toolCalls.map((t, idx) => (
-                              <ToolChip key={idx} tool={t} />
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Human-in-the-Loop Action Approval Card */}
-                        {m.pendingAction && (
-                          <div style={{ marginTop: "8px" }}>
-                            <ApprovalCard
-                              pendingAction={m.pendingAction}
-                              onResolved={(resolution) => {
-                                handleSendMessage(
-                                  resolution.success
-                                    ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
-                                    : `Rejected execution: ${resolution.error || "Action cancelled"}.`
-                                );
+                                display: "inline-block",
+                                width: "6px",
+                                height: "14px",
+                                background: "#4f46e5",
+                                marginLeft: "3px",
+                                verticalAlign: "middle",
+                                animation: "pulse 1s infinite",
                               }}
                             />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                          )}
+
+                          {/* Tool Executions */}
+                          {m.toolCalls && m.toolCalls.length > 0 && (
+                            <div style={{ marginTop: "8px", borderTop: "1px solid #f1f5f9", paddingTop: "6px" }}>
+                              {m.toolCalls.map((t, idx) => (
+                                <ToolChip key={idx} tool={t} />
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Human-in-the-Loop Action Approval Card */}
+                          {m.pendingAction && (
+                            <div style={{ marginTop: "8px" }}>
+                              <ApprovalCard
+                                pendingAction={m.pendingAction}
+                                onResolved={(resolution) => {
+                                  handleSendMessage(
+                                    resolution.success
+                                      ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
+                                      : `Rejected execution: ${resolution.error || "Action cancelled"}.`
+                                  );
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
 
                 {isLoading && (
                   <div
@@ -1050,7 +1153,7 @@ export function SummerDrawer() {
                     setInputPrompt(e.target.value);
                   }}
                   placeholder="Ask Summer to deploy, check logs, query DB, or inspect..."
-                  disabled={isLoading}
+                  disabled={isLoading || isStreaming}
                   style={{
                     flex: 1,
                     background: "transparent",
@@ -1084,15 +1187,15 @@ export function SummerDrawer() {
                 {/* Submit */}
                 <button
                   type="submit"
-                  disabled={!inputPrompt.trim() || isLoading}
+                  disabled={!inputPrompt.trim() || isLoading || isStreaming}
                   title="Send (Enter)"
                   style={{
-                    background: inputPrompt.trim() && !isLoading ? "#0f172a" : "#e2e8f0",
+                    background: inputPrompt.trim() && !isLoading && !isStreaming ? "#0f172a" : "#e2e8f0",
                     border: "none",
                     borderRadius: "6px",
                     padding: "7px 11px",
-                    color: inputPrompt.trim() && !isLoading ? "#ffffff" : "#94a3b8",
-                    cursor: inputPrompt.trim() && !isLoading ? "pointer" : "not-allowed",
+                    color: inputPrompt.trim() && !isLoading && !isStreaming ? "#ffffff" : "#94a3b8",
+                    cursor: inputPrompt.trim() && !isLoading && !isStreaming ? "pointer" : "not-allowed",
                     fontWeight: 600,
                     display: "flex",
                     alignItems: "center",
@@ -1118,7 +1221,7 @@ export function SummerDrawer() {
               >
                 <span>Voice: <strong>Aoede (Female)</strong></span>
                 <span>•</span>
-                <span>Press <kbd style={{ padding: "1px 4px", background: "#f1f5f9", borderRadius: "3px", border: "1px solid #e2e8f0" }}>Enter ↵</kbd> to send</span>
+                <span>Streaming enabled</span>
                 <span>•</span>
                 <span><kbd style={{ padding: "1px 4px", background: "#f1f5f9", borderRadius: "3px", border: "1px solid #e2e8f0" }}>⌘K</kbd> to toggle</span>
               </div>

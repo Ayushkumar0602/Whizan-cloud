@@ -182,11 +182,14 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: "navigate_ui",
-    description: "Guides and navigates the user's browser UI to a specific dashboard page (e.g. /dashboard/hosting, /dashboard/backend, /dashboard/databases, /dashboard/cron, /dashboard/settings).",
+    description: "Guides and navigates the user's browser UI to a specific dashboard page. Valid routes are: /dashboard, /dashboard/services, /dashboard/projects, /dashboard/databases, /dashboard/functions, /dashboard/cron, /dashboard/flows, /dashboard/deploy, /dashboard/mcp, /dashboard/cli, /dashboard/settings, /dashboard/contact.",
     parameters: {
       type: "OBJECT",
       properties: {
-        path: { type: "STRING", description: "The dashboard route path to navigate to" },
+        path: {
+          type: "STRING",
+          description: "The dashboard route path (e.g. /dashboard/services, /dashboard/databases, /dashboard/cron, /dashboard/deploy)",
+        },
         label: { type: "STRING", description: "Short human-readable label of the destination page" },
       },
       required: ["path"],
@@ -204,6 +207,70 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
 ];
+
+/**
+ * Normalizes and validates paths to ensure they point to real dashboard routes
+ */
+export function normalizeDashboardRoute(rawPath: string): string {
+  if (!rawPath) return "/dashboard";
+  let clean = rawPath.trim().replace(/\\/g, "/");
+
+  // Remove protocol and domain if full URL was passed
+  if (clean.startsWith("http://") || clean.startsWith("https://")) {
+    try {
+      const u = new URL(clean);
+      clean = u.pathname;
+    } catch {}
+  }
+
+  // Strip trailing slashes
+  if (clean.length > 1 && clean.endsWith("/")) {
+    clean = clean.slice(0, -1);
+  }
+
+  const KNOWN_MAP: Record<string, string> = {
+    "/": "/dashboard",
+    "/dashboard": "/dashboard",
+    "/services": "/dashboard/services",
+    "/backend": "/dashboard/backend",
+    "/projects": "/dashboard/projects",
+    "/hosting": "/dashboard/hosting",
+    "/deploy": "/dashboard/deploy",
+    "/deployments": "/dashboard/deploy",
+    "/databases": "/dashboard/databases",
+    "/database": "/dashboard/databases",
+    "/db": "/dashboard/databases",
+    "/functions": "/dashboard/functions",
+    "/edge-functions": "/dashboard/functions",
+    "/cron": "/dashboard/cron",
+    "/cron-jobs": "/dashboard/cron",
+    "/flows": "/dashboard/flows",
+    "/mcp": "/dashboard/mcp",
+    "/cli": "/dashboard/cli",
+    "/settings": "/dashboard/settings",
+    "/contact": "/dashboard/contact",
+    "/admin": "/dashboard/admin",
+    "/admin/terminal": "/dashboard/admin/terminal",
+    "/admin/logs": "/dashboard/admin/logs",
+    "/admin/containers": "/dashboard/admin/containers",
+    "/admin/database": "/dashboard/admin/database",
+    "/admin/storage": "/dashboard/admin/storage",
+    "/admin/iam": "/dashboard/admin/iam",
+  };
+
+  if (KNOWN_MAP[clean]) {
+    return KNOWN_MAP[clean];
+  }
+
+  // Auto-prefix with /dashboard if needed
+  if (!clean.startsWith("/dashboard")) {
+    const prefixed = `/dashboard${clean.startsWith("/") ? "" : "/"}${clean}`;
+    if (KNOWN_MAP[prefixed]) return KNOWN_MAP[prefixed];
+    return prefixed;
+  }
+
+  return clean;
+}
 
 /**
  * Execute a validated tool call on behalf of the user.
@@ -583,10 +650,11 @@ export async function executeAgentTool(
       }
 
       case "navigate_ui": {
+        const validatedPath = normalizeDashboardRoute(parameters.path);
         return {
           success: true,
-          data: { navigatingTo: parameters.path, label: parameters.label || "Navigating" },
-          clientAction: { type: "NAVIGATE", path: parameters.path },
+          data: { navigatingTo: validatedPath, label: parameters.label || "Navigating" },
+          clientAction: { type: "NAVIGATE", path: validatedPath },
         };
       }
 
