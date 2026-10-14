@@ -64,10 +64,10 @@ export async function agentRoutes(fastify: FastifyInstance) {
     const originAllowed =
       !reqOrigin ||
       reqOrigin === (process.env.DASHBOARD_URL || "http://localhost:3000") ||
-      /^https?:\/\/[a-z0-9-]+\.onrender\.com$/.test(reqOrigin) ||
-      /^https?:\/\/[a-z0-9-]+\.vercel\.app$/.test(reqOrigin) ||
-      /^http:\/\/localhost(:\d+)?$/.test(reqOrigin) ||
-      /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(reqOrigin);
+      /^https?:\/\/[a-z0-9-]+\.onrender\.com$/i.test(reqOrigin) ||
+      /^https?:\/\/[a-z0-9-]+\.vercel\.app$/i.test(reqOrigin) ||
+      /^http:\/\/localhost(:\d+)?$/i.test(reqOrigin) ||
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/i.test(reqOrigin);
 
     // Set SSE headers (disable Fastify serialization, write raw)
     reply.raw.writeHead(200, {
@@ -75,6 +75,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no", // Prevent Nginx buffering
+      Vary: "Origin",
       ...(originAllowed && reqOrigin
         ? {
             "Access-Control-Allow-Origin": reqOrigin,
@@ -83,18 +84,30 @@ export async function agentRoutes(fastify: FastifyInstance) {
         : {}),
     });
 
-    await handleAgentChatStream(
-      { userId, ...parse.data },
-      (event) => {
-        try {
-          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-        } catch {
-          // Client disconnected — silently ignore
+    try {
+      await handleAgentChatStream(
+        { userId, ...parse.data },
+        (event) => {
+          try {
+            reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+          } catch {
+            // Client disconnected — silently ignore
+          }
         }
-      }
-    );
-
-    reply.raw.end();
+      );
+    } catch (streamErr: any) {
+      request.log.error({ err: streamErr }, "Error in agent chat stream");
+      try {
+        reply.raw.write(
+          `data: ${JSON.stringify({
+            type: "error",
+            error: streamErr?.message || "Internal agent streaming error",
+          })}\n\n`
+        );
+      } catch {}
+    } finally {
+      reply.raw.end();
+    }
   });
 
   // POST /api/agent/approve

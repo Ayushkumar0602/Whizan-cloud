@@ -314,6 +314,8 @@ export function SummerDrawer() {
     let audioData: any = null;
     const collectedSteps: ActiveStep[] = [];
 
+    let streamSucceeded = false;
+
     try {
       const response = await agentApi.streamChat(
         {
@@ -325,6 +327,7 @@ export function SummerDrawer() {
         abortController.signal
       );
 
+      streamSucceeded = true;
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -463,8 +466,62 @@ export function SummerDrawer() {
     } catch (err: any) {
       if (err.name === "AbortError") {
         assistantText = assistantText || "Request cancelled.";
+      } else if (!streamSucceeded) {
+        // ── Fallback: SSE stream failed (CORS, 404, not deployed yet) ──
+        // Seamlessly fall back to the legacy synchronous /chat endpoint
+        console.warn("[Summer] SSE stream unavailable, falling back to /chat:", err.message);
+        try {
+          setAgentState("thinking");
+          const step: ActiveStep = {
+            id: `step-fallback`,
+            message: "Analyzing your request…",
+            status: "running",
+          };
+          collectedSteps.push(step);
+          setActiveSteps([...collectedSteps]);
+
+          const res = await agentApi.chat({
+            message: text,
+            sessionId: currentSessionId || undefined,
+            context: { pathname: pathname || undefined },
+            enableTts: voiceEnabled,
+          });
+
+          // Synthesize events from the synchronous response
+          if (!currentSessionId && res.sessionId) {
+            setCurrentSessionId(res.sessionId);
+            loadSessions();
+          }
+
+          assistantText = res.message || "";
+          toolCalls = res.toolExecutions || [];
+          pendingAction = res.pendingAction || null;
+          audioData = res.audio || null;
+
+          // Synthesize step telemetry from tool executions
+          collectedSteps[0].status = "done";
+          for (const t of toolCalls) {
+            collectedSteps.push({
+              id: `tool-fb-${t.name}`,
+              message: `Called ${t.name}`,
+              status: t.error ? "error" : "done",
+              toolName: t.name,
+            });
+          }
+          setActiveSteps([...collectedSteps]);
+
+          // Handle navigation
+          if (res.clientAction?.type === "NAVIGATE" && res.clientAction.path) {
+            try { localStorage.setItem("whizan_summer_is_open", "true"); } catch {}
+            router.push(res.clientAction.path);
+          } else if (res.clientAction?.type === "OPEN_URL" && res.clientAction.url) {
+            window.open(res.clientAction.url, "_blank");
+          }
+        } catch (fallbackErr: any) {
+          assistantText = assistantText || `Connection error: ${fallbackErr.message}`;
+        }
       } else {
-        assistantText = assistantText || `Connection error: ${err.message}`;
+        assistantText = assistantText || `Stream error: ${err.message}`;
       }
     }
 
