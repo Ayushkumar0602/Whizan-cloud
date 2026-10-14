@@ -1501,5 +1501,76 @@ export const system = {
     request<SystemStatusResponse>("/api/system/status", { ...opts, ttlMs: 15_000 }),
 };
 
+export interface AgentChatResponse {
+  sessionId: string;
+  message: string;
+  toolExecutions: Array<{
+    name: string;
+    parameters: any;
+    result?: any;
+    error?: string;
+  }>;
+  pendingAction?: {
+    actionId: string;
+    toolName: string;
+    parameters: any;
+    riskTier: string;
+    explanation: string;
+  } | null;
+  clientAction?: {
+    type: "NAVIGATE" | "OPEN_URL";
+    path?: string;
+    url?: string;
+  } | null;
+  audio?: {
+    success: boolean;
+    audioBase64?: string;
+    format?: string;
+    spokenText: string;
+    fallbackToBrowserSpeech?: boolean;
+  } | null;
+}
+
+export const agentApi = {
+  chat: (payload: {
+    message: string;
+    sessionId?: string;
+    context?: { pathname?: string; targetId?: string; targetType?: "service" | "project" };
+    enableTts?: boolean;
+  }) =>
+    request<AgentChatResponse>("/api/agent/chat", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  approveAction: (payload: {
+    actionId: string;
+    decision: "APPROVE" | "REJECT";
+    modifiedParameters?: Record<string, any>;
+  }) =>
+    request<{ success: boolean; result?: any; error?: string }>("/api/agent/approve", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getSessions: () =>
+    request<Array<{ id: string; title: string; createdAt: string; updatedAt: string }>>("/api/agent/sessions"),
+
+  getSession: (id: string) =>
+    request<any>(`/api/agent/sessions/${id}`),
+
+  deleteSession: (id: string) =>
+    request<{ success: boolean; message: string }>(`/api/agent/sessions/${id}`, {
+      method: "DELETE",
+    }),
+
+  tts: (text: string) =>
+    request<any>("/api/agent/tts", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+};
+
+
 
 

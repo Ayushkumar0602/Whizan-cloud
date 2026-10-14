@@ -21,6 +21,7 @@ import { containerRoutes } from "./routes/containers.js";
 import { functionRoutes, rehydrateEdgeFunctions } from "./routes/functions.js";
 import { cronRoutes } from "./routes/crons.js";
 import { flowRoutes } from "./routes/flows.js";
+import { agentRoutes } from "./routes/agent.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -213,6 +214,7 @@ await app.register(containerRoutes, { prefix: "/api/containers" });
 await app.register(functionRoutes, { prefix: "/api/functions" });
 await app.register(cronRoutes, { prefix: "/api/crons" });
 await app.register(flowRoutes, { prefix: "/api/flows" });
+await app.register(agentRoutes, { prefix: "/api/agent" });
 
 import { checkVmOnline } from "./lib/vm-status.js";
 

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { SummerDrawer } from "@/components/agent/summer-drawer";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -297,6 +298,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="dash-main aurora-bg">
         <MaintenanceBanner />
         {children}
+        <SummerDrawer />
       </main>
 
       <style>{`

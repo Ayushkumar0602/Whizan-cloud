@@ -36,6 +36,7 @@ model User {
   functionServices FunctionService[]
   cronJobs         CronJob[]
   workflows        Workflow[]
+  agentSessions    AgentSession[]
 
   @@map("users")
 }
@@ -870,4 +871,61 @@ enum ApprovalStatus {
 
   @@map("approval_status")
 }
+
+// ─────────────────────────────────────────
+//  SUMMER: BROWSER COPILOT AGENT SESSIONS
+// ─────────────────────────────────────────
+model AgentSession {
+  id        String         @id @default(uuid())
+  userId    String         @map("user_id")
+  title     String         @default("New Conversation")
+  context   Json?          // Current page route, focused project/service ID
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AgentMessage[]
+  actions   AgentAction[]
+
+  @@map("agent_sessions")
+}
+
+// ─────────────────────────────────────────
+//  SUMMER: AGENT MESSAGES
+// ─────────────────────────────────────────
+model AgentMessage {
+  id        String       @id @default(uuid())
+  sessionId String       @map("session_id")
+  role      String       // "user" | "assistant" | "system" | "tool"
+  content   String       @db.Text
+  toolCalls Json?        @map("tool_calls")     // Array of structured tool requests
+  toolResult Json?       @map("tool_result")    // Tool output payload
+  audioUrl  String?      @map("audio_url")      // Optional cached TTS snippet URL
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  session   AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("agent_messages")
+}
+
+// ─────────────────────────────────────────
+//  SUMMER: HUMAN-IN-THE-LOOP APPROVALS
+// ─────────────────────────────────────────
+model AgentAction {
+  id              String    @id @default(uuid())
+  sessionId       String    @map("session_id")
+  toolName        String    @map("tool_name")
+  parameters      Json
+  riskTier        String    @default("TIER_2") @map("risk_tier") // TIER_1, TIER_2, TIER_3
+  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, EXECUTED, BLOCKED
+  decisionBy      String?   @map("decision_by") // User ID
+  decidedAt       DateTime? @map("decided_at")
+  executionResult Json?     @map("execution_result")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  session         AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("agent_actions")
+}
+
 
