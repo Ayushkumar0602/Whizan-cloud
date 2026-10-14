@@ -23,36 +23,40 @@ export function AudioWave({ isSpeaking, className = "" }: AudioWaveProps) {
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const numBars = 16;
-      const barWidth = 3;
+      const numBars = 12;
+      const barWidth = 2.5;
       const gap = 3;
       const totalWidth = numBars * (barWidth + gap);
       const startX = (canvas.width - totalWidth) / 2;
       const centerY = canvas.height / 2;
 
-      phase += 0.08;
+      phase += 0.09;
 
       for (let i = 0; i < numBars; i++) {
         const x = startX + i * (barWidth + gap);
-        let height = 4;
+        let height = 3;
 
         if (isSpeaking) {
-          // Dynamic wave oscillation
-          const wave = Math.sin(phase + i * 0.45) * Math.cos(phase * 0.7 + i * 0.2);
-          height = Math.max(4, Math.abs(wave) * (canvas.height * 0.75));
+          // Organic speech oscillation
+          const wave = Math.sin(phase + i * 0.5) * Math.cos(phase * 0.8 + i * 0.25);
+          height = Math.max(3, Math.abs(wave) * (canvas.height * 0.8));
         }
 
         const y = centerY - height / 2;
 
-        // Gradient color: Cyan to Purple
-        const gradient = ctx.createLinearGradient(0, y, 0, y + height);
-        gradient.addColorStop(0, "#00f0ff");
-        gradient.addColorStop(0.5, "#a855f7");
-        gradient.addColorStop(1, "#ec4899");
+        // Elegant Indigo-to-Cyan Accent Palette
+        if (isSpeaking) {
+          const gradient = ctx.createLinearGradient(0, y, 0, y + height);
+          gradient.addColorStop(0, "#4f46e5");
+          gradient.addColorStop(0.6, "#0284c7");
+          gradient.addColorStop(1, "#06b6d4");
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = "#cbd5e1";
+        }
 
-        ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.roundRect(x, y, barWidth, height, 2);
+        ctx.roundRect(x, y, barWidth, height, 1.5);
         ctx.fill();
       }
 
@@ -69,13 +73,13 @@ export function AudioWave({ isSpeaking, className = "" }: AudioWaveProps) {
   return (
     <canvas
       ref={canvasRef}
-      width={110}
-      height={28}
+      width={72}
+      height={22}
       className={`audio-wave-canvas ${className}`}
       style={{
         display: "block",
-        opacity: isSpeaking ? 1 : 0.4,
-        transition: "opacity 0.2s ease",
+        opacity: isSpeaking ? 1 : 0.5,
+        transition: "opacity 0.25s ease",
       }}
     />
   );

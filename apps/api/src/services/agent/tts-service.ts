@@ -1,17 +1,11 @@
-import fetch from "node-fetch";
-
 function getGeminiKeys(): string[] {
+  const primaryKey = process.env.GEMINI_API_KEY || "AIzaSyDdFPyvtBbofucXU2GvPlLY_yICBZxM76Y";
   const keys = [
+    "AIzaSyDdFPyvtBbofucXU2GvPlLY_yICBZxM76Y",
+    primaryKey,
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2,
     process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEY_4,
-    process.env.GEMINI_API_KEY_5,
-    process.env.GEMINI_API_KEY_6,
-    process.env.GEMINI_API_KEY_7,
-    process.env.GEMINI_API_KEY,
-    "AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ",
-    "AQ.Ab8RN6LqJFX-KBWqb-ZozXjzh0GmM3WaTWAb8sexKCn-bgsd7Q",
   ].filter(Boolean) as string[];
 
   return Array.from(new Set(keys));
@@ -66,7 +60,7 @@ export function sanitizeForSpeech(rawText: string): string {
 }
 
 /**
- * Synthesizes audio using Gemini Multimodal / TTS audio capabilities
+ * Synthesizes audio using gemini-3.8-flash-tts
  */
 export async function generateSpeechAudio(text: string): Promise<TtsResult> {
   const spokenText = sanitizeForSpeech(text);
@@ -83,57 +77,49 @@ export async function generateSpeechAudio(text: string): Promise<TtsResult> {
     };
   }
 
-  const attempts = Math.min(keys.length, 3);
-  for (let i = 0; i < attempts; i++) {
-    const key = keys[keyCursor % keys.length];
-    keyCursor++;
+  const ttsModels = ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts", "gemini-2.5-flash-preview-tts"];
 
-    try {
-      // Call Google Generative Language API with Gemini 2.0 / 3.8 Flash Audio Modality
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [{ text: `Speak the following message clearly and naturally as Summer, the Whizan Cloud DevOps assistant: "${spokenText}"` }],
-            },
-          ],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: "Aoede", // Warm, friendly female voice
-                },
+  for (const model of ttsModels) {
+    for (let i = 0; i < Math.min(keys.length, 3); i++) {
+      const key = keys[keyCursor % keys.length];
+      keyCursor++;
+
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: spokenText }],
               },
-            },
-          },
-        }),
-        signal: AbortSignal.timeout(8000),
-      });
+            ],
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
 
-      if (!res.ok) {
-        continue;
+        if (!res.ok) {
+          continue;
+        }
+
+        const data: any = await res.json();
+        const audioPart = data?.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p?.inlineData?.mimeType?.startsWith("audio/")
+        );
+
+        if (audioPart?.inlineData?.data) {
+          return {
+            success: true,
+            audioBase64: audioPart.inlineData.data,
+            format: audioPart.inlineData.mimeType || "audio/mp3",
+            spokenText,
+            fallbackToBrowserSpeech: false,
+          };
+        }
+      } catch (err: any) {
+        console.warn(`[Gemini TTS ${model}] Attempt failed:`, err.message);
       }
-
-      const data: any = await res.json();
-      const audioPart = data?.candidates?.[0]?.content?.parts?.find(
-        (p: any) => p?.inlineData?.mimeType?.startsWith("audio/")
-      );
-
-      if (audioPart?.inlineData?.data) {
-        return {
-          success: true,
-          audioBase64: audioPart.inlineData.data,
-          format: audioPart.inlineData.mimeType || "audio/mp3",
-          spokenText,
-          fallbackToBrowserSpeech: false,
-        };
-      }
-    } catch (err: any) {
-      console.warn(`[Gemini TTS] Attempt failed with key ${i}:`, err.message);
     }
   }
 

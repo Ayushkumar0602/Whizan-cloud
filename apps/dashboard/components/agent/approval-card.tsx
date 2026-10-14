@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Check, X, Edit3, Loader2 } from "lucide-react";
+import { ShieldCheck, Check, X, Edit3, Loader2, AlertTriangle } from "lucide-react";
 import { agentApi } from "@/lib/api";
 
 interface ApprovalCardProps {
@@ -31,7 +31,7 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
     if (decision === "APPROVE" && editing) {
       try {
         parsedParams = JSON.parse(editedParams);
-      } catch (err: any) {
+      } catch {
         setErrorMsg("Invalid JSON parameters format.");
         setLoading(false);
         return;
@@ -61,10 +61,10 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
     <div
       style={{
         margin: "12px 0",
-        borderRadius: "12px",
-        background: "linear-gradient(145deg, rgba(245, 158, 11, 0.08), rgba(15, 23, 42, 0.6))",
-        border: "1px solid rgba(245, 158, 11, 0.35)",
-        boxShadow: "0 8px 24px rgba(245, 158, 11, 0.12)",
+        borderRadius: "10px",
+        background: "#ffffff",
+        border: "1px solid #fde68a",
+        boxShadow: "0 4px 16px rgba(245, 158, 11, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)",
         overflow: "hidden",
         fontSize: "0.82rem",
       }}
@@ -76,113 +76,195 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "10px 14px",
-          background: "rgba(245, 158, 11, 0.12)",
-          borderBottom: "1px solid rgba(245, 158, 11, 0.2)",
+          background: "linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%)",
+          borderBottom: "1px solid #fde68a",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <ShieldAlert size={16} style={{ color: "#f59e0b" }} />
-          <span style={{ fontWeight: 700, color: "#fef3c7" }}>
-            Action Verification Required
-          </span>
+          <div
+            style={{
+              width: "24px",
+              height: "24px",
+              borderRadius: "6px",
+              background: "#fef3c7",
+              border: "1px solid #fcd34d",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#b45309",
+            }}
+          >
+            <ShieldCheck size={14} />
+          </div>
+          <div>
+            <span style={{ fontWeight: 700, color: "#92400e", fontSize: "0.82rem" }}>
+              Human Approval Required
+            </span>
+          </div>
         </div>
         <span
           style={{
-            fontSize: "0.7rem",
-            fontWeight: 600,
+            fontSize: "0.68rem",
+            fontWeight: 700,
             padding: "2px 8px",
             borderRadius: "12px",
-            background: "rgba(245, 158, 11, 0.2)",
-            color: "#fbbf24",
-            border: "1px solid rgba(245, 158, 11, 0.4)",
+            background: "#fef3c7",
+            color: "#b45309",
+            border: "1px solid #fcd34d",
           }}
         >
-          {pendingAction.riskTier || "TIER_2"} Gate
+          {pendingAction.riskTier || "TIER_2"}
         </span>
       </div>
 
       {/* Body */}
       <div style={{ padding: "12px 14px" }}>
-        <p style={{ margin: "0 0 10px 0", color: "#e2e8f0", lineHeight: 1.45 }}>
+        <p style={{ margin: "0 0 8px 0", color: "#334155", lineHeight: 1.5 }}>
           {pendingAction.explanation}
         </p>
 
-        <div style={{ marginBottom: "10px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            fontSize: "0.74rem",
+            color: "#64748b",
+            marginBottom: "6px",
+          }}
+        >
+          <span>Target action:</span>
+          <code
+            style={{
+              background: "#f1f5f9",
+              color: "#4f46e5",
+              padding: "1px 6px",
+              borderRadius: "4px",
+              fontFamily: "ui-monospace, monospace",
+              fontWeight: 600,
+            }}
+          >
+            {pendingAction.toolName}
+          </code>
+        </div>
+
+        {/* Parameters Section */}
+        <div style={{ marginTop: "10px" }}>
           <div
             style={{
               display: "flex",
-              justifyContent: "space-between",
               alignItems: "center",
+              justifyContent: "space-between",
               marginBottom: "4px",
             }}
           >
-            <span style={{ fontSize: "0.72rem", color: "var(--muted, #94a3b8)", fontWeight: 600 }}>
-              Action: <code style={{ color: "#00f0ff" }}>{pendingAction.toolName}</code>
+            <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>
+              Parameters
             </span>
             <button
               type="button"
               onClick={() => setEditing(!editing)}
               style={{
-                background: "transparent",
-                border: "none",
-                color: editing ? "#a855f7" : "var(--muted, #94a3b8)",
-                fontSize: "0.72rem",
                 display: "flex",
                 alignItems: "center",
                 gap: "4px",
+                background: "transparent",
+                border: "none",
+                color: "#4f46e5",
+                fontSize: "0.72rem",
+                fontWeight: 600,
                 cursor: "pointer",
               }}
             >
               <Edit3 size={11} />
-              {editing ? "Cancel Edit" : "Edit Parameters"}
+              <span>{editing ? "Cancel Edit" : "Edit JSON"}</span>
             </button>
           </div>
 
           {editing ? (
             <textarea
+              rows={4}
               value={editedParams}
               onChange={(e) => setEditedParams(e.target.value)}
-              rows={4}
               style={{
                 width: "100%",
-                padding: "8px",
-                background: "#080c14",
-                border: "1px solid rgba(168, 85, 247, 0.4)",
+                padding: "8px 10px",
                 borderRadius: "6px",
-                color: "#e2e8f0",
-                fontFamily: "monospace",
+                background: "#0f172a",
+                color: "#f8fafc",
                 fontSize: "0.74rem",
+                fontFamily: "ui-monospace, monospace",
+                border: "1px solid #334155",
                 outline: "none",
+                resize: "vertical",
               }}
             />
           ) : (
             <pre
               style={{
                 margin: 0,
-                padding: "8px",
-                background: "#080c14",
+                padding: "8px 10px",
                 borderRadius: "6px",
-                border: "1px solid rgba(255, 255, 255, 0.06)",
+                background: "#090d16",
                 color: "#cbd5e1",
-                fontFamily: "monospace",
                 fontSize: "0.72rem",
-                maxHeight: "120px",
-                overflowY: "auto",
+                fontFamily: "ui-monospace, monospace",
+                overflowX: "auto",
+                border: "1px solid #1e293b",
               }}
             >
-              {JSON.stringify(pendingAction.parameters, null, 2)}
+              {JSON.stringify(pendingAction.parameters || {}, null, 2)}
             </pre>
           )}
         </div>
 
         {errorMsg && (
-          <div style={{ color: "#ef4444", fontSize: "0.75rem", marginBottom: "10px" }}>
-            {errorMsg}
+          <div
+            style={{
+              marginTop: "8px",
+              padding: "6px 10px",
+              borderRadius: "6px",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#b91c1c",
+              fontSize: "0.72rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <AlertTriangle size={12} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Buttons */}
-        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "12px" }}>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => handleDecision("APPROVE")}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px",
+              padding: "7px 12px",
+              borderRadius: "6px",
+              background: "linear-gradient(180deg, #059669 0%, #047857 100%)",
+              color: "#ffffff",
+              border: "none",
+              fontWeight: 600,
+              fontSize: "0.78rem",
+              cursor: loading ? "not-allowed" : "pointer",
+              boxShadow: "0 1px 3px rgba(4, 120, 87, 0.3)",
+            }}
+          >
+            {loading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+            <span>Approve & Execute</span>
+          </button>
+
           <button
             type="button"
             disabled={loading}
@@ -190,42 +272,20 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "5px",
-              padding: "6px 14px",
+              justifyContent: "center",
+              gap: "4px",
+              padding: "7px 12px",
               borderRadius: "6px",
-              border: "1px solid rgba(239, 68, 68, 0.4)",
-              background: "rgba(239, 68, 68, 0.08)",
-              color: "#fca5a5",
-              fontSize: "0.78rem",
+              background: "#f1f5f9",
+              color: "#475569",
+              border: "1px solid #cbd5e1",
               fontWeight: 600,
+              fontSize: "0.78rem",
               cursor: loading ? "not-allowed" : "pointer",
             }}
           >
             <X size={13} />
-            Reject
-          </button>
-
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => handleDecision("APPROVE")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "5px",
-              padding: "6px 16px",
-              borderRadius: "6px",
-              border: "none",
-              background: "linear-gradient(135deg, #10b981, #059669)",
-              color: "#ffffff",
-              fontSize: "0.78rem",
-              fontWeight: 700,
-              cursor: loading ? "not-allowed" : "pointer",
-              boxShadow: "0 2px 8px rgba(16, 185, 129, 0.3)",
-            }}
-          >
-            {loading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            Approve & Run
+            <span>Reject</span>
           </button>
         </div>
       </div>
