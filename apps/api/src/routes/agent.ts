@@ -59,12 +59,28 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
     const { userId } = request.user;
 
+    // Determine CORS origin — reply.raw bypasses @fastify/cors so we set headers manually
+    const reqOrigin = request.headers.origin || "";
+    const originAllowed =
+      !reqOrigin ||
+      reqOrigin === (process.env.DASHBOARD_URL || "http://localhost:3000") ||
+      /^https?:\/\/[a-z0-9-]+\.onrender\.com$/.test(reqOrigin) ||
+      /^https?:\/\/[a-z0-9-]+\.vercel\.app$/.test(reqOrigin) ||
+      /^http:\/\/localhost(:\d+)?$/.test(reqOrigin) ||
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(reqOrigin);
+
     // Set SSE headers (disable Fastify serialization, write raw)
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no", // Prevent Nginx buffering
+      ...(originAllowed && reqOrigin
+        ? {
+            "Access-Control-Allow-Origin": reqOrigin,
+            "Access-Control-Allow-Credentials": "true",
+          }
+        : {}),
     });
 
     await handleAgentChatStream(
