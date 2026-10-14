@@ -4,24 +4,7 @@ import { evaluateToolCall } from "./guardrails.js";
 import { SUMMER_TOOL_DEFINITIONS, executeAgentTool } from "./tools-registry.js";
 import { generateSpeechAudio, type TtsResult } from "./tts-service.js";
 
-function getGeminiKeys(): string[] {
-  const primaryKey = process.env.GEMINI_API_KEY || "AIzaSyDdFPyvtBbofucXU2GvPlLY_yICBZxM76Y";
-  const keys = [
-    "AIzaSyDdFPyvtBbofucXU2GvPlLY_yICBZxM76Y",
-    primaryKey,
-    process.env.GEMINI_API_KEY_1,
-    process.env.GEMINI_API_KEY_2,
-    process.env.GEMINI_API_KEY_3,
-    process.env.GEMINI_API_KEY_4,
-    process.env.GEMINI_API_KEY_5,
-    process.env.GEMINI_API_KEY_6,
-    process.env.GEMINI_API_KEY_7,
-  ].filter(Boolean) as string[];
-
-  return Array.from(new Set(keys));
-}
-
-let keyIndex = 0;
+import { getActiveKey, rotateToNextKey, getKeyCount } from "./key-pool.js";
 
 export interface AgentChatInput {
   userId: string;
@@ -164,7 +147,6 @@ export async function handleAgentChat(input: AgentChatInput): Promise<AgentChatR
       },
     };
 
-    const keys = getGeminiKeys();
     let geminiResponse: any = null;
     const thinkingModels = [
       "gemini-3.8-flash",
@@ -174,12 +156,13 @@ export async function handleAgentChat(input: AgentChatInput): Promise<AgentChatR
       "gemini-3.5-flash",
     ];
 
+    const totalKeys = getKeyCount();
+
     for (const model of thinkingModels) {
       if (geminiResponse) break;
 
-      for (let attempt = 0; attempt < Math.min(keys.length, 2); attempt++) {
-        const key = keys[keyIndex % keys.length];
-        keyIndex++;
+      for (let attempt = 0; attempt < Math.min(totalKeys, 4); attempt++) {
+        const key = getActiveKey();
 
         try {
           const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
@@ -187,21 +170,29 @@ export async function handleAgentChat(input: AgentChatInput): Promise<AgentChatR
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(geminiPayload),
-            signal: AbortSignal.timeout(8000),
+            signal: AbortSignal.timeout(10000),
           });
 
           if (res.ok) {
             geminiResponse = await res.json();
+            // Sticky: current key succeeded, remains sticky
             break;
           }
 
-          // If the model is currently overloaded (503) or rate-limited (429), immediately fall back to next model
-          if (res.status === 503 || res.status === 429) {
-            console.warn(`[Agent LLM ${model}] Model overloaded (${res.status}), transitioning to fallback...`);
+          // If rate-limited or auth failed, advance to next key and stick with it
+          if (res.status === 429 || res.status === 401 || res.status === 403) {
+            rotateToNextKey(`LLM HTTP ${res.status}`);
+            continue;
+          }
+
+          // If the model itself is temporarily overloaded (503), transition to fallback model
+          if (res.status === 503) {
+            console.warn(`[Agent LLM ${model}] Model overloaded (503), transitioning to fallback...`);
             break;
           }
         } catch (err: any) {
-          console.warn(`[Agent LLM ${model}] Attempt ${attempt} failed:`, err.message);
+          console.warn(`[Agent LLM ${model}] Attempt failed:`, err.message);
+          rotateToNextKey(`LLM error: ${err.message}`);
         }
       }
     }
