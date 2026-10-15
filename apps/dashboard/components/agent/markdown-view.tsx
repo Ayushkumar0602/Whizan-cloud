@@ -24,6 +24,9 @@ const M = {
 };
 
 export function MarkdownView({ content }: MarkdownViewProps) {
+  if (!content || content.trim() === "" || content.trim() === "undefined") {
+    return null;
+  }
   const elements = parseMarkdownBlocks(content);
   return <div style={{ color: M.text, fontSize: "0.84rem", lineHeight: 1.6 }}>{elements}</div>;
 }

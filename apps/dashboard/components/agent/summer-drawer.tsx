@@ -185,7 +185,7 @@ export function SummerDrawer() {
                 data.messages.map((m: any) => ({
                   id: m.id,
                   role: m.role,
-                  content: m.content,
+                  content: m.content || "",
                   toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
                   createdAt: m.createdAt,
                 }))
@@ -250,7 +250,7 @@ export function SummerDrawer() {
           data.messages.map((m: any) => ({
             id: m.id,
             role: m.role,
-            content: m.content,
+            content: m.content || "",
             toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
             createdAt: m.createdAt,
           }))
@@ -487,11 +487,12 @@ export function SummerDrawer() {
               break;
 
             case "step": {
-              const existingIdx = collectedSteps.findIndex((s) => s.id === evt.stepId);
+              const stepId = evt.stepId || `step-${Date.now()}`;
+              const existingIdx = collectedSteps.findIndex((s) => s.id === stepId);
               const stepObj: ActiveStep = {
-                id: evt.stepId,
+                id: stepId,
                 message: evt.message,
-                status: evt.status,
+                status: evt.status || "running",
                 durationMs: evt.durationMs,
                 toolName: evt.toolName,
               };
@@ -502,27 +503,39 @@ export function SummerDrawer() {
               }
               setActiveSteps([...collectedSteps]);
               setAgentState(evt.toolName ? "executing" : "thinking");
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, steps: [...collectedSteps] } : m
+                )
+              );
               break;
             }
 
             case "tool_start": {
+              const toolName = evt.toolName || evt.name || "devops_tool";
               const startStep: ActiveStep = {
-                id: `tool-${evt.toolName}-${Date.now()}`,
-                message: `Executing ${evt.toolName}…`,
+                id: `tool-${toolName}-${Date.now()}`,
+                message: `Executing ${toolName}…`,
                 status: "running",
-                toolName: evt.toolName,
+                toolName: toolName,
               };
               collectedSteps.push(startStep);
               setActiveSteps([...collectedSteps]);
               setAgentState("executing");
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, steps: [...collectedSteps] } : m
+                )
+              );
               break;
             }
 
             case "tool_result": {
+              const toolName = evt.toolName || evt.name;
               const targetIdx = collectedSteps
                 .slice()
                 .reverse()
-                .findIndex((s) => s.toolName === evt.toolName);
+                .findIndex((s) => s.toolName === toolName || s.id.includes(toolName));
               if (targetIdx >= 0) {
                 const actualIdx = collectedSteps.length - 1 - targetIdx;
                 collectedSteps[actualIdx].status = evt.error ? "error" : "done";
@@ -532,23 +545,39 @@ export function SummerDrawer() {
                 setActiveSteps([...collectedSteps]);
               }
               toolCalls.push({
-                name: evt.toolName,
+                name: toolName,
                 parameters: evt.parameters,
                 result: evt.result,
                 error: evt.error,
+                durationMs: evt.durationMs,
               });
-              break;
-            }
-
-            case "text":
-              assistantText += evt.delta;
-              setAgentState("streaming");
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: assistantText } : m
+                  m.id === assistantMsgId
+                    ? { ...m, steps: [...collectedSteps], toolCalls: [...toolCalls] }
+                    : m
                 )
               );
               break;
+            }
+
+            case "text": {
+              const textContent = evt.content ?? evt.delta ?? evt.text ?? "";
+              if (evt.content !== undefined) {
+                assistantText = evt.content;
+              } else if (textContent) {
+                assistantText += textContent;
+              }
+              setAgentState("streaming");
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: assistantText, steps: [...collectedSteps] }
+                    : m
+                )
+              );
+              break;
+            }
 
             case "hitl":
               pendingAction = evt.action;
@@ -577,6 +606,9 @@ export function SummerDrawer() {
               break;
 
             case "done":
+              if (evt.fullText && (!assistantText || assistantText === "undefined" || assistantText.trim() === "")) {
+                assistantText = evt.fullText;
+              }
               setAgentState("idle");
               break;
 
@@ -620,7 +652,7 @@ export function SummerDrawer() {
             loadSessions();
           }
 
-          assistantText = res.message || "";
+          assistantText = res.message || (res as any).text || (res as any).content || "";
           toolCalls = res.toolExecutions || [];
           pendingAction = res.pendingAction || null;
           audioData = res.audio || null;
@@ -654,6 +686,11 @@ export function SummerDrawer() {
       }
     }
 
+    // Safeguard: Ensure assistantText is never "undefined" or empty
+    if (!assistantText || assistantText === "undefined" || assistantText.trim() === "") {
+      assistantText = "I have completed your request.";
+    }
+
     // Final message state update
     setMessages((prev) => {
       const exists = prev.find((m) => m.id === assistantMsgId);
@@ -677,7 +714,7 @@ export function SummerDrawer() {
     setAgentState("idle");
     abortRef.current = null;
 
-    // Play descriptive voice audio after completion
+    // Play concise voice audio after completion
     if (audioData && voiceEnabled) {
       playSpeech(audioData);
     }
@@ -725,225 +762,7 @@ export function SummerDrawer() {
     ];
   })();
 
-  // ─── Coding Agent Execution Deck (Live Telemetry Console) ───────────────
-
-  function renderCodingAgentDeck() {
-    if (activeSteps.length === 0 && agentState === "idle") return null;
-
-    return (
-      <div
-        style={{
-          margin: "10px 14px 4px",
-          borderRadius: "10px",
-          background: T.bgSubtle,
-          border: `1px solid ${T.border}`,
-          overflow: "hidden",
-          boxShadow: T.cardShadow,
-        }}
-      >
-        {/* Status Bar */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "8px 12px",
-            background: "#ffffff",
-            borderBottom: `1px solid ${T.borderLight}`,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                background: agentState !== "idle" ? T.accent : T.success,
-                boxShadow:
-                  agentState !== "idle" ? "0 0 8px rgba(79, 70, 229, 0.6)" : "none",
-                animation: agentState !== "idle" ? "summerPulse 1.5s infinite" : "none",
-              }}
-            />
-            <span
-              style={{
-                fontSize: "0.74rem",
-                fontWeight: 700,
-                color: T.text,
-                letterSpacing: "-0.01em",
-              }}
-            >
-              {agentState !== "idle" ? "DevOps Agent Working" : "Execution Finished"}
-            </span>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {agentState !== "idle" && (
-              <span
-                style={{
-                  fontSize: "0.68rem",
-                  color: T.accent,
-                  fontFamily: "monospace",
-                  fontWeight: 600,
-                }}
-              >
-                {elapsedSeconds}s
-              </span>
-            )}
-            <span
-              style={{
-                fontSize: "0.68rem",
-                padding: "2px 7px",
-                borderRadius: "6px",
-                background: T.bgInset,
-                color: T.textSecondary,
-                fontWeight: 600,
-              }}
-            >
-              {activeSteps.length} {activeSteps.length === 1 ? "step" : "steps"}
-            </span>
-          </div>
-        </div>
-
-        {/* Steps List */}
-        <div
-          style={{
-            padding: "6px 8px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "5px",
-            maxHeight: "220px",
-            overflowY: "auto",
-          }}
-        >
-          {activeSteps.map((step) => {
-            const Icon = getToolIcon(step.toolName);
-            return (
-              <div
-                key={step.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "6px 10px",
-                  borderRadius: "7px",
-                  background: "#ffffff",
-                  border: `1px solid ${
-                    step.status === "running" ? T.borderActive : T.borderLight
-                  }`,
-                  fontSize: "0.74rem",
-                  color: T.text,
-                  transition: "all 0.2s ease",
-                  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
-                }}
-              >
-                <div
-                  style={{
-                    width: "20px",
-                    height: "20px",
-                    borderRadius: "5px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background:
-                      step.status === "running"
-                        ? "rgba(79, 70, 229, 0.1)"
-                        : step.status === "done"
-                        ? T.successBg
-                        : T.errorBg,
-                    color:
-                      step.status === "running"
-                        ? T.accent
-                        : step.status === "done"
-                        ? T.success
-                        : T.error,
-                  }}
-                >
-                  {step.status === "running" ? (
-                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
-                  ) : step.status === "done" ? (
-                    <CheckCircle2 size={12} />
-                  ) : (
-                    <AlertCircle size={12} />
-                  )}
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    {step.toolName && (
-                      <span
-                        style={{
-                          fontFamily: "ui-monospace, monospace",
-                          fontWeight: 600,
-                          fontSize: "0.7rem",
-                          color: T.accent,
-                          background: "rgba(79, 70, 229, 0.06)",
-                          padding: "1px 5px",
-                          borderRadius: "4px",
-                        }}
-                      >
-                        {step.toolName}
-                      </span>
-                    )}
-                    <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        color: T.textSecondary,
-                      }}
-                    >
-                      {step.message}
-                    </span>
-                  </div>
-                </div>
-
-                {step.durationMs !== undefined && (
-                  <span
-                    style={{
-                      fontSize: "0.65rem",
-                      color: T.textMuted,
-                      fontFamily: "monospace",
-                    }}
-                  >
-                    {step.durationMs < 1000
-                      ? `${step.durationMs}ms`
-                      : `${(step.durationMs / 1000).toFixed(1)}s`}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-
-          {agentState === "thinking" && activeSteps.length === 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "8px 10px",
-                borderRadius: "7px",
-                background: "#ffffff",
-                border: `1px solid ${T.borderLight}`,
-                fontSize: "0.74rem",
-                color: T.accent,
-              }}
-            >
-              <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
-              <span>Analyzing infrastructure state…</span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Inline Tool Inspector for Completed Messages ────────────────────────
+  // ─── Inline Tool Execution Card (Collapsible Monospace Drawer) ──────────
 
   function ToolExecutionCard({ tool }: { tool: any }) {
     const [expanded, setExpanded] = useState(false);
@@ -953,7 +772,7 @@ export function SummerDrawer() {
     return (
       <div
         style={{
-          margin: "6px 0",
+          margin: "5px 0",
           borderRadius: "8px",
           background: T.bgSubtle,
           border: `1px solid ${isErr ? T.errorBorder : T.border}`,
@@ -967,7 +786,7 @@ export function SummerDrawer() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "7px 10px",
+            padding: "6px 10px",
             cursor: "pointer",
             userSelect: "none",
             background: "#ffffff",
@@ -1014,7 +833,7 @@ export function SummerDrawer() {
                   border: `1px solid ${T.successBorder}`,
                 }}
               >
-                Executed
+                Executed {tool.durationMs ? `(${tool.durationMs}ms)` : ""}
               </span>
             )}
             {expanded ? (
@@ -1045,7 +864,7 @@ export function SummerDrawer() {
                     fontWeight: 600,
                   }}
                 >
-                  INPUT PARAMETERS:
+                  PARAMETERS:
                 </div>
                 <pre
                   style={{
@@ -1075,7 +894,7 @@ export function SummerDrawer() {
                     fontWeight: 600,
                   }}
                 >
-                  RESPONSE PAYLOAD:
+                  OUTPUT:
                 </div>
                 <pre
                   style={{
@@ -1347,10 +1166,7 @@ export function SummerDrawer() {
             </div>
           )}
 
-          {/* ── Coding Agent Live Telemetry Console ────────────────── */}
-          {agentState !== "idle" && renderCodingAgentDeck()}
-
-          {/* ── Body Area ─────────────────────────────────────────── */}
+          {/* ── Body Area (Chat Messages with Inline Agent Activity) ─ */}
           {showHistory ? (
             <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: T.bg }}>
               <div
@@ -1449,7 +1265,7 @@ export function SummerDrawer() {
               )}
             </div>
           ) : (
-            /* Chat Messages List */
+            /* Chat Messages List with INLINE Coding Agent Experience */
             <div
               style={{
                 flex: 1,
@@ -1457,134 +1273,293 @@ export function SummerDrawer() {
                 padding: "16px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "12px",
+                gap: "14px",
               }}
             >
-              {messages.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: m.role === "user" ? "flex-end" : "flex-start",
-                  }}
-                >
-                  {m.role === "user" ? (
-                    <div
-                      style={{
-                        maxWidth: "84%",
-                        borderRadius: "14px 14px 2px 14px",
-                        padding: "10px 14px",
-                        fontSize: "0.84rem",
-                        lineHeight: 1.55,
-                        background: T.accentGradient,
-                        color: "#ffffff",
-                        boxShadow: "0 4px 14px rgba(79, 70, 229, 0.25)",
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {m.content}
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        maxWidth: "96%",
-                        borderRadius: "12px",
-                        padding: "12px 16px",
-                        fontSize: "0.84rem",
-                        background: "#ffffff",
-                        border: `1px solid ${T.border}`,
-                        boxShadow: T.cardShadow,
-                        color: T.text,
-                      }}
-                    >
-                      <MarkdownView content={m.content} />
+              {messages.map((m) => {
+                const isCurrentActiveTurn =
+                  m.id.startsWith("asst-") &&
+                  m.id === messages[messages.length - 1]?.id &&
+                  agentState !== "idle";
 
-                      {/* Coding Agent Tool Execution Deck */}
-                      {m.toolCalls && m.toolCalls.length > 0 && (
-                        <div
-                          style={{
-                            marginTop: "10px",
-                            borderTop: `1px solid ${T.borderLight}`,
-                            paddingTop: "8px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontSize: "0.68rem",
-                              fontWeight: 700,
-                              color: T.textSecondary,
-                              marginBottom: "4px",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "5px",
-                            }}
-                          >
-                            <Terminal size={11} style={{ color: T.accent }} />
-                            <span>DEVOPS TOOL ACTIVITY ({m.toolCalls.length})</span>
-                          </div>
-                          {m.toolCalls.map((t: any, i: number) => (
-                            <ToolExecutionCard key={i} tool={t} />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* HITL Action Approval Card */}
-                      {m.pendingAction && (
-                        <div style={{ marginTop: "10px" }}>
-                          <ApprovalCardInline
-                            pendingAction={m.pendingAction}
-                            onResolved={(r) =>
-                              handleSendMessage(
-                                r.success
-                                  ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
-                                  : `Rejected execution: ${r.error || "Cancelled"}.`
-                              )
-                            }
-                          />
-                        </div>
-                      )}
-
-                      {/* Message Actions Footer */}
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: m.role === "user" ? "flex-end" : "flex-start",
+                    }}
+                  >
+                    {m.role === "user" ? (
                       <div
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "flex-end",
-                          gap: "8px",
-                          marginTop: "8px",
-                          paddingTop: "6px",
-                          borderTop: `1px solid ${T.borderLight}`,
+                          maxWidth: "84%",
+                          borderRadius: "14px 14px 2px 14px",
+                          padding: "10px 14px",
+                          fontSize: "0.84rem",
+                          lineHeight: 1.55,
+                          background: T.accentGradient,
+                          color: "#ffffff",
+                          boxShadow: "0 4px 14px rgba(79, 70, 229, 0.25)",
+                          wordBreak: "break-word",
                         }}
                       >
-                        {m.audioData && (
-                          <button
-                            type="button"
-                            onClick={() => playSpeech(m.audioData)}
-                            title="Replay Voice Summary"
-                            style={{ ...tinyBtnStyle }}
-                          >
-                            <Volume2 size={11} />
-                            <span>Replay</span>
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => copyMsg(m.id, m.content)}
-                          title="Copy response"
-                          style={{
-                            ...tinyBtnStyle,
-                            color: copiedMsgId === m.id ? T.success : T.textMuted,
-                          }}
-                        >
-                          {copiedMsgId === m.id ? <Check size={11} /> : <Copy size={11} />}
-                          <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
-                        </button>
+                        {m.content}
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <div
+                        style={{
+                          maxWidth: "96%",
+                          borderRadius: "12px",
+                          padding: "14px 16px",
+                          fontSize: "0.84rem",
+                          background: "#ffffff",
+                          border: `1px solid ${T.border}`,
+                          boxShadow: T.cardShadow,
+                          color: T.text,
+                        }}
+                      >
+                        {/* ── 1. Live Inline Agent Activity Deck (In Chat!) ── */}
+                        {isCurrentActiveTurn && (
+                          <div
+                            style={{
+                              marginBottom: "12px",
+                              paddingBottom: "10px",
+                              borderBottom: `1px solid ${T.borderLight}`,
+                            }}
+                          >
+                            {/* Live Thinking Status Pill */}
+                            <div
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "7px",
+                                padding: "4px 10px",
+                                borderRadius: "6px",
+                                background: "rgba(79, 70, 229, 0.06)",
+                                border: `1px solid ${T.borderActive}`,
+                                fontSize: "0.74rem",
+                                color: T.accent,
+                                fontWeight: 600,
+                                marginBottom: "8px",
+                              }}
+                            >
+                              <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                              <span>
+                                {agentState === "thinking"
+                                  ? "Thinking… Inspecting cloud environment"
+                                  : "DevOps Agent Executing…"}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "0.68rem",
+                                  color: T.textMuted,
+                                  fontFamily: "monospace",
+                                  marginLeft: "4px",
+                                }}
+                              >
+                                {elapsedSeconds}s
+                              </span>
+                            </div>
+
+                            {/* Live Steps being executed in this turn */}
+                            {activeSteps.length > 0 && (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "5px",
+                                  marginTop: "4px",
+                                }}
+                              >
+                                {activeSteps.map((step) => {
+                                  const Icon = getToolIcon(step.toolName);
+                                  return (
+                                    <div
+                                      key={step.id}
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "7px",
+                                        padding: "6px 9px",
+                                        borderRadius: "6px",
+                                        background: T.bgSubtle,
+                                        border: `1px solid ${
+                                          step.status === "running"
+                                            ? T.borderActive
+                                            : T.borderLight
+                                        }`,
+                                        fontSize: "0.73rem",
+                                      }}
+                                    >
+                                      {step.status === "running" ? (
+                                        <Loader2
+                                          size={11}
+                                          style={{
+                                            color: T.accent,
+                                            animation: "spin 1s linear infinite",
+                                          }}
+                                        />
+                                      ) : step.status === "done" ? (
+                                        <CheckCircle2 size={12} style={{ color: T.success }} />
+                                      ) : (
+                                        <AlertCircle size={12} style={{ color: T.error }} />
+                                      )}
+                                      {step.toolName && (
+                                        <span
+                                          style={{
+                                            fontFamily: "monospace",
+                                            fontWeight: 600,
+                                            color: T.accent,
+                                            background: "#ffffff",
+                                            padding: "1px 5px",
+                                            borderRadius: "4px",
+                                            border: `1px solid ${T.border}`,
+                                          }}
+                                        >
+                                          {step.toolName}
+                                        </span>
+                                      )}
+                                      <span
+                                        style={{
+                                          color: T.textSecondary,
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        {step.message}
+                                      </span>
+                                      {step.durationMs !== undefined && (
+                                        <span
+                                          style={{
+                                            marginLeft: "auto",
+                                            fontSize: "0.64rem",
+                                            color: T.textMuted,
+                                            fontFamily: "monospace",
+                                          }}
+                                        >
+                                          {step.durationMs}ms
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* ── 2. Completed DevOps Tool Activity (Collapsible in message) ── */}
+                        {m.toolCalls && m.toolCalls.length > 0 && !isCurrentActiveTurn && (
+                          <div
+                            style={{
+                              marginBottom: "10px",
+                              paddingBottom: "8px",
+                              borderBottom: `1px solid ${T.borderLight}`,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: "0.68rem",
+                                fontWeight: 700,
+                                color: T.textSecondary,
+                                marginBottom: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "5px",
+                              }}
+                            >
+                              <Terminal size={11} style={{ color: T.accent }} />
+                              <span>DEVOPS ACTIONS EXECUTED ({m.toolCalls.length})</span>
+                            </div>
+                            {m.toolCalls.map((t: any, i: number) => (
+                              <ToolExecutionCard key={i} tool={t} />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* ── 3. Streaming or Final Assistant Response ── */}
+                        {m.content &&
+                        m.content.trim().length > 0 &&
+                        m.content !== "undefined" ? (
+                          <MarkdownView content={m.content} />
+                        ) : isCurrentActiveTurn ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              color: T.textMuted,
+                              fontSize: "0.78rem",
+                              marginTop: "4px",
+                            }}
+                          >
+                            <span>Synthesizing response</span>
+                            <span style={{ animation: "summerPulse 1.2s infinite" }}>…</span>
+                          </div>
+                        ) : null}
+
+                        {/* ── 4. Human Approval Card ── */}
+                        {m.pendingAction && (
+                          <div style={{ marginTop: "10px" }}>
+                            <ApprovalCardInline
+                              pendingAction={m.pendingAction}
+                              onResolved={(r) =>
+                                handleSendMessage(
+                                  r.success
+                                    ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
+                                    : `Rejected execution: ${r.error || "Cancelled"}.`
+                                )
+                              }
+                            />
+                          </div>
+                        )}
+
+                        {/* ── 5. Message Actions Footer (Replay & Copy) ── */}
+                        {!isCurrentActiveTurn && (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                              gap: "8px",
+                              marginTop: "8px",
+                              paddingTop: "6px",
+                              borderTop: `1px solid ${T.borderLight}`,
+                            }}
+                          >
+                            {m.audioData && (
+                              <button
+                                type="button"
+                                onClick={() => playSpeech(m.audioData)}
+                                title="Replay Voice Summary"
+                                style={{ ...tinyBtnStyle }}
+                              >
+                                <Volume2 size={11} />
+                                <span>Replay</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => copyMsg(m.id, m.content)}
+                              title="Copy response"
+                              style={{
+                                ...tinyBtnStyle,
+                                color: copiedMsgId === m.id ? T.success : T.textMuted,
+                              }}
+                            >
+                              {copiedMsgId === m.id ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
           )}

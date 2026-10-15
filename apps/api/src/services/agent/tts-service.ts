@@ -72,17 +72,17 @@ export async function summarizeForSpokenVoice(rawText: string, toolExecutions?: 
             {
               parts: [
                 {
-                  text: `You are Summer, a friendly and highly capable cloud DevOps engineer on Whizan Cloud.
-Generate a clear, engaging, and descriptive spoken executive summary for voice narration.
-- Explain what background tasks or diagnostic tools you performed under the hood.
-- Clearly describe the final outcome, health status, or metrics in precise detail.
-- Keep the narration conversational, warm, and natural (between 3 to 5 clear sentences, approximately 50 to 90 words).
+                  text: `You are Summer, an expert DevOps AI on Whizan Cloud.
+Generate a short, information-full, and concise spoken summary for voice narration.
+- Briefly mention what diagnostic actions or tools you executed (if any).
+- Directly state the key outcome, health status, or core answer with high information density.
+- Keep it natural, conversational, and concise (exactly 2 to 3 crisp sentences, under 55 words).
 - Do NOT read raw code, markdown table pipes, json brackets, URLs, or hashes.
 - Speak in complete, fluid sentences suitable for voice narration.
 
-Underlying tools executed: ${toolsRan}
+Tools executed: ${toolsRan}
 
-Response to explain:
+Full response:
 ${rawText}`,
                 },
               ],
@@ -104,15 +104,15 @@ ${rawText}`,
     console.warn("[TTS Summarizer] Micro-summary fallback:", err.message);
   }
 
-  // Graceful grammatical sentence boundary extraction (3-4 sentences, never cut off mid-sentence)
+  // Graceful grammatical sentence boundary extraction (2-3 sentences, never cut off mid-sentence)
   const cleaned = sanitizeForSpeech(rawText);
   const sentences = cleaned.match(/[^.!?]+[.!?]+/g);
   if (sentences && sentences.length > 0) {
-    const descriptiveSlice = sentences.slice(0, 4).join(" ").trim();
-    if (descriptiveSlice.length > 30) return descriptiveSlice;
+    const conciseSlice = sentences.slice(0, 3).join(" ").trim();
+    if (conciseSlice.length > 25) return conciseSlice;
   }
 
-  return cleaned.slice(0, 380).trim();
+  return cleaned.slice(0, 240).trim();
 }
 
 /**

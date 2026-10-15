@@ -23,9 +23,9 @@ export interface AgentChatInput {
 export type AgentStreamEvent =
   | { type: "session"; sessionId: string }
   | { type: "step"; message: string }
-  | { type: "tool_start"; name: string; parameters: any }
-  | { type: "tool_result"; name: string; result?: any; error?: string; durationMs: number }
-  | { type: "text"; content: string }
+  | { type: "tool_start"; name: string; toolName?: string; parameters: any }
+  | { type: "tool_result"; name: string; toolName?: string; result?: any; error?: string; durationMs: number }
+  | { type: "text"; content: string; delta?: string }
   | { type: "hitl"; actionId: string; toolName: string; parameters: any; riskTier: string; explanation: string }
   | { type: "navigate"; path: string; label?: string }
   | { type: "open_url"; url: string }
@@ -233,7 +233,7 @@ export async function handleAgentChatStream(
       const textParts = parts.filter((p: any) => p.text).map((p: any) => p.text);
       if (textParts.length > 0) {
         finalText = textParts.join("\n");
-        emit({ type: "text", content: finalText });
+        emit({ type: "text", content: finalText, delta: finalText });
       }
 
       // Extract function calls
@@ -261,7 +261,7 @@ export async function handleAgentChatStream(
         // Tier 3: Blocked
         if (!guardrail.allowed) {
           const error = `BLOCKED BY SECURITY POLICY: ${guardrail.reason}`;
-          emit({ type: "tool_result", name, error, durationMs: 0 });
+          emit({ type: "tool_result", name, toolName: name, error, durationMs: 0 });
           toolExecutions.push({ name, parameters: args, error });
           toolResponses.push({
             functionResponse: { name, response: { error } },
@@ -299,7 +299,7 @@ export async function handleAgentChatStream(
 
           if (!finalText) {
             finalText = `I've prepared the parameters to run **${name}**. Please review and approve below.`;
-            emit({ type: "text", content: finalText });
+            emit({ type: "text", content: finalText, delta: finalText });
           }
 
           hitlHalted = true;
@@ -307,7 +307,7 @@ export async function handleAgentChatStream(
         }
 
         // Tier 1: Execute immediately
-        emit({ type: "tool_start", name, parameters: args || {} });
+        emit({ type: "tool_start", name, toolName: name, parameters: args || {} });
         const t0 = Date.now();
 
         const result = await executeAgentTool(name, args || {}, userId);
@@ -316,6 +316,7 @@ export async function handleAgentChatStream(
         emit({
           type: "tool_result",
           name,
+          toolName: name,
           result: result.data,
           error: result.error,
           durationMs,
