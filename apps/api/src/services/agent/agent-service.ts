@@ -166,7 +166,21 @@ export async function handleAgentChatStream(
     });
 
     const cleanMsg = message.trim().toLowerCase();
-    const isAffirmative = /^(yes|yeah|yep|sure|approve|proceed|confirm|do it|go ahead|redeploy_resource|redeploy)$/i.test(cleanMsg);
+
+    // Guard against legacy client message echo to prevent re-prompt loops
+    if (cleanMsg.startsWith("confirmed: approved execution of") || cleanMsg.startsWith("rejected execution:")) {
+      const ackText = cleanMsg.startsWith("confirmed: approved")
+        ? "Action confirmed and executed."
+        : "Action was cancelled.";
+      emit({ type: "text", content: ackText, delta: ackText });
+      emit({ type: "done", fullText: ackText, toolExecutions: [], sessionId: session.id });
+      await prisma.agentMessage.create({
+        data: { sessionId: session.id, role: "assistant", content: ackText },
+      });
+      return;
+    }
+
+    const isAffirmative = /^(yes|yeah|yep|sure|approve|proceed|confirm|do it|go ahead|redeploy_resource|redeploy|delete_environment_variable|set_environment_variable)$/i.test(cleanMsg);
     const isNegative = /^(no|nah|cancel|reject|abort|stop|don't)$/i.test(cleanMsg);
 
     if (pendingAction && isAffirmative) {

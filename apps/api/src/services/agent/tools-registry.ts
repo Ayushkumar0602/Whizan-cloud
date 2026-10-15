@@ -137,6 +137,19 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "delete_environment_variable",
+    description: "Permanently deletes an environment variable from a backend service or web project (HITL Required).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        targetType: { type: "STRING", enum: ["service", "project"], description: "Whether to delete from a service or project" },
+        targetId: { type: "STRING", description: "The ID, slug, or name of the target service or project" },
+        key: { type: "STRING", description: "The environment variable key name to remove (e.g. PYTHON_BIN)" },
+      },
+      required: ["targetType", "targetId", "key"],
+    },
+  },
+  {
     name: "provision_database",
     description: "Provisions a managed PostgreSQL, Redis, or MySQL database (HITL Required).",
     parameters: {
@@ -700,6 +713,56 @@ export async function executeAgentTool(
             update: { value },
           });
           return { success: true, data: { message: `Environment variable "${key}" set successfully on project "${project.name}".` } };
+        }
+      }
+
+      case "delete_environment_variable": {
+        const { targetType, targetId, key } = parameters;
+        const cleanKey = String(key || "").trim();
+        if (!cleanKey) return { success: false, error: "Missing required environment variable key name." };
+
+        if (targetType === "project") {
+          const project = await prisma.project.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+          });
+          if (!project) return { success: false, error: `Project "${targetId}" not found.` };
+
+          const deleted = await prisma.envVariable.deleteMany({
+            where: { projectId: project.id, key: cleanKey },
+          });
+
+          return {
+            success: true,
+            data: {
+              message: `Environment variable "${cleanKey}" has been successfully deleted from project "${project.name}".`,
+              deletedCount: deleted.count,
+              key: cleanKey,
+            },
+          };
+        } else {
+          const service = await prisma.backendService.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+          });
+          if (!service) return { success: false, error: `Backend service "${targetId}" not found.` };
+
+          const deleted = await prisma.serviceEnvVariable.deleteMany({
+            where: { serviceId: service.id, key: cleanKey },
+          });
+
+          return {
+            success: true,
+            data: {
+              message: `Environment variable "${cleanKey}" has been successfully deleted from backend service "${service.name}".`,
+              deletedCount: deleted.count,
+              key: cleanKey,
+            },
+          };
         }
       }
 

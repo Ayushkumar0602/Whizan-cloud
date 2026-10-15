@@ -40,6 +40,7 @@ const TIER_2_TOOLS = new Set([
   "restart_service",
   "redeploy_resource",
   "set_environment_variable",
+  "delete_environment_variable",
   "provision_database",
   "trigger_cron_job",
   "trigger_workflow",
