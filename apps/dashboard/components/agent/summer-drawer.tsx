@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Sparkles,
   X,
   Send,
   Mic,
@@ -21,11 +20,21 @@ import {
   CheckCircle2,
   AlertCircle,
   Terminal,
+  Server,
+  Database,
+  Globe,
+  Zap,
+  Activity,
+  Layers,
   ChevronDown,
   ChevronUp,
+  Cpu,
+  Clock,
+  Sparkles,
 } from "lucide-react";
 import { agentApi, type AgentChatResponse } from "@/lib/api";
 import { MarkdownView } from "./markdown-view";
+import { SummerLogo } from "./summer-logo";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,28 +61,62 @@ interface Message {
   createdAt: string;
 }
 
-// ─── Design Tokens ──────────────────────────────────────────────────────────
+// ─── Design Tokens (Strict Light Mode with Soft Aurora Glow) ─────────────────
 
 const T = {
-  bg: "#0c0f1a",
-  bgSecondary: "#131726",
-  bgGlass: "rgba(19, 23, 38, 0.92)",
-  bgCard: "rgba(255, 255, 255, 0.03)",
-  bgCardHover: "rgba(255, 255, 255, 0.06)",
-  border: "rgba(255, 255, 255, 0.06)",
-  borderActive: "rgba(99, 102, 241, 0.3)",
-  text: "#f1f5f9",
-  textSecondary: "#94a3b8",
-  textMuted: "#64748b",
-  accent: "#6366f1",
-  accentCyan: "#22d3ee",
-  accentGradient: "linear-gradient(135deg, #6366f1, #22d3ee)",
-  success: "#10b981",
-  error: "#ef4444",
-  warning: "#f59e0b",
-  radius: "12px",
-  shadow: "0 24px 80px rgba(0, 0, 0, 0.5), 0 0 1px rgba(255,255,255,0.05)",
+  // Pure white background with soft radiant aura
+  bg: "#ffffff",
+  bgSubtle: "#f8fafc",
+  bgCard: "#ffffff",
+  bgCardHover: "#f8fafc",
+  bgInset: "#f1f5f9",
+
+  // Borders
+  border: "#e2e8f0",
+  borderLight: "#f1f5f9",
+  borderActive: "rgba(79, 70, 229, 0.4)",
+
+  // Typography
+  text: "#0f172a",
+  textSecondary: "#475569",
+  textMuted: "#94a3b8",
+
+  // Brand accents & Aurora gradients
+  accent: "#4f46e5",
+  accentHover: "#4338ca",
+  accentCyan: "#06b6d4",
+  accentGradient: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #06b6d4 100%)",
+  auroraMesh:
+    "radial-gradient(ellipse at 90% 0%, rgba(199, 210, 254, 0.4) 0%, rgba(224, 231, 255, 0.3) 35%, rgba(207, 250, 254, 0.25) 65%, #ffffff 100%)",
+
+  // Semantic status
+  success: "#059669",
+  successBg: "rgba(16, 185, 129, 0.08)",
+  successBorder: "rgba(16, 185, 129, 0.25)",
+  error: "#e11d48",
+  errorBg: "rgba(225, 29, 72, 0.06)",
+  errorBorder: "rgba(225, 29, 72, 0.22)",
+  warning: "#d97706",
+  warningBg: "rgba(217, 119, 6, 0.08)",
+  warningBorder: "rgba(217, 119, 6, 0.24)",
+
+  // Shadows
+  shadow: "-12px 0 35px -5px rgba(15, 23, 42, 0.09), -4px 0 12px -2px rgba(15, 23, 42, 0.04)",
+  cardShadow: "0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)",
 };
+
+// Helper: Pick icon based on tool name
+function getToolIcon(name: string = "") {
+  const n = name.toLowerCase();
+  if (n.includes("exec") || n.includes("terminal") || n.includes("cmd")) return Terminal;
+  if (n.includes("database") || n.includes("db")) return Database;
+  if (n.includes("service") || n.includes("container")) return Server;
+  if (n.includes("health") || n.includes("network") || n.includes("route")) return Globe;
+  if (n.includes("function") || n.includes("edge")) return Zap;
+  if (n.includes("cron")) return Clock;
+  if (n.includes("analytics") || n.includes("inspect")) return Activity;
+  return Cpu;
+}
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -89,7 +132,8 @@ export function SummerDrawer() {
     {
       id: "welcome",
       role: "assistant",
-      content: "Hi! I'm **Summer**, your autonomous DevOps copilot for Whizan Cloud.\n\nI can inspect containers, diagnose logs, configure environments, provision databases, and deploy services. How can I help?",
+      content:
+        "Hi! I'm **Summer**, your autonomous DevOps copilot on Whizan Cloud.\n\nI can inspect live containers, stream logs, provision databases, trigger deployments, and monitor your cloud fleet. What would you like to run?",
       createdAt: new Date().toISOString(),
     },
   ]);
@@ -100,11 +144,30 @@ export function SummerDrawer() {
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const speechRecRef = useRef<any>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const drawerRef = useRef<HTMLDivElement | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ─── Elapsed Timer for Coding Agent Execution ───────────────────────────
+
+  useEffect(() => {
+    if (agentState !== "idle") {
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((s) => s + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [agentState]);
 
   // ─── Persistence & Keyboard Shortcuts ───────────────────────────────────
 
@@ -114,21 +177,30 @@ export function SummerDrawer() {
       const sid = localStorage.getItem("whizan_summer_session_id");
       if (sid) {
         setCurrentSessionId(sid);
-        agentApi.getSession(sid).then((data) => {
-          if (data?.messages?.length > 0) {
-            setMessages(data.messages.map((m: any) => ({
-              id: m.id, role: m.role, content: m.content,
-              toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
-              createdAt: m.createdAt,
-            })));
-          }
-        }).catch(() => {});
+        agentApi
+          .getSession(sid)
+          .then((data) => {
+            if (data?.messages?.length > 0) {
+              setMessages(
+                data.messages.map((m: any) => ({
+                  id: m.id,
+                  role: m.role,
+                  content: m.content,
+                  toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
+                  createdAt: m.createdAt,
+                }))
+              );
+            }
+          })
+          .catch(() => {});
       }
     } catch {}
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem("whizan_summer_is_open", isOpen ? "true" : "false"); } catch {}
+    try {
+      localStorage.setItem("whizan_summer_is_open", isOpen ? "true" : "false");
+    } catch {}
   }, [isOpen]);
 
   useEffect(() => {
@@ -164,7 +236,9 @@ export function SummerDrawer() {
   // ─── Session Management ─────────────────────────────────────────────────
 
   async function loadSessions() {
-    try { setSessions((await agentApi.getSessions()) || []); } catch {}
+    try {
+      setSessions((await agentApi.getSessions()) || []);
+    } catch {}
   }
 
   async function selectSession(sid: string) {
@@ -172,11 +246,15 @@ export function SummerDrawer() {
       const data = await agentApi.getSession(sid);
       if (data?.messages) {
         setCurrentSessionId(sid);
-        setMessages(data.messages.map((m: any) => ({
-          id: m.id, role: m.role, content: m.content,
-          toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
-          createdAt: m.createdAt,
-        })));
+        setMessages(
+          data.messages.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            toolCalls: m.toolCalls ? JSON.parse(m.toolCalls) : undefined,
+            createdAt: m.createdAt,
+          }))
+        );
       }
       setShowHistory(false);
     } catch {}
@@ -198,13 +276,17 @@ export function SummerDrawer() {
     setCurrentSessionId(null);
     setShowHistory(false);
     setActiveSteps([]);
-    try { localStorage.removeItem("whizan_summer_session_id"); } catch {}
-    setMessages([{
-      id: `welcome-${Date.now()}`,
-      role: "assistant",
-      content: "Starting fresh! What would you like to inspect, deploy, or configure?",
-      createdAt: new Date().toISOString(),
-    }]);
+    try {
+      localStorage.removeItem("whizan_summer_session_id");
+    } catch {}
+    setMessages([
+      {
+        id: `welcome-${Date.now()}`,
+        role: "assistant",
+        content: "Starting a fresh session! What would you like to build, deploy, or inspect?",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
   }
 
   // ─── Audio ──────────────────────────────────────────────────────────────
@@ -220,9 +302,14 @@ export function SummerDrawer() {
         audioRef.current = audio;
         audio.onplay = () => setIsSpeaking(true);
         audio.onended = () => setIsSpeaking(false);
-        audio.onerror = () => { setIsSpeaking(false); fallbackSpeech(audioData.spokenText); };
+        audio.onerror = () => {
+          setIsSpeaking(false);
+          fallbackSpeech(audioData.spokenText);
+        };
         audio.play().catch(() => fallbackSpeech(audioData.spokenText));
-      } catch { fallbackSpeech(audioData.spokenText); }
+      } catch {
+        fallbackSpeech(audioData.spokenText);
+      }
     } else if (audioData.fallbackToBrowserSpeech && audioData.spokenText) {
       fallbackSpeech(audioData.spokenText);
     }
@@ -236,78 +323,118 @@ export function SummerDrawer() {
       utt.rate = 1.05;
       utt.pitch = 1.15;
       const voices = window.speechSynthesis.getVoices();
-      const fem = voices.find((v) => v.lang.startsWith("en") && (v.name.includes("Samantha") || v.name.includes("Female") || v.name.includes("Karen") || v.name.includes("Victoria")));
+      const fem = voices.find(
+        (v) =>
+          v.lang.startsWith("en") &&
+          (v.name.includes("Samantha") ||
+            v.name.includes("Female") ||
+            v.name.includes("Karen") ||
+            v.name.includes("Victoria") ||
+            v.name.includes("Zira"))
+      );
       if (fem) utt.voice = fem;
       utt.onstart = () => setIsSpeaking(true);
       utt.onend = () => setIsSpeaking(false);
       utt.onerror = () => setIsSpeaking(false);
       window.speechSynthesis.speak(utt);
-    } catch { setIsSpeaking(false); }
+    } catch {
+      setIsSpeaking(false);
+    }
   }
 
   function stopAudio() {
     audioRef.current?.pause();
     audioRef.current = null;
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     setIsSpeaking(false);
   }
 
-  // ─── Voice Dictation ────────────────────────────────────────────────────
+  // ─── Speech Recognition (Voice Input) ───────────────────────────────────
 
   function toggleMic() {
-    if (isListening) { speechRecRef.current?.stop(); setIsListening(false); return; }
-    if (typeof window === "undefined") return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-    try {
-      stopAudio();
-      const rec = new SR();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-US";
-      rec.onstart = () => setIsListening(true);
-      rec.onend = () => setIsListening(false);
-      rec.onerror = () => setIsListening(false);
-      rec.onresult = (e: any) => {
-        const t = e.results?.[0]?.[0]?.transcript;
-        if (t) setInputPrompt((p) => (p ? `${p} ${t}` : t));
-      };
-      speechRecRef.current = rec;
-      rec.start();
-    } catch { setIsListening(false); }
+    if (isListening) {
+      speechRecRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      alert("Speech recognition is not supported in this browser.");
+      return;
+    }
+
+    const rec = new SpeechRec();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = "en-US";
+
+    rec.onstart = () => setIsListening(true);
+    rec.onresult = (e: any) => {
+      const transcript = e.results?.[0]?.[0]?.transcript;
+      if (transcript) {
+        setInputPrompt((p) => (p ? `${p} ${transcript}` : transcript));
+      }
+      setIsListening(false);
+    };
+    rec.onerror = () => setIsListening(false);
+    rec.onend = () => setIsListening(false);
+
+    speechRecRef.current = rec;
+    rec.start();
   }
 
-  // ─── Cancel In-Flight Request ───────────────────────────────────────────
+  // ─── Abort / Cancel ─────────────────────────────────────────────────────
 
   function cancelRequest() {
-    abortRef.current?.abort();
-    abortRef.current = null;
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     setAgentState("idle");
-    setActiveSteps([]);
+    setActiveSteps((steps) =>
+      steps.map((s) => (s.status === "running" ? { ...s, status: "error" } : s))
+    );
   }
 
-  // ─── SSE Streaming Send ─────────────────────────────────────────────────
+  // ─── Send Message with SSE Stream & Resilient Sync Fallback ─────────────
 
-  async function handleSendMessage(textToSend?: string) {
-    const text = (textToSend || inputPrompt).trim();
-    if (!text || agentState !== "idle") return;
+  async function handleSendMessage(overrideText?: string) {
+    const text = overrideText || inputPrompt;
+    if (!text.trim() || agentState !== "idle") return;
 
     stopAudio();
     setInputPrompt("");
-    setActiveSteps([]);
-    setAgentState("thinking");
+    setShowHistory(false);
 
-    const userMsgId = `usr-${Date.now()}`;
-    const updatedMessages: Message[] = [
-      ...messages,
-      { id: userMsgId, role: "user", content: text, createdAt: new Date().toISOString() },
-    ];
-    setMessages(updatedMessages);
+    const userMsgId = `user-${Date.now()}`;
+    const assistantMsgId = `asst-${Date.now()}`;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: userMsgId,
+        role: "user",
+        content: text,
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: assistantMsgId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    setAgentState("thinking");
+    setActiveSteps([]);
 
     const abortController = new AbortController();
     abortRef.current = abortController;
 
-    const assistantMsgId = `ast-${Date.now()}`;
     let assistantText = "";
     let toolCalls: any[] = [];
     let pendingAction: any = null;
@@ -333,131 +460,133 @@ export function SummerDrawer() {
       let buffer = "";
 
       while (true) {
-        const { done, value } = await reader.read();
+        const { value, done } = await reader.read();
         if (done) break;
+
         buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
 
-        const chunks = buffer.split("\n\n");
-        buffer = chunks.pop()!;
+        for (const block of lines) {
+          const match = block.match(/^data:\s*(.+)$/m);
+          if (!match) continue;
 
-        for (const chunk of chunks) {
-          if (!chunk.startsWith("data: ")) continue;
-          let event: any;
-          try { event = JSON.parse(chunk.slice(6)); } catch { continue; }
+          let evt: any;
+          try {
+            evt = JSON.parse(match[1]);
+          } catch {
+            continue;
+          }
 
-          switch (event.type) {
+          switch (evt.type) {
             case "session":
-              if (!currentSessionId && event.sessionId) {
-                setCurrentSessionId(event.sessionId);
+              if (!currentSessionId && evt.sessionId) {
+                setCurrentSessionId(evt.sessionId);
                 loadSessions();
               }
               break;
 
             case "step": {
-              const step: ActiveStep = {
-                id: `step-${Date.now()}-${Math.random()}`,
-                message: event.message,
-                status: "running",
+              const existingIdx = collectedSteps.findIndex((s) => s.id === evt.stepId);
+              const stepObj: ActiveStep = {
+                id: evt.stepId,
+                message: evt.message,
+                status: evt.status,
+                durationMs: evt.durationMs,
+                toolName: evt.toolName,
               };
-              collectedSteps.push(step);
+              if (existingIdx >= 0) {
+                collectedSteps[existingIdx] = stepObj;
+              } else {
+                collectedSteps.push(stepObj);
+              }
               setActiveSteps([...collectedSteps]);
-              setAgentState("executing");
+              setAgentState(evt.toolName ? "executing" : "thinking");
               break;
             }
 
             case "tool_start": {
-              const step: ActiveStep = {
-                id: `tool-${event.name}-${Date.now()}`,
-                message: `Calling ${event.name}…`,
+              const startStep: ActiveStep = {
+                id: `tool-${evt.toolName}-${Date.now()}`,
+                message: `Executing ${evt.toolName}…`,
                 status: "running",
-                toolName: event.name,
+                toolName: evt.toolName,
               };
-              collectedSteps.push(step);
+              collectedSteps.push(startStep);
               setActiveSteps([...collectedSteps]);
               setAgentState("executing");
               break;
             }
 
             case "tool_result": {
-              const idx = collectedSteps.findIndex(
-                (s) => s.toolName === event.name && s.status === "running"
-              );
-              if (idx >= 0) {
-                collectedSteps[idx] = {
-                  ...collectedSteps[idx],
-                  status: event.error ? "error" : "done",
-                  durationMs: event.durationMs,
-                  toolResult: event.result,
-                  toolError: event.error,
-                };
+              const targetIdx = collectedSteps
+                .slice()
+                .reverse()
+                .findIndex((s) => s.toolName === evt.toolName);
+              if (targetIdx >= 0) {
+                const actualIdx = collectedSteps.length - 1 - targetIdx;
+                collectedSteps[actualIdx].status = evt.error ? "error" : "done";
+                collectedSteps[actualIdx].durationMs = evt.durationMs;
+                collectedSteps[actualIdx].toolResult = evt.result;
+                collectedSteps[actualIdx].toolError = evt.error;
                 setActiveSteps([...collectedSteps]);
               }
               toolCalls.push({
-                name: event.name,
-                parameters: {},
-                result: event.result,
-                error: event.error,
+                name: evt.toolName,
+                parameters: evt.parameters,
+                result: evt.result,
+                error: evt.error,
               });
               break;
             }
 
             case "text":
-              assistantText = event.content;
+              assistantText += evt.delta;
               setAgentState("streaming");
-              // Update or create assistant message
-              setMessages((prev) => {
-                const exists = prev.find((m) => m.id === assistantMsgId);
-                if (exists) {
-                  return prev.map((m) =>
-                    m.id === assistantMsgId ? { ...m, content: assistantText } : m
-                  );
-                }
-                return [
-                  ...prev,
-                  {
-                    id: assistantMsgId,
-                    role: "assistant" as const,
-                    content: assistantText,
-                    createdAt: new Date().toISOString(),
-                  },
-                ];
-              });
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, content: assistantText } : m
+                )
+              );
               break;
 
             case "hitl":
-              pendingAction = {
-                actionId: event.actionId,
-                toolName: event.toolName,
-                parameters: event.parameters,
-                riskTier: event.riskTier,
-                explanation: event.explanation,
-              };
+              pendingAction = evt.action;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId ? { ...m, pendingAction: evt.action } : m
+                )
+              );
               break;
 
             case "navigate":
-              try { localStorage.setItem("whizan_summer_is_open", "true"); } catch {}
-              router.push(event.path);
+              if (evt.path) {
+                try {
+                  localStorage.setItem("whizan_summer_is_open", "true");
+                } catch {}
+                router.push(evt.path);
+              }
               break;
 
             case "open_url":
-              window.open(event.url, "_blank");
-              break;
-
-            case "done":
-              assistantText = event.fullText || assistantText;
-              toolCalls = event.toolExecutions || toolCalls;
-              // Mark all running steps as done
-              collectedSteps.forEach((s) => { if (s.status === "running") s.status = "done"; });
-              setActiveSteps([...collectedSteps]);
+              if (evt.url) window.open(evt.url, "_blank");
               break;
 
             case "audio":
-              audioData = event;
+              audioData = evt;
+              break;
+
+            case "done":
+              setAgentState("idle");
               break;
 
             case "error":
-              assistantText = assistantText || event.message;
-              collectedSteps.forEach((s) => { if (s.status === "running") s.status = "error"; });
+              assistantText = assistantText
+                ? `${assistantText}\n\n⚠️ **Error**: ${evt.error || evt.message}`
+                : `⚠️ **Error**: ${evt.error || evt.message}`;
+              collectedSteps.forEach((s) => {
+                if (s.status === "running") s.status = "error";
+              });
               setActiveSteps([...collectedSteps]);
               break;
           }
@@ -467,8 +596,7 @@ export function SummerDrawer() {
       if (err.name === "AbortError") {
         assistantText = assistantText || "Request cancelled.";
       } else if (!streamSucceeded) {
-        // ── Fallback: SSE stream failed (CORS, 404, not deployed yet) ──
-        // Seamlessly fall back to the legacy synchronous /chat endpoint
+        // ── Fallback: SSE stream unavailable, fall back to /chat ──
         console.warn("[Summer] SSE stream unavailable, falling back to /chat:", err.message);
         try {
           setAgentState("thinking");
@@ -487,7 +615,6 @@ export function SummerDrawer() {
             enableTts: voiceEnabled,
           });
 
-          // Synthesize events from the synchronous response
           if (!currentSessionId && res.sessionId) {
             setCurrentSessionId(res.sessionId);
             loadSessions();
@@ -498,34 +625,36 @@ export function SummerDrawer() {
           pendingAction = res.pendingAction || null;
           audioData = res.audio || null;
 
-          // Synthesize step telemetry from tool executions
           collectedSteps[0].status = "done";
           for (const t of toolCalls) {
             collectedSteps.push({
               id: `tool-fb-${t.name}`,
-              message: `Called ${t.name}`,
+              message: `Executed ${t.name}`,
               status: t.error ? "error" : "done",
               toolName: t.name,
+              toolResult: t.result,
+              toolError: t.error,
             });
           }
           setActiveSteps([...collectedSteps]);
 
-          // Handle navigation
           if (res.clientAction?.type === "NAVIGATE" && res.clientAction.path) {
-            try { localStorage.setItem("whizan_summer_is_open", "true"); } catch {}
+            try {
+              localStorage.setItem("whizan_summer_is_open", "true");
+            } catch {}
             router.push(res.clientAction.path);
           } else if (res.clientAction?.type === "OPEN_URL" && res.clientAction.url) {
             window.open(res.clientAction.url, "_blank");
           }
         } catch (fallbackErr: any) {
-          assistantText = assistantText || `Connection error: ${fallbackErr.message}`;
+          assistantText = assistantText || `Connection issue: ${fallbackErr.message}`;
         }
       } else {
-        assistantText = assistantText || `Stream error: ${err.message}`;
+        assistantText = assistantText || `Stream interrupted: ${err.message}`;
       }
     }
 
-    // Final message update
+    // Final message state update
     setMessages((prev) => {
       const exists = prev.find((m) => m.id === assistantMsgId);
       const finalMsg: Message = {
@@ -548,7 +677,7 @@ export function SummerDrawer() {
     setAgentState("idle");
     abortRef.current = null;
 
-    // Play audio only after stream completes
+    // Play descriptive voice audio after completion
     if (audioData && voiceEnabled) {
       playSpeech(audioData);
     }
@@ -564,29 +693,29 @@ export function SummerDrawer() {
 
   const quickChips = (() => {
     const p = pathname || "";
-    if (p.includes("/services")) {
+    if (p.includes("/services") || p.includes("/backend")) {
       return [
-        { label: "List Services", prompt: "List all my backend services with their status" },
-        { label: "Check Logs", prompt: "Show latest deployment logs for my services" },
-        { label: "Fleet Health", prompt: "Give me a full fleet health overview" },
+        { label: "List Services", prompt: "List all my backend services and their live status" },
+        { label: "Service Logs", prompt: "Show latest deployment logs for my active services" },
+        { label: "Fleet Health", prompt: "Check full fleet health status" },
       ];
     }
     if (p.includes("/databases")) {
       return [
-        { label: "List Databases", prompt: "List all my provisioned databases" },
-        { label: "Fleet Health", prompt: "Fleet overview with database status" },
+        { label: "List Databases", prompt: "List all my managed databases and connection states" },
+        { label: "DB Diagnostics", prompt: "Inspect database resource usage and connections" },
       ];
     }
     if (p.includes("/functions")) {
       return [
-        { label: "Edge Functions", prompt: "List all my edge functions and endpoints" },
-        { label: "Fleet Health", prompt: "Fleet overview" },
+        { label: "Edge Functions", prompt: "List all edge functions and active endpoints" },
+        { label: "Function Health", prompt: "Check edge function health and latency" },
       ];
     }
     if (p.includes("/cron")) {
       return [
-        { label: "Cron Jobs", prompt: "List all my cron jobs and their last status" },
-        { label: "Fleet Health", prompt: "Fleet overview" },
+        { label: "Cron Jobs", prompt: "List all scheduled cron jobs and recent execution runs" },
+        { label: "Fleet Health", prompt: "Fleet health overview" },
       ];
     }
     return [
@@ -596,95 +725,391 @@ export function SummerDrawer() {
     ];
   })();
 
-  // ─── Inline Step Tracker ────────────────────────────────────────────────
+  // ─── Coding Agent Execution Deck (Live Telemetry Console) ───────────────
 
-  function renderStepTracker() {
+  function renderCodingAgentDeck() {
     if (activeSteps.length === 0 && agentState === "idle") return null;
 
     return (
-      <div style={{ padding: "8px 16px", display: "flex", flexDirection: "column", gap: "4px" }}>
-        {activeSteps.map((step) => (
-          <div
-            key={step.id}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "5px 10px",
-              borderRadius: "8px",
-              background: T.bgCard,
-              fontSize: "0.75rem",
-              color: T.textSecondary,
-              transition: "all 0.2s ease",
-            }}
-          >
-            {step.status === "running" && (
-              <Loader2 size={12} style={{ color: T.accent, animation: "spin 1s linear infinite" }} />
-            )}
-            {step.status === "done" && <CheckCircle2 size={12} style={{ color: T.success }} />}
-            {step.status === "error" && <AlertCircle size={12} style={{ color: T.error }} />}
-            <span style={{ flex: 1 }}>{step.message}</span>
-            {step.durationMs !== undefined && (
-              <span style={{ fontSize: "0.65rem", color: T.textMuted }}>
-                {step.durationMs < 1000 ? `${step.durationMs}ms` : `${(step.durationMs / 1000).toFixed(1)}s`}
+      <div
+        style={{
+          margin: "10px 14px 4px",
+          borderRadius: "10px",
+          background: T.bgSubtle,
+          border: `1px solid ${T.border}`,
+          overflow: "hidden",
+          boxShadow: T.cardShadow,
+        }}
+      >
+        {/* Status Bar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "8px 12px",
+            background: "#ffffff",
+            borderBottom: `1px solid ${T.borderLight}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                background: agentState !== "idle" ? T.accent : T.success,
+                boxShadow:
+                  agentState !== "idle" ? "0 0 8px rgba(79, 70, 229, 0.6)" : "none",
+                animation: agentState !== "idle" ? "summerPulse 1.5s infinite" : "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: "0.74rem",
+                fontWeight: 700,
+                color: T.text,
+                letterSpacing: "-0.01em",
+              }}
+            >
+              {agentState !== "idle" ? "DevOps Agent Working" : "Execution Finished"}
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {agentState !== "idle" && (
+              <span
+                style={{
+                  fontSize: "0.68rem",
+                  color: T.accent,
+                  fontFamily: "monospace",
+                  fontWeight: 600,
+                }}
+              >
+                {elapsedSeconds}s
               </span>
             )}
+            <span
+              style={{
+                fontSize: "0.68rem",
+                padding: "2px 7px",
+                borderRadius: "6px",
+                background: T.bgInset,
+                color: T.textSecondary,
+                fontWeight: 600,
+              }}
+            >
+              {activeSteps.length} {activeSteps.length === 1 ? "step" : "steps"}
+            </span>
           </div>
-        ))}
-        {agentState === "thinking" && activeSteps.length === 0 && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "5px 10px",
-              borderRadius: "8px",
-              background: T.bgCard,
-              fontSize: "0.75rem",
-              color: T.accent,
-            }}
-          >
-            <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-            <span>Summer is thinking…</span>
-          </div>
-        )}
+        </div>
+
+        {/* Steps List */}
+        <div
+          style={{
+            padding: "6px 8px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "5px",
+            maxHeight: "220px",
+            overflowY: "auto",
+          }}
+        >
+          {activeSteps.map((step) => {
+            const Icon = getToolIcon(step.toolName);
+            return (
+              <div
+                key={step.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "6px 10px",
+                  borderRadius: "7px",
+                  background: "#ffffff",
+                  border: `1px solid ${
+                    step.status === "running" ? T.borderActive : T.borderLight
+                  }`,
+                  fontSize: "0.74rem",
+                  color: T.text,
+                  transition: "all 0.2s ease",
+                  boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "20px",
+                    height: "20px",
+                    borderRadius: "5px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background:
+                      step.status === "running"
+                        ? "rgba(79, 70, 229, 0.1)"
+                        : step.status === "done"
+                        ? T.successBg
+                        : T.errorBg,
+                    color:
+                      step.status === "running"
+                        ? T.accent
+                        : step.status === "done"
+                        ? T.success
+                        : T.error,
+                  }}
+                >
+                  {step.status === "running" ? (
+                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                  ) : step.status === "done" ? (
+                    <CheckCircle2 size={12} />
+                  ) : (
+                    <AlertCircle size={12} />
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    {step.toolName && (
+                      <span
+                        style={{
+                          fontFamily: "ui-monospace, monospace",
+                          fontWeight: 600,
+                          fontSize: "0.7rem",
+                          color: T.accent,
+                          background: "rgba(79, 70, 229, 0.06)",
+                          padding: "1px 5px",
+                          borderRadius: "4px",
+                        }}
+                      >
+                        {step.toolName}
+                      </span>
+                    )}
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: T.textSecondary,
+                      }}
+                    >
+                      {step.message}
+                    </span>
+                  </div>
+                </div>
+
+                {step.durationMs !== undefined && (
+                  <span
+                    style={{
+                      fontSize: "0.65rem",
+                      color: T.textMuted,
+                      fontFamily: "monospace",
+                    }}
+                  >
+                    {step.durationMs < 1000
+                      ? `${step.durationMs}ms`
+                      : `${(step.durationMs / 1000).toFixed(1)}s`}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+
+          {agentState === "thinking" && activeSteps.length === 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "8px 10px",
+                borderRadius: "7px",
+                background: "#ffffff",
+                border: `1px solid ${T.borderLight}`,
+                fontSize: "0.74rem",
+                color: T.accent,
+              }}
+            >
+              <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+              <span>Analyzing infrastructure state…</span>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
 
-  // ─── Inline Tool Chip ───────────────────────────────────────────────────
+  // ─── Inline Tool Inspector for Completed Messages ────────────────────────
 
-  function ToolChipInline({ tool }: { tool: any }) {
+  function ToolExecutionCard({ tool }: { tool: any }) {
     const [expanded, setExpanded] = useState(false);
     const isErr = !!tool.error;
+    const Icon = getToolIcon(tool.name);
+
     return (
-      <div style={{ margin: "4px 0", borderRadius: "8px", background: T.bgSecondary, border: `1px solid ${isErr ? "rgba(239,68,68,0.2)" : T.border}`, overflow: "hidden", fontSize: "0.75rem" }}>
+      <div
+        style={{
+          margin: "6px 0",
+          borderRadius: "8px",
+          background: T.bgSubtle,
+          border: `1px solid ${isErr ? T.errorBorder : T.border}`,
+          overflow: "hidden",
+          fontSize: "0.75rem",
+        }}
+      >
         <div
           onClick={() => setExpanded(!expanded)}
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", cursor: "pointer", userSelect: "none" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "7px 10px",
+            cursor: "pointer",
+            userSelect: "none",
+            background: "#ffffff",
+          }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <Terminal size={11} style={{ color: isErr ? T.error : T.accent }} />
-            <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, color: T.text }}>{tool.name}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+            <Icon size={12} style={{ color: isErr ? T.error : T.accent }} />
+            <span
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontWeight: 600,
+                color: T.text,
+                fontSize: "0.72rem",
+              }}
+            >
+              {tool.name}
+            </span>
           </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             {isErr ? (
-              <span style={{ fontSize: "0.65rem", fontWeight: 600, color: T.error, background: "rgba(239,68,68,0.1)", padding: "1px 6px", borderRadius: "8px" }}>Blocked</span>
+              <span
+                style={{
+                  fontSize: "0.64rem",
+                  fontWeight: 600,
+                  color: T.error,
+                  background: T.errorBg,
+                  padding: "1px 6px",
+                  borderRadius: "6px",
+                  border: `1px solid ${T.errorBorder}`,
+                }}
+              >
+                Failed
+              </span>
             ) : (
-              <span style={{ fontSize: "0.65rem", fontWeight: 600, color: T.success, background: "rgba(16,185,129,0.1)", padding: "1px 6px", borderRadius: "8px" }}>Done</span>
+              <span
+                style={{
+                  fontSize: "0.64rem",
+                  fontWeight: 600,
+                  color: T.success,
+                  background: T.successBg,
+                  padding: "1px 6px",
+                  borderRadius: "6px",
+                  border: `1px solid ${T.successBorder}`,
+                }}
+              >
+                Executed
+              </span>
             )}
-            {expanded ? <ChevronUp size={12} style={{ color: T.textMuted }} /> : <ChevronDown size={12} style={{ color: T.textMuted }} />}
+            {expanded ? (
+              <ChevronUp size={12} style={{ color: T.textMuted }} />
+            ) : (
+              <ChevronDown size={12} style={{ color: T.textMuted }} />
+            )}
           </div>
         </div>
+
         {expanded && (
-          <div style={{ padding: "8px 10px", borderTop: `1px solid ${T.border}`, background: T.bg }}>
-            {tool.result && (
-              <pre style={{ margin: 0, padding: "6px 8px", borderRadius: "6px", background: T.bgSecondary, color: T.textSecondary, fontSize: "0.7rem", fontFamily: "ui-monospace, monospace", overflowX: "auto", maxHeight: "160px", border: `1px solid ${T.border}` }}>
-                {typeof tool.result === "string" ? tool.result : JSON.stringify(tool.result, null, 2)}
-              </pre>
+          <div
+            style={{
+              padding: "8px 10px",
+              borderTop: `1px solid ${T.borderLight}`,
+              background: "#0f172a",
+              color: "#e2e8f0",
+            }}
+          >
+            {tool.parameters && (
+              <div style={{ marginBottom: "6px" }}>
+                <div
+                  style={{
+                    fontSize: "0.64rem",
+                    color: "#94a3b8",
+                    fontFamily: "monospace",
+                    marginBottom: "3px",
+                    fontWeight: 600,
+                  }}
+                >
+                  INPUT PARAMETERS:
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: "6px 8px",
+                    borderRadius: "5px",
+                    background: "#1e293b",
+                    color: "#38bdf8",
+                    fontSize: "0.68rem",
+                    fontFamily: "ui-monospace, monospace",
+                    overflowX: "auto",
+                  }}
+                >
+                  {JSON.stringify(tool.parameters, null, 2)}
+                </pre>
+              </div>
             )}
+
+            {tool.result && (
+              <div>
+                <div
+                  style={{
+                    fontSize: "0.64rem",
+                    color: "#94a3b8",
+                    fontFamily: "monospace",
+                    marginBottom: "3px",
+                    fontWeight: 600,
+                  }}
+                >
+                  RESPONSE PAYLOAD:
+                </div>
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: "6px 8px",
+                    borderRadius: "5px",
+                    background: "#1e293b",
+                    color: "#f8fafc",
+                    fontSize: "0.68rem",
+                    fontFamily: "ui-monospace, monospace",
+                    overflowX: "auto",
+                    maxHeight: "180px",
+                  }}
+                >
+                  {typeof tool.result === "string"
+                    ? tool.result
+                    : JSON.stringify(tool.result, null, 2)}
+                </pre>
+              </div>
+            )}
+
             {tool.error && (
-              <pre style={{ margin: 0, padding: "6px 8px", borderRadius: "6px", background: "rgba(239,68,68,0.05)", color: "#fca5a5", fontSize: "0.7rem", fontFamily: "ui-monospace, monospace", overflowX: "auto", border: "1px solid rgba(239,68,68,0.15)" }}>
+              <pre
+                style={{
+                  margin: 0,
+                  padding: "6px 8px",
+                  borderRadius: "5px",
+                  background: "rgba(225, 29, 72, 0.2)",
+                  color: "#fca5a5",
+                  fontSize: "0.68rem",
+                  fontFamily: "ui-monospace, monospace",
+                  overflowX: "auto",
+                }}
+              >
                 {tool.error}
               </pre>
             )}
@@ -694,343 +1119,638 @@ export function SummerDrawer() {
     );
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────
+  // ─── Render Main Panel ──────────────────────────────────────────────────
 
   return (
     <>
-      {/* Floating Trigger */}
+      {/* ── Floating Launcher Button (Clean Light Pill with Soft Aura) ── */}
       <button
         type="button"
         onClick={() => setIsOpen(true)}
         aria-label="Open Summer Copilot"
         style={{
-          position: "fixed", bottom: "20px", right: "20px", zIndex: 9990,
-          display: "flex", alignItems: "center", gap: "8px",
-          padding: "8px 16px", borderRadius: "9999px",
-          background: T.bg, color: T.text,
-          fontWeight: 600, fontSize: "0.82rem",
+          position: "fixed",
+          bottom: "22px",
+          right: "22px",
+          zIndex: 9990,
+          display: "flex",
+          alignItems: "center",
+          gap: "9px",
+          padding: "8px 16px 8px 10px",
+          borderRadius: "9999px",
+          background: "#ffffff",
+          color: T.text,
+          fontWeight: 600,
+          fontSize: "0.82rem",
           border: `1px solid ${T.border}`,
-          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.15)",
-          cursor: "pointer", backdropFilter: "blur(16px)",
-          transition: "all 0.2s ease",
+          boxShadow:
+            "0 10px 25px -3px rgba(79, 70, 229, 0.15), 0 4px 6px -2px rgba(15, 23, 42, 0.05)",
+          cursor: "pointer",
+          transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
-        <div style={{
-          width: "20px", height: "20px", borderRadius: "50%",
-          background: T.accentGradient,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 0 12px rgba(99, 102, 241, 0.4)",
-        }}>
-          <Sparkles size={11} color="#fff" />
-        </div>
-        <span>Summer</span>
-        <kbd style={{
-          padding: "1px 5px", borderRadius: "4px",
-          background: "rgba(255,255,255,0.08)", color: T.textMuted,
-          fontSize: "0.65rem", fontFamily: "ui-monospace, monospace",
-          border: `1px solid ${T.border}`,
-        }}>⌘K</kbd>
+        <SummerLogo size={22} active={agentState !== "idle"} />
+        <span style={{ letterSpacing: "-0.01em" }}>Summer</span>
+        <kbd
+          style={{
+            padding: "1px 5px",
+            borderRadius: "4px",
+            background: T.bgInset,
+            color: T.textSecondary,
+            fontSize: "0.65rem",
+            fontFamily: "ui-monospace, monospace",
+            border: `1px solid ${T.border}`,
+          }}
+        >
+          ⌘K
+        </kbd>
       </button>
 
-      {/* Drawer Panel */}
+      {/* ── Agent Drawer (NO BACKDROP BLUR, 100% Crisp Visible Screen) ── */}
       {isOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            onClick={() => { stopAudio(); setIsOpen(false); }}
+        <aside
+          ref={drawerRef}
+          role="dialog"
+          aria-label="Summer DevOps Copilot"
+          style={{
+            position: "fixed",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            maxWidth: "520px",
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            background: T.bg,
+            backgroundImage: T.auroraMesh,
+            borderLeft: `1px solid ${T.border}`,
+            boxShadow: T.shadow,
+            animation: "drawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+        >
+          {/* ── Header ─────────────────────────────────────────────── */}
+          <header
             style={{
-              position: "fixed", inset: 0,
-              background: "rgba(0, 0, 0, 0.4)",
-              backdropFilter: "blur(6px)",
-              zIndex: 9998,
-            }}
-          />
-
-          <aside
-            role="dialog"
-            aria-label="Summer DevOps Copilot"
-            style={{
-              position: "fixed", top: 0, right: 0, bottom: 0,
-              width: "100%", maxWidth: "480px", zIndex: 9999,
-              display: "flex", flexDirection: "column",
-              background: T.bg,
-              borderLeft: `1px solid ${T.border}`,
-              boxShadow: T.shadow,
-              animation: "drawerSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "12px 18px",
+              borderBottom: `1px solid ${T.border}`,
+              background: "rgba(255, 255, 255, 0.85)",
+              backdropFilter: "blur(12px)",
             }}
           >
-            {/* ── Header ─────────────────────────────────────────────── */}
-            <header style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "12px 16px",
-              borderBottom: `1px solid ${T.border}`,
-              background: T.bgSecondary,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{
-                  width: "30px", height: "30px", borderRadius: "8px",
-                  background: T.accentGradient,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 2px 8px rgba(99, 102, 241, 0.3)",
-                }}>
-                  <Sparkles size={15} color="#fff" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: "0.88rem", color: T.text }}>Summer</div>
-                  <div style={{ fontSize: "0.68rem", color: T.textMuted }}>DevOps Copilot</div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                {isSpeaking && (
-                  <button type="button" onClick={stopAudio} title="Stop Voice"
-                    style={{ ...iconBtnStyle, background: "rgba(99,102,241,0.15)", color: T.accent, border: `1px solid ${T.borderActive}` }}>
-                    <Square size={12} fill="currentColor" />
-                  </button>
-                )}
-                <button type="button" onClick={() => { if (voiceEnabled) stopAudio(); setVoiceEnabled(!voiceEnabled); }}
-                  title={voiceEnabled ? "Mute Voice" : "Enable Voice"}
-                  style={{ ...iconBtnStyle, color: voiceEnabled ? T.accent : T.textMuted, background: voiceEnabled ? "rgba(99,102,241,0.1)" : "transparent" }}>
-                  {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                </button>
-                <button type="button" onClick={() => setShowHistory(!showHistory)} title="History"
-                  style={{ ...iconBtnStyle, color: showHistory ? T.text : T.textMuted, background: showHistory ? "rgba(255,255,255,0.08)" : "transparent" }}>
-                  <History size={14} />
-                </button>
-                <button type="button" onClick={startNewChat} title="New Chat"
-                  style={{ ...iconBtnStyle, color: T.textMuted }}>
-                  <Plus size={14} />
-                </button>
-                <button type="button" onClick={() => { stopAudio(); setIsOpen(false); }} title="Close"
-                  style={{ ...iconBtnStyle, color: T.textMuted }}>
-                  <X size={14} />
-                </button>
-              </div>
-            </header>
-
-            {/* ── Quick Chips (only when idle) ────────────────────────── */}
-            {!showHistory && agentState === "idle" && (
-              <div style={{
-                padding: "8px 14px",
-                borderBottom: `1px solid ${T.border}`,
-                display: "flex", gap: "6px", overflowX: "auto", whiteSpace: "nowrap",
-              }}>
-                {quickChips.map((c, i) => (
-                  <button key={i} type="button" onClick={() => handleSendMessage(c.prompt)}
-                    disabled={agentState !== "idle"}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <SummerLogo size={30} active={agentState !== "idle"} />
+              <div>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: "0.92rem",
+                    color: T.text,
+                    letterSpacing: "-0.015em",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span>Summer</span>
+                  <span
                     style={{
-                      padding: "4px 10px", borderRadius: "8px",
-                      background: T.bgCard, border: `1px solid ${T.border}`,
-                      color: T.textSecondary, fontSize: "0.72rem", fontWeight: 500,
-                      cursor: "pointer", whiteSpace: "nowrap",
-                      transition: "all 0.15s ease",
-                    }}>
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* ── Live Step Tracker ───────────────────────────────────── */}
-            {agentState !== "idle" && renderStepTracker()}
-
-            {/* ── Body ───────────────────────────────────────────────── */}
-            {showHistory ? (
-              <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: T.bg }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-                  <span style={{ fontWeight: 700, fontSize: "0.85rem", color: T.text }}>History</span>
-                  <button type="button" onClick={() => setShowHistory(false)}
-                    style={{ background: "transparent", border: "none", color: T.accent, fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}>
-                    Back
-                  </button>
+                      fontSize: "0.62rem",
+                      padding: "1px 6px",
+                      borderRadius: "6px",
+                      background: "rgba(79, 70, 229, 0.08)",
+                      color: T.accent,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Gemini 3.8 Flash
+                  </span>
                 </div>
-                {sessions.length === 0 ? (
-                  <div style={{ textAlign: "center", padding: "40px 10px", color: T.textMuted, fontSize: "0.8rem" }}>
-                    No conversations yet.
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {sessions.map((s) => (
-                      <div key={s.id} onClick={() => selectSession(s.id)}
-                        style={{
-                          padding: "10px 12px", borderRadius: "8px",
-                          background: currentSessionId === s.id ? "rgba(99,102,241,0.08)" : T.bgCard,
-                          border: `1px solid ${currentSessionId === s.id ? T.borderActive : T.border}`,
-                          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between",
-                          transition: "all 0.15s ease",
-                        }}>
-                        <div style={{ overflow: "hidden", flex: 1, marginRight: "8px" }}>
-                          <div style={{ fontWeight: 600, fontSize: "0.78rem", color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {s.title || "Conversation"}
-                          </div>
-                          <div style={{ fontSize: "0.65rem", color: T.textMuted, marginTop: "2px" }}>
-                            {new Date(s.createdAt).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <button type="button" onClick={(e) => deleteSession(s.id, e)} title="Delete"
-                          style={{ background: "transparent", border: "none", color: T.textMuted, cursor: "pointer", padding: "4px" }}>
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div style={{ fontSize: "0.68rem", color: T.textSecondary }}>
+                  Autonomous Cloud DevOps Copilot
+                </div>
               </div>
-            ) : (
-              /* Chat Messages */
-              <div style={{
-                flex: 1, overflowY: "auto", padding: "14px",
-                display: "flex", flexDirection: "column", gap: "10px",
-                background: T.bg,
-              }}>
-                {messages.map((m) => (
-                  <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.role === "user" ? "flex-end" : "flex-start" }}>
-                    {m.role === "user" ? (
-                      <div style={{
-                        maxWidth: "82%", borderRadius: "12px 12px 2px 12px",
-                        padding: "10px 14px", fontSize: "0.82rem", lineHeight: 1.55,
-                        background: T.accentGradient, color: "#fff",
-                        boxShadow: "0 2px 12px rgba(99, 102, 241, 0.2)",
-                        wordBreak: "break-word",
-                      }}>
-                        {m.content}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              {isSpeaking && (
+                <button
+                  type="button"
+                  onClick={stopAudio}
+                  title="Stop Voice Output"
+                  style={{
+                    ...iconBtnStyle,
+                    background: "rgba(79, 70, 229, 0.1)",
+                    color: T.accent,
+                    border: `1px solid ${T.borderActive}`,
+                  }}
+                >
+                  <Square size={13} fill="currentColor" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceEnabled) stopAudio();
+                  setVoiceEnabled(!voiceEnabled);
+                }}
+                title={voiceEnabled ? "Mute Voice (Aoede)" : "Enable Voice (Aoede)"}
+                style={{
+                  ...iconBtnStyle,
+                  color: voiceEnabled ? T.accent : T.textMuted,
+                  background: voiceEnabled ? "rgba(79, 70, 229, 0.08)" : "transparent",
+                }}
+              >
+                {voiceEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowHistory(!showHistory)}
+                title="Conversation History"
+                style={{
+                  ...iconBtnStyle,
+                  color: showHistory ? T.accent : T.textSecondary,
+                  background: showHistory ? "rgba(79, 70, 229, 0.08)" : "transparent",
+                }}
+              >
+                <History size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={startNewChat}
+                title="New Chat Session"
+                style={{ ...iconBtnStyle, color: T.textSecondary }}
+              >
+                <Plus size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  stopAudio();
+                  setIsOpen(false);
+                }}
+                title="Close Drawer (Esc)"
+                style={{ ...iconBtnStyle, color: T.textSecondary }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </header>
+
+          {/* ── Context & Quick Chips ──────────────────────────────── */}
+          {!showHistory && agentState === "idle" && (
+            <div
+              style={{
+                padding: "8px 14px",
+                borderBottom: `1px solid ${T.borderLight}`,
+                background: "rgba(255, 255, 255, 0.7)",
+                display: "flex",
+                gap: "6px",
+                overflowX: "auto",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {quickChips.map((c, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => handleSendMessage(c.prompt)}
+                  disabled={agentState !== "idle"}
+                  style={{
+                    padding: "4px 10px",
+                    borderRadius: "7px",
+                    background: "#ffffff",
+                    border: `1px solid ${T.border}`,
+                    color: T.textSecondary,
+                    fontSize: "0.72rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
+                    transition: "all 0.15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = T.accent;
+                    e.currentTarget.style.color = T.accent;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = T.border;
+                    e.currentTarget.style.color = T.textSecondary;
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── Coding Agent Live Telemetry Console ────────────────── */}
+          {agentState !== "idle" && renderCodingAgentDeck()}
+
+          {/* ── Body Area ─────────────────────────────────────────── */}
+          {showHistory ? (
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: T.bg }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: "12px",
+                }}
+              >
+                <span style={{ fontWeight: 700, fontSize: "0.85rem", color: T.text }}>
+                  Saved Sessions
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory(false)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: T.accent,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Back to Chat
+                </button>
+              </div>
+              {sessions.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "40px 10px",
+                    color: T.textMuted,
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  No prior sessions found.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      onClick={() => selectSession(s.id)}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        background:
+                          currentSessionId === s.id ? "rgba(79, 70, 229, 0.05)" : "#ffffff",
+                        border: `1px solid ${
+                          currentSessionId === s.id ? T.borderActive : T.border
+                        }`,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.02)",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ overflow: "hidden", flex: 1, marginRight: "8px" }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: "0.78rem",
+                            color: T.text,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {s.title || "Session"}
+                        </div>
+                        <div style={{ fontSize: "0.65rem", color: T.textMuted, marginTop: "2px" }}>
+                          {new Date(s.createdAt).toLocaleDateString()}
+                        </div>
                       </div>
-                    ) : (
-                      <div style={{
-                        maxWidth: "94%", borderRadius: "10px",
-                        padding: "10px 14px", fontSize: "0.82rem",
-                        background: T.bgSecondary, border: `1px solid ${T.border}`,
+                      <button
+                        type="button"
+                        onClick={(e) => deleteSession(s.id, e)}
+                        title="Delete session"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          color: T.textMuted,
+                          cursor: "pointer",
+                          padding: "4px",
+                        }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Chat Messages List */
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+            >
+              {messages.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: m.role === "user" ? "flex-end" : "flex-start",
+                  }}
+                >
+                  {m.role === "user" ? (
+                    <div
+                      style={{
+                        maxWidth: "84%",
+                        borderRadius: "14px 14px 2px 14px",
+                        padding: "10px 14px",
+                        fontSize: "0.84rem",
+                        lineHeight: 1.55,
+                        background: T.accentGradient,
+                        color: "#ffffff",
+                        boxShadow: "0 4px 14px rgba(79, 70, 229, 0.25)",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {m.content}
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        maxWidth: "96%",
+                        borderRadius: "12px",
+                        padding: "12px 16px",
+                        fontSize: "0.84rem",
+                        background: "#ffffff",
+                        border: `1px solid ${T.border}`,
+                        boxShadow: T.cardShadow,
                         color: T.text,
-                      }}>
-                        <MarkdownView content={m.content} />
+                      }}
+                    >
+                      <MarkdownView content={m.content} />
 
-                        {/* Tool calls */}
-                        {m.toolCalls && m.toolCalls.length > 0 && (
-                          <div style={{ marginTop: "8px", borderTop: `1px solid ${T.border}`, paddingTop: "6px" }}>
-                            {m.toolCalls.map((t: any, i: number) => (
-                              <ToolChipInline key={i} tool={t} />
-                            ))}
+                      {/* Coding Agent Tool Execution Deck */}
+                      {m.toolCalls && m.toolCalls.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: "10px",
+                            borderTop: `1px solid ${T.borderLight}`,
+                            paddingTop: "8px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: "0.68rem",
+                              fontWeight: 700,
+                              color: T.textSecondary,
+                              marginBottom: "4px",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "5px",
+                            }}
+                          >
+                            <Terminal size={11} style={{ color: T.accent }} />
+                            <span>DEVOPS TOOL ACTIVITY ({m.toolCalls.length})</span>
                           </div>
-                        )}
+                          {m.toolCalls.map((t: any, i: number) => (
+                            <ToolExecutionCard key={i} tool={t} />
+                          ))}
+                        </div>
+                      )}
 
-                        {/* HITL Approval */}
-                        {m.pendingAction && (
-                          <div style={{ marginTop: "8px" }}>
-                            <ApprovalCardInline
-                              pendingAction={m.pendingAction}
-                              onResolved={(r) => handleSendMessage(
+                      {/* HITL Action Approval Card */}
+                      {m.pendingAction && (
+                        <div style={{ marginTop: "10px" }}>
+                          <ApprovalCardInline
+                            pendingAction={m.pendingAction}
+                            onResolved={(r) =>
+                              handleSendMessage(
                                 r.success
                                   ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
                                   : `Rejected execution: ${r.error || "Cancelled"}.`
-                              )}
-                            />
-                          </div>
-                        )}
-
-                        {/* Message footer: copy + replay voice */}
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px", marginTop: "6px", paddingTop: "4px", borderTop: `1px solid ${T.border}` }}>
-                          {m.audioData && (
-                            <button type="button" onClick={() => playSpeech(m.audioData)} title="Replay Voice"
-                              style={{ ...tinyBtnStyle }}>
-                              <Volume2 size={11} />
-                              <span>Replay</span>
-                            </button>
-                          )}
-                          <button type="button" onClick={() => copyMsg(m.id, m.content)} title="Copy"
-                            style={{ ...tinyBtnStyle, color: copiedMsgId === m.id ? T.success : T.textMuted }}>
-                            {copiedMsgId === m.id ? <Check size={11} /> : <Copy size={11} />}
-                            <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
-                          </button>
+                              )
+                            }
+                          />
                         </div>
+                      )}
+
+                      {/* Message Actions Footer */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "flex-end",
+                          gap: "8px",
+                          marginTop: "8px",
+                          paddingTop: "6px",
+                          borderTop: `1px solid ${T.borderLight}`,
+                        }}
+                      >
+                        {m.audioData && (
+                          <button
+                            type="button"
+                            onClick={() => playSpeech(m.audioData)}
+                            title="Replay Voice Summary"
+                            style={{ ...tinyBtnStyle }}
+                          >
+                            <Volume2 size={11} />
+                            <span>Replay</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => copyMsg(m.id, m.content)}
+                          title="Copy response"
+                          style={{
+                            ...tinyBtnStyle,
+                            color: copiedMsgId === m.id ? T.success : T.textMuted,
+                          }}
+                        >
+                          {copiedMsgId === m.id ? <Check size={11} /> : <Copy size={11} />}
+                          <span>{copiedMsgId === m.id ? "Copied" : "Copy"}</span>
+                        </button>
                       </div>
-                    )}
-                  </div>
-                ))}
-                <div ref={messagesEndRef} />
-              </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+
+          {/* ── Input Bar (Elevated Capsule with Soft Aurora Glow) ── */}
+          <footer
+            style={{
+              padding: "12px 16px",
+              borderTop: `1px solid ${T.border}`,
+              background: "rgba(255, 255, 255, 0.9)",
+              backdropFilter: "blur(12px)",
+            }}
+          >
+            {agentState !== "idle" && (
+              <button
+                type="button"
+                onClick={cancelRequest}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  padding: "6px",
+                  marginBottom: "8px",
+                  borderRadius: "8px",
+                  background: T.errorBg,
+                  border: `1px solid ${T.errorBorder}`,
+                  color: T.error,
+                  fontSize: "0.75rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                <StopCircle size={13} />
+                <span>Cancel Request</span>
+              </button>
             )}
 
-            {/* ── Input Area ─────────────────────────────────────────── */}
-            <footer style={{ padding: "12px 14px", borderTop: `1px solid ${T.border}`, background: T.bgSecondary }}>
-              {agentState !== "idle" && (
-                <button type="button" onClick={cancelRequest}
-                  style={{
-                    width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-                    gap: "6px", padding: "6px", marginBottom: "8px",
-                    borderRadius: "8px", background: "rgba(239,68,68,0.08)",
-                    border: "1px solid rgba(239,68,68,0.2)", color: T.error,
-                    fontSize: "0.75rem", fontWeight: 600, cursor: "pointer",
-                  }}>
-                  <StopCircle size={13} />
-                  <span>Cancel Request</span>
-                </button>
-              )}
-              <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendMessage();
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "#ffffff",
+                border: `1px solid ${T.border}`,
+                borderRadius: "10px",
+                padding: "6px 8px 6px 14px",
+                boxShadow:
+                  "0 2px 8px rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(79, 70, 229, 0.04)",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <input
+                type="text"
+                value={inputPrompt}
+                onChange={(e) => {
+                  stopAudio();
+                  setInputPrompt(e.target.value);
+                }}
+                placeholder="Ask Summer to deploy, inspect, or diagnose…"
+                disabled={agentState !== "idle"}
                 style={{
-                  display: "flex", alignItems: "center", gap: "6px",
-                  background: T.bgCard, border: `1px solid ${T.border}`,
-                  borderRadius: "10px", padding: "5px 6px 5px 12px",
-                  transition: "border-color 0.15s ease",
-                }}>
-                <input
-                  type="text"
-                  value={inputPrompt}
-                  onChange={(e) => { stopAudio(); setInputPrompt(e.target.value); }}
-                  placeholder="Ask Summer…"
-                  disabled={agentState !== "idle"}
-                  style={{
-                    flex: 1, background: "transparent", border: "none",
-                    color: T.text, fontSize: "0.82rem", outline: "none",
-                  }}
-                />
-                <button type="button" onClick={toggleMic}
-                  title={isListening ? "Listening…" : "Voice Input"}
-                  style={{
-                    ...iconBtnStyle,
-                    background: isListening ? "rgba(239,68,68,0.15)" : "transparent",
-                    color: isListening ? T.error : T.textMuted,
-                    border: isListening ? "1px solid rgba(239,68,68,0.3)" : "none",
-                  }}>
-                  {isListening ? <MicOff size={14} /> : <Mic size={14} />}
-                </button>
-                <button type="submit"
-                  disabled={!inputPrompt.trim() || agentState !== "idle"}
-                  title="Send"
-                  style={{
-                    background: inputPrompt.trim() && agentState === "idle" ? T.accentGradient : "rgba(255,255,255,0.05)",
-                    border: "none", borderRadius: "8px",
-                    padding: "7px 10px",
-                    color: inputPrompt.trim() && agentState === "idle" ? "#fff" : T.textMuted,
-                    cursor: inputPrompt.trim() && agentState === "idle" ? "pointer" : "not-allowed",
-                    fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "all 0.15s ease",
-                  }}>
-                  <Send size={13} />
-                </button>
-              </form>
-            </footer>
-          </aside>
-        </>
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  color: T.text,
+                  fontSize: "0.84rem",
+                  outline: "none",
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={toggleMic}
+                title={isListening ? "Listening…" : "Voice Input"}
+                style={{
+                  ...iconBtnStyle,
+                  background: isListening ? T.errorBg : "transparent",
+                  color: isListening ? T.error : T.textSecondary,
+                  border: isListening ? `1px solid ${T.errorBorder}` : "none",
+                }}
+              >
+                {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+              </button>
+
+              <button
+                type="submit"
+                disabled={!inputPrompt.trim() || agentState !== "idle"}
+                title="Send Message"
+                style={{
+                  background:
+                    inputPrompt.trim() && agentState === "idle"
+                      ? T.accentGradient
+                      : T.bgInset,
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "7px 11px",
+                  color:
+                    inputPrompt.trim() && agentState === "idle" ? "#ffffff" : T.textMuted,
+                  cursor:
+                    inputPrompt.trim() && agentState === "idle" ? "pointer" : "not-allowed",
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow:
+                    inputPrompt.trim() && agentState === "idle"
+                      ? "0 2px 8px rgba(79, 70, 229, 0.3)"
+                      : "none",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Send size={13} />
+              </button>
+            </form>
+          </footer>
+        </aside>
       )}
 
       {/* ── Keyframe Animations ─────────────────────────────────────── */}
       <style jsx global>{`
         @keyframes drawerSlideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
+          from {
+            transform: translateX(100%);
+            opacity: 0.4;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
         }
         @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        @keyframes summerPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.6;
+          }
+          50% {
+            transform: scale(1.15);
+            opacity: 0.9;
+          }
         }
       `}</style>
     </>
   );
 }
 
-// ─── Inline Approval Card ─────────────────────────────────────────────────
+// ─── Inline Approval Card (Light Mode) ───────────────────────────────────────
 
-function ApprovalCardInline({ pendingAction, onResolved }: {
+function ApprovalCardInline({
+  pendingAction,
+  onResolved,
+}: {
   pendingAction: any;
   onResolved: (result: { success: boolean; error?: string }) => void;
 }) {
@@ -1039,7 +1759,10 @@ function ApprovalCardInline({ pendingAction, onResolved }: {
   async function handleDecision(decision: "APPROVE" | "REJECT") {
     setLoading(true);
     try {
-      const res = await agentApi.approveAction({ actionId: pendingAction.actionId, decision });
+      const res = await agentApi.approveAction({
+        actionId: pendingAction.actionId,
+        decision,
+      });
       onResolved({ success: res.success, error: res.error });
     } catch (err: any) {
       onResolved({ success: false, error: err.message });
@@ -1049,53 +1772,117 @@ function ApprovalCardInline({ pendingAction, onResolved }: {
   }
 
   return (
-    <div style={{
-      borderRadius: "8px", background: "rgba(245, 158, 11, 0.06)",
-      border: "1px solid rgba(245, 158, 11, 0.15)", padding: "10px 12px",
-      fontSize: "0.78rem",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-        <AlertCircle size={13} style={{ color: T.warning }} />
-        <span style={{ fontWeight: 700, color: T.warning }}>Approval Required</span>
-        <span style={{ fontSize: "0.65rem", padding: "1px 6px", borderRadius: "8px", background: "rgba(245,158,11,0.1)", color: T.warning, fontWeight: 600 }}>
+    <div
+      style={{
+        borderRadius: "8px",
+        background: "rgba(217, 119, 6, 0.05)",
+        border: "1px solid rgba(217, 119, 6, 0.2)",
+        padding: "10px 14px",
+        fontSize: "0.78rem",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          marginBottom: "6px",
+        }}
+      >
+        <AlertCircle size={14} style={{ color: "#d97706" }} />
+        <span style={{ fontWeight: 700, color: "#d97706" }}>Human Approval Required</span>
+        <span
+          style={{
+            fontSize: "0.64rem",
+            padding: "1px 6px",
+            borderRadius: "6px",
+            background: "rgba(217, 119, 6, 0.12)",
+            color: "#b45309",
+            fontWeight: 700,
+          }}
+        >
           {pendingAction.riskTier}
         </span>
       </div>
-      <p style={{ margin: "0 0 8px", color: T.textSecondary, lineHeight: 1.4 }}>{pendingAction.explanation}</p>
-      <code style={{ display: "block", padding: "4px 8px", borderRadius: "6px", background: T.bg, color: T.accent, fontSize: "0.72rem", fontFamily: "monospace", marginBottom: "8px" }}>
+      <p style={{ margin: "0 0 8px", color: "#475569", lineHeight: 1.45 }}>
+        {pendingAction.explanation}
+      </p>
+      <code
+        style={{
+          display: "block",
+          padding: "5px 8px",
+          borderRadius: "6px",
+          background: "#ffffff",
+          color: "#4f46e5",
+          fontSize: "0.72rem",
+          fontFamily: "monospace",
+          marginBottom: "10px",
+          border: "1px solid #e2e8f0",
+        }}
+      >
         {pendingAction.toolName}
       </code>
       <div style={{ display: "flex", gap: "8px" }}>
-        <button type="button" disabled={loading} onClick={() => handleDecision("APPROVE")}
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => handleDecision("APPROVE")}
           style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
-            padding: "6px 12px", borderRadius: "6px",
-            background: "linear-gradient(180deg, #059669, #047857)", color: "#fff",
-            border: "none", fontWeight: 600, fontSize: "0.75rem", cursor: loading ? "not-allowed" : "pointer",
-          }}>
-          {loading ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Check size={12} />}
-          Approve
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "5px",
+            padding: "7px 12px",
+            borderRadius: "6px",
+            background: "linear-gradient(180deg, #059669, #047857)",
+            color: "#ffffff",
+            border: "none",
+            fontWeight: 600,
+            fontSize: "0.76rem",
+            cursor: loading ? "not-allowed" : "pointer",
+            boxShadow: "0 1px 3px rgba(5, 150, 105, 0.2)",
+          }}
+        >
+          {loading ? (
+            <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+          ) : (
+            <Check size={13} />
+          )}
+          Approve & Run
         </button>
-        <button type="button" disabled={loading} onClick={() => handleDecision("REJECT")}
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => handleDecision("REJECT")}
           style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
-            padding: "6px 12px", borderRadius: "6px",
-            background: T.bgCard, color: T.textSecondary,
-            border: `1px solid ${T.border}`, fontWeight: 600, fontSize: "0.75rem", cursor: loading ? "not-allowed" : "pointer",
-          }}>
-          <X size={12} /> Reject
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "5px",
+            padding: "7px 12px",
+            borderRadius: "6px",
+            background: "#ffffff",
+            color: "#475569",
+            border: "1px solid #e2e8f0",
+            fontWeight: 600,
+            fontSize: "0.76rem",
+            cursor: loading ? "not-allowed" : "pointer",
+          }}
+        >
+          <X size={13} /> Reject
         </button>
       </div>
     </div>
   );
 }
 
-// ─── Shared Styles ──────────────────────────────────────────────────────────
+// ─── Button Styles ──────────────────────────────────────────────────────────
 
 const iconBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  borderRadius: "6px",
+  borderRadius: "7px",
   padding: "6px",
   cursor: "pointer",
   display: "flex",
@@ -1107,12 +1894,13 @@ const iconBtnStyle: React.CSSProperties = {
 const tinyBtnStyle: React.CSSProperties = {
   background: "transparent",
   border: "none",
-  color: T.textMuted,
+  color: "#94a3b8",
   cursor: "pointer",
   display: "flex",
   alignItems: "center",
-  gap: "3px",
-  fontSize: "0.65rem",
-  padding: "2px 4px",
-  borderRadius: "4px",
+  gap: "4px",
+  fontSize: "0.68rem",
+  padding: "3px 6px",
+  borderRadius: "5px",
+  fontWeight: 500,
 };

@@ -39,22 +39,27 @@ export function sanitizeForSpeech(rawText: string): string {
 }
 
 /**
- * Intelligently generates a natural, concise 1-2 sentence spoken summary for voice narration.
- * Prevents audio cutoffs, eliminates rambling over raw tables, and sounds completely natural.
+ * Intelligently generates a descriptive, natural spoken overview explaining what was done and the final result.
+ * Avoids raw table pipes and code blocks while providing clear, comprehensive verbal context.
  */
-export async function summarizeForSpokenVoice(rawText: string): Promise<string> {
+export async function summarizeForSpokenVoice(rawText: string, toolExecutions?: any[]): Promise<string> {
   const isComplex =
     rawText.includes("|") ||
     rawText.includes("```") ||
-    rawText.length > 180 ||
-    (rawText.match(/\n[-*]/g) || []).length > 2;
+    rawText.length > 200 ||
+    (rawText.match(/\n[-*]/g) || []).length > 2 ||
+    (toolExecutions && toolExecutions.length > 0);
+
+  const toolsRan = toolExecutions && toolExecutions.length > 0
+    ? toolExecutions.map((t: any) => t.name || t.tool || "tool").join(", ")
+    : "none";
 
   if (!isComplex) {
     const cleaned = sanitizeForSpeech(rawText);
     return cleaned.length > 0 ? cleaned : "Here is the information you requested.";
   }
 
-  // Fast micro-summarization using gemini-3.5-flash-lite (<800ms)
+  // Micro-summarization using gemini-3.5-flash-lite (<800ms)
   try {
     const key = getActiveKey();
     const res = await fetch(
@@ -67,42 +72,47 @@ export async function summarizeForSpokenVoice(rawText: string): Promise<string> 
             {
               parts: [
                 {
-                  text: `You are Summer, a smart and friendly cloud DevOps AI copilot on Whizan Cloud.
-Summarize the following cloud response into 1 or 2 natural, conversational spoken sentences for voice narration.
-Highlight the primary status, action taken, or outcome concisely and warmly.
-Do NOT read tables, markdown pipes, code, or bullet points. Keep it under 35 words.
+                  text: `You are Summer, a friendly and highly capable cloud DevOps engineer on Whizan Cloud.
+Generate a clear, engaging, and descriptive spoken executive summary for voice narration.
+- Explain what background tasks or diagnostic tools you performed under the hood.
+- Clearly describe the final outcome, health status, or metrics in precise detail.
+- Keep the narration conversational, warm, and natural (between 3 to 5 clear sentences, approximately 50 to 90 words).
+- Do NOT read raw code, markdown table pipes, json brackets, URLs, or hashes.
+- Speak in complete, fluid sentences suitable for voice narration.
 
-Response to summarize:
+Underlying tools executed: ${toolsRan}
+
+Response to explain:
 ${rawText}`,
                 },
               ],
             },
           ],
         }),
-        signal: AbortSignal.timeout(3500),
+        signal: AbortSignal.timeout(4000),
       }
     );
 
     if (res.ok) {
       const data: any = await res.json();
       const summary = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (summary && summary.length > 10) {
+      if (summary && summary.length > 15) {
         return sanitizeForSpeech(summary);
       }
     }
   } catch (err: any) {
-    console.warn("[TTS Summarizer] Fast micro-summary fallback:", err.message);
+    console.warn("[TTS Summarizer] Micro-summary fallback:", err.message);
   }
 
-  // Graceful grammatical sentence boundary extraction (never cut off mid-sentence)
+  // Graceful grammatical sentence boundary extraction (3-4 sentences, never cut off mid-sentence)
   const cleaned = sanitizeForSpeech(rawText);
   const sentences = cleaned.match(/[^.!?]+[.!?]+/g);
   if (sentences && sentences.length > 0) {
-    const firstTwo = sentences.slice(0, 2).join(" ").trim();
-    if (firstTwo.length > 15) return firstTwo;
+    const descriptiveSlice = sentences.slice(0, 4).join(" ").trim();
+    if (descriptiveSlice.length > 30) return descriptiveSlice;
   }
 
-  return cleaned.slice(0, 220).trim();
+  return cleaned.slice(0, 380).trim();
 }
 
 /**
@@ -183,8 +193,8 @@ export function shouldGenerateAudio(text: string, toolExecutions?: any[]): boole
  * Synthesizes female audio using gemini-3.8-flash-tts with Aoede prebuilt voice
  * Uses intelligent voice summarization and sticky key rotation
  */
-export async function generateSpeechAudio(text: string): Promise<TtsResult> {
-  const spokenText = await summarizeForSpokenVoice(text);
+export async function generateSpeechAudio(text: string, toolExecutions?: any[]): Promise<TtsResult> {
+  const spokenText = await summarizeForSpokenVoice(text, toolExecutions);
   if (!spokenText) {
     return { success: false, spokenText: "", error: "No text to speak" };
   }

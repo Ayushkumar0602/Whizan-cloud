@@ -7,25 +7,25 @@ interface MarkdownViewProps {
   content: string;
 }
 
-// Design tokens matching the dark Summer drawer
+// Design tokens matching Whizan Cloud's clean light-mode design standard
 const M = {
-  text: "#e2e8f0",
-  textSecondary: "#94a3b8",
-  textBold: "#f8fafc",
-  accent: "#6366f1",
-  bgCode: "#0c0f1a",
-  bgCodeHeader: "#111528",
-  border: "rgba(255, 255, 255, 0.06)",
-  bgTable: "rgba(255, 255, 255, 0.02)",
-  bgTableHeader: "rgba(255, 255, 255, 0.04)",
-  bgTableStripe: "rgba(255, 255, 255, 0.02)",
-  success: "#10b981",
-  link: "#818cf8",
+  text: "#0f172a",
+  textSecondary: "#475569",
+  textBold: "#020617",
+  accent: "#4f46e5",
+  bgCode: "#f8fafc",
+  bgCodeHeader: "#f1f5f9",
+  border: "#e2e8f0",
+  bgTable: "#ffffff",
+  bgTableHeader: "#f8fafc",
+  bgTableStripe: "#fbfcfe",
+  success: "#059669",
+  link: "#2563eb",
 };
 
 export function MarkdownView({ content }: MarkdownViewProps) {
   const elements = parseMarkdownBlocks(content);
-  return <div>{elements}</div>;
+  return <div style={{ color: M.text, fontSize: "0.84rem", lineHeight: 1.6 }}>{elements}</div>;
 }
 
 function CodeBlock({ code, language }: { code: string; language?: string }) {
@@ -40,12 +40,13 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
   return (
     <div
       style={{
-        margin: "8px 0",
+        margin: "10px 0",
         borderRadius: "8px",
         overflow: "hidden",
         border: `1px solid ${M.border}`,
         background: M.bgCode,
-        fontSize: "0.76rem",
+        fontSize: "0.78rem",
+        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)",
       }}
     >
       <div
@@ -53,19 +54,19 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "5px 10px",
+          padding: "6px 12px",
           background: M.bgCodeHeader,
           borderBottom: `1px solid ${M.border}`,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <div style={{ display: "flex", gap: "4px" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ef4444", opacity: 0.7 }} />
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#f59e0b", opacity: 0.7 }} />
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#10b981", opacity: 0.7 }} />
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#ef4444", opacity: 0.8 }} />
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#f59e0b", opacity: 0.8 }} />
+            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#10b981", opacity: 0.8 }} />
           </div>
-          <span style={{ fontSize: "0.65rem", color: M.textSecondary, fontFamily: "monospace", textTransform: "uppercase", marginLeft: "4px" }}>
-            {language || "code"}
+          <span style={{ fontSize: "0.68rem", color: M.textSecondary, fontFamily: "monospace", textTransform: "uppercase", marginLeft: "6px", fontWeight: 600 }}>
+            {language || "text"}
           </span>
         </div>
         <button
@@ -76,19 +77,20 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
             display: "flex", alignItems: "center", gap: "4px",
             background: "transparent", border: "none",
             color: copied ? M.success : M.textSecondary,
-            fontSize: "0.68rem", cursor: "pointer", padding: "2px 6px", borderRadius: "4px",
+            fontSize: "0.7rem", cursor: "pointer", padding: "2px 6px", borderRadius: "4px",
+            fontWeight: 500,
           }}
         >
-          {copied ? <Check size={11} /> : <Copy size={11} />}
+          {copied ? <Check size={12} /> : <Copy size={12} />}
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
       <pre
         style={{
-          margin: 0, padding: "10px 12px", overflowX: "auto",
+          margin: 0, padding: "12px 14px", overflowX: "auto",
           color: M.text,
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-          lineHeight: 1.5,
+          lineHeight: 1.55,
         }}
       >
         <code>{code}</code>
@@ -135,7 +137,7 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
     // Headers
     if (line.startsWith("### ")) {
       nodes.push(
-        <h4 key={`h4-${i}`} style={{ fontSize: "0.88rem", fontWeight: 700, margin: "10px 0 4px", color: M.textBold }}>
+        <h4 key={`h4-${i}`} style={{ fontSize: "0.92rem", fontWeight: 700, margin: "12px 0 4px", color: M.textBold }}>
           {renderInline(line.slice(4))}
         </h4>
       );
@@ -144,7 +146,7 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
     }
     if (line.startsWith("## ")) {
       nodes.push(
-        <h3 key={`h3-${i}`} style={{ fontSize: "0.95rem", fontWeight: 700, margin: "12px 0 6px", color: M.textBold }}>
+        <h3 key={`h3-${i}`} style={{ fontSize: "1rem", fontWeight: 700, margin: "14px 0 6px", color: M.textBold }}>
           {renderInline(line.slice(3))}
         </h3>
       );
@@ -153,7 +155,7 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
     }
     if (line.startsWith("# ")) {
       nodes.push(
-        <h2 key={`h2-${i}`} style={{ fontSize: "1.05rem", fontWeight: 800, margin: "14px 0 6px", color: M.textBold }}>
+        <h2 key={`h2-${i}`} style={{ fontSize: "1.1rem", fontWeight: 800, margin: "16px 0 6px", color: M.textBold }}>
           {renderInline(line.slice(2))}
         </h2>
       );
@@ -161,7 +163,7 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
       continue;
     }
 
-    // Lists
+    // Bullet Lists
     if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
       const listItems: string[] = [];
       while (i < lines.length && (lines[i].trim().startsWith("- ") || lines[i].trim().startsWith("* "))) {
@@ -169,9 +171,9 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
         i++;
       }
       nodes.push(
-        <ul key={`ul-${i}`} style={{ margin: "6px 0", paddingLeft: "18px", fontSize: "0.82rem", color: M.text }}>
+        <ul key={`ul-${i}`} style={{ margin: "6px 0", paddingLeft: "18px", fontSize: "0.84rem", color: M.text }}>
           {listItems.map((item, idx) => (
-            <li key={idx} style={{ margin: "2px 0" }}>
+            <li key={idx} style={{ margin: "3px 0" }}>
               {renderInline(item)}
             </li>
           ))}
@@ -188,9 +190,9 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
         i++;
       }
       nodes.push(
-        <ol key={`ol-${i}`} style={{ margin: "6px 0", paddingLeft: "20px", fontSize: "0.82rem", color: M.text }}>
+        <ol key={`ol-${i}`} style={{ margin: "6px 0", paddingLeft: "20px", fontSize: "0.84rem", color: M.text }}>
           {listItems.map((item, idx) => (
-            <li key={idx} style={{ margin: "2px 0" }}>
+            <li key={idx} style={{ margin: "3px 0" }}>
               {renderInline(item)}
             </li>
           ))}
@@ -210,10 +212,10 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
         <blockquote
           key={`bq-${i}`}
           style={{
-            margin: "6px 0", padding: "6px 12px",
+            margin: "8px 0", padding: "8px 14px",
             borderLeft: `3px solid ${M.accent}`,
-            background: "rgba(99, 102, 241, 0.05)",
-            color: M.textSecondary, fontSize: "0.82rem",
+            background: "rgba(79, 70, 229, 0.04)",
+            color: M.textSecondary, fontSize: "0.84rem",
             borderRadius: "0 6px 6px 0",
           }}
         >
@@ -233,7 +235,7 @@ function parseMarkdownBlocks(text: string): React.ReactNode[] {
 
     // Regular Paragraph
     nodes.push(
-      <p key={`p-${i}`} style={{ margin: "5px 0", fontSize: "0.82rem", lineHeight: 1.6, color: M.text }}>
+      <p key={`p-${i}`} style={{ margin: "6px 0", fontSize: "0.84rem", lineHeight: 1.6, color: M.text }}>
         {renderInline(line)}
       </p>
     );
@@ -262,18 +264,19 @@ function renderTable(lines: string[], key: string): React.ReactNode {
     <div
       key={key}
       style={{
-        margin: "8px 0", borderRadius: "8px", overflowX: "auto",
+        margin: "10px 0", borderRadius: "8px", overflowX: "auto",
         border: `1px solid ${M.border}`, background: M.bgTable,
+        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.03)",
       }}
     >
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.76rem" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.78rem" }}>
         <thead>
           <tr style={{ background: M.bgTableHeader, borderBottom: `1px solid ${M.border}` }}>
             {headerCells.map((cell, idx) => (
               <th
                 key={idx}
                 style={{
-                  textAlign: "left", padding: "7px 10px",
+                  textAlign: "left", padding: "8px 12px",
                   fontWeight: 600, color: M.textSecondary,
                 }}
               >
@@ -292,7 +295,7 @@ function renderTable(lines: string[], key: string): React.ReactNode {
               }}
             >
               {row.map((cell, cellIdx) => (
-                <td key={cellIdx} style={{ padding: "7px 10px", color: M.text }}>
+                <td key={cellIdx} style={{ padding: "8px 12px", color: M.text }}>
                   {renderInline(cell)}
                 </td>
               ))}
@@ -324,12 +327,13 @@ function renderInline(text: string): React.ReactNode {
         <code
           key={idx}
           style={{
-            background: "rgba(99, 102, 241, 0.12)",
-            color: M.link,
-            padding: "1px 5px", borderRadius: "4px",
-            fontSize: "0.76rem",
+            background: "#f1f5f9",
+            color: M.accent,
+            padding: "2px 5px", borderRadius: "4px",
+            fontSize: "0.78rem",
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
             fontWeight: 500,
+            border: `1px solid #e2e8f0`,
           }}
         >
           {part.slice(1, -1)}

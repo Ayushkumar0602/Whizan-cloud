@@ -376,7 +376,7 @@ export async function handleAgentChatStream(
     // ── 8. TTS — Generate & Emit Asynchronously (Non-Blocking) ────────────
     if (enableTts && finalText && shouldGenerateAudio(finalText, toolExecutions)) {
       try {
-        const audio = await generateSpeechAudio(finalText);
+        const audio = await generateSpeechAudio(finalText, toolExecutions);
         if (audio) {
           emit({
             type: "audio",

@@ -2,6 +2,8 @@
   "name": "hostify",
   "private": true,
   "scripts": {
+    "build:render": "bash ./scripts/render-build.sh",
+    "build:api": "bash ./scripts/render-build.sh",
     "build": "turbo run build",
     "dev": "turbo run dev",
     "dev:api": "turbo run dev --filter=api",
