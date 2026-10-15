@@ -5,6 +5,7 @@ import { checkVmAvailabilityForTool } from "./guardrails.js";
 import { buildQueue } from "../../routes/deployments.js";
 import { serviceQueue } from "../../routes/services.js";
 import { getAuthenticatedGitUrl } from "../../lib/github-utils.js";
+import { decrypt } from "../../lib/crypto.js";
 
 export interface ToolDefinition {
   name: string;
@@ -107,6 +108,18 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
     parameters: {
       type: "OBJECT",
       properties: {},
+    },
+  },
+  {
+    name: "list_environment_variables",
+    description: "Lists all configured environment variables and keys for a backend service or web project. Sensitive secret values are securely masked (e.g. ••••••••).",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        targetType: { type: "STRING", enum: ["service", "project"], description: "Whether to list variables for a service or project" },
+        targetId: { type: "STRING", description: "The ID, slug, or name of the service or project" },
+      },
+      required: ["targetType", "targetId"],
     },
   },
   {
@@ -577,6 +590,85 @@ export async function executeAgentTool(
           select: { id: true, name: true, slug: true, description: true, enabled: true, updatedAt: true },
         });
         return { success: true, data: workflows };
+      }
+
+      case "list_environment_variables": {
+        const targetType = String(parameters.targetType || "service").toLowerCase();
+        const targetId = String(parameters.targetId || "").trim();
+
+        if (targetType === "project") {
+          const project = await prisma.project.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+            include: { envVariables: true },
+          });
+          if (!project) return { success: false, error: `Project "${targetId}" not found.` };
+
+          const variables = project.envVariables.map((v) => {
+            let displayVal = "••••••••";
+            if (!v.isSecret) {
+              try {
+                displayVal = decrypt(v.value) || v.value;
+              } catch {
+                displayVal = v.value;
+              }
+            }
+            return {
+              key: v.key,
+              value: displayVal,
+              isSecret: v.isSecret,
+            };
+          });
+
+          return {
+            success: true,
+            data: {
+              targetType: "project",
+              targetName: project.name,
+              targetSlug: project.slug,
+              count: variables.length,
+              variables,
+            },
+          };
+        } else {
+          const service = await prisma.backendService.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+            include: { envVariables: true },
+          });
+          if (!service) return { success: false, error: `Backend service "${targetId}" not found.` };
+
+          const variables = service.envVariables.map((v) => {
+            let displayVal = "••••••••";
+            if (!v.isSecret) {
+              try {
+                displayVal = decrypt(v.value) || v.value;
+              } catch {
+                displayVal = v.value;
+              }
+            }
+            return {
+              key: v.key,
+              value: displayVal,
+              isSecret: v.isSecret,
+            };
+          });
+
+          return {
+            success: true,
+            data: {
+              targetType: "service",
+              targetName: service.name,
+              targetSlug: service.slug,
+              count: variables.length,
+              variables,
+            },
+          };
+        }
       }
 
       // ───────────────────────────────────────────────────────────────────────

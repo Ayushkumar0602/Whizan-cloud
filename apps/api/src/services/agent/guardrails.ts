@@ -29,6 +29,7 @@ const TIER_1_TOOLS = new Set([
   "list_workflows",
   "check_endpoint_health",
   "curl_endpoint",
+  "list_environment_variables",
   "navigate_ui",
   "open_external_url",
   "get_system_status",

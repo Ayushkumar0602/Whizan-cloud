@@ -1517,13 +1517,38 @@ export function SummerDrawer() {
                           <div style={{ marginTop: "10px" }}>
                             <ApprovalCardInline
                               pendingAction={m.pendingAction}
-                              onResolved={(r) =>
-                                handleSendMessage(
-                                  r.success
-                                    ? `Confirmed: Approved execution of ${m.pendingAction?.toolName}.`
-                                    : `Rejected execution: ${r.error || "Cancelled"}.`
-                                )
-                              }
+                              onResolved={(r) => {
+                                // Mark action as resolved on this message
+                                setMessages((prev) =>
+                                  prev.map((msg) =>
+                                    msg.id === m.id
+                                      ? {
+                                          ...msg,
+                                          pendingAction: {
+                                            ...msg.pendingAction,
+                                            resolved: true,
+                                            decision: r.success ? "APPROVED" : "REJECTED",
+                                          },
+                                        }
+                                      : msg
+                                  )
+                                );
+
+                                // Add execution outcome directly into chat UI without re-prompting the AI in a loop
+                                const outcomeText = r.success
+                                  ? `✔ **${m.pendingAction?.toolName}** executed successfully.\n\n${typeof r.result === "string" ? r.result : (r.result?.message || JSON.stringify(r.result, null, 2))}`
+                                  : `✖ Execution rejected or failed for **${m.pendingAction?.toolName}**: ${r.error || "Action cancelled."}`;
+
+                                setMessages((prev) => [
+                                  ...prev,
+                                  {
+                                    id: `res-${Date.now()}`,
+                                    role: "assistant",
+                                    content: outcomeText,
+                                    createdAt: new Date().toISOString(),
+                                  },
+                                ]);
+                              }}
                             />
                           </div>
                         )}
@@ -1738,7 +1763,7 @@ function ApprovalCardInline({
   onResolved,
 }: {
   pendingAction: any;
-  onResolved: (result: { success: boolean; error?: string }) => void;
+  onResolved: (result: { success: boolean; error?: string; result?: any }) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | null>(null);
@@ -1751,7 +1776,7 @@ function ApprovalCardInline({
         decision: choice,
       });
       setDecision(choice === "APPROVE" ? "APPROVED" : "REJECTED");
-      onResolved({ success: res.success, error: res.error });
+      onResolved({ success: res.success, error: res.error, result: res.result });
     } catch (err: any) {
       onResolved({ success: false, error: err.message });
     } finally {
@@ -1759,7 +1784,10 @@ function ApprovalCardInline({
     }
   }
 
-  if (decision === "APPROVED") {
+  const isApproved = decision === "APPROVED" || (pendingAction?.resolved && pendingAction?.decision === "APPROVED");
+  const isRejected = decision === "REJECTED" || (pendingAction?.resolved && pendingAction?.decision === "REJECTED");
+
+  if (isApproved) {
     return (
       <div
         style={{
@@ -1780,7 +1808,7 @@ function ApprovalCardInline({
     );
   }
 
-  if (decision === "REJECTED") {
+  if (isRejected) {
     return (
       <div
         style={{
