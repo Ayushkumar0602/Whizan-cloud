@@ -2,6 +2,9 @@ import { prisma } from "../../lib/prisma.js";
 import { redisClient } from "../../lib/redis.js";
 import { checkVmOnline } from "../../lib/vm-status.js";
 import { checkVmAvailabilityForTool } from "./guardrails.js";
+import { buildQueue } from "../../routes/deployments.js";
+import { serviceQueue } from "../../routes/services.js";
+import { getAuthenticatedGitUrl } from "../../lib/github-utils.js";
 
 export interface ToolDefinition {
   name: string;
@@ -202,6 +205,21 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
       type: "OBJECT",
       properties: {
         url: { type: "STRING", description: "The URL to open" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "curl_endpoint",
+    description: "Performs an HTTP/HTTPS request (GET, HEAD, POST) to inspect status codes, headers, response latency, and body snippet of any public URL or internal endpoint.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        url: { type: "STRING", description: "The full HTTP/HTTPS URL to test (e.g. http://my-app.20.2.136.11.nip.io/health or https://api.github.com)" },
+        method: { type: "STRING", enum: ["GET", "HEAD", "POST"], description: "HTTP method (defaults to GET)" },
+        headers: { type: "OBJECT", description: "Optional key-value HTTP headers to send" },
+        body: { type: "STRING", description: "Optional request body string (for POST requests)" },
+        timeoutMs: { type: "INTEGER", description: "Request timeout in ms (default 5000, max 15000)" },
       },
       required: ["url"],
     },
@@ -609,15 +627,113 @@ export async function executeAgentTool(
       case "redeploy_resource": {
         const { canExecute, notice } = await checkVmAvailabilityForTool("redeploy_resource");
         if (!canExecute) {
-          return { success: false, error: notice };
+          return { success: false, error: notice || "The compute node is currently offline. Please try again later." };
         }
 
-        return {
-          success: true,
-          data: {
-            message: `Redeployment enqueued for ${parameters.targetType} "${parameters.targetId}". Build worker has been dispatched.`,
-          },
-        };
+        const targetType = String(parameters.targetType || "project").toLowerCase();
+        const targetId = String(parameters.targetId || "").trim();
+
+        if (targetType === "project") {
+          const project = await prisma.project.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+          });
+          if (!project) {
+            return { success: false, error: `Project "${targetId}" not found for your account.` };
+          }
+
+          const deployment = await prisma.deployment.create({
+            data: {
+              projectId: project.id,
+              commitHash: "manual-summer",
+              commitMessage: "Redeployed via Summer Agent Copilot",
+              branch: project.branch,
+              status: "QUEUED",
+            },
+          });
+
+          const isDirectUpload = !project.githubRepoUrl || project.githubRepoUrl === "direct-upload" || project.githubRepoUrl.trim() === "";
+          const repoUrl = isDirectUpload ? "direct-upload" : await getAuthenticatedGitUrl(project.githubRepoUrl, userId);
+
+          await buildQueue.add("build", {
+            deploymentId: deployment.id,
+            projectId: project.id,
+            repoUrl,
+            branch: project.branch,
+            rootDir: project.rootDir || ".",
+            buildCommand: project.buildCommand,
+            installCommand: project.installCommand,
+            outputDir: project.outputDir,
+            framework: project.framework,
+            slug: project.slug,
+            isDirectUpload,
+          });
+
+          return {
+            success: true,
+            data: {
+              message: `Redeployment enqueued for project "${project.name}" (${project.slug}). Build worker has been dispatched.`,
+              deploymentId: deployment.id,
+              targetType: "project",
+              targetName: project.name,
+              status: "QUEUED",
+            },
+          };
+        } else {
+          const service = await prisma.backendService.findFirst({
+            where: {
+              userId,
+              OR: [{ id: targetId }, { slug: targetId }, { name: targetId }],
+            },
+          });
+          if (!service) {
+            return { success: false, error: `Backend service "${targetId}" not found for your account.` };
+          }
+
+          const deployment = await prisma.serviceDeployment.create({
+            data: {
+              serviceId: service.id,
+              commitHash: "manual-summer",
+              commitMessage: "Redeployed via Summer Agent Copilot",
+              branch: service.branch,
+              status: "QUEUED",
+            },
+          });
+
+          const isDirectUpload = !service.githubRepoUrl || service.githubRepoUrl === "direct-upload" || service.githubRepoUrl.trim() === "";
+          const repoUrl = isDirectUpload ? "direct-upload" : await getAuthenticatedGitUrl(service.githubRepoUrl, userId);
+
+          await serviceQueue.add("service-build", {
+            deploymentId: deployment.id,
+            serviceId: service.id,
+            repoUrl,
+            branch: service.branch,
+            language: service.language,
+            rootDir: service.rootDir,
+            installCommand: service.installCommand,
+            startCommand: service.startCommand,
+            internalPort: service.internalPort,
+            slug: service.slug,
+            autoSleep: service.autoSleep,
+            instanceType: service.instanceType,
+            cpuLimit: service.cpuLimit,
+            memoryLimit: service.memoryLimit,
+            isDirectUpload,
+          });
+
+          return {
+            success: true,
+            data: {
+              message: `Redeployment enqueued for backend service "${service.name}" (${service.slug}). Build worker has been dispatched.`,
+              deploymentId: deployment.id,
+              targetType: "service",
+              targetName: service.name,
+              status: "QUEUED",
+            },
+          };
+        }
       }
 
       case "run_diagnostic_command": {
@@ -664,6 +780,69 @@ export async function executeAgentTool(
           data: { openingUrl: parameters.url },
           clientAction: { type: "OPEN_URL", url: parameters.url },
         };
+      }
+
+      case "curl_endpoint": {
+        const url = String(parameters.url || "").trim();
+        if (!url) return { success: false, error: "Missing required parameter 'url'." };
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+          return { success: false, error: "Invalid URL protocol. Must start with http:// or https://" };
+        }
+
+        const method = String(parameters.method || "GET").toUpperCase();
+        const timeoutMs = Math.min(Math.max(Number(parameters.timeoutMs) || 5000, 1000), 15000);
+        const headers = (parameters.headers && typeof parameters.headers === "object") ? parameters.headers : {};
+
+        try {
+          const t0 = Date.now();
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+          const fetchOptions: RequestInit = {
+            method,
+            headers,
+            signal: controller.signal,
+          };
+          if (method === "POST" && parameters.body) {
+            fetchOptions.body = String(parameters.body);
+          }
+
+          const response = await fetch(url, fetchOptions);
+          clearTimeout(timeoutId);
+          const latencyMs = Date.now() - t0;
+
+          const responseHeaders: Record<string, string> = {};
+          response.headers.forEach((val, key) => {
+            responseHeaders[key] = val;
+          });
+
+          let bodySnippet = "";
+          try {
+            const rawText = await response.text();
+            bodySnippet = rawText.length > 2000 ? rawText.slice(0, 2000) + "… [truncated]" : rawText;
+          } catch {
+            bodySnippet = "<Could not read response body>";
+          }
+
+          return {
+            success: true,
+            data: {
+              url,
+              method,
+              status: response.status,
+              statusText: response.statusText,
+              ok: response.ok,
+              latencyMs,
+              headers: responseHeaders,
+              bodySnippet,
+            },
+          };
+        } catch (err: any) {
+          return {
+            success: false,
+            error: `HTTP probe failed: ${err.name === "AbortError" ? `Request timed out after ${timeoutMs}ms` : err.message}`,
+          };
+        }
       }
 
       default:

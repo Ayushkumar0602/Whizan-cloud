@@ -11,7 +11,7 @@ import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
 import { checkVmOnline } from "../lib/vm-status.js";
 
-const serviceQueue = new Queue("service-build", {
+export const serviceQueue = new Queue("service-build", {
   connection: redisClient,
   defaultJobOptions: {
     attempts: 1,

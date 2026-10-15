@@ -25,14 +25,15 @@ const PRESENTATION = `Presentation Rules:
 - When listing multiple resources, prefer compact tables over verbose paragraphs.
 - Use bold for key status words (e.g. **ACTIVE**, **FAILED**, **HEALTHY**).`;
 
-const VM_OFFLINE = `⚠️ CLOUD COMPUTE VM: OFFLINE (Maintenance Mode)
-The cloud compute worker node is currently offline. You remain 100% operational for:
+const VM_OFFLINE = `⚠️ CLOUD COMPUTE VM: OFFLINE
+The cloud compute worker node is currently offline.
+If the user asks to redeploy, restart containers, or run live diagnostics on services while the compute node is offline, reply clearly and directly: "The compute node is currently offline. Please try again later."
+You remain 100% operational for:
+- Probing HTTP/HTTPS endpoints, APIs, and URLs via curl_endpoint
 - Inspecting database records and configuration
 - Reviewing past build logs and deployment history
 - Configuring environment variables and cron schedules
-- Managing workflows, edge functions, and answering questions
-If the user asks to redeploy, restart containers, or run live diagnostics, explain the maintenance state calmly and offer to stage/queue the action for when the node resumes.
-DO NOT attempt to call VM-dependent tools (run_diagnostic_command, restart_service, redeploy_resource) while the VM is offline.`;
+- Managing workflows, edge functions, and UI navigation`;
 
 // ─── Tool Sets ──────────────────────────────────────────────────────────────
 
@@ -99,13 +100,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
 /**
  * Generates a compact tool inventory string for the system prompt.
- * VM-dependent tools are excluded when the VM is offline so the LLM
- * never attempts to call them.
  */
 function buildToolInventory(vmOnline: boolean): string {
-  const tools = SUMMER_TOOL_DEFINITIONS.filter(
-    (t) => vmOnline || !VM_DEPENDENT_TOOLS.has(t.name)
-  );
+  const tools = SUMMER_TOOL_DEFINITIONS;
   const lines = tools.map((t) => `• ${t.name} — ${t.description}`);
   return `Available Tools (${tools.length}):\n${lines.join("\n")}`;
 }

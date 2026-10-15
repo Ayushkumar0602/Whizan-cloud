@@ -188,10 +188,8 @@ export async function handleAgentChatStream(
     }
     contents.push({ role: "user", parts: [{ text: enriched }] });
 
-    // Filter tool definitions (hide VM-dependent tools when offline)
-    const activeTools = SUMMER_TOOL_DEFINITIONS.filter(
-      (t) => vmStatus.vmOnline || !VM_DEPENDENT.has(t.name)
-    );
+    // Provide all tool definitions so Summer can reason about and execute full capabilities
+    const activeTools = SUMMER_TOOL_DEFINITIONS;
 
     // ── 5. ReAct Loop ─────────────────────────────────────────────────────
     const toolExecutions: AgentChatResponse["toolExecutions"] = [];
@@ -265,6 +263,17 @@ export async function handleAgentChatStream(
           toolExecutions.push({ name, parameters: args, error });
           toolResponses.push({
             functionResponse: { name, response: { error } },
+          });
+          continue;
+        }
+
+        // VM-dependent tools check: if VM is offline, inform immediately without prompting for unusable HITL
+        if (guardrail.requiresVm && !vmStatus.vmOnline) {
+          const offlineError = "The compute node is currently offline. Please try again later.";
+          emit({ type: "tool_result", name, toolName: name, error: offlineError, durationMs: 0 });
+          toolExecutions.push({ name, parameters: args, error: offlineError });
+          toolResponses.push({
+            functionResponse: { name, response: { success: false, error: offlineError } },
           });
           continue;
         }

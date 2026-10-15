@@ -28,6 +28,7 @@ const TIER_1_TOOLS = new Set([
   "list_cron_jobs",
   "list_workflows",
   "check_endpoint_health",
+  "curl_endpoint",
   "navigate_ui",
   "open_external_url",
   "get_system_status",
@@ -150,8 +151,7 @@ export async function checkVmAvailabilityForTool(
     return {
       canExecute: false,
       vmStatus,
-      notice:
-        "The cloud compute worker node is currently offline for maintenance. Live container execution and new container builds are paused until the node comes back online. However, all configuration changes and records can still be saved.",
+      notice: "The compute node is currently offline. Please try again later.",
     };
   }
 
