@@ -59,6 +59,10 @@ async function executeNetworkFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
+  if (!accessToken && path !== "/api/auth/refresh" && path !== "/api/auth/login" && path !== "/api/auth/register" && typeof window !== "undefined") {
+    await refreshAccessToken().catch(() => {});
+  }
+
   if (accessToken) {
     headers["Authorization"] = `Bearer ${accessToken}`;
   }

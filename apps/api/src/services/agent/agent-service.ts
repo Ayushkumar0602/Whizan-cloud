@@ -26,10 +26,10 @@ export type AgentStreamEvent =
   | { type: "tool_start"; name: string; toolName?: string; parameters: any }
   | { type: "tool_result"; name: string; toolName?: string; result?: any; error?: string; durationMs: number }
   | { type: "text"; content: string; delta?: string }
-  | { type: "hitl"; actionId: string; toolName: string; parameters: any; riskTier: string; explanation: string }
+  | { type: "hitl"; action?: any; actionId: string; toolName: string; parameters: any; riskTier: string; explanation: string }
   | { type: "navigate"; path: string; label?: string }
   | { type: "open_url"; url: string }
-  | { type: "done"; fullText: string; toolExecutions: any[]; sessionId: string }
+  | { type: "done"; fullText: string; toolExecutions: any[]; sessionId: string; pendingAction?: any }
   | { type: "audio"; audioBase64?: string; format?: string; spokenText: string; fallbackToBrowserSpeech?: boolean }
   | { type: "error"; message: string };
 
@@ -159,6 +159,116 @@ export async function handleAgentChatStream(
       data: { sessionId: session.id, role: "user", content: message },
     });
 
+    // ── 2.5 Quick Approval for Pending Actions ────────────────────────────
+    const pendingAction = await prisma.agentAction.findFirst({
+      where: { sessionId: session.id, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const cleanMsg = message.trim().toLowerCase();
+    const isAffirmative = /^(yes|yeah|yep|sure|approve|proceed|confirm|do it|go ahead|redeploy_resource|redeploy)$/i.test(cleanMsg);
+    const isNegative = /^(no|nah|cancel|reject|abort|stop|don't)$/i.test(cleanMsg);
+
+    if (pendingAction && isAffirmative) {
+      emit({ type: "step", message: `Executing approved action: ${pendingAction.toolName}…` });
+      const execution = await executeAgentTool(
+        pendingAction.toolName,
+        pendingAction.parameters as Record<string, any>,
+        userId
+      );
+
+      await prisma.agentAction.update({
+        where: { id: pendingAction.id },
+        data: {
+          status: execution.success ? "EXECUTED" : "FAILED",
+          decidedAt: new Date(),
+          decisionBy: userId,
+          executionResult: execution.data || execution.error,
+        },
+      });
+
+      const confirmText = execution.success
+        ? `✔ **${pendingAction.toolName}** has been approved and executed successfully.\n\n${execution.data?.message || JSON.stringify(execution.data, null, 2)}`
+        : `✖ Execution failed for **${pendingAction.toolName}**: ${execution.error}`;
+
+      emit({ type: "text", content: confirmText, delta: confirmText });
+      emit({
+        type: "done",
+        fullText: confirmText,
+        toolExecutions: [
+          {
+            name: pendingAction.toolName,
+            parameters: pendingAction.parameters,
+            result: execution.data,
+            error: execution.error,
+          },
+        ],
+        sessionId: session.id,
+      });
+
+      await prisma.agentMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: confirmText,
+          toolCalls: JSON.stringify([
+            {
+              name: pendingAction.toolName,
+              parameters: pendingAction.parameters,
+              result: execution.data,
+              error: execution.error,
+            },
+          ]),
+          toolResult: execution.data || execution.error,
+        },
+      });
+
+      if (enableTts) {
+        try {
+          const audio = await generateSpeechAudio(confirmText, []);
+          if (audio) {
+            emit({
+              type: "audio",
+              audioBase64: audio.audioBase64,
+              format: audio.format,
+              spokenText: audio.spokenText,
+              fallbackToBrowserSpeech: audio.fallbackToBrowserSpeech,
+            });
+          }
+        } catch {}
+      }
+      return;
+    }
+
+    if (pendingAction && isNegative) {
+      await prisma.agentAction.update({
+        where: { id: pendingAction.id },
+        data: {
+          status: "REJECTED",
+          decidedAt: new Date(),
+          decisionBy: userId,
+        },
+      });
+
+      const cancelText = `Action **${pendingAction.toolName}** was cancelled as requested.`;
+      emit({ type: "text", content: cancelText, delta: cancelText });
+      emit({
+        type: "done",
+        fullText: cancelText,
+        toolExecutions: [],
+        sessionId: session.id,
+      });
+
+      await prisma.agentMessage.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content: cancelText,
+        },
+      });
+      return;
+    }
+
     // ── 3. Build Conversation History ─────────────────────────────────────
     const recent = (session.messages || []).slice().reverse();
     const contents: any[] = [];
@@ -194,6 +304,7 @@ export async function handleAgentChatStream(
     // ── 5. ReAct Loop ─────────────────────────────────────────────────────
     const toolExecutions: AgentChatResponse["toolExecutions"] = [];
     let finalText = "";
+    let pendingActionPayload: any = null;
 
     emit({ type: "step", message: "Analyzing your request…" });
 
@@ -291,8 +402,16 @@ export async function handleAgentChatStream(
           });
 
           const explanation = `I need your approval to execute **${name}**. This action modifies live resources.`;
+          pendingActionPayload = {
+            actionId: action.id,
+            toolName: name,
+            parameters: args || {},
+            riskTier: guardrail.riskTier,
+            explanation,
+          };
           emit({
             type: "hitl",
+            action: pendingActionPayload,
             actionId: action.id,
             toolName: name,
             parameters: args,
@@ -370,6 +489,7 @@ export async function handleAgentChatStream(
       fullText: finalText,
       toolExecutions,
       sessionId: session.id,
+      pendingAction: pendingActionPayload,
     });
 
     // ── 7. Persist Assistant Message ──────────────────────────────────────

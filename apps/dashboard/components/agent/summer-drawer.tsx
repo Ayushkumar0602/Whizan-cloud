@@ -579,14 +579,22 @@ export function SummerDrawer() {
               break;
             }
 
-            case "hitl":
-              pendingAction = evt.action;
+            case "hitl": {
+              const act = evt.action || {
+                actionId: evt.actionId || evt.id,
+                toolName: evt.toolName || evt.name,
+                parameters: evt.parameters || evt.args,
+                riskTier: evt.riskTier || "TIER_2",
+                explanation: evt.explanation || `I need your approval to execute ${evt.toolName || evt.name}.`,
+              };
+              pendingAction = act;
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, pendingAction: evt.action } : m
+                  m.id === assistantMsgId ? { ...m, pendingAction: act } : m
                 )
               );
               break;
+            }
 
             case "navigate":
               if (evt.path) {
@@ -608,6 +616,9 @@ export function SummerDrawer() {
             case "done":
               if (evt.fullText && (!assistantText || assistantText === "undefined" || assistantText.trim() === "")) {
                 assistantText = evt.fullText;
+              }
+              if (evt.pendingAction && !pendingAction) {
+                pendingAction = evt.pendingAction;
               }
               setAgentState("idle");
               break;
@@ -699,7 +710,7 @@ export function SummerDrawer() {
         role: "assistant",
         content: assistantText,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-        pendingAction,
+        pendingAction: pendingAction || exists?.pendingAction,
         audioData,
         steps: collectedSteps.length > 0 ? collectedSteps : undefined,
         createdAt: new Date().toISOString(),
@@ -1730,14 +1741,16 @@ function ApprovalCardInline({
   onResolved: (result: { success: boolean; error?: string }) => void;
 }) {
   const [loading, setLoading] = useState(false);
+  const [decision, setDecision] = useState<"APPROVED" | "REJECTED" | null>(null);
 
-  async function handleDecision(decision: "APPROVE" | "REJECT") {
+  async function handleDecision(choice: "APPROVE" | "REJECT") {
     setLoading(true);
     try {
       const res = await agentApi.approveAction({
         actionId: pendingAction.actionId,
-        decision,
+        decision: choice,
       });
+      setDecision(choice === "APPROVE" ? "APPROVED" : "REJECTED");
       onResolved({ success: res.success, error: res.error });
     } catch (err: any) {
       onResolved({ success: false, error: err.message });
@@ -1746,14 +1759,62 @@ function ApprovalCardInline({
     }
   }
 
+  if (decision === "APPROVED") {
+    return (
+      <div
+        style={{
+          borderRadius: "8px",
+          background: "rgba(5, 150, 105, 0.08)",
+          border: "1px solid rgba(5, 150, 105, 0.25)",
+          padding: "8px 12px",
+          fontSize: "0.76rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          color: "#059669",
+          fontWeight: 600,
+        }}
+      >
+        <Check size={14} /> Approved & Dispatched: {pendingAction.toolName}
+      </div>
+    );
+  }
+
+  if (decision === "REJECTED") {
+    return (
+      <div
+        style={{
+          borderRadius: "8px",
+          background: "rgba(239, 68, 68, 0.08)",
+          border: "1px solid rgba(239, 68, 68, 0.25)",
+          padding: "8px 12px",
+          fontSize: "0.76rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+          color: "#dc2626",
+          fontWeight: 600,
+        }}
+      >
+        <X size={14} /> Action Cancelled: {pendingAction.toolName}
+      </div>
+    );
+  }
+
+  const paramSummary =
+    pendingAction.parameters && Object.keys(pendingAction.parameters).length > 0
+      ? JSON.stringify(pendingAction.parameters, null, 2)
+      : "";
+
   return (
     <div
       style={{
         borderRadius: "8px",
-        background: "rgba(217, 119, 6, 0.05)",
-        border: "1px solid rgba(217, 119, 6, 0.2)",
-        padding: "10px 14px",
+        background: "rgba(217, 119, 6, 0.06)",
+        border: "1px solid rgba(217, 119, 6, 0.25)",
+        padding: "12px 14px",
         fontSize: "0.78rem",
+        boxShadow: "0 2px 8px rgba(217, 119, 6, 0.08)",
       }}
     >
       <div
@@ -1771,21 +1832,21 @@ function ApprovalCardInline({
             fontSize: "0.64rem",
             padding: "1px 6px",
             borderRadius: "6px",
-            background: "rgba(217, 119, 6, 0.12)",
+            background: "rgba(217, 119, 6, 0.15)",
             color: "#b45309",
             fontWeight: 700,
           }}
         >
-          {pendingAction.riskTier}
+          {pendingAction.riskTier || "TIER_2"}
         </span>
       </div>
-      <p style={{ margin: "0 0 8px", color: "#475569", lineHeight: 1.45 }}>
-        {pendingAction.explanation}
+      <p style={{ margin: "0 0 8px", color: "#334155", lineHeight: 1.45, fontWeight: 500 }}>
+        {pendingAction.explanation || `Approval required before running ${pendingAction.toolName}.`}
       </p>
-      <code
+      <div
         style={{
           display: "block",
-          padding: "5px 8px",
+          padding: "6px 10px",
           borderRadius: "6px",
           background: "#ffffff",
           color: "#4f46e5",
@@ -1793,10 +1854,15 @@ function ApprovalCardInline({
           fontFamily: "monospace",
           marginBottom: "10px",
           border: "1px solid #e2e8f0",
+          wordBreak: "break-all",
+          whiteSpace: "pre-wrap",
+          maxHeight: "120px",
+          overflowY: "auto",
         }}
       >
-        {pendingAction.toolName}
-      </code>
+        <strong>{pendingAction.toolName}</strong>
+        {paramSummary ? `\n${paramSummary}` : ""}
+      </div>
       <div style={{ display: "flex", gap: "8px" }}>
         <button
           type="button"
@@ -1808,21 +1874,21 @@ function ApprovalCardInline({
             alignItems: "center",
             justifyContent: "center",
             gap: "5px",
-            padding: "7px 12px",
+            padding: "8px 14px",
             borderRadius: "6px",
             background: "linear-gradient(180deg, #059669, #047857)",
             color: "#ffffff",
             border: "none",
             fontWeight: 600,
-            fontSize: "0.76rem",
+            fontSize: "0.78rem",
             cursor: loading ? "not-allowed" : "pointer",
             boxShadow: "0 1px 3px rgba(5, 150, 105, 0.2)",
           }}
         >
           {loading ? (
-            <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+            <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
           ) : (
-            <Check size={13} />
+            <Check size={14} />
           )}
           Approve & Run
         </button>
@@ -1835,17 +1901,17 @@ function ApprovalCardInline({
             alignItems: "center",
             justifyContent: "center",
             gap: "5px",
-            padding: "7px 12px",
+            padding: "8px 14px",
             borderRadius: "6px",
             background: "#ffffff",
             color: "#475569",
-            border: "1px solid #e2e8f0",
+            border: "1px solid #cbd5e1",
             fontWeight: 600,
-            fontSize: "0.76rem",
+            fontSize: "0.78rem",
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          <X size={13} /> Reject
+          <X size={14} /> Reject
         </button>
       </div>
     </div>
