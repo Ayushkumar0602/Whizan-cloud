@@ -5,14 +5,15 @@ import { redisClient, redisSub } from "../lib/redis.js";
 import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { checkVmOnline } from "../lib/vm-status.js";
+import { uploadArchiveToVm } from "../lib/vm-archive.js";
 
 // Shared build queue — the build-worker consumes from this
 export const buildQueue = new Queue("build", {
   connection: redisClient,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: 100,
-    removeOnFail: 200,
+    removeOnComplete: 10,
+    removeOnFail: 20,
   },
 });
 
@@ -238,25 +239,20 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      try {
-        // Save payload in Redis with 15m TTL (chunked in 2MB slices to prevent Upstash ERR max request size exceeded)
-        const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
-        const totalChunks = Math.ceil(buffer.length / CHUNK_SIZE);
-        if (totalChunks > 1) {
-          for (let i = 0; i < totalChunks; i++) {
-            const chunk = buffer.subarray(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-            await redisClient.set(`upload:${deployment.id}:chunk:${i}`, chunk.toString("base64"), "EX", 900);
-          }
-          await redisClient.set(`upload:${deployment.id}:chunks`, totalChunks.toString(), "EX", 900);
-        } else {
-          await redisClient.set(`upload:${deployment.id}`, buffer.toString("base64"), "EX", 900);
-        }
-      } catch (redisErr: any) {
+      // Stage archive directly to Azure VM SSD storage (bypassing Redis memory limits)
+      const uploadRes = await uploadArchiveToVm({
+        targetType: "project",
+        targetId: id,
+        deploymentId: deployment.id,
+        buffer,
+      });
+
+      if (!uploadRes.ok) {
         await prisma.deployment.update({
           where: { id: deployment.id },
-          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: `Failed to stage archive in Redis: ${redisErr.message}` },
+          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: uploadRes.error || "Failed to stage archive on VM storage" },
         });
-        return reply.code(500).send({ error: "Failed to stage archive in Redis: " + redisErr.message });
+        return reply.code(500).send({ error: uploadRes.error || "Failed to stage archive on VM storage" });
       }
 
       await buildQueue.add("build", {
@@ -271,6 +267,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         framework: project.framework,
         slug: project.slug,
         isDirectUpload: true,
+        sourceArchiveOnDisk: !uploadRes.stagedInRedis,
       } as any);
 
       return reply.code(201).send(deployment);

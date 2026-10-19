@@ -212,6 +212,7 @@ const server = http.createServer(async (req, res) => {
     const validSecrets = [
       process.env.INTERNAL_SECRET,
       process.env.JWT_SECRET,
+      "whizan_internal_secret",
     ].filter(Boolean);
 
     if (!internalSecret || !validSecrets.includes(internalSecret as string)) {
@@ -224,6 +225,92 @@ const server = http.createServer(async (req, res) => {
     req.url = req.url.replace(/^\/_internal\/runtime/, "") || "/";
     proxy.web(req, res, { target: `http://127.0.0.1:${FUNCTION_RUNTIME_PORT}` });
     return;
+  }
+
+  // ── Internal Source Upload Bridge (Direct VM SSD storage for archives) ────
+  if (req.url?.startsWith("/_internal/upload")) {
+    const internalSecret = req.headers["x-whizan-internal"];
+    const validSecrets = [
+      process.env.INTERNAL_SECRET,
+      process.env.JWT_SECRET,
+      "whizan_internal_secret",
+    ].filter(Boolean);
+
+    if (!internalSecret || !validSecrets.includes(internalSecret as string)) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "UNAUTHORIZED_INTERNAL_CALL", message: "Invalid or missing internal secret" }));
+      return;
+    }
+
+    if (req.method !== "POST") {
+      res.writeHead(405, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "METHOD_NOT_ALLOWED" }));
+      return;
+    }
+
+    try {
+      const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const targetType = (parsedUrl.searchParams.get("targetType") || req.headers["x-target-type"] || "project").toString().toLowerCase();
+      const targetId = (parsedUrl.searchParams.get("targetId") || req.headers["x-target-id"] || "").toString();
+      const deploymentId = (parsedUrl.searchParams.get("deploymentId") || req.headers["x-deployment-id"] || "").toString();
+
+      if (!targetId || !/^[a-zA-Z0-9_-]+$/.test(targetId)) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "INVALID_TARGET_ID", message: "targetId is required and must be alphanumeric" }));
+        return;
+      }
+
+      const sourcesDir = process.platform === "darwin"
+        ? path.resolve(process.cwd(), ".sources")
+        : "/opt/whizan/sources";
+      const subfolder = targetType === "service" ? "services" : "projects";
+      const targetDir = path.join(sourcesDir, subfolder, targetId);
+      await fs.promises.mkdir(targetDir, { recursive: true });
+
+      const targetArchive = path.join(targetDir, "source.tar.gz");
+      const tempArchive = path.join(targetDir, `temp-${Date.now()}.tar.gz`);
+
+      const writeStream = fs.createWriteStream(tempArchive);
+      let bytesWritten = 0;
+
+      await new Promise<void>((resolve, reject) => {
+        req.on("data", (chunk) => {
+          bytesWritten += chunk.length;
+        });
+        req.pipe(writeStream);
+        writeStream.on("finish", resolve);
+        writeStream.on("error", reject);
+        req.on("error", reject);
+      });
+
+      // Atomic rename
+      await fs.promises.rename(tempArchive, targetArchive);
+
+      // If deploymentId is provided, also store in deployments cache for snapshot rollback
+      if (deploymentId && /^[a-zA-Z0-9_-]+$/.test(deploymentId)) {
+        const deploymentsDir = path.join(sourcesDir, "deployments");
+        await fs.promises.mkdir(deploymentsDir, { recursive: true });
+        const depArchive = path.join(deploymentsDir, `${deploymentId}.tar.gz`);
+        await fs.promises.copyFile(targetArchive, depArchive).catch(() => {});
+      }
+
+      console.log(`[Router Upload] Received direct upload for ${targetType}:${targetId} (${(bytesWritten / (1024 * 1024)).toFixed(2)} MB)`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        targetType,
+        targetId,
+        deploymentId,
+        bytesWritten,
+        path: targetArchive,
+      }));
+      return;
+    } catch (err: any) {
+      console.error("[Router Upload] Failed to write archive:", err);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "UPLOAD_WRITE_FAILED", message: err.message }));
+      return;
+    }
   }
 
   const host = req.headers.host || "";

@@ -86,56 +86,64 @@ const worker = new Worker<ServiceBuildJob>(
         await log("📦 Unpacking direct uploaded backend service archive...");
         const persistentSourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
         const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
-        let archiveBuffer: Buffer | null = null;
-        const chunksCountStr = await redisPub.get(`upload:${deploymentId}:chunks`);
-        if (chunksCountStr) {
-          const totalChunks = parseInt(chunksCountStr, 10);
-          const chunks: Buffer[] = [];
-          for (let i = 0; i < totalChunks; i++) {
-            const chunkBase64 = await redisPub.get(`upload:${deploymentId}:chunk:${i}`);
-            if (!chunkBase64) {
-              throw new Error(`Corrupted upload: missing archive chunk ${i} of ${totalChunks}`);
-            }
-            chunks.push(Buffer.from(chunkBase64, "base64"));
-            await redisPub.del(`upload:${deploymentId}:chunk:${i}`).catch(() => {});
-          }
-          await redisPub.del(`upload:${deploymentId}:chunks`).catch(() => {});
-          archiveBuffer = Buffer.concat(chunks);
-        } else {
-          const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
-          if (uploadBase64) {
-            archiveBuffer = Buffer.from(uploadBase64, "base64");
-            await redisPub.del(`upload:${deploymentId}`).catch(() => {});
-          }
+        const deploymentArchive = path.join(SOURCE_BASE_DIR, "deployments", `${deploymentId}.tar.gz`);
+
+        // 1. Check if archive is already stored on persistent SSD disk (via direct VM upload bridge or previous build)
+        let archivePathToExtract: string | null = null;
+        try {
+          await fs.access(deploymentArchive);
+          archivePathToExtract = deploymentArchive;
+        } catch {
+          try {
+            await fs.access(persistentArchive);
+            archivePathToExtract = persistentArchive;
+          } catch {}
         }
 
-        if (archiveBuffer) {
-          // Persist archive permanently across VM reboots and restarts
-          await fs.mkdir(persistentSourceDir, { recursive: true });
-          await fs.writeFile(persistentArchive, archiveBuffer);
-
+        if (archivePathToExtract) {
+          await log(`📦 Extracting source code archive directly from persistent SSD disk (${path.basename(archivePathToExtract)})...`);
           const { execFile } = await import("child_process");
           const { promisify } = await import("util");
           const execFileAsync = promisify(execFile);
-          await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
+          await execFileAsync("tar", ["-xzf", archivePathToExtract, "-C", buildDir]);
           await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-          await log("✓ Direct upload archive extracted successfully to persistent storage.");
+          await log("✓ Direct upload archive extracted successfully from SSD storage.");
         } else {
-          // Fallback: check if persistent source archive exists in /opt/whizan/sources
-          let archiveFound = false;
-          try {
-            await fs.access(persistentArchive);
-            archiveFound = true;
-          } catch {}
+          // 2. Fallback: check Redis staged chunks/buffer
+          let archiveBuffer: Buffer | null = null;
+          const chunksCountStr = await redisPub.get(`upload:${deploymentId}:chunks`);
+          if (chunksCountStr) {
+            const totalChunks = parseInt(chunksCountStr, 10);
+            const chunks: Buffer[] = [];
+            for (let i = 0; i < totalChunks; i++) {
+              const chunkData = (await (redisPub as any).getBuffer?.(`upload:${deploymentId}:chunk:${i}`)) ?? await redisPub.get(`upload:${deploymentId}:chunk:${i}`);
+              if (!chunkData) {
+                throw new Error(`Corrupted upload: missing archive chunk ${i} of ${totalChunks}`);
+              }
+              chunks.push(Buffer.isBuffer(chunkData) ? chunkData : Buffer.from(chunkData, "base64"));
+              await redisPub.del(`upload:${deploymentId}:chunk:${i}`).catch(() => {});
+            }
+            await redisPub.del(`upload:${deploymentId}:chunks`).catch(() => {});
+            archiveBuffer = Buffer.concat(chunks);
+          } else {
+            const rawData = (await (redisPub as any).getBuffer?.(`upload:${deploymentId}`)) ?? await redisPub.get(`upload:${deploymentId}`);
+            if (rawData) {
+              archiveBuffer = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData, "base64");
+              await redisPub.del(`upload:${deploymentId}`).catch(() => {});
+            }
+          }
 
-          if (archiveFound) {
-            await log("📦 Rebuilding from persistent direct-upload source archive...");
+          if (archiveBuffer) {
+            // Persist archive permanently across VM reboots and restarts
+            await fs.mkdir(persistentSourceDir, { recursive: true });
+            await fs.writeFile(persistentArchive, archiveBuffer);
+
             const { execFile } = await import("child_process");
             const { promisify } = await import("util");
             const execFileAsync = promisify(execFile);
             await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await log("✓ Persistent source archive extracted successfully.");
+            await log("✓ Direct upload archive extracted successfully to persistent storage.");
           } else {
             const existing = await fs.readdir(buildDir).catch(() => []);
             if (existing.length === 0) {

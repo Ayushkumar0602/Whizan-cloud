@@ -14,8 +14,8 @@ const databaseQueue = new Queue("database-job", {
   connection: redisClient,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: 100,
-    removeOnFail: 200,
+    removeOnComplete: 10,
+    removeOnFail: 20,
   },
 });
 
