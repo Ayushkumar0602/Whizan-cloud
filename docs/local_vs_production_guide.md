@@ -214,7 +214,7 @@ Ensure your production services have the following environment variables configu
 - `REDIS_URL`: Upstash Redis connection string.
 - `JWT_SECRET`: Production secret.
 - `ENCRYPTION_KEY`: AES-256 encryption key.
-- `GITHUB_CLIENT_ID`: OAuth Client ID (`Iv23liCqgXS2WzQBItri`).
+- `GITHUB_CLIENT_ID`: OAuth Client ID (`YOUR_GITHUB_CLIENT_ID`).
 - `GITHUB_CLIENT_SECRET`: OAuth Client Secret.
 - `GITHUB_CALLBACK_URL`: `https://whizan-cloud-service.onrender.com/api/auth/github/callback`.
 - `DASHBOARD_URL`: Your production Vercel dashboard URL.
