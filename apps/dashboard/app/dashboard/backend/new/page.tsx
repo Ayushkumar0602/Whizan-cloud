@@ -7,6 +7,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { GitHubRepoPicker, type SelectedRepoInfo } from "@/components/github-repo-picker";
+import { useAuth } from "@/lib/auth";
 import {
   Github,
   Server,
@@ -40,6 +41,11 @@ const INSTANCE_PLANS = [
 
 export default function NewServicePage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin =
+    user?.role === "ADMIN" ||
+    user?.role === "ROOT_ADMIN" ||
+    user?.email === "aj0892829122@gmail.com";
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [envText, setEnvText] = useState("");
@@ -618,23 +624,49 @@ export default function NewServicePage() {
 
               {/* Dedicated Card */}
               <div
-                onClick={() =>
+                onClick={() => {
+                  if (!isAdmin) {
+                    toast.info(
+                      "Portfolio Forced-Idleness: Always-On dedicated compute is restricted to platform administrators. Deployments run on the Auto-Sleep Free Tier (0.1 vCPU / 512MB RAM with 15m idle spin-down)."
+                    );
+                    return;
+                  }
                   setFormData({
                     ...formData,
                     autoSleep: false,
                     instanceType: "starter",
                     cpuLimit: 0.5,
                     memoryLimit: 512,
-                  })
-                }
+                  });
+                }}
                 className={`plan-mode-card ${!formData.autoSleep ? "plan-mode-active-dedicated" : ""}`}
+                style={!isAdmin ? { opacity: 0.65, cursor: "not-allowed" } : {}}
               >
                 <div className="plan-mode-top">
                   <div className="plan-mode-title">
-                    <Zap size={18} color="#10b981" />
+                    <Zap size={18} color={isAdmin ? "#10b981" : "#94a3b8"} />
                     <span>Always-On Dedicated</span>
+                    {!isAdmin && (
+                      <span
+                        style={{
+                          fontSize: "0.68rem",
+                          background: "rgba(245, 158, 11, 0.15)",
+                          color: "#d97706",
+                          border: "1px solid rgba(245, 158, 11, 0.3)",
+                          padding: "1px 6px",
+                          borderRadius: "999px",
+                          fontWeight: 600,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "3px",
+                          marginLeft: "6px",
+                        }}
+                      >
+                        <Lock size={10} /> Admin Only
+                      </span>
+                    )}
                   </div>
-                  {!formData.autoSleep && <Check size={16} color="#10b981" />}
+                  {!formData.autoSleep && isAdmin && <Check size={16} color="#10b981" />}
                 </div>
                 <p className="plan-mode-desc">
                   Never sleeps. Zero cold boot delay. Ideal for websockets, background workers, and latency-sensitive APIs.

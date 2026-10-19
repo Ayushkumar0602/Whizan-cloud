@@ -1492,17 +1492,28 @@ export const flowsApi = {
 
 export interface SystemStatusResponse {
   vmOnline: boolean;
-  status: "ONLINE" | "MAINTENANCE";
+  status: "ONLINE" | "WAKING_UP" | "MAINTENANCE" | "OFFLINE";
   message: string;
   contactEmail: string;
   contactUrl: string;
   vmHost?: string;
+  estimatedSecondsRemaining?: number;
   timestamp: number;
 }
 
 export const system = {
   getStatus: (opts?: RequestOptions) =>
     request<SystemStatusResponse>("/api/system/status", { ...opts, ttlMs: 15_000 }),
+  wake: (reason?: string) =>
+    request<{ status: string; message: string }>("/api/vm/wake", {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || "dashboard_user_wake" }),
+    }),
+  sleep: (reason?: string) =>
+    request<{ status: string; message: string }>("/api/vm/sleep", {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || "admin_manual_sleep" }),
+    }),
 };
 
 export interface AgentChatResponse {

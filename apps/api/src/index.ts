@@ -217,6 +217,7 @@ await app.register(flowRoutes, { prefix: "/api/flows" });
 await app.register(agentRoutes, { prefix: "/api/agent" });
 
 import { checkVmOnline } from "./lib/vm-status.js";
+import { triggerVmWake, triggerVmSleep } from "./lib/vm-wake.js";
 
 // ─── Health Check & Root ──────────────────────────────────────────────────────
 
@@ -231,6 +232,38 @@ app.route({
   url: "/api/system/status",
   handler: async () => {
     return checkVmOnline();
+  },
+});
+
+app.route({
+  method: ["GET", "HEAD"],
+  url: "/api/vm/status",
+  handler: async () => {
+    return checkVmOnline({ autoWake: false });
+  },
+});
+
+app.route({
+  method: ["POST"],
+  url: "/api/vm/wake",
+  handler: async (request: any) => {
+    const reason = request.body?.reason || "user_request";
+    return triggerVmWake(reason);
+  },
+});
+
+app.route({
+  method: ["POST"],
+  url: "/api/vm/sleep",
+  handler: async (request: any, reply: any) => {
+    // Only Root Admin can manually trigger immediate sleep from API
+    const user = (request as any).user;
+    if (user && user.email !== "aj0892829122@gmail.com" && user.role !== "ROOT_ADMIN") {
+      reply.status(403);
+      return { error: "Only platform administrators can manually deallocate the compute node." };
+    }
+    const reason = request.body?.reason || "admin_manual_sleep";
+    return triggerVmSleep(reason);
   },
 });
 

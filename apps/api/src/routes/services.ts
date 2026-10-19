@@ -10,6 +10,7 @@ import { parseDockerStats } from "../lib/container-metrics.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
 import { checkVmOnline } from "../lib/vm-status.js";
+import { isUserAdmin } from "../lib/auth-utils.js";
 
 export const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -193,33 +194,23 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     // Subscription Tier Enforcement:
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
-      select: { subscriptionTier: true },
+      select: { email: true, role: true, subscriptionTier: true },
     });
-    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
+    const isAdmin = isUserAdmin(userRecord);
 
-    let instanceType = body.data.instanceType || (isProfessional ? "starter" : "free");
-    let cpuLimit = body.data.cpuLimit;
-    let memoryLimit = body.data.memoryLimit;
-    let autoSleep = body.data.autoSleep ?? (!isProfessional);
+    let instanceType = "free";
+    let cpuLimit = 0.1;
+    let memoryLimit = 512;
+    let autoSleep = true;
 
-    if (!isProfessional) {
-      // Strict Hobby Tier enforcement:
-      // Agents and users on Hobby Plan are locked to free tier: 0.1 vCPU, 512MB RAM, autoSleep = true
-      instanceType = "free";
-      cpuLimit = 0.1;
-      memoryLimit = 512;
-      autoSleep = true;
-    } else {
-      // Professional users can customize compute
-      if (autoSleep) {
-        instanceType = "free";
-        cpuLimit = 0.1;
-        memoryLimit = 512;
-      } else {
-        const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
-        if (!cpuLimit) cpuLimit = tier.cpu;
-        if (!memoryLimit) memoryLimit = tier.memory;
-      }
+    // Platform-wide policy: All deployments are forced to autoSleep=true (Scale-to-Zero).
+    // Only verified Platform Administrators can choose dedicated Always-On tiers.
+    if (isAdmin && body.data.autoSleep === false) {
+      autoSleep = false;
+      instanceType = body.data.instanceType || "starter";
+      const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
+      cpuLimit = body.data.cpuLimit || tier.cpu;
+      memoryLimit = body.data.memoryLimit || tier.memory;
     }
 
     const { envVars, isWorker, guardrailRejectReason, ...serviceFields } = body.data;
@@ -305,24 +296,23 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
-      select: { subscriptionTier: true },
+      select: { email: true, role: true, subscriptionTier: true },
     });
-    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
+    const isAdmin = isUserAdmin(userRecord);
 
-    // Hobby plan is strictly locked to free tier
-    if (!isProfessional) {
+    // Platform-wide policy: Non-admins are strictly forced to Auto-Sleep / Free Tier
+    if (!isAdmin) {
       patchData.instanceType = "free";
       patchData.cpuLimit = 0.1;
       patchData.memoryLimit = 512;
       patchData.autoSleep = true;
     } else {
-      // When spin-down (autoSleep) is enabled, enforce 0.1 vCPU and 512MB RAM
+      // Admins can toggle between autoSleep and dedicated tiers
       if (patchData.autoSleep === true) {
         patchData.instanceType = "free";
         patchData.cpuLimit = 0.1;
         patchData.memoryLimit = 512;
       } else if (patchData.autoSleep === false && existing.autoSleep === true) {
-        // Switching from Free Tier to Dedicated Always-On
         if (!patchData.instanceType || patchData.instanceType === "free") {
           patchData.instanceType = "starter";
         }

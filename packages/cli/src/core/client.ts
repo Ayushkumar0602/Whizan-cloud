@@ -149,8 +149,8 @@ export class WhizanClient {
         internalPort: isWorker ? 0 : (params.internalPort || 8000),
         isWorker,
         isPublic: params.isPublic !== undefined ? params.isPublic : true,
-        autoSleep: params.autoSleep !== undefined ? params.autoSleep : false,
-        instanceType: params.instanceType || "starter",
+        autoSleep: params.autoSleep !== undefined ? params.autoSleep : true,
+        instanceType: params.instanceType || "free",
         envVars: params.envVars,
       }),
     });

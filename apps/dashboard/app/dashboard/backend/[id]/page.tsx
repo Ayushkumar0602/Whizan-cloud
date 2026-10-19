@@ -7,7 +7,7 @@ import {
   ArrowLeft, Globe, GitBranch, Play, Terminal, Clock, Server, Trash2,
   Loader2, Key, ExternalLink, Activity, Cpu, Check, Zap, Moon, Copy,
   ChevronDown, Plus, PanelLeftClose, PanelLeftOpen, FileCode2, ArrowRight, Radio, Sliders,
-  Sparkles, ShieldAlert, ShieldCheck
+  Sparkles, ShieldAlert, ShieldCheck, Lock
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { ServiceShell } from "@/components/service-shell";
 import { ServiceMetrics } from "@/components/service-metrics";
 import { formatDeployedUrl, getServiceIngressUrl } from "@/lib/domains";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
+import { useAuth } from "@/lib/auth";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 const INSTANCE_PLANS = [
@@ -29,6 +30,11 @@ const INSTANCE_PLANS = [
 export default function BackendServicePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin =
+    user?.role === "ADMIN" ||
+    user?.role === "ROOT_ADMIN" ||
+    user?.email === "aj0892829122@gmail.com";
   const { vmOnline } = useSystemStatus();
   const [service, setService] = useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -408,7 +414,29 @@ export default function BackendServicePage() {
                         {service.autoSleep ? <Moon size={15} color="#f59e0b" /> : <Zap size={15} color="#10b981" />}
                         Auto-Sleep (Scale-to-Zero)
                       </h3>
-                      {service.autoSleep && <span className="mode-badge-free">Free Tier • 0.1 vCPU</span>}
+                      {service.autoSleep && (
+                        <span className="mode-badge-free">
+                          Free Tier • 0.1 vCPU
+                        </span>
+                      )}
+                      {!isAdmin && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            background: "rgba(245, 158, 11, 0.15)",
+                            color: "#d97706",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            padding: "1px 6px",
+                            borderRadius: "999px",
+                            fontWeight: 600,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
+                          }}
+                        >
+                          <Lock size={10} /> Locked to Auto-Sleep
+                        </span>
+                      )}
                     </div>
                     <p className="mode-switch-desc">
                       {service.autoSleep
@@ -416,11 +444,24 @@ export default function BackendServicePage() {
                         : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
                     </p>
                   </div>
-                  <label className="switch" style={{ flexShrink: 0 }}>
+                  <label
+                    className="switch"
+                    style={{ flexShrink: 0, opacity: !isAdmin ? 0.6 : 1, cursor: !isAdmin ? "not-allowed" : "pointer" }}
+                    onClick={(e) => {
+                      if (!isAdmin) {
+                        e.preventDefault();
+                        toast.info(
+                          "Portfolio Forced-Idleness: Always-On dedicated compute is restricted to platform administrators."
+                        );
+                      }
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={service.autoSleep}
+                      disabled={!isAdmin}
                       onChange={async (e) => {
+                        if (!isAdmin) return;
                         const val = e.target.checked;
                         const nextType = val ? "free" : "starter";
                         const nextCpu  = val ? 0.1  : 0.5;
@@ -458,6 +499,10 @@ export default function BackendServicePage() {
                           key={plan.id}
                           type="button"
                           onClick={async () => {
+                            if (!isAdmin) {
+                              toast.info("Portfolio Forced-Idleness: Changing dedicated compute tiers is restricted to platform administrators.");
+                              return;
+                            }
                             setService({ ...service, instanceType: plan.id as any, cpuLimit: plan.cpu, memoryLimit: plan.memory });
                             try {
                               await services.update(service.id, { instanceType: plan.id as any, cpuLimit: plan.cpu, memoryLimit: plan.memory });

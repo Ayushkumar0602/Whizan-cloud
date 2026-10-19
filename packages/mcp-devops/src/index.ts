@@ -993,17 +993,22 @@ Please gently inform the user of this situation:
           }
         } catch {}
         
-        // Enforce Hobby subscription tier compute limits
+        // Enforce Portfolio Forced-Idleness: Only Platform Admins can choose non-free tiers or always-on
         let authProfile: any = null;
         try {
           authProfile = await client.getAuthStatus();
         } catch {}
-        const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
-        if (!isProfessional) {
+        const isUserAdmin =
+          authProfile?.user?.role === "ADMIN" ||
+          authProfile?.user?.role === "ROOT_ADMIN" ||
+          authProfile?.user?.isAdmin === true ||
+          authProfile?.user?.email === "aj0892829122@gmail.com";
+
+        if (!isUserAdmin) {
           serviceArgs.instanceType = "free";
           serviceArgs.autoSleep = true;
-          delete serviceArgs.cpuLimit;
-          delete serviceArgs.memoryLimit;
+          serviceArgs.cpuLimit = 0.1;
+          serviceArgs.memoryLimit = 512;
         }
 
         let service: any;
@@ -1296,13 +1301,18 @@ Please gently inform the user of this situation:
 
       case "whizan_provision_database": {
         const dbArgs = (args || {}) as any;
-        // Enforce Hobby subscription tier limits
+        // Enforce Portfolio Forced-Idleness: Only Platform Admins can choose non-starter database tiers
         let authProfile: any = null;
         try {
           authProfile = await client.getAuthStatus();
         } catch {}
-        const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
-        if (!isProfessional) {
+        const isUserAdmin =
+          authProfile?.user?.role === "ADMIN" ||
+          authProfile?.user?.role === "ROOT_ADMIN" ||
+          authProfile?.user?.isAdmin === true ||
+          authProfile?.user?.email === "aj0892829122@gmail.com";
+
+        if (!isUserAdmin) {
           dbArgs.instanceType = "starter";
         }
         const db = await client.provisionDatabase(dbArgs);

@@ -59,6 +59,24 @@ export async function dbCommand(args: string[] = []) {
         }
       }
 
+      if (instanceType !== "starter") {
+        try {
+          const authStatus = await client.getAuthStatus();
+          const isUserAdmin =
+            authStatus?.user?.role === "ADMIN" ||
+            authStatus?.user?.role === "ROOT_ADMIN" ||
+            authStatus?.user?.email === "aj0892829122@gmail.com";
+          if (!isUserAdmin) {
+            console.error(
+              `  ${c.amber}ℹ Portfolio Forced-Idleness: Custom database tiers require administrator permission. Defaulting to 'starter' tier with 20m auto-sleep.${c.reset}`
+            );
+            instanceType = "starter";
+          }
+        } catch {
+          instanceType = "starter";
+        }
+      }
+
       let bindTargetId: string | null = null;
       const bindIdx = subArgs.findIndex((a) => a === "--bind");
       if (bindIdx !== -1 && subArgs[bindIdx + 1]) {

@@ -123,7 +123,7 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       "PHASE 3 (PROVISION OR REDEPLOY):",
       "  - IF EXISTING PROJECT DETECTED: Reuse the existing targetId and skip creation. Redeploy directly using whizan_deploy_direct.",
       "  - IF NEW FRONTEND / FULLSTACK (Vite, React, Astro, Next.js, or Dockerfile web app): Call whizan_create_project. Set framework and correct outputDir ('dist' for Vite/React, '.next' for Next.js, or 'CUSTOM' for Dockerfile). For Next.js dynamic routes, do NOT add 'output: export'.",
-      "  - IF NEW BACKEND (Node.js, Python, Go): Call whizan_create_service. Compute is strictly locked to free tier for Hobby users. Ensure 0.0.0.0 host binding.",
+      "  - IF NEW BACKEND (Node.js, Python, Go): Call whizan_create_service. Compute is strictly locked to Portfolio Forced-Idleness (0.1 vCPU, 512MB RAM, autoSleep: true with 15m idle spin-down). Only Platform Admins can choose custom tiers. Ensure 0.0.0.0 host binding.",
       "PHASE 4 (UPLOAD): Upload workspace archive using whizan_deploy_direct. Save the returned deploymentId.",
       "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
       "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). Note: Use http:// (not https://) for *.nip.io domains on Whizan Cloud."

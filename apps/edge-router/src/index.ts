@@ -84,6 +84,16 @@ function trackAccess(deploymentId: string) {
   }
 }
 
+// ── Throttled Global Router Activity (For VM Idle Reaper) ────────────────────
+let lastGlobalRouterAccess = 0;
+function recordRouterActivity() {
+  const now = Date.now();
+  if (now - lastGlobalRouterAccess > 15_000) {
+    lastGlobalRouterAccess = now;
+    redis.set("router:last_access", now.toString()).catch(() => {});
+  }
+}
+
 // ── Buffered In-Memory Analytics (Batches writes to prevent Redis overload) ──
 let analyticsBuffer: any[] = [];
 function bufferAnalyticsEvent(event: any) {
@@ -192,6 +202,9 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({ status: "ok", service: "edge-router", timestamp: new Date().toISOString() }));
     return;
   }
+
+  // Record router traffic activity for VM idle reaper
+  recordRouterActivity();
 
   // ── Internal Runtime Bridge (Secure VM bridge for Control Plane / API) ────
   if (req.url?.startsWith("/_internal/runtime/")) {
@@ -1102,6 +1115,7 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
 // ─── WebSocket Support (Upgrade Event) ────────────────────────────────────────
 
 server.on("upgrade", async (req, socket, head) => {
+  recordRouterActivity();
   const host = req.headers.host || "";
   let slug: string;
   

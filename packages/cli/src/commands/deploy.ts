@@ -352,7 +352,8 @@ export async function deployCommand(args: string[] = []) {
           startCommand: analysis.startCommand || "npm start",
           internalPort: opts.port || analysis.internalPort,
           isWorker: analysis.isWorker,
-          instanceType: "starter",
+          instanceType: "free",
+          autoSleep: true,
           envVars: collectedEnv,
         });
         targetId = service.id;

@@ -12,6 +12,10 @@ interface ActiveExecSession {
 
 const activeSessions = new Map<string, ActiveExecSession>();
 
+export function getActiveSessionCount(): number {
+  return activeSessions.size;
+}
+
 export async function initRemoteExec(): Promise<void> {
   await redisSub.subscribe("exec:open");
   console.log("[Remote Exec] Listening for remote web terminal sessions on 'exec:open'...");

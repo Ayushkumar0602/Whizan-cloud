@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import GhostFibers from "./GhostFibers";
 import { Globe } from "lucide-react";
+import { system } from "@/lib/api";
 
 function WakeupContent() {
   const searchParams = useSearchParams();
@@ -15,6 +16,11 @@ function WakeupContent() {
   const [stepText, setStepText] = useState("Awakening compute container...");
   const [stepIcon, setStepIcon] = useState("⚡");
   const [progress, setProgress] = useState(20);
+
+  useEffect(() => {
+    // Proactively notify control plane to wake the Azure VM if asleep
+    system.wake(`wakeup_page_${slug}`).catch(() => {});
+  }, [slug]);
 
   useEffect(() => {
     if (isReady) return;

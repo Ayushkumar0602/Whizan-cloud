@@ -16,6 +16,7 @@ import "./service-worker.js";
 import "./database-worker.js";
 import { initRemoteExec } from "./remote-exec.js";
 import { startMetricsCollector } from "./metrics-collector.js";
+import { startVmReaper } from "./vm-reaper.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -1663,6 +1664,7 @@ const statsInterval = setInterval(async () => {
 console.log("[Worker] Build worker started — waiting for jobs...");
 initRemoteExec().catch((e) => console.error("[Remote Exec Error]", e));
 startMetricsCollector();
+startVmReaper();
 
 // ── Database Reconciliation on VM Startup ──────────────────────────────────
 (async () => {
