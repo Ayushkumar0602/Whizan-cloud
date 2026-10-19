@@ -63,7 +63,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.0.9",
+    version: "1.0.10",
   },
   {
     capabilities: {
