@@ -22,13 +22,13 @@ async function queryControlPlaneApi(endpoint: string, options?: any) {
   try {
     const localRes = await fetch(`http://127.0.0.1:${API_PORT}${endpoint}`, options).catch(() => null);
     if (localRes && localRes.ok) return localRes;
-  } catch {}
+  } catch { }
 
   // 2. Resilient fallback to Render Control Plane API
   try {
     const remoteRes = await fetch(`${API_URL}${endpoint}`, options).catch(() => null);
     if (remoteRes && remoteRes.ok) return remoteRes;
-  } catch {}
+  } catch { }
 
   return null;
 }
@@ -80,17 +80,7 @@ function trackAccess(deploymentId: string) {
   // Scale-to-zero threshold is 10-20 minutes, so updating Redis once every 60s is plenty
   if (now - last > 60_000) {
     lastAccessMap.set(deploymentId, now);
-    redis.set(`access:${deploymentId}`, now).catch(() => {});
-  }
-}
-
-// ── Throttled Global Router Activity (For VM Idle Reaper) ────────────────────
-let lastGlobalRouterAccess = 0;
-function recordRouterActivity() {
-  const now = Date.now();
-  if (now - lastGlobalRouterAccess > 15_000) {
-    lastGlobalRouterAccess = now;
-    redis.set("router:last_access", now.toString()).catch(() => {});
+    redis.set(`access:${deploymentId}`, now).catch(() => { });
   }
 }
 
@@ -111,7 +101,7 @@ function flushAnalytics() {
   if (analyticsBuffer.length === 0) return;
   const batch = analyticsBuffer.splice(0, 50);
   const strings = batch.map((e) => JSON.stringify(e));
-  redis.rpush("analytics:buffer", ...strings).catch(() => {});
+  redis.rpush("analytics:buffer", ...strings).catch(() => { });
 }
 
 // Periodic flush every 30 seconds
@@ -128,7 +118,7 @@ const proxy = httpProxy.createProxyServer({
 
 proxy.on("error", (err, req, res) => {
   console.error(`[Router] Proxy error for ${req.headers.host}${req.url}:`, err.message);
-  
+
   // Extract slug to trigger a cold-start (wakeup)
   const host = req.headers.host || "";
   let slug = "";
@@ -152,10 +142,10 @@ proxy.on("error", (err, req, res) => {
           slug,
           deploymentId: dep.deploymentId,
           type: dep.type || (dep as any).deploymentType || "service"
-        })).catch(() => {});
+        })).catch(() => { });
       }
     }
-  }).catch(() => {});
+  }).catch(() => { });
 
   if ("writeHead" in res && !res.headersSent) {
     if (
@@ -203,16 +193,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Record router traffic activity for VM idle reaper
-  recordRouterActivity();
-
   // ── Internal Runtime Bridge (Secure VM bridge for Control Plane / API) ────
   if (req.url?.startsWith("/_internal/runtime/")) {
     const internalSecret = req.headers["x-whizan-internal"];
     const validSecrets = [
       process.env.INTERNAL_SECRET,
       process.env.JWT_SECRET,
-      "whizan_internal_secret",
     ].filter(Boolean);
 
     if (!internalSecret || !validSecrets.includes(internalSecret as string)) {
@@ -225,92 +211,6 @@ const server = http.createServer(async (req, res) => {
     req.url = req.url.replace(/^\/_internal\/runtime/, "") || "/";
     proxy.web(req, res, { target: `http://127.0.0.1:${FUNCTION_RUNTIME_PORT}` });
     return;
-  }
-
-  // ── Internal Source Upload Bridge (Direct VM SSD storage for archives) ────
-  if (req.url?.startsWith("/_internal/upload")) {
-    const internalSecret = req.headers["x-whizan-internal"];
-    const validSecrets = [
-      process.env.INTERNAL_SECRET,
-      process.env.JWT_SECRET,
-      "whizan_internal_secret",
-    ].filter(Boolean);
-
-    if (!internalSecret || !validSecrets.includes(internalSecret as string)) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "UNAUTHORIZED_INTERNAL_CALL", message: "Invalid or missing internal secret" }));
-      return;
-    }
-
-    if (req.method !== "POST") {
-      res.writeHead(405, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "METHOD_NOT_ALLOWED" }));
-      return;
-    }
-
-    try {
-      const parsedUrl = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-      const targetType = (parsedUrl.searchParams.get("targetType") || req.headers["x-target-type"] || "project").toString().toLowerCase();
-      const targetId = (parsedUrl.searchParams.get("targetId") || req.headers["x-target-id"] || "").toString();
-      const deploymentId = (parsedUrl.searchParams.get("deploymentId") || req.headers["x-deployment-id"] || "").toString();
-
-      if (!targetId || !/^[a-zA-Z0-9_-]+$/.test(targetId)) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "INVALID_TARGET_ID", message: "targetId is required and must be alphanumeric" }));
-        return;
-      }
-
-      const sourcesDir = process.platform === "darwin"
-        ? path.resolve(process.cwd(), ".sources")
-        : "/opt/whizan/sources";
-      const subfolder = targetType === "service" ? "services" : "projects";
-      const targetDir = path.join(sourcesDir, subfolder, targetId);
-      await fs.promises.mkdir(targetDir, { recursive: true });
-
-      const targetArchive = path.join(targetDir, "source.tar.gz");
-      const tempArchive = path.join(targetDir, `temp-${Date.now()}.tar.gz`);
-
-      const writeStream = fs.createWriteStream(tempArchive);
-      let bytesWritten = 0;
-
-      await new Promise<void>((resolve, reject) => {
-        req.on("data", (chunk) => {
-          bytesWritten += chunk.length;
-        });
-        req.pipe(writeStream);
-        writeStream.on("finish", resolve);
-        writeStream.on("error", reject);
-        req.on("error", reject);
-      });
-
-      // Atomic rename
-      await fs.promises.rename(tempArchive, targetArchive);
-
-      // If deploymentId is provided, also store in deployments cache for snapshot rollback
-      if (deploymentId && /^[a-zA-Z0-9_-]+$/.test(deploymentId)) {
-        const deploymentsDir = path.join(sourcesDir, "deployments");
-        await fs.promises.mkdir(deploymentsDir, { recursive: true });
-        const depArchive = path.join(deploymentsDir, `${deploymentId}.tar.gz`);
-        await fs.promises.copyFile(targetArchive, depArchive).catch(() => {});
-      }
-
-      console.log(`[Router Upload] Received direct upload for ${targetType}:${targetId} (${(bytesWritten / (1024 * 1024)).toFixed(2)} MB)`);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        ok: true,
-        targetType,
-        targetId,
-        deploymentId,
-        bytesWritten,
-        path: targetArchive,
-      }));
-      return;
-    } catch (err: any) {
-      console.error("[Router Upload] Failed to write archive:", err);
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "UPLOAD_WRITE_FAILED", message: err.message }));
-      return;
-    }
   }
 
   const host = req.headers.host || "";
@@ -370,7 +270,7 @@ const server = http.createServer(async (req, res) => {
         await handleFunctionRequest(slug, req, res, req.url || "/");
         return;
       }
-    } catch {}
+    } catch { }
 
     res.writeHead(404, { "Content-Type": "text/html" });
     res.end(`
@@ -484,7 +384,7 @@ async function handleFunctionRequest(
   if (rawMeta) {
     try {
       fnMeta = JSON.parse(rawMeta);
-    } catch {}
+    } catch { }
   }
 
   // Fallback to internal API if cache missed (e.g. after VM reboot or Redis flush)
@@ -607,7 +507,7 @@ async function handleFunctionRequest(
     let keyMeta: any = null;
 
     if (keyMetaRaw) {
-      try { keyMeta = JSON.parse(keyMetaRaw); } catch {}
+      try { keyMeta = JSON.parse(keyMetaRaw); } catch { }
     }
 
     // Fallback to internal API verification on cache miss
@@ -640,7 +540,7 @@ async function handleFunctionRequest(
     const rateKey = `fn:rate:${keyHash}:${minuteBucket}`;
     const currentCount = await redis.incr(rateKey).catch(() => 1);
     if (currentCount === 1) {
-      redis.expire(rateKey, 70).catch(() => {});
+      redis.expire(rateKey, 70).catch(() => { });
     }
 
     const limit = keyMeta.rateLimitRpm || 600;
@@ -763,7 +663,7 @@ async function handleFunctionRequest(
       clientIp,
       timestamp: new Date().toISOString(),
     };
-    redis.rpush("fn:invocations:buffer", JSON.stringify(telemetryEvent)).catch(() => {});
+    redis.rpush("fn:invocations:buffer", JSON.stringify(telemetryEvent)).catch(() => { });
   } catch (err: any) {
     console.error(`[Router] Error proxying to Function Runtime:`, err.message);
     res.writeHead(502, {
@@ -811,11 +711,11 @@ async function handleWakeupAndProxy(deployment: DeploymentInfo, req: http.Incomi
   const acquiredLock = await redis.set(`wakeup:inflight:${slug}`, "1", "EX", 20, "NX").catch(() => null);
   if (acquiredLock) {
     console.log(`[Router] Cold start: waking up deployment ${deployment.deploymentId} for ${slug}...`);
-    redis.publish("wakeup", JSON.stringify({ 
-      slug, 
-      deploymentId: deployment.deploymentId, 
+    redis.publish("wakeup", JSON.stringify({
+      slug,
+      deploymentId: deployment.deploymentId,
       type: deployment.type || (deployment as any).deploymentType || "service"
-    })).catch(() => {});
+    })).catch(() => { });
   }
 
   // Instantly return the loading screen so the user sees feedback immediately, instead of a hanging browser tab
@@ -1202,10 +1102,9 @@ function loadingScreenHtml(title: string, message: string, slug?: string) {
 // ─── WebSocket Support (Upgrade Event) ────────────────────────────────────────
 
 server.on("upgrade", async (req, socket, head) => {
-  recordRouterActivity();
   const host = req.headers.host || "";
   let slug: string;
-  
+
   if (host.endsWith(`.${BASE_DOMAIN}`) || host.endsWith(`.${BASE_DOMAIN}:${ROUTER_PORT}`)) {
     slug = host.split(".")[0];
   } else {
@@ -1220,7 +1119,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
 
   const deployment = await lookupDeployment(slug).catch(() => null);
-  
+
   if (!deployment) {
     socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
     socket.destroy();
@@ -1228,7 +1127,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
 
   // Update access time for scale-to-zero tracking
-  redis.set(`access:${deployment.deploymentId}`, Date.now().toString(), "EX", 30 * 24 * 60 * 60).catch(() => {});
+  redis.set(`access:${deployment.deploymentId}`, Date.now().toString(), "EX", 30 * 24 * 60 * 60).catch(() => { });
 
   if (deployment.type === "static" || (deployment as any).deploymentType === "STATIC") {
     // Static sites don't support WebSockets
@@ -1244,11 +1143,11 @@ server.on("upgrade", async (req, socket, head) => {
     // Cold start for WebSockets. We can't render an auto-refresh HTML screen on a raw TCP socket.
     // We publish a wakeup event, then instantly reject the socket so the client app's reconnection logic kicks in.
     console.log(`[Router] Cold start (WS): waking up deployment ${deployment.deploymentId}...`);
-    redis.publish("wakeup", JSON.stringify({ 
-      slug, 
-      deploymentId: deployment.deploymentId, 
-      type: deployment.type || (deployment as any).deploymentType 
-    })).catch(() => {});
+    redis.publish("wakeup", JSON.stringify({
+      slug,
+      deploymentId: deployment.deploymentId,
+      type: deployment.type || (deployment as any).deploymentType
+    })).catch(() => { });
     socket.write('HTTP/1.1 503 Service Unavailable\r\nRetry-After: 3\r\n\r\n');
     socket.destroy();
   }

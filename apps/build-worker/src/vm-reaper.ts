@@ -7,9 +7,7 @@ import { Queue } from "bullmq";
 import { redisPub } from "./redis.js";
 import { getActiveSessionCount } from "./remote-exec.js";
 
-const SLEEP_WEBHOOK_URL =
-  process.env.AZURE_VM_SLEEP_WEBHOOK_URL ||
-  "REDACTED_AZURE_SLEEP_WEBHOOK_URL";
+const SLEEP_WEBHOOK_URL = process.env.AZURE_VM_SLEEP_WEBHOOK_URL || "";
 
 const BOOT_GRACE_PERIOD_SEC = 900; // 15 minutes grace period after VM boot
 const IDLE_TIMEOUT_MS = 20 * 60 * 1000; // 20 continuous minutes of zero activity
@@ -137,6 +135,12 @@ export function startVmReaper(): void {
 
         // Call the Azure Automation Sleep Webhook
         try {
+          if (!SLEEP_WEBHOOK_URL) {
+            console.warn("[VM Reaper] AZURE_VM_SLEEP_WEBHOOK_URL is not configured in environment variables. Skipping deallocation.");
+            isDeallocating = false;
+            consecutiveIdleChecks = 0;
+            return;
+          }
           const res = await fetch(SLEEP_WEBHOOK_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },

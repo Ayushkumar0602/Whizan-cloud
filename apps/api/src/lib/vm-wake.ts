@@ -1,12 +1,7 @@
 import { redisClient } from "./redis.js";
 
-export const AZURE_VM_WAKE_WEBHOOK_URL =
-  process.env.AZURE_VM_WAKE_WEBHOOK_URL ||
-  "REDACTED_AZURE_WAKE_WEBHOOK_URL";
-
-export const AZURE_VM_SLEEP_WEBHOOK_URL =
-  process.env.AZURE_VM_SLEEP_WEBHOOK_URL ||
-  "REDACTED_AZURE_SLEEP_WEBHOOK_URL";
+export const AZURE_VM_WAKE_WEBHOOK_URL = process.env.AZURE_VM_WAKE_WEBHOOK_URL || "";
+export const AZURE_VM_SLEEP_WEBHOOK_URL = process.env.AZURE_VM_SLEEP_WEBHOOK_URL || "";
 
 export interface WakeTriggerResult {
   success: boolean;
@@ -63,6 +58,15 @@ export async function triggerVmWake(reason: string = "demand"): Promise<WakeTrig
   }
 
   // 3. Dispatch the Azure Automation Webhook
+  if (!AZURE_VM_WAKE_WEBHOOK_URL) {
+    console.error("[VM Wake] AZURE_VM_WAKE_WEBHOOK_URL is not configured in environment variables.");
+    return {
+      success: false,
+      action: "error",
+      message: "AZURE_VM_WAKE_WEBHOOK_URL environment variable is missing on the control plane.",
+    };
+  }
+
   try {
     console.log(`[VM Wake] Dispatched Azure Automation wake trigger (reason: ${reason})`);
     
@@ -113,6 +117,11 @@ export async function triggerVmWake(reason: string = "demand"): Promise<WakeTrig
  * Triggers Azure Automation to stop and deallocate the Azure VM ($0/hr compute billing).
  */
 export async function triggerVmSleep(reason: string = "idle_timeout"): Promise<{ success: boolean; message: string }> {
+  if (!AZURE_VM_SLEEP_WEBHOOK_URL) {
+    console.error("[VM Sleep] AZURE_VM_SLEEP_WEBHOOK_URL is not configured in environment variables.");
+    return { success: false, message: "AZURE_VM_SLEEP_WEBHOOK_URL environment variable is missing on the control plane." };
+  }
+
   try {
     console.log(`[VM Sleep] Dispatched Azure Automation sleep trigger (reason: ${reason})`);
     

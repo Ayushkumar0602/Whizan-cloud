@@ -87,23 +87,30 @@ const worker = new Worker<ServiceBuildJob>(
         const persistentSourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
         const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
         const deploymentArchive = path.join(SOURCE_BASE_DIR, "deployments", `${deploymentId}.tar.gz`);
-        const archiveUrl = (job.data as any).archiveUrl ||
-          `https://fdwstppklgibuwqjrusf.supabase.co/storage/v1/object/public/whizan-deployments/services/${serviceId}/${deploymentId}.tar.gz`;
+        const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+        const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
+        const archiveUrl =
+          (job.data as any).archiveUrl ||
+          (supabaseUrl
+            ? `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${serviceId}/${deploymentId}.tar.gz`
+            : null);
 
         // 1. Download directly from Supabase S3 Object Storage if available
-        try {
-          const res = await fetch(archiveUrl, { method: "GET" });
-          if (res.ok) {
-            const arrayBuf = await res.arrayBuffer();
-            if (arrayBuf.byteLength > 100) {
-              await fs.mkdir(persistentSourceDir, { recursive: true });
-              await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
-              await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
-              await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
-              await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+        if (archiveUrl) {
+          try {
+            const res = await fetch(archiveUrl, { method: "GET" });
+            if (res.ok) {
+              const arrayBuf = await res.arrayBuffer();
+              if (arrayBuf.byteLength > 100) {
+                await fs.mkdir(persistentSourceDir, { recursive: true });
+                await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
+                await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
+                await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
+                await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
 
         // 2. Check if archive is stored on persistent SSD disk
         let archivePathToExtract: string | null = null;

@@ -53,7 +53,7 @@ export class WhizanClient {
   async clearConfig(): Promise<void> {
     try {
       await fs.unlink(CONFIG_PATH);
-    } catch {}
+    } catch { }
     this.config.apiKey = undefined;
   }
 
@@ -209,8 +209,8 @@ export class WhizanClient {
         internalPort: isWorker ? 0 : (params.internalPort || 8000),
         isWorker,
         isPublic: params.isPublic !== undefined ? params.isPublic : true,
-        autoSleep: params.autoSleep !== undefined ? params.autoSleep : true,
-        instanceType: params.instanceType || "free",
+        autoSleep: params.autoSleep !== undefined ? params.autoSleep : false,
+        instanceType: params.instanceType || "starter",
         envVars: params.envVars,
         guardrailRejectReason: params.guardrailRejectReason,
       }),
@@ -225,7 +225,7 @@ export class WhizanClient {
 
     // Ensure all env vars are saved via bulk endpoint
     if (params.envVars && Object.keys(params.envVars).length > 0) {
-      await this.setEnvVars("service", service.id, params.envVars).catch(() => {});
+      await this.setEnvVars("service", service.id, params.envVars).catch(() => { });
     }
 
     return service;
@@ -272,7 +272,7 @@ export class WhizanClient {
     const project: any = await res.json();
 
     if (params.envVars && Object.keys(params.envVars).length > 0) {
-      await this.setEnvVars("project", project.id, params.envVars).catch(() => {});
+      await this.setEnvVars("project", project.id, params.envVars).catch(() => { });
     }
 
     return project;
@@ -498,7 +498,7 @@ export class WhizanClient {
             effectiveUrl: fallbackUrl,
             message: `Service healthy and reachable at ${fallbackUrl}. (Note: HTTPS port 443 was refused; automatically fell back to HTTP port 80).`,
           };
-        } catch {}
+        } catch { }
       }
       return { ok: false, status: 0, effectiveUrl: url, message: `Could not connect to ${url}: ${err.message}` };
     }

@@ -34,7 +34,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
     try {
       const raw = await fs.readFile(configPath, "utf8");
       existing = JSON.parse(raw);
-    } catch {}
+    } catch { }
 
     const resolvedTargetType = data.targetType || data.type || existing.targetType || existing.type || "service";
 
@@ -63,7 +63,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.0.10",
+    version: "1.0.9",
   },
   {
     capabilities: {
@@ -676,281 +676,352 @@ Please gently inform the user of this situation:
   }
 
   switch (name) {
-      case "whizan_auth_status": {
-        const status = await client.getAuthStatus();
-        return {
-          content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
-        };
-      }
+    case "whizan_auth_status": {
+      const status = await client.getAuthStatus();
+      return {
+        content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
+      };
+    }
 
-      case "whizan_login": {
-        const { apiKey, apiUrl } = (args || {}) as any;
-        await client.saveConfig({ apiKey, ...(apiUrl ? { apiUrl } : {}) });
-        const status = await client.getAuthStatus();
-        return {
-          content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
-        };
-      }
+    case "whizan_login": {
+      const { apiKey, apiUrl } = (args || {}) as any;
+      await client.saveConfig({ apiKey, ...(apiUrl ? { apiUrl } : {}) });
+      const status = await client.getAuthStatus();
+      return {
+        content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
+      };
+    }
 
-      case "whizan_analyze_workspace": {
-        const { workspaceDir } = (args || {}) as any;
-        const targetDir = workspaceDir || ".";
-        const report = await analyzeWorkspace(targetDir);
+    case "whizan_analyze_workspace": {
+      const { workspaceDir } = (args || {}) as any;
+      const targetDir = workspaceDir || ".";
+      const report = await analyzeWorkspace(targetDir);
 
-        // 1. Fetch developer profile & subscription tier
-        let authProfile: any = null;
+      // 1. Fetch developer profile & subscription tier
+      let authProfile: any = null;
+      try {
+        authProfile = await client.getAuthStatus();
+      } catch { }
+
+      const subscriptionTier = authProfile?.user?.subscriptionTier || "HOBBY";
+      const isProfessional = subscriptionTier === "PROFESSIONAL";
+
+      const computePolicy = isProfessional
+        ? "PROFESSIONAL TIER: Custom instance sizing and scaling enabled from hosting pages."
+        : "HOBBY TIER: Strict free compute limits enforced (Backends: 0.1 vCPU, 512MB RAM, autoSleep=true; Databases: starter 0.5 vCPU, 512MB RAM). Agents MUST NOT select custom or upgraded compute specs.";
+
+      report.recommendations.unshift(`[COMPUTE ALLOCATION POLICY]: ${computePolicy}`);
+
+      // 2. Cross-chat context discovery: Local .whizan.json
+      let localConfig: any = report.localWhizanConfig || null;
+      if (!localConfig) {
         try {
-          authProfile = await client.getAuthStatus();
-        } catch {}
+          const raw = await fs.readFile(path.join(path.resolve(targetDir), ".whizan.json"), "utf8");
+          localConfig = JSON.parse(raw);
+          report.localWhizanConfig = localConfig;
+        } catch { }
+      }
 
-        const subscriptionTier = authProfile?.user?.subscriptionTier || "HOBBY";
-        const isProfessional = subscriptionTier === "PROFESSIONAL";
+      // 3. Query server records for existing projects and services
+      let serverProjects: any[] = [];
+      let serverServices: any[] = [];
+      let serverFunctions: any[] = [];
+      if (authProfile?.authenticated) {
+        try {
+          const [projs, servs, fns] = await Promise.all([
+            client.listProjects().catch(() => []),
+            client.listServices().catch(() => []),
+            client.listFunctions().catch(() => []),
+          ]);
+          serverProjects = projs || [];
+          serverServices = servs || [];
+          serverFunctions = fns || [];
+        } catch { }
+      }
 
-        const computePolicy = isProfessional
-          ? "PROFESSIONAL TIER: Custom instance sizing and scaling enabled from hosting pages."
-          : "HOBBY TIER: Strict free compute limits enforced (Backends: 0.1 vCPU, 512MB RAM, autoSleep=true; Databases: starter 0.5 vCPU, 512MB RAM). Agents MUST NOT select custom or upgraded compute specs.";
+      // 4. Match local repository with server deployments
+      let matchedTarget: any = null;
+      let matchSource: "local_config" | "server_match" = "local_config";
+      let targetType: "project" | "service" | "function" = "project";
 
-        report.recommendations.unshift(`[COMPUTE ALLOCATION POLICY]: ${computePolicy}`);
-
-        // 2. Cross-chat context discovery: Local .whizan.json
-        let localConfig: any = report.localWhizanConfig || null;
-        if (!localConfig) {
-          try {
-            const raw = await fs.readFile(path.join(path.resolve(targetDir), ".whizan.json"), "utf8");
-            localConfig = JSON.parse(raw);
-            report.localWhizanConfig = localConfig;
-          } catch {}
-        }
-
-        // 3. Query server records for existing projects and services
-        let serverProjects: any[] = [];
-        let serverServices: any[] = [];
-        let serverFunctions: any[] = [];
-        if (authProfile?.authenticated) {
-          try {
-            const [projs, servs, fns] = await Promise.all([
-              client.listProjects().catch(() => []),
-              client.listServices().catch(() => []),
-              client.listFunctions().catch(() => []),
-            ]);
-            serverProjects = projs || [];
-            serverServices = servs || [];
-            serverFunctions = fns || [];
-          } catch {}
-        }
-
-        // 4. Match local repository with server deployments
-        let matchedTarget: any = null;
-        let matchSource: "local_config" | "server_match" = "local_config";
-        let targetType: "project" | "service" | "function" = "project";
-
-        // Step A: Check localConfig targetId
-        const localTargetType = localConfig?.targetType || localConfig?.type;
-        if (localConfig?.targetId && localTargetType) {
-          if (localTargetType === "project") {
-            const p = serverProjects.find((x) => x.id === localConfig.targetId);
-            if (p) {
-              matchedTarget = p;
-              targetType = "project";
-              matchSource = "local_config";
-            }
-          } else if (localTargetType === "service") {
-            const s = serverServices.find((x) => x.id === localConfig.targetId);
-            if (s) {
-              matchedTarget = s;
-              targetType = "service";
-              matchSource = "local_config";
-            }
-          } else if (localTargetType === "function") {
-            const f = serverFunctions.find((x) => x.id === localConfig.targetId);
-            if (f) {
-              matchedTarget = f;
-              targetType = "function";
-              matchSource = "local_config";
-            }
+      // Step A: Check localConfig targetId
+      const localTargetType = localConfig?.targetType || localConfig?.type;
+      if (localConfig?.targetId && localTargetType) {
+        if (localTargetType === "project") {
+          const p = serverProjects.find((x) => x.id === localConfig.targetId);
+          if (p) {
+            matchedTarget = p;
+            targetType = "project";
+            matchSource = "local_config";
           }
-
-          // Fallback: If targetId is saved in localConfig but not found in server query array
-          if (!matchedTarget) {
-            matchedTarget = {
-              id: localConfig.targetId,
-              name: localConfig.name || localConfig.slug || "linked-deployment",
-              slug: localConfig.slug || localConfig.targetId,
-              status: localConfig.lastDeploymentStatus || "UNKNOWN",
-            };
-            targetType = localTargetType;
+        } else if (localTargetType === "service") {
+          const s = serverServices.find((x) => x.id === localConfig.targetId);
+          if (s) {
+            matchedTarget = s;
+            targetType = "service";
+            matchSource = "local_config";
+          }
+        } else if (localTargetType === "function") {
+          const f = serverFunctions.find((x) => x.id === localConfig.targetId);
+          if (f) {
+            matchedTarget = f;
+            targetType = "function";
             matchSource = "local_config";
           }
         }
 
-        // Step B: Check server projects/services by slug, package name, or folder name
-        if (!matchedTarget && (serverProjects.length > 0 || serverServices.length > 0)) {
-          const folderName = path.basename(path.resolve(targetDir)).toLowerCase();
-          let pkgName: string | undefined;
-          try {
-            const pkgRaw = await fs.readFile(path.join(path.resolve(targetDir), "package.json"), "utf8");
-            const pkg = JSON.parse(pkgRaw);
-            pkgName = pkg.name?.toLowerCase()?.replace(/^@[^/]+\//, "");
-          } catch {}
-
-          const matchCandidate = (item: any) => {
-            const itemSlug = item.slug?.toLowerCase();
-            const itemName = item.name?.toLowerCase();
-            return (
-              (localConfig?.slug && (itemSlug === localConfig.slug.toLowerCase() || itemName === localConfig.slug.toLowerCase())) ||
-              (pkgName && (itemSlug === pkgName || itemName === pkgName)) ||
-              (folderName && (itemSlug === folderName || itemName === folderName))
-            );
+        // Fallback: If targetId is saved in localConfig but not found in server query array
+        if (!matchedTarget) {
+          matchedTarget = {
+            id: localConfig.targetId,
+            name: localConfig.name || localConfig.slug || "linked-deployment",
+            slug: localConfig.slug || localConfig.targetId,
+            status: localConfig.lastDeploymentStatus || "UNKNOWN",
           };
+          targetType = localTargetType;
+          matchSource = "local_config";
+        }
+      }
 
-          if (report.projectType === "frontend" || report.framework === "Next.js") {
-            matchedTarget = serverProjects.find(matchCandidate);
-            if (matchedTarget) {
-              targetType = "project";
-              matchSource = "server_match";
-            }
-          } else if (report.projectType === "backend") {
+      // Step B: Check server projects/services by slug, package name, or folder name
+      if (!matchedTarget && (serverProjects.length > 0 || serverServices.length > 0)) {
+        const folderName = path.basename(path.resolve(targetDir)).toLowerCase();
+        let pkgName: string | undefined;
+        try {
+          const pkgRaw = await fs.readFile(path.join(path.resolve(targetDir), "package.json"), "utf8");
+          const pkg = JSON.parse(pkgRaw);
+          pkgName = pkg.name?.toLowerCase()?.replace(/^@[^/]+\//, "");
+        } catch { }
+
+        const matchCandidate = (item: any) => {
+          const itemSlug = item.slug?.toLowerCase();
+          const itemName = item.name?.toLowerCase();
+          return (
+            (localConfig?.slug && (itemSlug === localConfig.slug.toLowerCase() || itemName === localConfig.slug.toLowerCase())) ||
+            (pkgName && (itemSlug === pkgName || itemName === pkgName)) ||
+            (folderName && (itemSlug === folderName || itemName === folderName))
+          );
+        };
+
+        if (report.projectType === "frontend" || report.framework === "Next.js") {
+          matchedTarget = serverProjects.find(matchCandidate);
+          if (matchedTarget) {
+            targetType = "project";
+            matchSource = "server_match";
+          }
+        } else if (report.projectType === "backend") {
+          matchedTarget = serverServices.find(matchCandidate);
+          if (matchedTarget) {
+            targetType = "service";
+            matchSource = "server_match";
+          }
+        } else {
+          matchedTarget = serverProjects.find(matchCandidate);
+          if (matchedTarget) {
+            targetType = "project";
+            matchSource = "server_match";
+          } else {
             matchedTarget = serverServices.find(matchCandidate);
             if (matchedTarget) {
               targetType = "service";
               matchSource = "server_match";
             }
-          } else {
-            matchedTarget = serverProjects.find(matchCandidate);
-            if (matchedTarget) {
-              targetType = "project";
-              matchSource = "server_match";
-            } else {
-              matchedTarget = serverServices.find(matchCandidate);
-              if (matchedTarget) {
-                targetType = "service";
-                matchSource = "server_match";
-              }
-            }
           }
         }
+      }
 
-        // Step C: If match found, present redeployment guidance and synchronize .whizan.json
-        if (matchedTarget) {
-          const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-          const liveUrl = matchedTarget.slug ? `http://${matchedTarget.slug}.${baseDomain}` : undefined;
+      // Step C: If match found, present redeployment guidance and synchronize .whizan.json
+      if (matchedTarget) {
+        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+        const liveUrl = matchedTarget.slug ? `http://${matchedTarget.slug}.${baseDomain}` : undefined;
 
-          report.existingDeployment = {
-            found: true,
-            source: matchSource,
-            targetType,
-            targetId: matchedTarget.id,
-            name: matchedTarget.name,
-            slug: matchedTarget.slug,
-            liveUrl,
-            status: matchedTarget.status,
-            actionRecommendation: `Found existing ${targetType} '${matchedTarget.name}' (${matchedTarget.id}) on Whizan Cloud (${matchSource === "local_config" ? "from local .whizan.json" : "matched server project record"}). DO NOT re-create the ${targetType}. Ask user confirmation to redeploy to this existing deployment, then call whizan_deploy_direct with targetType: "${targetType}" and targetId: "${matchedTarget.id}". Previous containers, packages, and build artifacts will be cleanly decommissioned with zero redundancy.`
-          };
+        report.existingDeployment = {
+          found: true,
+          source: matchSource,
+          targetType,
+          targetId: matchedTarget.id,
+          name: matchedTarget.name,
+          slug: matchedTarget.slug,
+          liveUrl,
+          status: matchedTarget.status,
+          actionRecommendation: `Found existing ${targetType} '${matchedTarget.name}' (${matchedTarget.id}) on Whizan Cloud (${matchSource === "local_config" ? "from local .whizan.json" : "matched server project record"}). DO NOT re-create the ${targetType}. Ask user confirmation to redeploy to this existing deployment, then call whizan_deploy_direct with targetType: "${targetType}" and targetId: "${matchedTarget.id}". Previous containers, packages, and build artifacts will be cleanly decommissioned with zero redundancy.`
+        };
 
-          report.recommendations.unshift(
-            `[EXISTING DEPLOYMENT DETECTED]: Found matching ${targetType} '${matchedTarget.name}' (ID: ${matchedTarget.id}) on Whizan Cloud! DO NOT call whizan_create_${targetType}. Ask user permission to redeploy to ID '${matchedTarget.id}' and proceed directly with whizan_deploy_direct.`
-          );
+        report.recommendations.unshift(
+          `[EXISTING DEPLOYMENT DETECTED]: Found matching ${targetType} '${matchedTarget.name}' (ID: ${matchedTarget.id}) on Whizan Cloud! DO NOT call whizan_create_${targetType}. Ask user permission to redeploy to ID '${matchedTarget.id}' and proceed directly with whizan_deploy_direct.`
+        );
 
-          // Override recommended tool to redeploy instead of creating
-          report.recommendedDeploymentConfig = {
-            targetType: targetType as any,
-            toolToCall: "whizan_create_service" as any, // fallback type
-            internalPort: report.portConfig.detectedHardcodedPort || 8000,
-          };
+        // Override recommended tool to redeploy instead of creating
+        report.recommendedDeploymentConfig = {
+          targetType: targetType as any,
+          toolToCall: "whizan_create_service" as any, // fallback type
+          internalPort: report.portConfig.detectedHardcodedPort || 8000,
+        };
 
-          await saveLocalWhizanConfig(targetDir, {
-            targetId: matchedTarget.id,
-            targetType,
-            name: matchedTarget.name,
-            slug: matchedTarget.slug,
-            liveUrl,
-          });
+        await saveLocalWhizanConfig(targetDir, {
+          targetId: matchedTarget.id,
+          targetType,
+          name: matchedTarget.name,
+          slug: matchedTarget.slug,
+          liveUrl,
+        });
+      }
+
+      // Step D: Failure Diagnostic Handshake (Self-Healing Detection from CLI)
+      if (
+        localConfig?.targetId &&
+        (localConfig?.lastDeploymentStatus === "FAILED" ||
+          localConfig?.lastDeploymentStatus === "UNHEALTHY" ||
+          localConfig?.lastDeploymentStatus === "ERROR" ||
+          localConfig?.lastFailureReason)
+      ) {
+        let failureLogs: any = null;
+        if (localConfig.lastDeploymentId) {
+          try {
+            failureLogs = await client.getBuildLogs(localConfig.lastDeploymentId);
+          } catch { }
         }
 
-        // Step D: Failure Diagnostic Handshake (Self-Healing Detection from CLI)
-        if (
-          localConfig?.targetId &&
-          (localConfig?.lastDeploymentStatus === "FAILED" ||
-            localConfig?.lastDeploymentStatus === "UNHEALTHY" ||
-            localConfig?.lastDeploymentStatus === "ERROR" ||
-            localConfig?.lastFailureReason)
-        ) {
-          let failureLogs: any = null;
-          if (localConfig.lastDeploymentId) {
-            try {
-              failureLogs = await client.getBuildLogs(localConfig.lastDeploymentId);
-            } catch {}
-          }
+        const rawError =
+          localConfig.lastFailureReason ||
+          failureLogs?.errorMessage ||
+          "Build or container startup failed on cloud cluster";
 
-          const rawError =
-            localConfig.lastFailureReason ||
-            failureLogs?.errorMessage ||
-            "Build or container startup failed on cloud cluster";
+        const recentLogsList: string[] = (failureLogs?.logs || [])
+          .map((l: any) => (typeof l === "string" ? l : l.message || JSON.stringify(l)))
+          .slice(-15);
 
-          const recentLogsList: string[] = (failureLogs?.logs || [])
-            .map((l: any) => (typeof l === "string" ? l : l.message || JSON.stringify(l)))
-            .slice(-15);
+        report.lastBuildFailure = {
+          deploymentId: localConfig.lastDeploymentId || "unknown",
+          targetId: localConfig.targetId,
+          targetType: (localTargetType || targetType) as any,
+          status: localConfig.lastDeploymentStatus || "FAILED",
+          errorMessage: rawError,
+          recentLogs: recentLogsList,
+          failedAt: localConfig.failedAt,
+        };
 
-          report.lastBuildFailure = {
-            deploymentId: localConfig.lastDeploymentId || "unknown",
-            targetId: localConfig.targetId,
-            targetType: (localTargetType || targetType) as any,
-            status: localConfig.lastDeploymentStatus || "FAILED",
-            errorMessage: rawError,
-            recentLogs: recentLogsList,
-            failedAt: localConfig.failedAt,
-          };
+        const logSnippet = recentLogsList.length > 0 ? recentLogsList.map((l) => `  ${l}`).join("\n") : "  (Check local application logs or environment)";
 
-          const logSnippet = recentLogsList.length > 0 ? recentLogsList.map((l) => `  ${l}`).join("\n") : "  (Check local application logs or environment)";
+        report.recommendations.unshift(
+          `🚨 [URGENT: PREVIOUS CLI DEPLOYMENT FAILED — SELF-HEALING DIAGNOSIS]:\nDeployment ID: ${localConfig.lastDeploymentId || "unknown"}\nTarget ID:     ${localConfig.targetId} (${localTargetType || targetType})\nStatus:        ${localConfig.lastDeploymentStatus || "FAILED"}\nFailure Error: ${rawError}\n\nRecent Build Logs from Cloud Build Worker:\n${logSnippet}\n\n🛑 MANDATORY AI AGENT INSTRUCTIONS FOR REDEPLOYMENT:\n1. The cloud target '${localConfig.targetId}' ALREADY EXISTS. DO NOT call 'whizan_create_service' or 'whizan_create_project'!\n2. Analyze the build failure reason and logs above, and edit the local project files to fix the error.\n3. Ensure the app binds to '0.0.0.0' and uses 'process.env.PORT || 8000'.\n4. Call 'whizan_deploy_direct' with targetId: "${localConfig.targetId}" and targetType: "${localTargetType || targetType}" to redeploy the fixed code.\n5. Call 'whizan_check_health' to verify live status once build reaches READY/ACTIVE.`
+        );
+      }
 
-          report.recommendations.unshift(
-            `🚨 [URGENT: PREVIOUS CLI DEPLOYMENT FAILED — SELF-HEALING DIAGNOSIS]:\nDeployment ID: ${localConfig.lastDeploymentId || "unknown"}\nTarget ID:     ${localConfig.targetId} (${localTargetType || targetType})\nStatus:        ${localConfig.lastDeploymentStatus || "FAILED"}\nFailure Error: ${rawError}\n\nRecent Build Logs from Cloud Build Worker:\n${logSnippet}\n\n🛑 MANDATORY AI AGENT INSTRUCTIONS FOR REDEPLOYMENT:\n1. The cloud target '${localConfig.targetId}' ALREADY EXISTS. DO NOT call 'whizan_create_service' or 'whizan_create_project'!\n2. Analyze the build failure reason and logs above, and edit the local project files to fix the error.\n3. Ensure the app binds to '0.0.0.0' and uses 'process.env.PORT || 8000'.\n4. Call 'whizan_deploy_direct' with targetId: "${localConfig.targetId}" and targetType: "${localTargetType || targetType}" to redeploy the fixed code.\n5. Call 'whizan_check_health' to verify live status once build reaches READY/ACTIVE.`
-          );
-        }
+      if (!report.guardrailPassed) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${report.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.\n\nFull Audit:\n` + JSON.stringify(report, null, 2),
+            },
+          ],
+        };
+      }
 
-        if (!report.guardrailPassed) {
+      const sysStatus = await client.getSystemStatus().catch(() => null);
+      if (sysStatus && !sysStatus.vmOnline) {
+        (report as any).vmOnline = false;
+        (report as any).maintenanceNotice = `⚠️ NOTICE: Cloud compute infrastructure is currently powered down by administration. New deployments cannot proceed until reactivated. Contact: ${sysStatus.contactEmail}`;
+        report.recommendations.unshift(
+          `⚠️ Cloud compute infrastructure is temporarily paused by administration. New deployments cannot proceed until reactivation. For inquiries or reactivation, please contact: ${sysStatus.contactEmail}`
+        );
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
+      };
+    }
+
+    case "whizan_generate_patch": {
+      const patch = generatePatch((args || {}) as any);
+      return {
+        content: [{ type: "text", text: JSON.stringify(patch, null, 2) }],
+      };
+    }
+
+    case "whizan_create_service": {
+      const serviceArgs = (args || {}) as any;
+      const checkDir = serviceArgs.rootDir || ".";
+
+      // Anti-Duplicate Guardrail: Check local .whizan.json before creating service
+      const workspaceRoot = path.resolve(checkDir);
+      try {
+        const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
+        const existingCfg = JSON.parse(cfgRaw);
+        if (existingCfg?.targetId && !serviceArgs.forceNew) {
+          const exType = existingCfg.targetType || existingCfg.type || "service";
           return {
             content: [
               {
                 type: "text",
-                text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${report.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.\n\nFull Audit:\n` + JSON.stringify(report, null, 2),
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    blocked: true,
+                    code: "DUPLICATE_PREVENTION",
+                    message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
+                    existingDeployment: {
+                      targetId: existingCfg.targetId,
+                      targetType: exType,
+                      slug: existingCfg.slug,
+                      name: existingCfg.name,
+                    },
+                    instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate service, set 'forceNew: true'.`,
+                  },
+                  null,
+                  2
+                ),
               },
             ],
           };
         }
+      } catch { }
 
-        const sysStatus = await client.getSystemStatus().catch(() => null);
-        if (sysStatus && !sysStatus.vmOnline) {
-          (report as any).vmOnline = false;
-          (report as any).maintenanceNotice = `⚠️ NOTICE: Cloud compute infrastructure is currently powered down by administration. New deployments cannot proceed until reactivated. Contact: ${sysStatus.contactEmail}`;
-          report.recommendations.unshift(
-            `⚠️ Cloud compute infrastructure is temporarily paused by administration. New deployments cannot proceed until reactivation. For inquiries or reactivation, please contact: ${sysStatus.contactEmail}`
-          );
+      // System Guardrail pre-check
+      try {
+        const audit = await analyzeWorkspace(checkDir);
+        if (!audit.guardrailPassed) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+              },
+            ],
+          };
         }
+      } catch { }
 
-        return {
-          content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
-        };
+      // Enforce Hobby subscription tier compute limits
+      let authProfile: any = null;
+      try {
+        authProfile = await client.getAuthStatus();
+      } catch { }
+      const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+      if (!isProfessional) {
+        serviceArgs.instanceType = "free";
+        serviceArgs.autoSleep = true;
+        delete serviceArgs.cpuLimit;
+        delete serviceArgs.memoryLimit;
       }
 
-      case "whizan_generate_patch": {
-        const patch = generatePatch((args || {}) as any);
-        return {
-          content: [{ type: "text", text: JSON.stringify(patch, null, 2) }],
-        };
-      }
-
-      case "whizan_create_service": {
-        const serviceArgs = (args || {}) as any;
-        const checkDir = serviceArgs.rootDir || ".";
-
-        // Anti-Duplicate Guardrail: Check local .whizan.json before creating service
-        const workspaceRoot = path.resolve(checkDir);
-        try {
-          const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
-          const existingCfg = JSON.parse(cfgRaw);
-          if (existingCfg?.targetId && !serviceArgs.forceNew) {
-            const exType = existingCfg.targetType || existingCfg.type || "service";
+      let service: any;
+      try {
+        service = await client.createService(serviceArgs);
+      } catch (err: any) {
+        if (err instanceof WhizanApiError && err.statusCode === 409) {
+          const existingService = err.data?.existingService;
+          if (existingService) {
+            const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+            const liveUrl = `http://${existingService.slug}.${baseDomain}`;
+            await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
+              targetId: existingService.id,
+              targetType: "service",
+              name: existingService.name,
+              slug: existingService.slug,
+              liveUrl,
+            });
             return {
               content: [
                 {
@@ -958,16 +1029,11 @@ Please gently inform the user of this situation:
                   text: JSON.stringify(
                     {
                       success: false,
-                      blocked: true,
-                      code: "DUPLICATE_PREVENTION",
-                      message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
-                      existingDeployment: {
-                        targetId: existingCfg.targetId,
-                        targetType: exType,
-                        slug: existingCfg.slug,
-                        name: existingCfg.name,
-                      },
-                      instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate service, set 'forceNew: true'.`,
+                      conflict: true,
+                      message: `Service with slug '${existingService.slug}' already exists in your Whizan account (ID: ${existingService.id}).`,
+                      existingService,
+                      liveUrl,
+                      instructions: `Do NOT call whizan_create_service again. You can redeploy directly to this existing service. Ask user permission and call whizan_deploy_direct with targetType: "service" and targetId: "${existingService.id}".`,
                     },
                     null,
                     2
@@ -976,128 +1042,112 @@ Please gently inform the user of this situation:
               ],
             };
           }
-        } catch {}
-
-        // System Guardrail pre-check
-        try {
-          const audit = await analyzeWorkspace(checkDir);
-          if (!audit.guardrailPassed) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
-                },
-              ],
-            };
-          }
-        } catch {}
-        
-        // Enforce Portfolio Forced-Idleness: Only Platform Admins can choose non-free tiers or always-on
-        let authProfile: any = null;
-        try {
-          authProfile = await client.getAuthStatus();
-        } catch {}
-        const isUserAdmin =
-          authProfile?.user?.role === "ADMIN" ||
-          authProfile?.user?.role === "ROOT_ADMIN" ||
-          authProfile?.user?.isAdmin === true ||
-          authProfile?.user?.email === "aj0892829122@gmail.com";
-
-        const canCustomizeTier =
-          isUserAdmin || authProfile?.user?.subscriptionTier === "PROFESSIONAL";
-
-        if (!canCustomizeTier) {
-          serviceArgs.instanceType = "free";
-          serviceArgs.autoSleep = true;
-          serviceArgs.cpuLimit = 0.1;
-          serviceArgs.memoryLimit = 512;
         }
-
-        let service: any;
-        try {
-          service = await client.createService(serviceArgs);
-        } catch (err: any) {
-          if (err instanceof WhizanApiError && err.statusCode === 409) {
-            const existingService = err.data?.existingService;
-            if (existingService) {
-              const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-              const liveUrl = `http://${existingService.slug}.${baseDomain}`;
-              await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
-                targetId: existingService.id,
-                targetType: "service",
-                name: existingService.name,
-                slug: existingService.slug,
-                liveUrl,
-              });
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify(
-                      {
-                        success: false,
-                        conflict: true,
-                        message: `Service with slug '${existingService.slug}' already exists in your Whizan account (ID: ${existingService.id}).`,
-                        existingService,
-                        liveUrl,
-                        instructions: `Do NOT call whizan_create_service again. You can redeploy directly to this existing service. Ask user permission and call whizan_deploy_direct with targetType: "service" and targetId: "${existingService.id}".`,
-                      },
-                      null,
-                      2
-                    ),
-                  },
-                ],
-              };
-            }
-          }
-          throw err;
-        }
-
-        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const expectedLiveUrl = `http://${service.slug}.${baseDomain}`;
-        
-        await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
-          targetId: service.id,
-          targetType: "service",
-          name: service.name,
-          slug: service.slug,
-          liveUrl: expectedLiveUrl,
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Service '${service.name}' registered successfully.`,
-                  service,
-                  expectedLiveUrl,
-                  protocol: "http",
-                  note: `The live URL will be active at ${expectedLiveUrl} once direct deployment completes. Note: Use http:// (not https://) as Edge Router operates on Port 80.`,
-                  nextStep: `Deploy your code to this service by running whizan_deploy_direct with targetType: "service" and targetId: "${service.id}".`,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
+        throw err;
       }
 
-      case "whizan_create_project": {
-        const projectArgs = (args || {}) as any;
-        const checkDir = projectArgs.rootDir || ".";
+      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const expectedLiveUrl = `http://${service.slug}.${baseDomain}`;
 
-        // Anti-Duplicate Guardrail: Check local .whizan.json before creating project
-        const workspaceRoot = path.resolve(checkDir);
-        try {
-          const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
-          const existingCfg = JSON.parse(cfgRaw);
-          if (existingCfg?.targetId && !projectArgs.forceNew) {
-            const exType = existingCfg.targetType || existingCfg.type || "project";
+      await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
+        targetId: service.id,
+        targetType: "service",
+        name: service.name,
+        slug: service.slug,
+        liveUrl: expectedLiveUrl,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Service '${service.name}' registered successfully.`,
+                service,
+                expectedLiveUrl,
+                protocol: "http",
+                note: `The live URL will be active at ${expectedLiveUrl} once direct deployment completes. Note: Use http:// (not https://) as Edge Router operates on Port 80.`,
+                nextStep: `Deploy your code to this service by running whizan_deploy_direct with targetType: "service" and targetId: "${service.id}".`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_create_project": {
+      const projectArgs = (args || {}) as any;
+      const checkDir = projectArgs.rootDir || ".";
+
+      // Anti-Duplicate Guardrail: Check local .whizan.json before creating project
+      const workspaceRoot = path.resolve(checkDir);
+      try {
+        const cfgRaw = await fs.readFile(path.join(workspaceRoot, ".whizan.json"), "utf8");
+        const existingCfg = JSON.parse(cfgRaw);
+        if (existingCfg?.targetId && !projectArgs.forceNew) {
+          const exType = existingCfg.targetType || existingCfg.type || "project";
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    blocked: true,
+                    code: "DUPLICATE_PREVENTION",
+                    message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
+                    existingDeployment: {
+                      targetId: existingCfg.targetId,
+                      targetType: exType,
+                      slug: existingCfg.slug,
+                      name: existingCfg.name,
+                    },
+                    instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate project, set 'forceNew: true'.`,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+      } catch { }
+
+      // System Guardrail pre-check
+      try {
+        const audit = await analyzeWorkspace(checkDir);
+        if (!audit.guardrailPassed) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+              },
+            ],
+          };
+        }
+      } catch { }
+
+      let project: any;
+      try {
+        project = await client.createProject(projectArgs);
+      } catch (err: any) {
+        if (err instanceof WhizanApiError && err.statusCode === 409) {
+          const existingProject = err.data?.existingProject;
+          if (existingProject) {
+            const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+            const liveUrl = `http://${existingProject.slug}.${baseDomain}`;
+            await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
+              targetId: existingProject.id,
+              targetType: "project",
+              name: existingProject.name,
+              slug: existingProject.slug,
+              liveUrl,
+            });
             return {
               content: [
                 {
@@ -1105,16 +1155,11 @@ Please gently inform the user of this situation:
                   text: JSON.stringify(
                     {
                       success: false,
-                      blocked: true,
-                      code: "DUPLICATE_PREVENTION",
-                      message: `[GUARDRAIL TRIGGERED] This workspace is already linked to existing ${exType} '${existingCfg.name || existingCfg.slug}' (${existingCfg.targetId}).`,
-                      existingDeployment: {
-                        targetId: existingCfg.targetId,
-                        targetType: exType,
-                        slug: existingCfg.slug,
-                        name: existingCfg.name,
-                      },
-                      instructions: `DO NOT create a duplicate ${exType}. Call 'whizan_deploy_direct' with targetId: "${existingCfg.targetId}" and targetType: "${exType}" to redeploy your code changes. If you intentionally want a separate duplicate project, set 'forceNew: true'.`,
+                      conflict: true,
+                      message: `Project with slug '${existingProject.slug}' already exists in your Whizan account (ID: ${existingProject.id}).`,
+                      existingProject,
+                      liveUrl,
+                      instructions: `Do NOT call whizan_create_project again. You can redeploy directly to this existing project. Ask user permission and call whizan_deploy_direct with targetType: "project" and targetId: "${existingProject.id}".`,
                     },
                     null,
                     2
@@ -1123,670 +1168,609 @@ Please gently inform the user of this situation:
               ],
             };
           }
-        } catch {}
+        }
+        throw err;
+      }
 
-        // System Guardrail pre-check
-        try {
-          const audit = await analyzeWorkspace(checkDir);
-          if (!audit.guardrailPassed) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
-                },
-              ],
-            };
-          }
-        } catch {}
+      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const expectedLiveUrl = `http://${project.slug}.${baseDomain}`;
 
-        let project: any;
-        try {
-          project = await client.createProject(projectArgs);
-        } catch (err: any) {
-          if (err instanceof WhizanApiError && err.statusCode === 409) {
-            const existingProject = err.data?.existingProject;
-            if (existingProject) {
-              const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-              const liveUrl = `http://${existingProject.slug}.${baseDomain}`;
-              await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
-                targetId: existingProject.id,
-                targetType: "project",
-                name: existingProject.name,
-                slug: existingProject.slug,
-                liveUrl,
-              });
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify(
-                      {
-                        success: false,
-                        conflict: true,
-                        message: `Project with slug '${existingProject.slug}' already exists in your Whizan account (ID: ${existingProject.id}).`,
-                        existingProject,
-                        liveUrl,
-                        instructions: `Do NOT call whizan_create_project again. You can redeploy directly to this existing project. Ask user permission and call whizan_deploy_direct with targetType: "project" and targetId: "${existingProject.id}".`,
-                      },
-                      null,
-                      2
-                    ),
-                  },
+      await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
+        targetId: project.id,
+        targetType: "project",
+        name: project.name,
+        slug: project.slug,
+        liveUrl: expectedLiveUrl,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Project '${project.name}' registered successfully.`,
+                project,
+                expectedLiveUrl,
+                protocol: "http",
+                nextStep: `Deploy your frontend code by running whizan_deploy_direct with targetType: "project" and targetId: "${project.id}".`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_set_env_vars": {
+      const { targetType, targetId, envVars } = (args || {}) as any;
+      const results = await client.setEnvVars(targetType, targetId, envVars || {});
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Updated ${Object.keys(results).length} environment variables on ${targetType} ${targetId}.`,
+                results,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_deploy_direct": {
+      const { targetType, targetId, workspaceDir } = (args || {}) as any;
+      const targetDirectory = workspaceDir || ".";
+
+      // System Guardrail pre-check
+      try {
+        const audit = await analyzeWorkspace(targetDirectory);
+        if (!audit.guardrailPassed) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
+              },
+            ],
+          };
+        }
+      } catch { }
+
+      const archiveBuffer = await packDirectory(targetDirectory, targetType);
+
+      let deploymentResult: any;
+      if (targetType === "service") {
+        deploymentResult = await client.uploadServiceArchive(targetId, archiveBuffer);
+      } else {
+        deploymentResult = await client.uploadProjectArchive(targetId, archiveBuffer);
+      }
+
+      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const slug = deploymentResult?.service?.slug || deploymentResult?.project?.slug || targetId;
+      const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+
+      // Save deployment context in local .whizan.json
+      await saveLocalWhizanConfig(targetDirectory, {
+        targetId,
+        targetType,
+        slug,
+        name: deploymentResult?.service?.name || deploymentResult?.project?.name,
+        lastDeploymentId: deploymentResult.id,
+        liveUrl: expectedLiveUrl,
+        lastDeployedAt: new Date().toISOString(),
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on cloud worker. Old packages and previous container resources will be automatically decommissioned upon build completion with zero redundancy.`,
+                deploymentId: deploymentResult.id,
+                status: deploymentResult.status,
+                expectedLiveUrl,
+                nextSteps: [
+                  `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
+                  `2. Once build status reaches ACTIVE/READY, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
+                  `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl} (use http://, not https://).`
                 ],
-              };
-            }
-          }
-          throw err;
-        }
+                deployment: deploymentResult,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
 
-        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const expectedLiveUrl = `http://${project.slug}.${baseDomain}`;
+    case "whizan_provision_database": {
+      const dbArgs = (args || {}) as any;
+      // Enforce Hobby subscription tier limits
+      let authProfile: any = null;
+      try {
+        authProfile = await client.getAuthStatus();
+      } catch { }
+      const isProfessional = authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+      if (!isProfessional) {
+        dbArgs.instanceType = "starter";
+      }
+      const db = await client.provisionDatabase(dbArgs);
+      return {
+        content: [{ type: "text", text: JSON.stringify(db, null, 2) }],
+      };
+    }
 
-        await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
-          targetId: project.id,
-          targetType: "project",
-          name: project.name,
-          slug: project.slug,
-          liveUrl: expectedLiveUrl,
-        });
+    case "whizan_get_build_logs": {
+      const { deploymentId } = (args || {}) as any;
+      const result = await client.getBuildLogs(deploymentId);
 
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Project '${project.name}' registered successfully.`,
-                  project,
-                  expectedLiveUrl,
-                  protocol: "http",
-                  nextStep: `Deploy your frontend code by running whizan_deploy_direct with targetType: "project" and targetId: "${project.id}".`,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
+      let guidance = "";
+      if (result.status === "ACTIVE" || result.status === "READY") {
+        guidance = `✓ Service is online and ready! Verified live URL: ${result.liveUrl || "(check service slug)"}. You MUST now call whizan_check_health to verify HTTP readiness.`;
+      } else if (result.status === "FAILED") {
+        guidance = `✗ Build failed! Analyze the logs above to identify the missing dependency, build command error, or configuration issue. Fix the issue and call whizan_redeploy.`;
+      } else if (result.status === "CANCELLED") {
+        guidance = `Deployment was cancelled.`;
+      } else {
+        guidance = `Deployment is in progress (Status: ${result.status}). The cloud build worker is executing your build. Wait 5-10 seconds and call whizan_get_build_logs again. DO NOT assume deployment is finished until status is READY/ACTIVE or FAILED.`;
       }
 
-      case "whizan_set_env_vars": {
-        const { targetType, targetId, envVars } = (args || {}) as any;
-        const results = await client.setEnvVars(targetType, targetId, envVars || {});
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Updated ${Object.keys(results).length} environment variables on ${targetType} ${targetId}.`,
-                  results,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                deploymentId,
+                status: result.status,
+                liveUrl: result.liveUrl,
+                errorMessage: result.errorMessage,
+                logCount: result.logs.length,
+                guidance,
+                logs: result.logs.length > 0 ? result.logs : ["No log entries emitted yet. The build worker is preparing the container environment..."],
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_check_health": {
+      const { url, targetId } = (args || {}) as any;
+      const target = url || targetId;
+      if (!target) {
+        throw new Error("whizan_check_health requires either 'url' (e.g. http://<slug>.20.2.136.11.nip.io) or 'targetId'.");
       }
+      const health = await client.checkHealth(target);
+      return {
+        content: [{ type: "text", text: JSON.stringify(health, null, 2) }],
+      };
+    }
 
-      case "whizan_deploy_direct": {
-        const { targetType, targetId, workspaceDir } = (args || {}) as any;
-        const targetDirectory = workspaceDir || ".";
-
-        // System Guardrail pre-check
-        try {
-          const audit = await analyzeWorkspace(targetDirectory);
-          if (!audit.guardrailPassed) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `🛑 WHIZAN SYSTEM GUARDRAIL: DEPLOYMENT REFUSED\n\nReason: ${audit.refusalReason}\n\nWhizan Cloud exclusively hosts web services, backend APIs, background queue workers, and frontend web applications. Desktop GUI applications, native mobile apps, and one-shot CLI tools cannot be deployed.`,
-                },
-              ],
-            };
-          }
-        } catch {}
-
-        const archiveBuffer = await packDirectory(targetDirectory, targetType);
-        
-        let deploymentResult: any;
-        if (targetType === "service") {
-          deploymentResult = await client.uploadServiceArchive(targetId, archiveBuffer);
-        } else {
-          deploymentResult = await client.uploadProjectArchive(targetId, archiveBuffer);
-        }
-
-        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const slug = deploymentResult?.service?.slug || deploymentResult?.project?.slug || targetId;
-        const expectedLiveUrl = `http://${slug}.${baseDomain}`;
-
-        // Save deployment context in local .whizan.json
-        await saveLocalWhizanConfig(targetDirectory, {
+    case "whizan_redeploy": {
+      const { targetType, targetId, githubRepoUrl, branch, workspaceDir } = (args || {}) as any;
+      const deployment = await client.redeploy(targetType, targetId, { githubRepoUrl, branch });
+      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const slug = deployment?.service?.slug || deployment?.project?.slug || targetId;
+      const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+      if (workspaceDir) {
+        await saveLocalWhizanConfig(workspaceDir, {
           targetId,
           targetType,
           slug,
-          name: deploymentResult?.service?.name || deploymentResult?.project?.name,
-          lastDeploymentId: deploymentResult.id,
+          lastDeploymentId: deployment.id,
           liveUrl: expectedLiveUrl,
           lastDeployedAt: new Date().toISOString(),
         });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Archive (${Math.round(archiveBuffer.length / 1024)} KB) uploaded successfully. Build enqueued on cloud worker. Old packages and previous container resources will be automatically decommissioned upon build completion with zero redundancy.`,
-                  deploymentId: deploymentResult.id,
-                  status: deploymentResult.status,
-                  expectedLiveUrl,
-                  nextSteps: [
-                    `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
-                    `2. Once build status reaches ACTIVE/READY, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
-                    `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl} (use http://, not https://).`
-                  ],
-                  deployment: deploymentResult,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
       }
-
-      case "whizan_provision_database": {
-        const dbArgs = (args || {}) as any;
-        // Enforce Portfolio Forced-Idleness: Only Platform Admins can choose non-starter database tiers
-        let authProfile: any = null;
-        try {
-          authProfile = await client.getAuthStatus();
-        } catch {}
-        const isUserAdmin =
-          authProfile?.user?.role === "ADMIN" ||
-          authProfile?.user?.role === "ROOT_ADMIN" ||
-          authProfile?.user?.isAdmin === true ||
-          authProfile?.user?.email === "aj0892829122@gmail.com";
-
-        const canCustomizeTier =
-          isUserAdmin || authProfile?.user?.subscriptionTier === "PROFESSIONAL";
-
-        if (!canCustomizeTier) {
-          dbArgs.instanceType = "starter";
-        }
-        const db = await client.provisionDatabase(dbArgs);
-        return {
-          content: [{ type: "text", text: JSON.stringify(db, null, 2) }],
-        };
-      }
-
-      case "whizan_get_build_logs": {
-        const { deploymentId } = (args || {}) as any;
-        const result = await client.getBuildLogs(deploymentId);
-
-        let guidance = "";
-        if (result.status === "ACTIVE" || result.status === "READY") {
-          guidance = `✓ Service is online and ready! Verified live URL: ${result.liveUrl || "(check service slug)"}. You MUST now call whizan_check_health to verify HTTP readiness.`;
-        } else if (result.status === "FAILED") {
-          guidance = `✗ Build failed! Analyze the logs above to identify the missing dependency, build command error, or configuration issue. Fix the issue and call whizan_redeploy.`;
-        } else if (result.status === "CANCELLED") {
-          guidance = `Deployment was cancelled.`;
-        } else {
-          guidance = `Deployment is in progress (Status: ${result.status}). The cloud build worker is executing your build. Wait 5-10 seconds and call whizan_get_build_logs again. DO NOT assume deployment is finished until status is READY/ACTIVE or FAILED.`;
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  deploymentId,
-                  status: result.status,
-                  liveUrl: result.liveUrl,
-                  errorMessage: result.errorMessage,
-                  logCount: result.logs.length,
-                  guidance,
-                  logs: result.logs.length > 0 ? result.logs : ["No log entries emitted yet. The build worker is preparing the container environment..."],
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_check_health": {
-        const { url, targetId } = (args || {}) as any;
-        const target = url || targetId;
-        if (!target) {
-          throw new Error("whizan_check_health requires either 'url' (e.g. http://<slug>.20.2.136.11.nip.io) or 'targetId'.");
-        }
-        const health = await client.checkHealth(target);
-        return {
-          content: [{ type: "text", text: JSON.stringify(health, null, 2) }],
-        };
-      }
-
-      case "whizan_redeploy": {
-        const { targetType, targetId, githubRepoUrl, branch, workspaceDir } = (args || {}) as any;
-        const deployment = await client.redeploy(targetType, targetId, { githubRepoUrl, branch });
-        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const slug = deployment?.service?.slug || deployment?.project?.slug || targetId;
-        const expectedLiveUrl = `http://${slug}.${baseDomain}`;
-        if (workspaceDir) {
-          await saveLocalWhizanConfig(workspaceDir, {
-            targetId,
-            targetType,
-            slug,
-            lastDeploymentId: deployment.id,
-            liveUrl: expectedLiveUrl,
-            lastDeployedAt: new Date().toISOString(),
-          });
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Redeployment enqueued for ${targetType} '${targetId}'. Old packages, previous build outputs, and containers will be automatically decommissioned upon cutover.`,
-                  deploymentId: deployment.id,
-                  status: deployment.status,
-                  expectedLiveUrl,
-                  nextStep: `Call whizan_get_build_logs with deploymentId: "${deployment.id}" to follow live progress.`,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_link_git_repo": {
-        const { targetType, targetId, githubRepoUrl, branch, deployNow } = (args || {}) as any;
-        const result = await client.linkGitRepo(targetType, targetId, githubRepoUrl, branch, deployNow);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Linked repository '${githubRepoUrl}' (branch: ${branch || "main"}) to ${targetType} '${targetId}'.`,
-                  result,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_delete_resource": {
-        const { targetType, targetId } = (args || {}) as any;
-        await client.deleteResource(targetType, targetId);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  success: true,
-                  message: `Successfully deleted ${targetType} '${targetId}'. Docker containers stopped and removed; build files wiped from VM.`,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_exec_container_command": {
-        const { targetType, targetId, command } = (args || {}) as any;
-        const result = await client.execContainerCommand({ targetType, targetId, command });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_inspect_deployment": {
-        const { targetType, targetId } = (args || {}) as any;
-        const result = await client.inspectDeployment({ targetType, targetId });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_get_analytics": {
-        const { targetType, targetId, days } = (args || {}) as any;
-        const result = await client.getAnalytics({ targetType, targetId, days });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      // ─── Edge Functions Tool Handlers ──────────────────────────────────────────
-
-      case "whizan_create_function_service": {
-        const payload = (args || {}) as any;
-        const result = await client.createFunctionService(payload);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  message: `Edge Function Service '${result.service?.name}' created successfully!`,
-                  serviceId: result.service?.id,
-                  slug: result.service?.slug,
-                  apiKey: result.apiKey?.key,
-                  keyPrefix: result.apiKey?.keyPrefix,
-                  invocationUrl: result.invocationUrl,
-                  isPublic: result.service?.isPublic,
-                  timeoutMs: result.service?.timeoutMs,
-                  memoryLimit: result.service?.memoryLimit,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_deploy_function": {
-        const { functionId, code, workspaceDir } = (args || {}) as any;
-        const result = await client.deployFunction(functionId, code);
-
-        if (workspaceDir) {
-          await saveLocalWhizanConfig(workspaceDir, {
-            targetType: "function",
-            targetId: functionId,
-            lastDeploymentVersion: result.version,
-            lastDeployedAt: result.createdAt,
-          });
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  message: `Edge Function version v${result.version} successfully compiled and deployed!`,
-                  version: result.version,
-                  bundleHash: result.bundleHash,
-                  bundleSizeBytes: result.bundleSizeBytes,
-                  status: result.status,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_configure_function_endpoint": {
-        const payload = (args || {}) as any;
-        const result = await client.configureFunctionEndpoint(payload.functionId, payload);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  message: `Endpoint '${result.routePath || payload.routePath}' configured successfully!`,
-                  id: result.id,
-                  name: result.name,
-                  routePath: result.routePath,
-                  isPublic: result.isPublic,
-                  securityModel: result.isPublic ? "PUBLIC_WEBHOOK (Unauthenticated)" : "API_KEY_PROTECTED (Requires whz_fn_live_...)",
-                  httpMethods: result.httpMethods,
-                  memoryLimit: result.memoryLimit,
-                  timeoutSeconds: result.timeoutSeconds,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_create_function_api_key": {
-        const { functionId, name: keyName, scopes, rateLimitRpm, ipWhitelist } = (args || {}) as any;
-        const result = await client.createFunctionApiKey(functionId, {
-          name: keyName,
-          scopes,
-          rateLimitRpm,
-          ipWhitelist,
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  message: `New Function API Key generated for service '${functionId}'!`,
-                  id: result.id,
-                  name: result.name,
-                  apiKey: result.key, // Plaintext key
-                  keyPrefix: result.keyPrefix,
-                  rateLimitRpm: result.rateLimitRpm,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_invoke_function": {
-        const { slug, path: fnPath, method, body, apiKey, headers } = (args || {}) as any;
-        const result = await client.invokeFunction(slug, {
-          path: fnPath,
-          method,
-          body,
-          apiKey,
-          headers,
-        });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_list_functions": {
-        const functions = await client.listFunctions();
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(functions, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_create_cron_job": {
-        const {
-          name: jobName,
-          description: desc,
-          schedule,
-          timezone,
-          targetType,
-          targetConfig,
-          misfirePolicy,
-          concurrencyPolicy,
-          timeoutSeconds,
-        } = (args || {}) as any;
-
-        const target = {
-          targetType,
-          ...targetConfig,
-        };
-
-        const cronJob = await client.createCronJob({
-          name: jobName,
-          description: desc,
-          schedule,
-          timezone,
-          target,
-          misfirePolicy,
-          concurrencyPolicy,
-          timeoutSeconds,
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  message: `Cron job '${cronJob.name}' created successfully with Zero-Idle Macro-Scheduler!`,
-                  id: cronJob.id,
-                  schedule: cronJob.schedule,
-                  timezone: cronJob.timezone,
-                  targetType: cronJob.targetType,
-                  misfirePolicy: cronJob.misfirePolicy,
-                  concurrencyPolicy: cronJob.concurrencyPolicy,
-                  nextRunAt: cronJob.nextRunAt,
-                  enabled: cronJob.enabled,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "whizan_list_cron_jobs": {
-        const jobs = await client.listCronJobs();
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(jobs, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_trigger_cron_job": {
-        const { id: jobId } = (args || {}) as any;
-        const res = await client.triggerCronJob(jobId);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(res, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_get_cron_history": {
-        const { id: jobId, limit } = (args || {}) as any;
-        const history = await client.getCronHistory(jobId, limit || 10);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(history, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_create_workflow": {
-        const workflow = await client.createWorkflow(args as any);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Workflow "${workflow.name}" (ID: ${workflow.id}, Slug: ${workflow.slug}) created successfully!\n\nNodes: ${workflow.nodes?.length || 0}\nEdges: ${workflow.edges?.length || 0}`,
-            },
-          ],
-        };
-      }
-
-      case "whizan_trigger_workflow": {
-        const { id, metadata } = (args || {}) as any;
-        const res = await client.triggerWorkflow(id, metadata);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Workflow execution dispatched!\nRun ID: ${res.runId}\nMessage: ${res.message}`,
-            },
-          ],
-        };
-      }
-
-      case "whizan_get_workflow_run": {
-        const { workflowId, runId } = (args || {}) as any;
-        const run = await client.getWorkflowRun(workflowId, runId);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(run, null, 2),
-            },
-          ],
-        };
-      }
-
-      case "whizan_approve_workflow_step": {
-        const { approvalToken, approved, comments } = (args || {}) as any;
-        const res = await client.respondWorkflowApproval(approvalToken, approved, comments);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Approval response registered: ${res.message || "Success"} (Approved: ${approved})`,
-            },
-          ],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Redeployment enqueued for ${targetType} '${targetId}'. Old packages, previous build outputs, and containers will be automatically decommissioned upon cutover.`,
+                deploymentId: deployment.id,
+                status: deployment.status,
+                expectedLiveUrl,
+                nextStep: `Call whizan_get_build_logs with deploymentId: "${deployment.id}" to follow live progress.`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
     }
+
+    case "whizan_link_git_repo": {
+      const { targetType, targetId, githubRepoUrl, branch, deployNow } = (args || {}) as any;
+      const result = await client.linkGitRepo(targetType, targetId, githubRepoUrl, branch, deployNow);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Linked repository '${githubRepoUrl}' (branch: ${branch || "main"}) to ${targetType} '${targetId}'.`,
+                result,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_delete_resource": {
+      const { targetType, targetId } = (args || {}) as any;
+      await client.deleteResource(targetType, targetId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                success: true,
+                message: `Successfully deleted ${targetType} '${targetId}'. Docker containers stopped and removed; build files wiped from VM.`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_exec_container_command": {
+      const { targetType, targetId, command } = (args || {}) as any;
+      const result = await client.execContainerCommand({ targetType, targetId, command });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_inspect_deployment": {
+      const { targetType, targetId } = (args || {}) as any;
+      const result = await client.inspectDeployment({ targetType, targetId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_get_analytics": {
+      const { targetType, targetId, days } = (args || {}) as any;
+      const result = await client.getAnalytics({ targetType, targetId, days });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    }
+
+    // ─── Edge Functions Tool Handlers ──────────────────────────────────────────
+
+    case "whizan_create_function_service": {
+      const payload = (args || {}) as any;
+      const result = await client.createFunctionService(payload);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `Edge Function Service '${result.service?.name}' created successfully!`,
+                serviceId: result.service?.id,
+                slug: result.service?.slug,
+                apiKey: result.apiKey?.key,
+                keyPrefix: result.apiKey?.keyPrefix,
+                invocationUrl: result.invocationUrl,
+                isPublic: result.service?.isPublic,
+                timeoutMs: result.service?.timeoutMs,
+                memoryLimit: result.service?.memoryLimit,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_deploy_function": {
+      const { functionId, code, workspaceDir } = (args || {}) as any;
+      const result = await client.deployFunction(functionId, code);
+
+      if (workspaceDir) {
+        await saveLocalWhizanConfig(workspaceDir, {
+          targetType: "function",
+          targetId: functionId,
+          lastDeploymentVersion: result.version,
+          lastDeployedAt: result.createdAt,
+        });
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `Edge Function version v${result.version} successfully compiled and deployed!`,
+                version: result.version,
+                bundleHash: result.bundleHash,
+                bundleSizeBytes: result.bundleSizeBytes,
+                status: result.status,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_configure_function_endpoint": {
+      const payload = (args || {}) as any;
+      const result = await client.configureFunctionEndpoint(payload.functionId, payload);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `Endpoint '${result.routePath || payload.routePath}' configured successfully!`,
+                id: result.id,
+                name: result.name,
+                routePath: result.routePath,
+                isPublic: result.isPublic,
+                securityModel: result.isPublic ? "PUBLIC_WEBHOOK (Unauthenticated)" : "API_KEY_PROTECTED (Requires whz_fn_live_...)",
+                httpMethods: result.httpMethods,
+                memoryLimit: result.memoryLimit,
+                timeoutSeconds: result.timeoutSeconds,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_create_function_api_key": {
+      const { functionId, name: keyName, scopes, rateLimitRpm, ipWhitelist } = (args || {}) as any;
+      const result = await client.createFunctionApiKey(functionId, {
+        name: keyName,
+        scopes,
+        rateLimitRpm,
+        ipWhitelist,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `New Function API Key generated for service '${functionId}'!`,
+                id: result.id,
+                name: result.name,
+                apiKey: result.key, // Plaintext key
+                keyPrefix: result.keyPrefix,
+                rateLimitRpm: result.rateLimitRpm,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_invoke_function": {
+      const { slug, path: fnPath, method, body, apiKey, headers } = (args || {}) as any;
+      const result = await client.invokeFunction(slug, {
+        path: fnPath,
+        method,
+        body,
+        apiKey,
+        headers,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_list_functions": {
+      const functions = await client.listFunctions();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(functions, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_create_cron_job": {
+      const {
+        name: jobName,
+        description: desc,
+        schedule,
+        timezone,
+        targetType,
+        targetConfig,
+        misfirePolicy,
+        concurrencyPolicy,
+        timeoutSeconds,
+      } = (args || {}) as any;
+
+      const target = {
+        targetType,
+        ...targetConfig,
+      };
+
+      const cronJob = await client.createCronJob({
+        name: jobName,
+        description: desc,
+        schedule,
+        timezone,
+        target,
+        misfirePolicy,
+        concurrencyPolicy,
+        timeoutSeconds,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `Cron job '${cronJob.name}' created successfully with Zero-Idle Macro-Scheduler!`,
+                id: cronJob.id,
+                schedule: cronJob.schedule,
+                timezone: cronJob.timezone,
+                targetType: cronJob.targetType,
+                misfirePolicy: cronJob.misfirePolicy,
+                concurrencyPolicy: cronJob.concurrencyPolicy,
+                nextRunAt: cronJob.nextRunAt,
+                enabled: cronJob.enabled,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_list_cron_jobs": {
+      const jobs = await client.listCronJobs();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(jobs, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_trigger_cron_job": {
+      const { id: jobId } = (args || {}) as any;
+      const res = await client.triggerCronJob(jobId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_get_cron_history": {
+      const { id: jobId, limit } = (args || {}) as any;
+      const history = await client.getCronHistory(jobId, limit || 10);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(history, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_create_workflow": {
+      const workflow = await client.createWorkflow(args as any);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Workflow "${workflow.name}" (ID: ${workflow.id}, Slug: ${workflow.slug}) created successfully!\n\nNodes: ${workflow.nodes?.length || 0}\nEdges: ${workflow.edges?.length || 0}`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_trigger_workflow": {
+      const { id, metadata } = (args || {}) as any;
+      const res = await client.triggerWorkflow(id, metadata);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Workflow execution dispatched!\nRun ID: ${res.runId}\nMessage: ${res.message}`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_get_workflow_run": {
+      const { workflowId, runId } = (args || {}) as any;
+      const run = await client.getWorkflowRun(workflowId, runId);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(run, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_approve_workflow_step": {
+      const { approvalToken, approved, comments } = (args || {}) as any;
+      const res = await client.respondWorkflowApproval(approvalToken, approved, comments);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Approval response registered: ${res.message || "Success"} (Approved: ${approved})`,
+          },
+        ],
+      };
+    }
+
+    default:
+      throw new Error(`Unknown tool: ${name}`);
+  }
 }
 
 // ─── CLI Command Handlers ───────────────────────────────────────────────────
@@ -1986,10 +1970,10 @@ async function handleCliLogin(args: string[]) {
       process.platform === "win32"
         ? `start "" "${authUrl}"`
         : process.platform === "darwin"
-        ? `open "${authUrl}"`
-        : `xdg-open "${authUrl}"`;
+          ? `open "${authUrl}"`
+          : `xdg-open "${authUrl}"`;
 
-    exec(openCmd, () => {});
+    exec(openCmd, () => { });
   });
 
   setTimeout(() => {

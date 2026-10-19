@@ -21,10 +21,10 @@ import { useAuth } from "@/lib/auth";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
 
 const INSTANCE_PLANS = [
-  { id: "starter",  name: "Starter",  cpu: 0.5, memory: 512,  desc: "0.5 vCPU • 512MB" },
-  { id: "standard", name: "Standard", cpu: 1.0, memory: 1024, desc: "1.0 vCPU • 1GB"   },
-  { id: "pro",      name: "Pro",      cpu: 2.0, memory: 2048, desc: "2.0 vCPU • 2GB"   },
-  { id: "pro_plus", name: "Pro+",     cpu: 4.0, memory: 4096, desc: "4.0 vCPU • 4GB"   },
+  { id: "starter", name: "Starter", cpu: 0.5, memory: 512, desc: "0.5 vCPU • 512MB" },
+  { id: "standard", name: "Standard", cpu: 1.0, memory: 1024, desc: "1.0 vCPU • 1GB" },
+  { id: "pro", name: "Pro", cpu: 2.0, memory: 2048, desc: "2.0 vCPU • 2GB" },
+  { id: "pro_plus", name: "Pro+", cpu: 4.0, memory: 4096, desc: "4.0 vCPU • 4GB" },
 ];
 
 export default function BackendServicePage() {
@@ -35,7 +35,6 @@ export default function BackendServicePage() {
     user?.role === "ADMIN" ||
     user?.role === "ROOT_ADMIN" ||
     user?.email === "aj0892829122@gmail.com";
-  const canCustomizeTier = isAdmin || user?.subscriptionTier === "PROFESSIONAL";
   const { vmOnline } = useSystemStatus();
   const [service, setService] = useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -251,10 +250,10 @@ export default function BackendServicePage() {
 
   const latestDeploy = service.deployments[0];
   const isBuilding = latestDeploy?.status === "QUEUED" || latestDeploy?.status === "BUILDING";
-  const isActive   = latestDeploy?.status === "READY" && !!latestDeploy.containerPort;
-  const isAsleep   = latestDeploy?.status === "READY" && !latestDeploy.containerPort;
+  const isActive = latestDeploy?.status === "READY" && !!latestDeploy.containerPort;
+  const isAsleep = latestDeploy?.status === "READY" && !latestDeploy.containerPort;
   const ingressUrl = getServiceIngressUrl(service.slug);
-  const envCount   = service.envVariables.length;
+  const envCount = service.envVariables.length;
 
   function copyIngressUrl() {
     navigator.clipboard.writeText(ingressUrl);
@@ -407,85 +406,81 @@ export default function BackendServicePage() {
                 </div>
               </div>
 
-              {(() => {
-                const isAutoSleepActive = !canCustomizeTier || Boolean(service.autoSleep);
-                return (
-                  <>
-                    <div className={`mode-switch-card ${isAutoSleepActive ? "mode-free" : "mode-dedicated"}`}>
-                      <div className="mode-switch-content">
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="mode-switch-header">
-                            <h3 className="mode-switch-title">
-                              {isAutoSleepActive ? <Moon size={15} color="#f59e0b" /> : <Zap size={15} color="#10b981" />}
-                              Auto-Sleep (Scale-to-Zero)
-                            </h3>
-                            {isAutoSleepActive && (
-                              <span className="mode-badge-free">
-                                Free Tier • 0.1 vCPU
-                              </span>
-                            )}
-                            {!canCustomizeTier && (
-                              <span
-                                style={{
-                                  fontSize: "0.68rem",
-                                  background: "rgba(245, 158, 11, 0.15)",
-                                  color: "#d97706",
-                                  border: "1px solid rgba(245, 158, 11, 0.3)",
-                                  padding: "1px 6px",
-                                  borderRadius: "999px",
-                                  fontWeight: 600,
-                                  display: "inline-flex",
-                                  alignItems: "center",
-                                  gap: "3px",
-                                }}
-                              >
-                                <Lock size={10} /> Locked to Auto-Sleep
-                              </span>
-                            )}
-                          </div>
-                          <p className="mode-switch-desc">
-                            {isAutoSleepActive
-                              ? <><strong>Auto-Sleep:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
-                              : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
-                          </p>
-                        </div>
-                        <label
-                          className="switch"
-                          style={{ flexShrink: 0, opacity: !canCustomizeTier ? 0.8 : 1, cursor: !canCustomizeTier ? "not-allowed" : "pointer" }}
-                          onClick={(e) => {
-                            if (!canCustomizeTier) {
-                              e.preventDefault();
-                              toast.info(
-                                "Hobby Plan: Services are locked to Auto-Sleep (0.1 vCPU / 512MB). Upgrade to Professional for Always-On dedicated compute."
-                              );
-                            }
+              <div className={`mode-switch-card ${service.autoSleep ? "mode-free" : "mode-dedicated"}`}>
+                <div className="mode-switch-content">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="mode-switch-header">
+                      <h3 className="mode-switch-title">
+                        {service.autoSleep ? <Moon size={15} color="#f59e0b" /> : <Zap size={15} color="#10b981" />}
+                        Auto-Sleep (Scale-to-Zero)
+                      </h3>
+                      {service.autoSleep && (
+                        <span className="mode-badge-free">
+                          Free Tier • 0.1 vCPU
+                        </span>
+                      )}
+                      {!isAdmin && (
+                        <span
+                          style={{
+                            fontSize: "0.68rem",
+                            background: "rgba(245, 158, 11, 0.15)",
+                            color: "#d97706",
+                            border: "1px solid rgba(245, 158, 11, 0.3)",
+                            padding: "1px 6px",
+                            borderRadius: "999px",
+                            fontWeight: 600,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "3px",
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            checked={isAutoSleepActive}
-                            disabled={!canCustomizeTier}
-                            onChange={async (e) => {
-                              if (!canCustomizeTier) return;
-                              const val = e.target.checked;
-                              const nextType = val ? "free" : "starter";
-                              const nextCpu  = val ? 0.1  : 0.5;
-                              setService({ ...service, autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
-                              try {
-                                await services.update(service.id, { autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
-                                toast.success(val ? "Auto-Sleep enabled" : "Always-On mode activated");
-                              } catch {
-                                toast.error("Failed to update Auto-Sleep mode");
-                                setService({ ...service, autoSleep: !val });
-                              }
-                            }}
-                          />
-                          <span className="slider" />
-                        </label>
-                      </div>
+                          <Lock size={10} /> Locked to Auto-Sleep
+                        </span>
+                      )}
                     </div>
+                    <p className="mode-switch-desc">
+                      {service.autoSleep
+                        ? <><strong>Auto-Sleep:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
+                        : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
+                    </p>
+                  </div>
+                  <label
+                    className="switch"
+                    style={{ flexShrink: 0, opacity: !isAdmin ? 0.6 : 1, cursor: !isAdmin ? "not-allowed" : "pointer" }}
+                    onClick={(e) => {
+                      if (!isAdmin) {
+                        e.preventDefault();
+                        toast.info(
+                          "Portfolio Forced-Idleness: Always-On dedicated compute is restricted to platform administrators."
+                        );
+                      }
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={service.autoSleep}
+                      disabled={!isAdmin}
+                      onChange={async (e) => {
+                        if (!isAdmin) return;
+                        const val = e.target.checked;
+                        const nextType = val ? "free" : "starter";
+                        const nextCpu = val ? 0.1 : 0.5;
+                        setService({ ...service, autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
+                        try {
+                          await services.update(service.id, { autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
+                          toast.success(val ? "Auto-Sleep enabled" : "Always-On mode activated");
+                        } catch {
+                          toast.error("Failed to update Auto-Sleep mode");
+                          setService({ ...service, autoSleep: !val });
+                        }
+                      }}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+              </div>
 
-                    {!isAutoSleepActive && (
+              {!service.autoSleep && (
                 <div className="dedicated-plans-wrap">
                   <div className="plans-header">
                     <div>
@@ -504,8 +499,8 @@ export default function BackendServicePage() {
                           key={plan.id}
                           type="button"
                           onClick={async () => {
-                            if (!canCustomizeTier) {
-                              toast.info("Portfolio Forced-Idleness: Changing dedicated compute tiers requires Professional plan or administrator authorization.");
+                            if (!isAdmin) {
+                              toast.info("Portfolio Forced-Idleness: Changing dedicated compute tiers is restricted to platform administrators.");
                               return;
                             }
                             setService({ ...service, instanceType: plan.id as any, cpuLimit: plan.cpu, memoryLimit: plan.memory });
@@ -535,9 +530,6 @@ export default function BackendServicePage() {
                   </div>
                 </div>
               )}
-                  </>
-                );
-              })()}
             </div>
 
             {/* Build & Runtime Configuration — Collapsible */}
@@ -859,9 +851,9 @@ export default function BackendServicePage() {
           <div className="terminal-section-wrap" id="terminal-view">
             <div className="terminal-tab-bar">
               {([
-                { id: "logs",    label: "Build & Runtime Logs", Icon: Terminal,  chip: null },
-                { id: "shell",   label: "Web Shell",            Icon: Server,    chip: { text: "docker exec", cls: "chip-blue" } },
-                { id: "metrics", label: "Live Metrics",         Icon: Activity,  chip: { text: "SSE", cls: "chip-green", dot: true } },
+                { id: "logs", label: "Build & Runtime Logs", Icon: Terminal, chip: null },
+                { id: "shell", label: "Web Shell", Icon: Server, chip: { text: "docker exec", cls: "chip-blue" } },
+                { id: "metrics", label: "Live Metrics", Icon: Activity, chip: { text: "SSE", cls: "chip-green", dot: true } },
               ] as const).map(tab => {
                 const active = bottomTab === tab.id;
                 return (
@@ -899,7 +891,7 @@ export default function BackendServicePage() {
                   service && <ServiceShell serviceId={id} slug={service.slug} />
                 )
               ) : (
-                service && <ServiceMetrics serviceId={id} slug={service.slug} isPublic={service.isPublic} autoSleep={!canCustomizeTier || service.autoSleep} instanceType={service.instanceType} cpuLimit={service.cpuLimit} memoryLimit={service.memoryLimit} />
+                service && <ServiceMetrics serviceId={id} slug={service.slug} isPublic={service.isPublic} autoSleep={service.autoSleep} instanceType={service.instanceType} cpuLimit={service.cpuLimit} memoryLimit={service.memoryLimit} />
               )}
             </div>
           </div>

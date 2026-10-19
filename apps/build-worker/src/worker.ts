@@ -131,7 +131,7 @@ const worker = new Worker<BuildJob>(
         }
 
         // Always wipe and re-create the build dir to avoid stale leftovers
-        await fs.rm(buildDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(buildDir, { recursive: true, force: true }).catch(() => { });
         await fs.mkdir(buildDir, { recursive: true });
 
         if (isDirectUpload) {
@@ -139,80 +139,82 @@ const worker = new Worker<BuildJob>(
           const persistentSourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
           const deploymentArchive = path.join(SOURCE_BASE_DIR, "deployments", `${deploymentId}.tar.gz`);
-          const archiveUrl = (job.data as any).archiveUrl ||
-            `https://fdwstppklgibuwqjrusf.supabase.co/storage/v1/object/public/whizan-deployments/projects/${projectId}/${deploymentId}.tar.gz`;
 
           // 1. Download directly from Supabase S3 Object Storage if available
-          try {
-            const res = await fetch(archiveUrl, { method: "GET" });
-            if (res.ok) {
-              const arrayBuf = await res.arrayBuffer();
-              if (arrayBuf.byteLength > 100) {
-                await fs.mkdir(persistentSourceDir, { recursive: true });
-                await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
-                await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
-                await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
-                await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
-              }
-            }
-          } catch {}
+          const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+          const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
+          const archiveUrl =
+            (job.data as any).archiveUrl ||
+            (supabaseUrl
+              ? `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/projects/${projectId}/${deploymentId}.tar.gz`
+              : null);
 
-          // 2. Check if archive is stored on persistent SSD disk
-          let archivePathToExtract: string | null = null;
-          try {
-            await fs.access(deploymentArchive);
-            archivePathToExtract = deploymentArchive;
-          } catch {
+          if (archiveUrl) {
             try {
-              await fs.access(persistentArchive);
-              archivePathToExtract = persistentArchive;
+              const res = await fetch(archiveUrl, { method: "GET" });
+              if (res.ok) {
+                const arrayBuf = await res.arrayBuffer();
+                if (arrayBuf.byteLength > 100) {
+                  await fs.mkdir(persistentSourceDir, { recursive: true });
+                  await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
+                  await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
+                  await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
+                  await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+                }
+              }
             } catch {}
           }
 
-          if (archivePathToExtract) {
-            await log(`📦 Extracting source code archive directly from persistent SSD disk (${path.basename(archivePathToExtract)})...`);
+          let archiveBuffer: Buffer | null = null;
+          const chunksCountStr = await redisPub.get(`upload:${deploymentId}:chunks`);
+          if (chunksCountStr) {
+            const totalChunks = parseInt(chunksCountStr, 10);
+            const chunks: Buffer[] = [];
+            for (let i = 0; i < totalChunks; i++) {
+              const chunkBase64 = await redisPub.get(`upload:${deploymentId}:chunk:${i}`);
+              if (!chunkBase64) {
+                throw new Error(`Corrupted upload: missing archive chunk ${i} of ${totalChunks}`);
+              }
+              chunks.push(Buffer.from(chunkBase64, "base64"));
+              await redisPub.del(`upload:${deploymentId}:chunk:${i}`).catch(() => { });
+            }
+            await redisPub.del(`upload:${deploymentId}:chunks`).catch(() => { });
+            archiveBuffer = Buffer.concat(chunks);
+          } else {
+            const uploadBase64 = await redisPub.get(`upload:${deploymentId}`);
+            if (uploadBase64) {
+              archiveBuffer = Buffer.from(uploadBase64, "base64");
+              await redisPub.del(`upload:${deploymentId}`).catch(() => { });
+            }
+          }
+
+          if (archiveBuffer) {
+            // Persist archive permanently across VM reboots and restarts
+            await fs.mkdir(persistentSourceDir, { recursive: true });
+            await fs.writeFile(persistentArchive, archiveBuffer);
+
             const { execFile } = await import("child_process");
             const { promisify } = await import("util");
             const execFileAsync = promisify(execFile);
-            await execFileAsync("tar", ["-xzf", archivePathToExtract, "-C", buildDir]);
-            await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await log("✓ Direct upload archive extracted successfully to build directory");
+            await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
+            await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => { });
+            await log("✓ Direct upload archive extracted successfully to persistent storage");
           } else {
-            // 2. Fallback: check Redis staged chunks/buffer
-            let archiveBuffer: Buffer | null = null;
-            const chunksCountStr = await redisPub.get(`upload:${deploymentId}:chunks`);
-            if (chunksCountStr) {
-              const totalChunks = parseInt(chunksCountStr, 10);
-              const chunks: Buffer[] = [];
-              for (let i = 0; i < totalChunks; i++) {
-                const chunkData = (await (redisPub as any).getBuffer?.(`upload:${deploymentId}:chunk:${i}`)) ?? await redisPub.get(`upload:${deploymentId}:chunk:${i}`);
-                if (!chunkData) {
-                  throw new Error(`Corrupted upload: missing archive chunk ${i} of ${totalChunks}`);
-                }
-                chunks.push(Buffer.isBuffer(chunkData) ? chunkData : Buffer.from(chunkData, "base64"));
-                await redisPub.del(`upload:${deploymentId}:chunk:${i}`).catch(() => {});
-              }
-              await redisPub.del(`upload:${deploymentId}:chunks`).catch(() => {});
-              archiveBuffer = Buffer.concat(chunks);
-            } else {
-              const rawData = (await (redisPub as any).getBuffer?.(`upload:${deploymentId}`)) ?? await redisPub.get(`upload:${deploymentId}`);
-              if (rawData) {
-                archiveBuffer = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData, "base64");
-                await redisPub.del(`upload:${deploymentId}`).catch(() => {});
-              }
-            }
+            // Fallback: check if persistent source archive exists in /opt/whizan/sources
+            let archiveFound = false;
+            try {
+              await fs.access(persistentArchive);
+              archiveFound = true;
+            } catch { }
 
-            if (archiveBuffer) {
-              // Persist archive permanently across VM reboots and restarts
-              await fs.mkdir(persistentSourceDir, { recursive: true });
-              await fs.writeFile(persistentArchive, archiveBuffer);
-
+            if (archiveFound) {
+              await log("📦 Rebuilding from persistent direct-upload source archive...");
               const { execFile } = await import("child_process");
               const { promisify } = await import("util");
               const execFileAsync = promisify(execFile);
               await execFileAsync("tar", ["-xzf", persistentArchive, "-C", buildDir]);
-              await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-              await log("✓ Direct upload archive extracted successfully to persistent storage");
+              await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => { });
+              await log("✓ Persistent source archive extracted successfully");
             } else {
               const existing = await fs.readdir(buildDir).catch(() => []);
               if (existing.length === 0) {
@@ -261,7 +263,7 @@ const worker = new Worker<BuildJob>(
           const dockerfileContent = await fs.readFile(path.join(hostWorkDir, "Dockerfile"), "utf8");
           const exposeMatch = dockerfileContent.match(/EXPOSE\s+(\d+)/i);
           if (exposeMatch) detectedPort = parseInt(exposeMatch[1], 10);
-        } catch {}
+        } catch { }
 
         const { spawn } = await import("child_process");
         await new Promise<void>((resolve, reject) => {
@@ -274,10 +276,10 @@ const worker = new Worker<BuildJob>(
             env: { ...process.env, DOCKER_BUILDKIT: "1" },
           });
           proc.stdout.on("data", (data) => {
-            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => {}));
+            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => { }));
           });
           proc.stderr.on("data", (data) => {
-            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => {}));
+            data.toString().split("\n").filter(Boolean).forEach((l: string) => log(`[docker build] ${l}`).catch(() => { }));
           });
           proc.on("close", (code) => {
             if (code === 0) resolve();
@@ -403,24 +405,24 @@ const worker = new Worker<BuildJob>(
                 const container = docker.getContainer(info.Id);
                 if (info.State === "running") await container.stop({ t: 5 });
                 await container.remove({ force: true });
-              } catch {}
+              } catch { }
             }
             // Delete old build files (node_modules, packages, build outputs)
-            await fs.rm(path.join(BUILD_BASE_DIR, old.id), { recursive: true, force: true }).catch(() => {});
+            await fs.rm(path.join(BUILD_BASE_DIR, old.id), { recursive: true, force: true }).catch(() => { });
             // Clear old upload chunk keys in Redis if any lingered
             const oldChunksCount = await redisPub.get(`upload:${old.id}:chunks`);
             if (oldChunksCount) {
               const count = parseInt(oldChunksCount, 10);
               for (let i = 0; i < count; i++) {
-                await redisPub.del(`upload:${old.id}:chunk:${i}`).catch(() => {});
+                await redisPub.del(`upload:${old.id}:chunk:${i}`).catch(() => { });
               }
-              await redisPub.del(`upload:${old.id}:chunks`).catch(() => {});
+              await redisPub.del(`upload:${old.id}:chunks`).catch(() => { });
             }
-            await redisPub.del(`upload:${old.id}`).catch(() => {});
+            await redisPub.del(`upload:${old.id}`).catch(() => { });
             // Clear old logs
             await redisPub.del(`build-logs:${old.id}`);
             // Remove from DB to enforce 1-build rule
-            await prisma.deployment.delete({ where: { id: old.id } }).catch(() => {});
+            await prisma.deployment.delete({ where: { id: old.id } }).catch(() => { });
           }
           await log(`✓ Cleaned up ${oldDeployments.length} old deployment(s)`);
         }
@@ -438,7 +440,7 @@ const worker = new Worker<BuildJob>(
 
       // Clean up build dir on failure / cancellation (no app to serve)
       if (!isResume) {
-        await fs.rm(buildDir, { recursive: true, force: true }).catch(() => {});
+        await fs.rm(buildDir, { recursive: true, force: true }).catch(() => { });
       }
 
       if (!wasCancelled) {
@@ -447,7 +449,7 @@ const worker = new Worker<BuildJob>(
     } finally {
       // Always unsubscribe from cancel channel to free Redis resources
       redisSub.off("message", onCancelMessage);
-      await redisSub.unsubscribe(cancelChannel).catch(() => {});
+      await redisSub.unsubscribe(cancelChannel).catch(() => { });
     }
   },
   {
@@ -470,7 +472,7 @@ worker.on("failed", (job, err) => {
 // ─── Scale-to-Zero Idle Scaler & Wakeup ──────────────────────────────────────
 
 // 1. Listen for wakeups from Edge Router
-redisSub.subscribe("wakeup", "admin:commands").catch(() => {});
+redisSub.subscribe("wakeup", "admin:commands").catch(() => { });
 redisSub.on("message", async (channel, message) => {
   if (channel === "wakeup") {
     let dId = message;
@@ -527,7 +529,7 @@ redisSub.on("message", async (channel, message) => {
             await prisma.deployment.update({
               where: { id: d.id },
               data: { containerPort: mappedPort, status: "READY" }
-            }).catch(() => {});
+            }).catch(() => { });
             console.log(`[Scaler] Ultra-fast sub-second cold wake for ${d.project.slug} on port ${mappedPort}!`);
             return;
           }
@@ -564,21 +566,21 @@ redisSub.on("message", async (channel, message) => {
   if (channel === "admin:commands") {
     try {
       const payload = JSON.parse(message);
-      
+
       // Cryptographic signature check: reject unverified or forged commands
       const { verifyAdminPayload } = await import("./admin-crypto.js");
       if (!verifyAdminPayload(payload)) {
         console.warn(`[Security Alert] Rejected unverified command on admin:commands channel: action=${payload?.action}`);
         return;
       }
-      
+
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
       if (payload.action === "DELETE_SERVICE") {
         const { serviceId, slug, deploymentIds } = payload;
         console.log(`[Admin] Deleting all VM resources for service ${slug} (${serviceId})`);
-        
+
         // 1. Stop and remove all Docker containers for this service
         const allContainers = await docker.listContainers({ all: true }).catch(() => []);
         const matches = allContainers.filter((c: any) =>
@@ -590,8 +592,8 @@ redisSub.on("message", async (channel, message) => {
         for (const info of matches) {
           try {
             const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
-            await container.remove({ force: true }).catch(() => {});
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
+            await container.remove({ force: true }).catch(() => { });
             console.log(`[Admin] Removed service container ${info.Names?.[0] || info.Id}`);
           } catch (err: any) {
             console.error(`[Admin] Error removing container ${info.Id}:`, err.message);
@@ -601,11 +603,11 @@ redisSub.on("message", async (channel, message) => {
         // 2. Remove all build and persistent source directories on VM disk
         try {
           const sourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
-          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
+          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
-              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
-              await redisPub.del(`build-logs:${dId}`).catch(() => {});
+              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
+              await redisPub.del(`build-logs:${dId}`).catch(() => { });
             }
           }
         } catch (err: any) {
@@ -614,7 +616,7 @@ redisSub.on("message", async (channel, message) => {
 
         // 3. Clear edge-router routing key
         if (slug) {
-          await redisPub.del(`deployment:${slug}`).catch(() => {});
+          await redisPub.del(`deployment:${slug}`).catch(() => { });
         }
         return;
       }
@@ -634,8 +636,8 @@ redisSub.on("message", async (channel, message) => {
         for (const info of matches) {
           try {
             const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
-            await container.remove({ force: true }).catch(() => {});
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
+            await container.remove({ force: true }).catch(() => { });
             console.log(`[Admin] Removed project container ${info.Names?.[0] || info.Id}`);
           } catch (err: any) {
             console.error(`[Admin] Error removing project container:`, err.message);
@@ -645,11 +647,11 @@ redisSub.on("message", async (channel, message) => {
         // 2. Remove build and persistent source directories on VM disk
         try {
           const sourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
-          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => {});
+          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
-              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
-              await redisPub.del(`build-logs:${dId}`).catch(() => {});
+              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
+              await redisPub.del(`build-logs:${dId}`).catch(() => { });
             }
           }
         } catch (err: any) {
@@ -658,7 +660,7 @@ redisSub.on("message", async (channel, message) => {
 
         // 3. Clear edge-router routing key
         if (slug) {
-          await redisPub.del(`deployment:${slug}`).catch(() => {});
+          await redisPub.del(`deployment:${slug}`).catch(() => { });
         }
         return;
       }
@@ -673,14 +675,14 @@ redisSub.on("message", async (channel, message) => {
         for (const info of matches) {
           try {
             const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
             if (payload.action === "DELETE_CONTAINER") {
-              await container.remove({ force: true }).catch(() => {});
+              await container.remove({ force: true }).catch(() => { });
             }
-          } catch {}
+          } catch { }
         }
         if (payload.action === "DELETE_CONTAINER") {
-          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
+          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
         }
         return;
       }
@@ -691,8 +693,8 @@ redisSub.on("message", async (channel, message) => {
         const container = docker.getContainer(cId);
         try {
           const info = await container.inspect();
-          if (info.State.Running) await container.stop({ t: 2 }).catch(() => {});
-          await container.remove({ force: true }).catch(() => {});
+          if (info.State.Running) await container.stop({ t: 2 }).catch(() => { });
+          await container.remove({ force: true }).catch(() => { });
           console.log(`[Admin] Successfully removed container ${cId}`);
         } catch (err) {
           console.error(`[Admin] Failed to kill container ${cId}`, err);
@@ -703,7 +705,7 @@ redisSub.on("message", async (channel, message) => {
       if (payload.action === "RESTART_WORKER") {
         const { exec } = await import("child_process");
         console.log("[Admin] Restarting worker via PM2...");
-        exec("pm2 restart whizan-worker", () => {});
+        exec("pm2 restart whizan-worker", () => { });
         return;
       }
 
@@ -724,7 +726,7 @@ redisSub.on("message", async (channel, message) => {
       if (payload.action === "RESTART_ROUTER") {
         const { exec } = await import("child_process");
         console.log("[Admin] Restarting router via PM2...");
-        exec("pm2 restart whizan-router", () => {});
+        exec("pm2 restart whizan-router", () => { });
         return;
       }
 
@@ -889,7 +891,7 @@ redisSub.on("message", async (channel, message) => {
 
           await new Promise<void>((resolve) => {
             const timer = setTimeout(() => {
-              try { stream.destroy(); } catch {}
+              try { stream.destroy(); } catch { }
               resolve();
             }, 18000);
 
@@ -994,8 +996,8 @@ redisSub.on("message", async (channel, message) => {
       if (payload.action === "CLEAR_BUILD_CACHE") {
         try {
           console.log("[Admin] Clearing /opt/whizan-cache...");
-          await fs.rm("/opt/whizan-cache", { recursive: true, force: true }).catch(() => {});
-          await fs.mkdir("/opt/whizan-cache", { recursive: true }).catch(() => {});
+          await fs.rm("/opt/whizan-cache", { recursive: true, force: true }).catch(() => { });
+          await fs.mkdir("/opt/whizan-cache", { recursive: true }).catch(() => { });
           console.log("[Admin] Cleared /opt/whizan-cache successfully");
         } catch (err: any) {
           console.error("[Admin] Failed to clear build cache", err);
@@ -1020,7 +1022,7 @@ redisSub.on("message", async (channel, message) => {
           (SOURCE_BASE_DIR && targetPath.startsWith(SOURCE_BASE_DIR))
         ) {
           console.log(`[Admin] Deleting file/directory: ${targetPath}`);
-          await fs.rm(targetPath, { recursive: true, force: true }).catch(() => {});
+          await fs.rm(targetPath, { recursive: true, force: true }).catch(() => { });
         }
         return;
       }
@@ -1028,19 +1030,19 @@ redisSub.on("message", async (channel, message) => {
       if (payload.action === "STOP_CONTAINER" || payload.action === "DELETE_CONTAINER") {
         const dId = payload.deploymentId;
         console.log(`[Admin] Received ${payload.action} for deployment ${dId}`);
-        
+
         const containers = await docker.listContainers({ all: true }).catch(() => []);
-        
+
         const matches = containers.filter((c) => c.Mounts?.some((m) => m.Source?.includes(dId)));
         for (const info of matches) {
           const container = docker.getContainer(info.Id);
-          if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
-          await container.remove({ force: true }).catch(() => {});
+          if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
+          await container.remove({ force: true }).catch(() => { });
           console.log(`[Admin] Removed container ${info.Id} for deployment ${dId}`);
         }
 
         if (payload.action === "DELETE_CONTAINER") {
-          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => {});
+          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
           await redisPub.del(`build-logs:${dId}`);
           console.log(`[Admin] Cleaned up files for deployment ${dId}`);
         }
@@ -1067,12 +1069,12 @@ const scalerInterval = setInterval(async () => {
 
       // Spin down if idle for > 10 minutes
       if (idleMs > 10 * 60 * 1000) {
-        console.log(`[Scaler] Deployment ${d.id} idle for ${Math.round(idleMs/60000)}m. Scaling to zero...`);
-        
+        console.log(`[Scaler] Deployment ${d.id} idle for ${Math.round(idleMs / 60000)}m. Scaling to zero...`);
+
         const Docker = (await import("dockerode")).default;
         const docker = new Docker({ socketPath: "/var/run/docker.sock" });
         const containers = await docker.listContainers({ all: true }).catch(() => []);
-        
+
         const matches = containers.filter((c) =>
           c.Labels?.["deploymentId"] === d.id ||
           (d.project.slug && c.Labels?.["slug"] === d.project.slug) ||
@@ -1082,7 +1084,7 @@ const scalerInterval = setInterval(async () => {
         for (const info of matches) {
           const container = docker.getContainer(info.Id);
           if (info.State === "running") {
-            await container.stop({ t: 2 }).catch(() => {});
+            await container.stop({ t: 2 }).catch(() => { });
             console.log(`[Scaler] Preserved stopped container ${info.Names?.[0] || info.Id} for rapid sub-second wakeups.`);
           }
         }
@@ -1100,7 +1102,7 @@ const scalerInterval = setInterval(async () => {
         await prisma.deployment.update({
           where: { id: d.id },
           data: { containerPort: null }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
     // Backend Auto-Sleep Scaler
@@ -1118,12 +1120,12 @@ const scalerInterval = setInterval(async () => {
 
       // Spin down if idle for > 15 minutes
       if (idleMs > 15 * 60 * 1000) {
-        console.log(`[Scaler] Backend Service ${d.service.slug} idle for ${Math.round(idleMs/60000)}m. Stopping container...`);
+        console.log(`[Scaler] Backend Service ${d.service.slug} idle for ${Math.round(idleMs / 60000)}m. Stopping container...`);
         await publishLog(redisPub, d.id, `💤 [Auto-Sleep] Service ${d.service.slug} was idle for ${Math.round(idleMs / 60000)}m. Container stopped to save resources.`);
-        
+
         const Docker = (await import("dockerode")).default;
         const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-        
+
         const allConts = await docker.listContainers({ all: true }).catch(() => []);
         const match = allConts.find((c) =>
           c.Names?.some(
@@ -1136,7 +1138,7 @@ const scalerInterval = setInterval(async () => {
         if (match && match.State === "running") {
           const container = docker.getContainer(match.Id);
           // Only STOP the container to preserve state for instant wakeups
-          await container.stop({ t: 2 }).catch(() => {});
+          await container.stop({ t: 2 }).catch(() => { });
         }
 
         // Remove containerPort from Edge Router to trigger wakeup on next request
@@ -1152,7 +1154,7 @@ const scalerInterval = setInterval(async () => {
         await prisma.serviceDeployment.update({
           where: { id: d.id },
           data: { containerPort: null }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }
   } catch (err) {
@@ -1235,7 +1237,7 @@ async function getRealMemoryStats(): Promise<{
         usagePercent,
       };
     }
-  } catch {}
+  } catch { }
 
   // Fallback for non-Linux platforms (e.g. macOS dev)
   const totalMem = os.totalmem();
@@ -1271,18 +1273,18 @@ const statsInterval = setInterval(async () => {
       const Docker = (await import("dockerode")).default;
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
       const containers = await docker.listContainers({ all: true });
-      
+
       dockerContainers = await Promise.all(containers.map(async (c) => {
         let cpuPercent = 0;
         let memUsageMB = 0;
         let memLimitMB = 0;
         let memPercent = 0;
-        
+
         if (c.State === "running") {
           try {
             const container = docker.getContainer(c.Id);
             const stats = await container.stats({ stream: false });
-            
+
             // Calculate CPU percent
             const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - (stats.precpu_stats?.cpu_usage?.total_usage || 0);
             const systemDelta = stats.cpu_stats.system_cpu_usage - (stats.precpu_stats?.system_cpu_usage || 0);
@@ -1290,7 +1292,7 @@ const statsInterval = setInterval(async () => {
             if (systemDelta > 0 && cpuDelta > 0) {
               cpuPercent = (cpuDelta / systemDelta) * onlineCpus * 100.0;
             }
-            
+
             // Calculate Memory
             memUsageMB = (stats.memory_stats.usage || 0) / 1024 / 1024;
             memLimitMB = (stats.memory_stats.limit || 0) / 1024 / 1024;
@@ -1309,7 +1311,7 @@ const statsInterval = setInterval(async () => {
 
             const serviceId = c.Labels?.["serviceId"];
             // Note: Service container metrics are handled by metrics-collector.ts to avoid duplicate Redis writes
-          } catch (err) {}
+          } catch (err) { }
         }
 
         const name = c.Names?.[0]?.replace(/^\//, "") ?? "unknown";
@@ -1403,7 +1405,7 @@ const statsInterval = setInterval(async () => {
             totalMB: Math.round((imagesSize + containersSize + volumesSize + buildCacheSize) / 1024 / 1024),
           };
         }
-      } catch {}
+      } catch { }
 
       // Fallback via CLI if docker.df() returned null or empty
       if (!dockerSystem) {
@@ -1447,7 +1449,7 @@ const statsInterval = setInterval(async () => {
               totalMB: imagesMB + containersMB + volumesMB + buildCacheMB,
             };
           }
-        } catch {}
+        } catch { }
       }
     } catch (e) {
       console.error("[Stats] Failed to fetch docker stats", e);
@@ -1462,7 +1464,7 @@ const statsInterval = setInterval(async () => {
         completed: await buildQueue.getCompletedCount(),
         failed: await buildQueue.getFailedCount(),
       };
-    } catch {}
+    } catch { }
 
     // Disk space stats
     let diskStats = { totalMB: 0, usedMB: 0, freeMB: 0, usagePercent: 0 };
@@ -1477,7 +1479,7 @@ const statsInterval = setInterval(async () => {
         freeMB,
         usagePercent: totalMB > 0 ? Math.round((usedMB / totalMB) * 1000) / 10 : 0,
       };
-    } catch {}
+    } catch { }
 
     // Disk files (Builds, Workspaces, Volumes, Repos, and Logs)
     let diskFiles: { path: string; type: string; sizeMB: number; displayName?: string }[] = [];
@@ -1485,7 +1487,7 @@ const statsInterval = setInterval(async () => {
       const { exec } = await import("child_process");
       const util = await import("util");
       const execAsync = util.promisify(exec);
-      
+
       const scanDirs = [
         "/opt/whizan-cache/*",
         "/opt/whizan-builds/*",
@@ -1612,7 +1614,7 @@ const statsInterval = setInterval(async () => {
             displayName = `${filePath} (${fileName})`;
           }
         }
-        
+
         return {
           path: filePath,
           displayName,
@@ -1624,14 +1626,14 @@ const statsInterval = setInterval(async () => {
         };
       }));
       diskFiles.sort((a, b) => b.sizeMB - a.sizeMB);
-    } catch {}
+    } catch { }
 
     // Read tail of logs and store in redis
     try {
       const { exec } = await import("child_process");
       const util = await import("util");
       const execAsync = util.promisify(exec);
-      
+
       const [workerOut, workerErr, routerOut, routerErr] = await Promise.all([
         execAsync("cat /root/.pm2/logs/whizan-worker*out*.log /var/log/whizan/worker-out*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
         execAsync("cat /root/.pm2/logs/whizan-worker*error*.log /var/log/whizan/worker-error*.log 2>/dev/null | tail -n 100 || true").then(r => r.stdout).catch(() => ""),
@@ -1648,9 +1650,9 @@ const statsInterval = setInterval(async () => {
         pipe.set("vm:logs:worker:err", workerErr.trim() || "No worker error logs recorded.", "EX", 120);
         pipe.set("vm:logs:router:out", routerOut.trim() || defaultRouterLog, "EX", 120);
         pipe.set("vm:logs:router:err", routerErr.trim() || "No edge router error logs recorded.", "EX", 120);
-        await pipe.exec().catch(() => {});
+        await pipe.exec().catch(() => { });
       }
-    } catch {}
+    } catch { }
 
     const stats = {
       timestamp: Date.now(),
@@ -1710,7 +1712,7 @@ startVmReaper();
           console.log(`[Reconciler] Resuming stopped container ${cName} on VM startup...`);
           const c = docker.getContainer(match.Id);
           await c.start().catch((e: any) => console.warn(`[Reconciler] Start notice for ${cName}:`, e.message));
-          await redisPub.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+          await redisPub.set(`db:access:${db.id}`, Date.now()).catch(() => { });
         }
       }
     }

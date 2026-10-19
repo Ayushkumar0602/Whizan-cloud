@@ -1,9 +1,7 @@
 import { redisClient } from "./redis.js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://fdwstppklgibuwqjrusf.supabase.co";
-const SUPABASE_SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  "REDACTED_SUPABASE_SERVICE_ROLE_KEY";
+const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
 
 const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11";

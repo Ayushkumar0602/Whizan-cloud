@@ -12,8 +12,8 @@ export const buildQueue = new Queue("build", {
   connection: redisClient,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 20,
+    removeOnComplete: 100,
+    removeOnFail: 200,
   },
 });
 
@@ -133,7 +133,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
           await prisma.deployment.update({
             where: { id: inProgress.id },
             data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: "Deployment timed out or was superseded" },
-          }).catch(() => {});
+          }).catch(() => { });
         } else {
           return reply.code(409).send({ error: "A deployment is already in progress", deployment: inProgress });
         }
@@ -239,7 +239,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         },
       });
 
-      // Stage archive directly to Azure VM SSD storage (bypassing Redis memory limits)
+      // Stage archive directly to Supabase S3 Object Storage / VM bridge (bypassing Redis limits)
       const uploadRes = await uploadArchiveToVm({
         targetType: "project",
         targetId: id,
@@ -458,7 +458,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
           try {
             const decoded: any = fastify.jwt.verify(jwtToken);
             if (decoded && decoded.userId) authUser = decoded;
-          } catch {}
+          } catch { }
         }
       }
 
@@ -466,7 +466,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         try {
           await request.jwtVerify({ onlyCookie: false });
           if (request.user) authUser = request.user;
-        } catch {}
+        } catch { }
       }
 
       if (!authUser) {
@@ -535,8 +535,8 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       sub.on("message", (_ch: string, message: string) => {
         if (message === "__DONE__") {
           sendEvent("__DONE__");
-          sub.unsubscribe(channel).catch(() => {});
-          sub.quit().catch(() => {});
+          sub.unsubscribe(channel).catch(() => { });
+          sub.quit().catch(() => { });
           reply.raw.end();
         } else {
           sendEvent(message);
@@ -544,8 +544,8 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       });
 
       request.raw.on("close", () => {
-        sub.unsubscribe(channel).catch(() => {});
-        sub.quit().catch(() => {});
+        sub.unsubscribe(channel).catch(() => { });
+        sub.quit().catch(() => { });
       });
     }
   );

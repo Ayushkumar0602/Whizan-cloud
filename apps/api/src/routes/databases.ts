@@ -14,8 +14,8 @@ const databaseQueue = new Queue("database-job", {
   connection: redisClient,
   defaultJobOptions: {
     attempts: 1,
-    removeOnComplete: 10,
-    removeOnFail: 20,
+    removeOnComplete: 100,
+    removeOnFail: 200,
   },
 });
 
@@ -65,7 +65,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     if (db.readonlyPassword) {
       try {
         plainReadonlyPassword = decrypt(db.readonlyPassword);
-      } catch {}
+      } catch { }
     }
 
     const host =
@@ -183,37 +183,35 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     const cleanDbName = databaseName
       ? databaseName.replace(/[^a-zA-Z0-9_]/g, "_")
       : type === "REDIS"
-      ? ""
-      : `${cleanName.replace(/-/g, "_")}_db`;
+        ? ""
+        : `${cleanName.replace(/-/g, "_")}_db`;
 
     const cleanUsername = username
       ? username.replace(/[^a-zA-Z0-9_]/g, "_")
       : type === "REDIS"
-      ? "default"
-      : `${cleanName.replace(/-/g, "_")}_user`;
+        ? "default"
+        : `${cleanName.replace(/-/g, "_")}_user`;
 
     // Generate high-entropy 24-char password
     const rawPassword = crypto.randomBytes(18).toString("base64url");
     const encryptedPassword = encrypt(rawPassword);
 
-    // Resource limits & Portfolio Forced-Idleness enforcement
+    // Resource limits & Subscription Tier enforcement
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, email: true, subscriptionTier: true },
+      select: { subscriptionTier: true },
     });
-    const canCustomizeTier =
-      userRecord?.role === "ADMIN" ||
-      userRecord?.role === "ROOT_ADMIN" ||
-      userRecord?.email === "aj0892829122@gmail.com" ||
-      userRecord?.subscriptionTier === "PROFESSIONAL";
+    const isProfessional = (userRecord as any)?.subscriptionTier === "PROFESSIONAL";
 
-    // Non-professional Hobby users are strictly locked to starter tier (0.5 vCPU, 512MB RAM, 20m auto-sleep)
-    let effectiveInstanceType = "starter";
+    // Non-professional users are strictly locked to starter tier
+    let effectiveInstanceType = instanceType;
+    if (!isProfessional && (effectiveInstanceType === "standard" || effectiveInstanceType === "pro")) {
+      effectiveInstanceType = "starter";
+    }
+
     let cpuLimit = 0.5;
     let memoryLimit = 512;
-
-    if (canCustomizeTier) {
-      effectiveInstanceType = instanceType || "starter";
+    if (isProfessional) {
       if (effectiveInstanceType === "standard") {
         cpuLimit = 1.0;
         memoryLimit = 1024;
@@ -351,7 +349,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (db.status === "RUNNING") {
-      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
       return { status: "RUNNING", booting: false, message: "Database is active and operational." };
     }
 
@@ -382,7 +380,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (db.status === "RUNNING") {
-      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
       return { status: "RUNNING", booting: false, message: "Database is operational." };
     }
 
@@ -468,8 +466,8 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
 
     request.raw.on("close", () => {
       clearInterval(pingTimer);
-      sub.unsubscribe(channel).catch(() => {});
-      sub.quit().catch(() => {});
+      sub.unsubscribe(channel).catch(() => { });
+      sub.quit().catch(() => { });
     });
   });
 
@@ -550,7 +548,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Database Auto-Wakeup Helper ──────────────────────────────────────────
   async function ensureDatabaseRunning(db: any): Promise<boolean> {
     if (db.status === "RUNNING") {
-      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+      await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
       return true;
     }
 
@@ -574,7 +572,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         select: { status: true },
       });
       if (current?.status === "RUNNING") {
-        await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+        await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
         return true;
       }
     }
@@ -692,7 +690,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -731,7 +729,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           hint: err.hint,
         });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     } else if (db.type === "REDIS") {
       const redis = getRedisClientForDb(db);
@@ -800,7 +798,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     let client: PgClient | null = null;
     try {
@@ -841,7 +839,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           FROM pg_statio_user_tables;
         `);
         cacheHitRatio = parseFloat(cacheRes.rows[0]?.ratio || "100");
-      } catch {}
+      } catch { }
 
       // 3. Active Connection Breakdown
       let connectionBreakdown: any[] = [];
@@ -855,7 +853,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           GROUP BY state;
         `);
         connectionBreakdown = connRes.rows;
-      } catch {}
+      } catch { }
 
       // 4. Currently Running Queries / Wait Events
       let runningQueries: any[] = [];
@@ -876,7 +874,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           LIMIT 15;
         `);
         runningQueries = runRes.rows;
-      } catch {}
+      } catch { }
 
       // 5. Database Disk Size
       let databaseSize = "0 MB";
@@ -889,7 +887,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         `);
         databaseSizeBytes = parseInt(sizeRes.rows[0]?.size_bytes || "0", 10);
         databaseSize = sizeRes.rows[0]?.size_pretty || "0 MB";
-      } catch {}
+      } catch { }
 
       return {
         slowQueries,
@@ -902,7 +900,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });
     } finally {
-      await client?.end().catch(() => {});
+      await client?.end().catch(() => { });
     }
   });
 
@@ -932,7 +930,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });
     } finally {
-      await client?.end().catch(() => {});
+      await client?.end().catch(() => { });
     }
   });
 
@@ -957,7 +955,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });
     } finally {
-      await client?.end().catch(() => {});
+      await client?.end().catch(() => { });
     }
   });
 
@@ -1013,7 +1011,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       return reply.code(500).send({ error: err.message });
     } finally {
-      await client?.end().catch(() => {});
+      await client?.end().catch(() => { });
     }
   });
 
@@ -1070,7 +1068,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1132,7 +1130,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           );
           dbSize = sizeRes.rows[0]?.db_size || "N/A";
           dbSizeBytes = Number(sizeRes.rows[0]?.db_size_bytes) || 0;
-        } catch {}
+        } catch { }
 
         return {
           tables: tablesWithCounts,
@@ -1141,7 +1139,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           databaseSizeBytes: dbSizeBytes,
         };
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     } else if (db.type === "REDIS") {
       const redis = getRedisClientForDb(db);
@@ -1187,7 +1185,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1226,7 +1224,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         const result = await client.query(query, [table]);
         return { columns: result.rows };
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1260,7 +1258,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1311,9 +1309,8 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         const countRes = await client.query(countSql, searchParams);
         const totalCount = countRes.rows[0]?.total ?? 0;
 
-        const dataSql = `SELECT * FROM "${table}" ${whereClause} ${orderClause} LIMIT $${
-          searchParams.length + 1
-        } OFFSET $${searchParams.length + 2}`;
+        const dataSql = `SELECT * FROM "${table}" ${whereClause} ${orderClause} LIMIT $${searchParams.length + 1
+          } OFFSET $${searchParams.length + 2}`;
         const dataRes = await client.query(dataSql, [...searchParams, limit, offset]);
 
         return {
@@ -1326,7 +1323,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1358,7 +1355,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1393,7 +1390,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1428,7 +1425,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1454,7 +1451,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1488,7 +1485,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1505,7 +1502,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1546,7 +1543,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1571,7 +1568,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1598,7 +1595,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       }
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => {});
+    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
 
     if (db.type === "POSTGRESQL") {
       let client;
@@ -1614,7 +1611,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       } catch (err: any) {
         return reply.code(400).send({ error: err.message });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     }
 
@@ -1798,7 +1795,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           code: err.code,
         });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     } else if (isRedis) {
       const redis = new Redis(trimmedUrl, {
@@ -1923,7 +1920,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       return reply.code(400).send({ error: err.message });
     } finally {
-      await client.end().catch(() => {});
+      await client.end().catch(() => { });
     }
   });
 
@@ -1991,7 +1988,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           detail: err.detail,
         });
       } finally {
-        await client.end().catch(() => {});
+        await client.end().catch(() => { });
       }
     } else if (isRedis) {
       const redis = new Redis(trimmedUrl, {

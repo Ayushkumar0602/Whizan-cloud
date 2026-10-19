@@ -57,10 +57,14 @@ services:
       - key: GEMINI_API_KEY_5
         sync: false
       - key: SUPABASE_URL
-        value: "https://fdwstppklgibuwqjrusf.supabase.co"
+        sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: "whizan-deployments"
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: AZURE_VM_WAKE_WEBHOOK_URL
+        sync: false
+      - key: AZURE_VM_SLEEP_WEBHOOK_URL
         sync: false
 
 # NOTE: Dashboard is deployed on Vercel (not Render).

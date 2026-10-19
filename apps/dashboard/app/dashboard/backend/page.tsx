@@ -29,16 +29,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { formatDeployedUrl, getBaseRouterDomain, getServiceIngressUrl } from "@/lib/domains";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
-import { useAuth } from "@/lib/auth";
 
 export default function BackendHostingPage() {
   const router = useRouter();
-  const { user } = useAuth();
-  const isAdmin =
-    user?.role === "ADMIN" ||
-    user?.role === "ROOT_ADMIN" ||
-    user?.email === "aj0892829122@gmail.com";
-  const canCustomizeTier = isAdmin || user?.subscriptionTier === "PROFESSIONAL";
   const { vmOnline } = useSystemStatus();
   const [list, setList] = useState<ServiceWithLatestDeploy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,10 +203,10 @@ export default function BackendHostingPage() {
                     background: isActive
                       ? "linear-gradient(90deg, #10b981, #34d399)"
                       : isAsleep
-                      ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
-                      : isBuilding
-                      ? "linear-gradient(90deg, #6366f1, #38bdf8)"
-                      : "var(--card-border)",
+                        ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
+                        : isBuilding
+                          ? "linear-gradient(90deg, #6366f1, #38bdf8)"
+                          : "var(--card-border)",
                   }}
                 />
 
@@ -297,7 +290,7 @@ export default function BackendHostingPage() {
                 <Link href={`/dashboard/backend/${s.id}`} className="service-card-footer-link">
                   {/* Resource Allocation & Mode */}
                   <div className="resource-pill-row">
-                    {(!canCustomizeTier || s.autoSleep) ? (
+                    {s.autoSleep ? (
                       <span className="resource-chip chip-amber">
                         <Moon size={11} />
                         <span>Free Tier · 0.1 vCPU</span>
