@@ -407,81 +407,85 @@ export default function BackendServicePage() {
                 </div>
               </div>
 
-              <div className={`mode-switch-card ${service.autoSleep ? "mode-free" : "mode-dedicated"}`}>
-                <div className="mode-switch-content">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="mode-switch-header">
-                      <h3 className="mode-switch-title">
-                        {service.autoSleep ? <Moon size={15} color="#f59e0b" /> : <Zap size={15} color="#10b981" />}
-                        Auto-Sleep (Scale-to-Zero)
-                      </h3>
-                      {service.autoSleep && (
-                        <span className="mode-badge-free">
-                          Free Tier • 0.1 vCPU
-                        </span>
-                      )}
-                      {!canCustomizeTier && (
-                        <span
-                          style={{
-                            fontSize: "0.68rem",
-                            background: "rgba(245, 158, 11, 0.15)",
-                            color: "#d97706",
-                            border: "1px solid rgba(245, 158, 11, 0.3)",
-                            padding: "1px 6px",
-                            borderRadius: "999px",
-                            fontWeight: 600,
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "3px",
+              {(() => {
+                const isAutoSleepActive = !canCustomizeTier || Boolean(service.autoSleep);
+                return (
+                  <>
+                    <div className={`mode-switch-card ${isAutoSleepActive ? "mode-free" : "mode-dedicated"}`}>
+                      <div className="mode-switch-content">
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="mode-switch-header">
+                            <h3 className="mode-switch-title">
+                              {isAutoSleepActive ? <Moon size={15} color="#f59e0b" /> : <Zap size={15} color="#10b981" />}
+                              Auto-Sleep (Scale-to-Zero)
+                            </h3>
+                            {isAutoSleepActive && (
+                              <span className="mode-badge-free">
+                                Free Tier • 0.1 vCPU
+                              </span>
+                            )}
+                            {!canCustomizeTier && (
+                              <span
+                                style={{
+                                  fontSize: "0.68rem",
+                                  background: "rgba(245, 158, 11, 0.15)",
+                                  color: "#d97706",
+                                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                                  padding: "1px 6px",
+                                  borderRadius: "999px",
+                                  fontWeight: 600,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                }}
+                              >
+                                <Lock size={10} /> Locked to Auto-Sleep
+                              </span>
+                            )}
+                          </div>
+                          <p className="mode-switch-desc">
+                            {isAutoSleepActive
+                              ? <><strong>Auto-Sleep:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
+                              : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
+                          </p>
+                        </div>
+                        <label
+                          className="switch"
+                          style={{ flexShrink: 0, opacity: !canCustomizeTier ? 0.8 : 1, cursor: !canCustomizeTier ? "not-allowed" : "pointer" }}
+                          onClick={(e) => {
+                            if (!canCustomizeTier) {
+                              e.preventDefault();
+                              toast.info(
+                                "Hobby Plan: Services are locked to Auto-Sleep (0.1 vCPU / 512MB). Upgrade to Professional for Always-On dedicated compute."
+                              );
+                            }
                           }}
                         >
-                          <Lock size={10} /> Locked to Auto-Sleep
-                        </span>
-                      )}
+                          <input
+                            type="checkbox"
+                            checked={isAutoSleepActive}
+                            disabled={!canCustomizeTier}
+                            onChange={async (e) => {
+                              if (!canCustomizeTier) return;
+                              const val = e.target.checked;
+                              const nextType = val ? "free" : "starter";
+                              const nextCpu  = val ? 0.1  : 0.5;
+                              setService({ ...service, autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
+                              try {
+                                await services.update(service.id, { autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
+                                toast.success(val ? "Auto-Sleep enabled" : "Always-On mode activated");
+                              } catch {
+                                toast.error("Failed to update Auto-Sleep mode");
+                                setService({ ...service, autoSleep: !val });
+                              }
+                            }}
+                          />
+                          <span className="slider" />
+                        </label>
+                      </div>
                     </div>
-                    <p className="mode-switch-desc">
-                      {service.autoSleep
-                        ? <><strong>Auto-Sleep:</strong> Spins down after 15m inactivity. <strong>0.1 vCPU / 512MB</strong> ceiling.</>
-                        : <><strong>Always-On:</strong> No spin-down. Select a dedicated compute plan below.</>}
-                    </p>
-                  </div>
-                  <label
-                    className="switch"
-                    style={{ flexShrink: 0, opacity: !canCustomizeTier ? 0.6 : 1, cursor: !canCustomizeTier ? "not-allowed" : "pointer" }}
-                    onClick={(e) => {
-                      if (!canCustomizeTier) {
-                        e.preventDefault();
-                        toast.info(
-                          "Portfolio Forced-Idleness: Always-On dedicated compute requires Professional plan or administrator authorization."
-                        );
-                      }
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={service.autoSleep}
-                      disabled={!canCustomizeTier}
-                      onChange={async (e) => {
-                        if (!canCustomizeTier) return;
-                        const val = e.target.checked;
-                        const nextType = val ? "free" : "starter";
-                        const nextCpu  = val ? 0.1  : 0.5;
-                        setService({ ...service, autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
-                        try {
-                          await services.update(service.id, { autoSleep: val, instanceType: nextType as any, cpuLimit: nextCpu, memoryLimit: 512 });
-                          toast.success(val ? "Auto-Sleep enabled" : "Always-On mode activated");
-                        } catch {
-                          toast.error("Failed to update Auto-Sleep mode");
-                          setService({ ...service, autoSleep: !val });
-                        }
-                      }}
-                    />
-                    <span className="slider" />
-                  </label>
-                </div>
-              </div>
 
-              {!service.autoSleep && (
+                    {!isAutoSleepActive && (
                 <div className="dedicated-plans-wrap">
                   <div className="plans-header">
                     <div>
@@ -531,6 +535,9 @@ export default function BackendServicePage() {
                   </div>
                 </div>
               )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Build & Runtime Configuration — Collapsible */}
@@ -892,7 +899,7 @@ export default function BackendServicePage() {
                   service && <ServiceShell serviceId={id} slug={service.slug} />
                 )
               ) : (
-                service && <ServiceMetrics serviceId={id} slug={service.slug} isPublic={service.isPublic} autoSleep={service.autoSleep} instanceType={service.instanceType} cpuLimit={service.cpuLimit} memoryLimit={service.memoryLimit} />
+                service && <ServiceMetrics serviceId={id} slug={service.slug} isPublic={service.isPublic} autoSleep={!canCustomizeTier || service.autoSleep} instanceType={service.instanceType} cpuLimit={service.cpuLimit} memoryLimit={service.memoryLimit} />
               )}
             </div>
           </div>

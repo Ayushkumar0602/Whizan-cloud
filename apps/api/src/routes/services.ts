@@ -42,8 +42,8 @@ const BaseServiceSchema = z.object({
   internalPort: z.number().int().min(0).max(65535).default(8000),
   isWorker: z.boolean().default(false),
   isPublic: z.boolean().default(false),
-  autoSleep: z.boolean().default(false),
-  instanceType: z.enum(["free", "starter", "standard", "pro", "pro_plus"]).default("starter"),
+  autoSleep: z.boolean().default(true),
+  instanceType: z.enum(["free", "starter", "standard", "pro", "pro_plus"]).default("free"),
   cpuLimit: z.number().min(0.1).max(8.0).optional(),
   memoryLimit: z.number().int().min(256).max(16384).optional(),
   guardrailRejectReason: z.string().optional(),
@@ -71,7 +71,22 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   fastify.get("/", async (request) => {
     const { userId, role } = request.user;
     const query = request.query as { all?: string };
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, email: true, subscriptionTier: true },
+    });
+    const canCustomizeTier =
+      isUserAdmin(userRecord) || userRecord?.subscriptionTier === "PROFESSIONAL";
+
+    if (!canCustomizeTier) {
+      await prisma.backendService.updateMany({
+        where: { userId, autoSleep: false },
+        data: { autoSleep: true, instanceType: "free", cpuLimit: 0.1, memoryLimit: 512 },
+      }).catch(() => {});
+    }
+
     const whereClause = role === "ADMIN" && query?.all === "true" ? {} : { userId };
+
     return prisma.backendService.findMany({
       where: whereClause,
       include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
@@ -235,6 +250,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
           ...serviceFields,
           internalPort,
           slug: finalSlug,
+          autoSleep,
           instanceType,
           cpuLimit,
           memoryLimit,
@@ -275,7 +291,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
   fastify.get("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const { userId, role } = request.user;
-    const service = await prisma.backendService.findFirst({
+    let service = await prisma.backendService.findFirst({
       where: role === "ADMIN" ? { id } : { id, userId },
       include: {
         deployments: { orderBy: { createdAt: "desc" }, take: 10 },
@@ -283,6 +299,31 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       },
     });
     if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    // Self-healing: Enforce platform policy that non-professional Hobby users are strictly forced to Auto-Sleep / Free Tier
+    const userRecord = await prisma.user.findUnique({
+      where: { id: service.userId },
+      select: { role: true, email: true, subscriptionTier: true },
+    });
+    const canCustomizeTier =
+      isUserAdmin(userRecord) || userRecord?.subscriptionTier === "PROFESSIONAL";
+
+    if (!canCustomizeTier && (!service.autoSleep || service.instanceType !== "free")) {
+      service = await prisma.backendService.update({
+        where: { id: service.id },
+        data: {
+          autoSleep: true,
+          instanceType: "free",
+          cpuLimit: 0.1,
+          memoryLimit: 512,
+        },
+        include: {
+          deployments: { orderBy: { createdAt: "desc" }, take: 10 },
+          envVariables: { select: { id: true, key: true, createdAt: true, isSecret: true } },
+        },
+      });
+    }
+
     return service;
   });
 
