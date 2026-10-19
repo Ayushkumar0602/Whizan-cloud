@@ -199,8 +199,6 @@ const server = http.createServer(async (req, res) => {
     const validSecrets = [
       process.env.INTERNAL_SECRET,
       process.env.JWT_SECRET,
-      "whizan-internal-runtime-mesh-key-9b8c7d6e",
-      "81a56b57528ea5d96551b49394cf1877434d40ad5a33c9c349f5869da5e0489f",
     ].filter(Boolean);
 
     if (!internalSecret || !validSecrets.includes(internalSecret as string)) {

@@ -29,6 +29,7 @@ export interface AiAnalysisResult {
 
 function getGeminiKeys(): string[] {
   const keys = [
+    process.env.GEMINI_API_KEY,
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2,
     process.env.GEMINI_API_KEY_3,
@@ -36,9 +37,6 @@ function getGeminiKeys(): string[] {
     process.env.GEMINI_API_KEY_5,
     process.env.GEMINI_API_KEY_6,
     process.env.GEMINI_API_KEY_7,
-    process.env.GEMINI_API_KEY,
-    "AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ",
-    "AQ.Ab8RN6LqJFX-KBWqb-ZozXjzh0GmM3WaTWAb8sexKCn-bgsd7Q"
   ].filter(Boolean) as string[];
 
   return Array.from(new Set(keys));

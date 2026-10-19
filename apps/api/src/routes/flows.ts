@@ -4,7 +4,7 @@ import crypto from "crypto";
 import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 
-const INTERNAL_MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_2026_x89q";
+const INTERNAL_MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "";
 
 // ─── ZOD SCHEMAS ─────────────────────────────────────────────────────────────
 const WorkflowNodeSchema = z.object({

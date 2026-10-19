@@ -119,7 +119,7 @@ async function callRuntime(path: string, body: any, timeoutMs = 10000): Promise<
           "x-whizan-internal":
             process.env.INTERNAL_SECRET ||
             process.env.JWT_SECRET ||
-            "whizan-internal-runtime-mesh-key-9b8c7d6e",
+            "",
         },
         body: JSON.stringify(body),
         signal: controller.signal,

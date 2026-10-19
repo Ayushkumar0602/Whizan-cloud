@@ -9,7 +9,7 @@ import { ZeroIdleScheduler } from "./scheduler.js";
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const API_URL = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://whizan-cloud-service.onrender.com";
 const RUNTIME_URL = process.env.FUNCTION_RUNTIME_URL || "http://127.0.0.1:9090";
-const MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_2026_x89q";
+const MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "";
 
 console.log("─────────────────────────────────────────────────────────");
 console.log("⏱️  WHIZAN CRON ENGINE — SUPER RESOURCE OPTIMIZED DAEMON");

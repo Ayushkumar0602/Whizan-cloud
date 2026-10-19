@@ -34,7 +34,7 @@ export class FlowStateMachine {
     redis: Redis,
     runner: StepRunner,
     apiUrl = "https://whizan-cloud-service.onrender.com",
-    meshToken = "whizan_mesh_sec_2026_x89q"
+    meshToken = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || ""
   ) {
     this.redis = redis;
     this.runner = runner;

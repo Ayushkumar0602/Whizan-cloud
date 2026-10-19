@@ -8,12 +8,7 @@
  * 4. Once a fallback key succeeds, that key becomes the new persistent active key until IT fails.
  */
 
-const DEFAULT_POOL = [
-  "AIzaSyCevvEyTYzOiMnuTqird0ODBV08pt-w5uM",
-  "AQ.Ab8RN6I2CFdE0JixSI58VzNYvnUhzYIKP3zMtyRJywmoeb0Yvg",
-  "AQ.Ab8RN6KRI_SewANB8XvOd8W-UfIvnF_fII-YMDPidoxIhCwa8g",
-  "AIzaSyDdFPyvtBbofucXU2GvPlLY_yICBZxM76Y",
-];
+const DEFAULT_POOL: string[] = [];
 
 function buildKeyList(): string[] {
   const envKeys = [
@@ -23,6 +18,8 @@ function buildKeyList(): string[] {
     process.env.GEMINI_API_KEY_3,
     process.env.GEMINI_API_KEY_4,
     process.env.GEMINI_API_KEY_5,
+    process.env.GEMINI_API_KEY_6,
+    process.env.GEMINI_API_KEY_7,
   ].filter(Boolean) as string[];
 
   // Merge default pool and env keys without duplicates

@@ -58,8 +58,8 @@ export const localOpencodeRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Container does not exist, create it
     try {
-      const PRIMARY_KEY   = "AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ";
-      const FALLBACK_KEY  = "AQ.Ab8RN6LqJFX-KBWqb-ZozXjzh0GmM3WaTWAb8sexKCn-bgsd7Q";
+      const PRIMARY_KEY   = process.env.GEMINI_API_KEY_PRIMARY || process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || "";
+      const FALLBACK_KEY  = process.env.GEMINI_API_KEY_FALLBACK || process.env.GEMINI_API_KEY_2 || PRIMARY_KEY;
       const envVars = [
         "TERM=xterm-256color",
         "COLORTERM=truecolor",
@@ -144,10 +144,10 @@ export const localOpencodeRoutes: FastifyPluginAsync = async (fastify) => {
           "TERM=xterm-256color",
           "COLORTERM=truecolor",
           "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-          "GEMINI_API_KEY=AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ",
-          "GOOGLE_GENERATIVE_AI_API_KEY=AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ",
-          "GEMINI_API_KEY_PRIMARY=AQ.Ab8RN6Jey2BrJP1cYOJdhuvK7BvOVUi_haNSGUEEKp4JioHpZQ",
-          "GEMINI_API_KEY_FALLBACK=AQ.Ab8RN6LqJFX-KBWqb-ZozXjzh0GmM3WaTWAb8sexKCn-bgsd7Q",
+          `GEMINI_API_KEY=${process.env.GEMINI_API_KEY_PRIMARY || process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || ""}`,
+          `GOOGLE_GENERATIVE_AI_API_KEY=${process.env.GEMINI_API_KEY_PRIMARY || process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || ""}`,
+          `GEMINI_API_KEY_PRIMARY=${process.env.GEMINI_API_KEY_PRIMARY || process.env.GEMINI_API_KEY_1 || process.env.GEMINI_API_KEY || ""}`,
+          `GEMINI_API_KEY_FALLBACK=${process.env.GEMINI_API_KEY_FALLBACK || process.env.GEMINI_API_KEY_2 || process.env.GEMINI_API_KEY || ""}`,
         ],
       });
 

@@ -34,8 +34,28 @@ services:
         sync: false
       - key: GITHUB_CALLBACK_URL
         sync: false # e.g. https://whizan-api.onrender.com/api/auth/github/callback
+      - key: GITHUB_TOKEN
+        sync: false
       - key: DASHBOARD_URL
         sync: false # e.g. https://whizan-dashboard.onrender.com
+      - key: BASE_DOMAIN
+        sync: false # e.g. 20.2.136.11.nip.io
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: INTERNAL_MESH_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_1
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GEMINI_API_KEY_3
+        sync: false
+      - key: GEMINI_API_KEY_4
+        sync: false
+      - key: GEMINI_API_KEY_5
+        sync: false
 
 # NOTE: Dashboard is deployed on Vercel (not Render).
 # See: https://vercel.com — connect repo, set Root Directory = apps/dashboard

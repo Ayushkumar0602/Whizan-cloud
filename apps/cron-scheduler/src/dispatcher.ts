@@ -21,7 +21,11 @@ export class TaskDispatcher {
   private runtimeUrl: string;
   private meshToken: string;
 
-  constructor(redis: Redis, runtimeUrl = "http://127.0.0.1:9090", meshToken = "whizan_mesh_sec_2026_x89q") {
+  constructor(
+    redis: Redis,
+    runtimeUrl = "http://127.0.0.1:9090",
+    meshToken = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || ""
+  ) {
     this.redis = redis;
     this.runtimeUrl = runtimeUrl.replace(/\/$/, "");
     this.meshToken = meshToken;
