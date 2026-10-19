@@ -56,6 +56,12 @@ services:
         sync: false
       - key: GEMINI_API_KEY_5
         sync: false
+      - key: SUPABASE_URL
+        value: "https://fdwstppklgibuwqjrusf.supabase.co"
+      - key: SUPABASE_STORAGE_BUCKET
+        value: "whizan-deployments"
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
 
 # NOTE: Dashboard is deployed on Vercel (not Render).
 # See: https://vercel.com — connect repo, set Root Directory = apps/dashboard

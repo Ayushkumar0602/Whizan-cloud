@@ -569,6 +569,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       memoryLimit: service.memoryLimit,
       isDirectUpload: true,
       sourceArchiveOnDisk: !uploadRes.stagedInRedis,
+      archiveUrl: uploadRes.archiveUrl,
     } as any);
 
     return reply.code(201).send(deployment);

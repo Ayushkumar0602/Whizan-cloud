@@ -268,6 +268,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         slug: project.slug,
         isDirectUpload: true,
         sourceArchiveOnDisk: !uploadRes.stagedInRedis,
+        archiveUrl: uploadRes.archiveUrl,
       } as any);
 
       return reply.code(201).send(deployment);

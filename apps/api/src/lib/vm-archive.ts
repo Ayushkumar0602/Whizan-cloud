@@ -1,10 +1,17 @@
 import { redisClient } from "./redis.js";
 
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://fdwstppklgibuwqjrusf.supabase.co";
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "REDACTED_SUPABASE_SERVICE_ROLE_KEY";
+const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
+
+const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "whizan_internal_secret";
 
 export interface VmArchiveUploadResult {
   ok: boolean;
+  archiveUrl?: string;
   path?: string;
   bytesWritten?: number;
   error?: string;
@@ -12,11 +19,11 @@ export interface VmArchiveUploadResult {
 }
 
 /**
- * Streams or uploads source code archives directly to the Azure VM persistent SSD storage
- * via the Edge Router /_internal/upload bridge.
+ * Stores deployment archives in Supabase S3 Object Storage with automatic fallback
+ * to the direct VM SSD bridge and Redis.
  *
- * This completely eliminates the 30MB Redis Cloud memory bottleneck and prevents
- * volatile-lru chunk evictions that previously corrupted multi-megabyte direct uploads.
+ * This completely eliminates the 30MB Redis Cloud memory limit, avoids base64 inflation,
+ * and allows rapid CDN-accelerated downloads on compute worker nodes.
  */
 export async function uploadArchiveToVm(params: {
   targetType: "project" | "service";
@@ -26,14 +33,67 @@ export async function uploadArchiveToVm(params: {
 }): Promise<VmArchiveUploadResult> {
   const { targetType, targetId, deploymentId, buffer } = params;
 
-  // 1. Direct VM HTTP Upload Bridge (Zero Redis footprint)
-  const edgeRouterUrl = `http://${BASE_DOMAIN}/_internal/upload?targetType=${targetType}&targetId=${targetId}&deploymentId=${deploymentId}`;
+  // ── Strategy 1: Supabase S3 Object Storage (Industry standard, 0 Redis footprint) ──
+  if (SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const storagePath = `${targetType}s/${targetId}/${deploymentId}.tar.gz`;
+      const uploadUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/${SUPABASE_STORAGE_BUCKET}/${storagePath}`;
 
+      console.log(`[storage-archive] Uploading ${targetType} archive (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) to Supabase Storage: ${storagePath}...`);
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+
+      const res = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          "Content-Type": "application/gzip",
+          "x-upsert": "true",
+        },
+        body: buffer,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeout));
+
+      if (res.ok) {
+        // Also update latest source.tar.gz asynchronously
+        const latestPath = `${targetType}s/${targetId}/source.tar.gz`;
+        const latestUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/${SUPABASE_STORAGE_BUCKET}/${latestPath}`;
+        fetch(latestUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            apikey: SUPABASE_SERVICE_ROLE_KEY,
+            "Content-Type": "application/gzip",
+            "x-upsert": "true",
+          },
+          body: buffer,
+        }).catch(() => {});
+
+        const publicArchiveUrl = `${SUPABASE_URL.replace(/\/+$/, "")}/storage/v1/object/public/${SUPABASE_STORAGE_BUCKET}/${storagePath}`;
+        console.log(`[storage-archive] ✓ Successfully stored archive in Supabase Storage: ${publicArchiveUrl}`);
+
+        return {
+          ok: true,
+          archiveUrl: publicArchiveUrl,
+          bytesWritten: buffer.length,
+          stagedInRedis: false,
+        };
+      } else {
+        const errText = await res.text().catch(() => `HTTP ${res.status}`);
+        console.warn(`[storage-archive] Supabase Storage returned ${res.status}: ${errText}`);
+      }
+    } catch (err: any) {
+      console.warn(`[storage-archive] Supabase Storage upload error: ${err.message}`);
+    }
+  }
+
+  // ── Strategy 2: Direct VM HTTP Storage Bridge (Bypasses Redis) ──
+  const edgeRouterUrl = `http://20.2.136.11/_internal/upload?targetType=${targetType}&targetId=${targetId}&deploymentId=${deploymentId}`;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout for large uploads
-
-    console.log(`[vm-archive] Streaming ${targetType} archive (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) directly to VM SSD at ${edgeRouterUrl}...`);
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
     const res = await fetch(edgeRouterUrl, {
       method: "POST",
@@ -50,31 +110,25 @@ export async function uploadArchiveToVm(params: {
 
     if (res.ok) {
       const data: any = await res.json().catch(() => ({ ok: true }));
-      console.log(`[vm-archive] ✓ Successfully stored archive on VM SSD: ${data.path || "persisted"}`);
+      console.log(`[storage-archive] ✓ Stored archive via VM HTTP bridge: ${data.path}`);
       return { ok: true, path: data.path, bytesWritten: buffer.length, stagedInRedis: false };
-    } else {
-      const errText = await res.text().catch(() => `HTTP ${res.status}`);
-      console.warn(`[vm-archive] VM upload bridge returned ${res.status}: ${errText}`);
     }
   } catch (err: any) {
-    console.warn(`[vm-archive] Direct VM upload HTTP bridge failed: ${err.message}`);
+    console.warn(`[storage-archive] Direct VM HTTP bridge failed: ${err.message}`);
   }
 
-  // 2. Safe Fallback: If VM bridge failed and archive is small (<= 5MB), stage in Redis as a single binary buffer
-  // Note: Binary buffers do NOT have base64 overhead, and we avoid splitting into multi-keys to prevent partial LRU eviction
+  // ── Strategy 3: Safe Redis Fallback for small archives (<= 5MB) ──
   if (buffer.length <= 5 * 1024 * 1024) {
     try {
-      console.log(`[vm-archive] VM bridge unreachable. Staging small archive (${(buffer.length / 1024).toFixed(1)} KB) in Redis buffer fallback...`);
       await redisClient.set(`upload:${deploymentId}`, buffer, "EX", 900);
       return { ok: true, bytesWritten: buffer.length, stagedInRedis: true };
     } catch (redisErr: any) {
-      console.error(`[vm-archive] Redis fallback stage failed:`, redisErr);
       return { ok: false, error: redisErr.message };
     }
   }
 
   return {
     ok: false,
-    error: `Cloud compute node was unreachable on port 80 and archive payload (${(buffer.length / (1024 * 1024)).toFixed(1)} MB) exceeds the 5MB safety limit for in-memory Redis staging. Please verify the VM is running and accessible at http://${BASE_DOMAIN}.`,
+    error: `Storage upload failed and archive payload (${(buffer.length / (1024 * 1024)).toFixed(1)} MB) exceeds the 5MB safety limit for in-memory Redis staging.`,
   };
 }

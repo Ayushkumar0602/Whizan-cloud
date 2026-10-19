@@ -139,8 +139,25 @@ const worker = new Worker<BuildJob>(
           const persistentSourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           const persistentArchive = path.join(persistentSourceDir, "source.tar.gz");
           const deploymentArchive = path.join(SOURCE_BASE_DIR, "deployments", `${deploymentId}.tar.gz`);
+          const archiveUrl = (job.data as any).archiveUrl ||
+            `https://fdwstppklgibuwqjrusf.supabase.co/storage/v1/object/public/whizan-deployments/projects/${projectId}/${deploymentId}.tar.gz`;
 
-          // 1. Check if archive is already stored on persistent SSD disk (via direct VM upload bridge or previous build)
+          // 1. Download directly from Supabase S3 Object Storage if available
+          try {
+            const res = await fetch(archiveUrl, { method: "GET" });
+            if (res.ok) {
+              const arrayBuf = await res.arrayBuffer();
+              if (arrayBuf.byteLength > 100) {
+                await fs.mkdir(persistentSourceDir, { recursive: true });
+                await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
+                await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
+                await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
+                await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+              }
+            }
+          } catch {}
+
+          // 2. Check if archive is stored on persistent SSD disk
           let archivePathToExtract: string | null = null;
           try {
             await fs.access(deploymentArchive);
@@ -159,7 +176,7 @@ const worker = new Worker<BuildJob>(
             const execFileAsync = promisify(execFile);
             await execFileAsync("tar", ["-xzf", archivePathToExtract, "-C", buildDir]);
             await execFileAsync("chmod", ["-R", "a+rwX", buildDir]).catch(() => {});
-            await log("✓ Direct upload archive extracted successfully from SSD storage");
+            await log("✓ Direct upload archive extracted successfully to build directory");
           } else {
             // 2. Fallback: check Redis staged chunks/buffer
             let archiveBuffer: Buffer | null = null;
