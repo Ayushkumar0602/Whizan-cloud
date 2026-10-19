@@ -189,6 +189,19 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: "Invalid subscription tier. Must be 'HOBBY' or 'PROFESSIONAL'" });
       }
 
+      // Restrict upgrading to PROFESSIONAL tier: only an administrator can grant PROFESSIONAL tier
+      if (rawTier === "PROFESSIONAL") {
+        const caller = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true, email: true },
+        });
+        if (!isUserAdmin(caller)) {
+          return reply.code(403).send({
+            error: "Upgrading to Professional Plan requires platform administrator authorization.",
+          });
+        }
+      }
+
       const updated = await prisma.user.update({
         where: { id: userId },
         data: { subscriptionTier: rawTier },

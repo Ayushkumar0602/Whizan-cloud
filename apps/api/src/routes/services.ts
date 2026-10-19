@@ -196,21 +196,29 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       where: { id: userId },
       select: { email: true, role: true, subscriptionTier: true },
     });
-    const isAdmin = isUserAdmin(userRecord);
+    const canCustomizeTier =
+      isUserAdmin(userRecord) || userRecord?.subscriptionTier === "PROFESSIONAL";
 
     let instanceType = "free";
     let cpuLimit = 0.1;
     let memoryLimit = 512;
     let autoSleep = true;
 
-    // Platform-wide policy: All deployments are forced to autoSleep=true (Scale-to-Zero).
-    // Only verified Platform Administrators can choose dedicated Always-On tiers.
-    if (isAdmin && body.data.autoSleep === false) {
-      autoSleep = false;
-      instanceType = body.data.instanceType || "starter";
-      const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
-      cpuLimit = body.data.cpuLimit || tier.cpu;
-      memoryLimit = body.data.memoryLimit || tier.memory;
+    // Platform-wide policy: Default deployments are forced to autoSleep=true (Scale-to-Zero).
+    // Platform Administrators OR users granted PROFESSIONAL tier can choose custom compute / Always-On tiers.
+    if (canCustomizeTier) {
+      if (body.data.autoSleep === false) {
+        autoSleep = false;
+        instanceType = body.data.instanceType || "starter";
+        const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
+        cpuLimit = body.data.cpuLimit || tier.cpu;
+        memoryLimit = body.data.memoryLimit || tier.memory;
+      } else if (body.data.instanceType && body.data.instanceType !== "free") {
+        instanceType = body.data.instanceType;
+        const tier = INSTANCE_TIERS[instanceType] || INSTANCE_TIERS.starter;
+        cpuLimit = body.data.cpuLimit || tier.cpu;
+        memoryLimit = body.data.memoryLimit || tier.memory;
+      }
     }
 
     const { envVars, isWorker, guardrailRejectReason, ...serviceFields } = body.data;
@@ -298,10 +306,11 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       where: { id: userId },
       select: { email: true, role: true, subscriptionTier: true },
     });
-    const isAdmin = isUserAdmin(userRecord);
+    const canCustomizeTier =
+      isUserAdmin(userRecord) || userRecord?.subscriptionTier === "PROFESSIONAL";
 
-    // Platform-wide policy: Non-admins are strictly forced to Auto-Sleep / Free Tier
-    if (!isAdmin) {
+    // Platform-wide policy: Non-professional Hobby users are strictly forced to Auto-Sleep / Free Tier
+    if (!canCustomizeTier) {
       patchData.instanceType = "free";
       patchData.cpuLimit = 0.1;
       patchData.memoryLimit = 512;

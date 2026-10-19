@@ -199,19 +199,20 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     // Resource limits & Portfolio Forced-Idleness enforcement
     const userRecord = await prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, email: true },
+      select: { role: true, email: true, subscriptionTier: true },
     });
-    const isUserAdmin =
+    const canCustomizeTier =
       userRecord?.role === "ADMIN" ||
       userRecord?.role === "ROOT_ADMIN" ||
-      userRecord?.email === "aj0892829122@gmail.com";
+      userRecord?.email === "aj0892829122@gmail.com" ||
+      userRecord?.subscriptionTier === "PROFESSIONAL";
 
-    // Non-admin users are strictly locked to starter tier (0.5 vCPU, 512MB RAM, 20m auto-sleep)
+    // Non-professional Hobby users are strictly locked to starter tier (0.5 vCPU, 512MB RAM, 20m auto-sleep)
     let effectiveInstanceType = "starter";
     let cpuLimit = 0.5;
     let memoryLimit = 512;
 
-    if (isUserAdmin) {
+    if (canCustomizeTier) {
       effectiveInstanceType = instanceType || "starter";
       if (effectiveInstanceType === "standard") {
         cpuLimit = 1.0;

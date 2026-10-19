@@ -35,6 +35,7 @@ export default function BackendServicePage() {
     user?.role === "ADMIN" ||
     user?.role === "ROOT_ADMIN" ||
     user?.email === "aj0892829122@gmail.com";
+  const canCustomizeTier = isAdmin || user?.subscriptionTier === "PROFESSIONAL";
   const { vmOnline } = useSystemStatus();
   const [service, setService] = useState<ServiceWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -419,7 +420,7 @@ export default function BackendServicePage() {
                           Free Tier • 0.1 vCPU
                         </span>
                       )}
-                      {!isAdmin && (
+                      {!canCustomizeTier && (
                         <span
                           style={{
                             fontSize: "0.68rem",
@@ -446,12 +447,12 @@ export default function BackendServicePage() {
                   </div>
                   <label
                     className="switch"
-                    style={{ flexShrink: 0, opacity: !isAdmin ? 0.6 : 1, cursor: !isAdmin ? "not-allowed" : "pointer" }}
+                    style={{ flexShrink: 0, opacity: !canCustomizeTier ? 0.6 : 1, cursor: !canCustomizeTier ? "not-allowed" : "pointer" }}
                     onClick={(e) => {
-                      if (!isAdmin) {
+                      if (!canCustomizeTier) {
                         e.preventDefault();
                         toast.info(
-                          "Portfolio Forced-Idleness: Always-On dedicated compute is restricted to platform administrators."
+                          "Portfolio Forced-Idleness: Always-On dedicated compute requires Professional plan or administrator authorization."
                         );
                       }
                     }}
@@ -459,9 +460,9 @@ export default function BackendServicePage() {
                     <input
                       type="checkbox"
                       checked={service.autoSleep}
-                      disabled={!isAdmin}
+                      disabled={!canCustomizeTier}
                       onChange={async (e) => {
-                        if (!isAdmin) return;
+                        if (!canCustomizeTier) return;
                         const val = e.target.checked;
                         const nextType = val ? "free" : "starter";
                         const nextCpu  = val ? 0.1  : 0.5;
@@ -499,8 +500,8 @@ export default function BackendServicePage() {
                           key={plan.id}
                           type="button"
                           onClick={async () => {
-                            if (!isAdmin) {
-                              toast.info("Portfolio Forced-Idleness: Changing dedicated compute tiers is restricted to platform administrators.");
+                            if (!canCustomizeTier) {
+                              toast.info("Portfolio Forced-Idleness: Changing dedicated compute tiers requires Professional plan or administrator authorization.");
                               return;
                             }
                             setService({ ...service, instanceType: plan.id as any, cpuLimit: plan.cpu, memoryLimit: plan.memory });

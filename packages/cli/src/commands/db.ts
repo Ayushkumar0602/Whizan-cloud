@@ -62,13 +62,14 @@ export async function dbCommand(args: string[] = []) {
       if (instanceType !== "starter") {
         try {
           const authStatus = await client.getAuthStatus();
-          const isUserAdmin =
+          const canCustomize =
             authStatus?.user?.role === "ADMIN" ||
             authStatus?.user?.role === "ROOT_ADMIN" ||
-            authStatus?.user?.email === "aj0892829122@gmail.com";
-          if (!isUserAdmin) {
+            authStatus?.user?.email === "aj0892829122@gmail.com" ||
+            authStatus?.user?.subscriptionTier === "PROFESSIONAL";
+          if (!canCustomize) {
             console.error(
-              `  ${c.amber}ℹ Portfolio Forced-Idleness: Custom database tiers require administrator permission. Defaulting to 'starter' tier with 20m auto-sleep.${c.reset}`
+              `  ${c.amber}ℹ Portfolio Forced-Idleness: Custom database tiers require Professional plan or administrator permission. Defaulting to 'starter' tier with 20m auto-sleep.${c.reset}`
             );
             instanceType = "starter";
           }

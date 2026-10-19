@@ -46,6 +46,7 @@ export default function NewServicePage() {
     user?.role === "ADMIN" ||
     user?.role === "ROOT_ADMIN" ||
     user?.email === "aj0892829122@gmail.com";
+  const canCustomizeTier = isAdmin || user?.subscriptionTier === "PROFESSIONAL";
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [envText, setEnvText] = useState("");
@@ -625,9 +626,9 @@ export default function NewServicePage() {
               {/* Dedicated Card */}
               <div
                 onClick={() => {
-                  if (!isAdmin) {
+                  if (!canCustomizeTier) {
                     toast.info(
-                      "Portfolio Forced-Idleness: Always-On dedicated compute is restricted to platform administrators. Deployments run on the Auto-Sleep Free Tier (0.1 vCPU / 512MB RAM with 15m idle spin-down)."
+                      "Portfolio Forced-Idleness: Always-On dedicated compute requires Professional tier or administrator authorization. Deployments run on the Auto-Sleep Free Tier (0.1 vCPU / 512MB RAM with 15m idle spin-down)."
                     );
                     return;
                   }
@@ -640,13 +641,13 @@ export default function NewServicePage() {
                   });
                 }}
                 className={`plan-mode-card ${!formData.autoSleep ? "plan-mode-active-dedicated" : ""}`}
-                style={!isAdmin ? { opacity: 0.65, cursor: "not-allowed" } : {}}
+                style={!canCustomizeTier ? { opacity: 0.65, cursor: "not-allowed" } : {}}
               >
                 <div className="plan-mode-top">
                   <div className="plan-mode-title">
-                    <Zap size={18} color={isAdmin ? "#10b981" : "#94a3b8"} />
+                    <Zap size={18} color={canCustomizeTier ? "#10b981" : "#94a3b8"} />
                     <span>Always-On Dedicated</span>
-                    {!isAdmin && (
+                    {!canCustomizeTier && (
                       <span
                         style={{
                           fontSize: "0.68rem",
@@ -662,11 +663,11 @@ export default function NewServicePage() {
                           marginLeft: "6px",
                         }}
                       >
-                        <Lock size={10} /> Admin Only
+                        <Lock size={10} /> Pro / Admin Only
                       </span>
                     )}
                   </div>
-                  {!formData.autoSleep && isAdmin && <Check size={16} color="#10b981" />}
+                  {!formData.autoSleep && canCustomizeTier && <Check size={16} color="#10b981" />}
                 </div>
                 <p className="plan-mode-desc">
                   Never sleeps. Zero cold boot delay. Ideal for websockets, background workers, and latency-sensitive APIs.

@@ -1004,7 +1004,10 @@ Please gently inform the user of this situation:
           authProfile?.user?.isAdmin === true ||
           authProfile?.user?.email === "aj0892829122@gmail.com";
 
-        if (!isUserAdmin) {
+        const canCustomizeTier =
+          isUserAdmin || authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+
+        if (!canCustomizeTier) {
           serviceArgs.instanceType = "free";
           serviceArgs.autoSleep = true;
           serviceArgs.cpuLimit = 0.1;
@@ -1312,7 +1315,10 @@ Please gently inform the user of this situation:
           authProfile?.user?.isAdmin === true ||
           authProfile?.user?.email === "aj0892829122@gmail.com";
 
-        if (!isUserAdmin) {
+        const canCustomizeTier =
+          isUserAdmin || authProfile?.user?.subscriptionTier === "PROFESSIONAL";
+
+        if (!canCustomizeTier) {
           dbArgs.instanceType = "starter";
         }
         const db = await client.provisionDatabase(dbArgs);
