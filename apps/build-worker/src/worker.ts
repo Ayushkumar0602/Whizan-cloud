@@ -36,41 +36,16 @@ const SOURCE_BASE_DIR =
 const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
-
-const redisOptions = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  retryStrategy(times: number) {
-    return Math.min(times * 100, 3000);
-  },
-  reconnectOnError() {
-    return true;
-  },
-};
-
-// redisPub: used for publishing logs + cancel signals
-const redisPub = new Redis(REDIS_URL, redisOptions);
-redisPub.on("error", (err) => {
-  // Suppress uncaught error events when idle connections drop
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[RedisPub warn]", err.message);
-});
-
-// redisSub: dedicated subscriber connection (ioredis requirement)
-const redisSub = new Redis(REDIS_URL, redisOptions);
-redisSub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[RedisSub warn]", err.message);
-});
+import { redisPub, redisSub, redisOptions } from "./redis.js";
 
 const prisma = new PrismaClient();
 
 const appRunner = new AppRunner();
 
-// Shared queue for adding jobs programmatically
+// Shared queue for adding jobs programmatically (reuses shared redis connection)
 import { Queue } from "bullmq";
 const buildQueue = new Queue<BuildJob>("build", {
-  connection: new Redis(REDIS_URL, redisOptions),
+  connection: redisPub as any,
 });
 
 // ─── Worker ──────────────────────────────────────────────────────────────────

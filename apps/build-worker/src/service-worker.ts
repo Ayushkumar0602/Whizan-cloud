@@ -1,7 +1,6 @@
-import "dotenv/config";
 import { Worker, type Job } from "bullmq";
-import { Redis } from "ioredis";
 import { PrismaClient } from "@hostify/db";
+import { redisPub, redisSub, Redis } from "./redis.js";
 import { ServiceRunner, type ServiceBuildJob } from "./service-runner.js";
 import { publishLog } from "./log-streamer.js";
 import path from "path";
@@ -26,24 +25,6 @@ const SOURCE_BASE_DIR =
       : "/opt/whizan/sources";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
-
-const redisOptions = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  retryStrategy(times: number) {
-    return Math.min(times * 100, 3000);
-  },
-  reconnectOnError() {
-    return true;
-  },
-};
-
-const redisPub = new Redis(REDIS_URL, redisOptions);
-redisPub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[Service RedisPub warn]", err.message);
-});
-
 const prisma = new PrismaClient();
 const serviceRunner = new ServiceRunner();
 
@@ -413,12 +394,6 @@ worker.on("error", (err) => console.warn(`[Service Worker Queue warn]:`, err?.me
 
 // Export for testability or manual control
 export { worker };
-
-const redisSub = new Redis(REDIS_URL, redisOptions);
-redisSub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[Service RedisSub warn]", err.message);
-});
 
 const wakingUpServices = new Set<string>();
 

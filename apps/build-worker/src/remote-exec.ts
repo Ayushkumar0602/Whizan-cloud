@@ -1,37 +1,13 @@
 import Docker from "dockerode";
-import { Redis } from "ioredis";
+import { redisPub, redisSub } from "./redis.js";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-
-const redisOptions = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  retryStrategy(times: number) {
-    return Math.min(times * 100, 3000);
-  },
-  reconnectOnError() {
-    return true;
-  },
-};
-
-const redisPub = new Redis(REDIS_URL, redisOptions);
-redisPub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[RemoteExec Pub warn]", err.message);
-});
-
-const redisSub = new Redis(REDIS_URL, redisOptions);
-redisSub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[RemoteExec Sub warn]", err.message);
-});
 
 interface ActiveExecSession {
   sessionId: string;
   exec: any;
   stream: any;
-  sub: Redis;
+  onMessage: (channel: string, message: string) => void;
 }
 
 const activeSessions = new Map<string, ActiveExecSession>();
@@ -107,15 +83,33 @@ export async function initRemoteExec(): Promise<void> {
         Tty: true,
       });
 
-      // Dedicated Redis subscriber for this session
-      const sessionSub = new Redis(REDIS_URL, redisOptions);
-      sessionSub.on("error", () => {});
+      const inChan = `exec:in:${sessionId}`;
+      const resizeChan = `exec:resize:${sessionId}`;
+      const closeChan = `exec:close:${sessionId}`;
+
+      const onSessionMessage = (subChan: string, subMsg: string) => {
+        if (subChan === inChan) {
+          try {
+            const buf = Buffer.from(subMsg, "base64");
+            stream.write(buf);
+          } catch {}
+        } else if (subChan === resizeChan) {
+          try {
+            const dims = JSON.parse(subMsg);
+            if (dims.cols && dims.rows) {
+              exec.resize({ h: dims.rows, w: dims.cols }).catch(() => {});
+            }
+          } catch {}
+        } else if (subChan === closeChan) {
+          cleanupSession().catch(() => {});
+        }
+      };
 
       const session: ActiveExecSession = {
         sessionId,
         exec,
         stream,
-        sub: sessionSub,
+        onMessage: onSessionMessage,
       };
       activeSessions.set(sessionId, session);
 
@@ -127,12 +121,10 @@ export async function initRemoteExec(): Promise<void> {
       const cleanupSession = async () => {
         if (!activeSessions.has(sessionId)) return;
         activeSessions.delete(sessionId);
+        redisSub.off("message", onSessionMessage);
+        await redisSub.unsubscribe(inChan, resizeChan, closeChan).catch(() => {});
         try {
           stream.destroy();
-        } catch {}
-        try {
-          await sessionSub.unsubscribe();
-          await sessionSub.quit();
         } catch {}
       };
 
@@ -146,30 +138,9 @@ export async function initRemoteExec(): Promise<void> {
         await cleanupSession();
       });
 
-      // Subscribe to input, resize, close channels for this session
-      await sessionSub.subscribe(
-        `exec:in:${sessionId}`,
-        `exec:resize:${sessionId}`,
-        `exec:close:${sessionId}`
-      );
-
-      sessionSub.on("message", async (subChan, subMsg) => {
-        if (subChan === `exec:in:${sessionId}`) {
-          try {
-            const buf = Buffer.from(subMsg, "base64");
-            stream.write(buf);
-          } catch {}
-        } else if (subChan === `exec:resize:${sessionId}`) {
-          try {
-            const dims = JSON.parse(subMsg);
-            if (dims.cols && dims.rows) {
-              exec.resize({ h: dims.rows, w: dims.cols }).catch(() => {});
-            }
-          } catch {}
-        } else if (subChan === `exec:close:${sessionId}`) {
-          await cleanupSession();
-        }
-      });
+      // Subscribe to input, resize, close channels for this session using shared subscriber
+      redisSub.on("message", onSessionMessage);
+      await redisSub.subscribe(inChan, resizeChan, closeChan).catch(() => {});
 
       // Notify Render API that session is ready
       await redisPub.publish(

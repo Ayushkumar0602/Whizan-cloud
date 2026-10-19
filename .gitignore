@@ -39,6 +39,7 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+*.rdb
 
 # Hostify — build temp directories
 /tmp/hostify-builds/

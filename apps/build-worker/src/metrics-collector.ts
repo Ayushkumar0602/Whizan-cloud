@@ -1,26 +1,8 @@
 import Docker from "dockerode";
-import { Redis } from "ioredis";
 import { parseDockerStats, type MetricSnapshot } from "./metrics-helper.js";
+import { redisPub } from "./redis.js";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const docker = new Docker({ socketPath: "/var/run/docker.sock" });
-
-const redisOptions = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  retryStrategy(times: number) {
-    return Math.min(times * 100, 3000);
-  },
-  reconnectOnError() {
-    return true;
-  },
-};
-
-const redisPub = new Redis(REDIS_URL, redisOptions);
-redisPub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[MetricsCollector Pub warn]", err.message);
-});
 
 const prevSnapshots = new Map<string, MetricSnapshot>();
 

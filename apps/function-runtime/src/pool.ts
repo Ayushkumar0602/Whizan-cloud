@@ -78,14 +78,16 @@ export class FunctionPool {
   /**
    * Subscribes to Redis Pub/Sub for instant hot-reload and bundle eviction.
    */
+  private sub: Redis | null = null;
+
   private subscribeToReloadEvents(): void {
     if (!this.redis) return;
-    const sub = this.redis.duplicate();
-    sub.subscribe("fn:reload", (err: any) => {
+    this.sub = this.redis.duplicate();
+    this.sub.subscribe("fn:reload", (err: any) => {
       if (err) console.error("[FunctionPool] Failed to subscribe to fn:reload:", err.message);
     });
 
-    sub.on("message", (channel: string, message: string) => {
+    this.sub.on("message", (channel: string, message: string) => {
       if (channel === "fn:reload") {
         try {
           const { serviceId, version } = JSON.parse(message);
@@ -106,6 +108,10 @@ export class FunctionPool {
     if (this.sweepInterval) {
       clearInterval(this.sweepInterval);
       this.sweepInterval = null;
+    }
+    if (this.sub) {
+      this.sub.quit().catch(() => {});
+      this.sub = null;
     }
   }
 }

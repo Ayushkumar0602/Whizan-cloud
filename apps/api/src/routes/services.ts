@@ -996,10 +996,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       .filter(Boolean)
       .reverse();
 
-    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-    const sub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
-    sub.on("error", () => {});
-
+    const tickChan = `metrics:tick:${id}`;
     let isClosed = false;
 
     // Send initial snapshot event
@@ -1010,12 +1007,9 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       slug: service.slug,
     });
 
-    // Subscribe to live metrics ticks from VM worker
-    await sub.subscribe(`metrics:tick:${id}`).catch(() => {});
-
     let lastTickAt = Date.now();
-    sub.on("message", (channel, message) => {
-      if (channel === `metrics:tick:${id}` && !isClosed) {
+    const onTickMessage = (channel: string, message: string) => {
+      if (channel === tickChan && !isClosed) {
         try {
           const payload = JSON.parse(message);
           lastTickAt = Date.now();
@@ -1027,7 +1021,10 @@ export async function serviceRoutes(fastify: FastifyInstance) {
           });
         } catch {}
       }
-    });
+    };
+
+    redisSub.on("message", onTickMessage);
+    await redisSub.subscribe(tickChan).catch(() => {});
 
     // Periodic check to detect sleep/inactive state
     const interval = setInterval(async () => {
@@ -1045,8 +1042,8 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     request.raw.on("close", () => {
       isClosed = true;
       clearInterval(interval);
-      sub.unsubscribe().catch(() => {});
-      sub.quit().catch(() => {});
+      redisSub.off("message", onTickMessage);
+      redisSub.unsubscribe(tickChan).catch(() => {});
     });
   });
 
@@ -1226,46 +1223,21 @@ export async function serviceRoutes(fastify: FastifyInstance) {
 
     // 4b. Remote Exec Bridge to Compute Worker via Redis Pub/Sub
     const sessionId = `exec_${randomUUID()}`;
-    const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-    const sessionSub = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
-    sessionSub.on("error", () => {});
+    const readyChan = `exec:ready:${sessionId}`;
+    const outChan = `exec:out:${sessionId}`;
+    const errorChan = `exec:error:${sessionId}`;
+    const exitChan = `exec:exit:${sessionId}`;
 
     let isSessionActive = true;
     let lineBuffer = "";
 
-    const cleanupBridge = async () => {
-      if (!isSessionActive) return;
-      isSessionActive = false;
-      await redisClient.publish(`exec:close:${sessionId}`, "1").catch(() => {});
-      try {
-        await sessionSub.unsubscribe();
-        await sessionSub.quit();
-      } catch {}
-    };
+    let timeoutTimer: NodeJS.Timeout | null = null;
 
-    await sessionSub.subscribe(
-      `exec:ready:${sessionId}`,
-      `exec:out:${sessionId}`,
-      `exec:error:${sessionId}`,
-      `exec:exit:${sessionId}`
-    );
-
-    const timeoutTimer = setTimeout(() => {
-      if (isSessionActive) {
-        socket.send(JSON.stringify({
-          type: "error",
-          message: `Connection timeout: Build worker did not respond. If the container is sleeping, wake it up first.`
-        }));
-        socket.close(4004, "Worker timeout");
-        cleanupBridge();
-      }
-    }, 12_000);
-
-    sessionSub.on("message", (subChan, subMsg) => {
+    const onSessionMessage = (subChan: string, subMsg: string) => {
       if (!isSessionActive) return;
 
-      if (subChan === `exec:ready:${sessionId}`) {
-        clearTimeout(timeoutTimer);
+      if (subChan === readyChan) {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
         try {
           const data = JSON.parse(subMsg);
           socket.send(JSON.stringify({
@@ -1275,22 +1247,22 @@ export async function serviceRoutes(fastify: FastifyInstance) {
             slug: service.slug,
           }));
         } catch {}
-      } else if (subChan === `exec:out:${sessionId}`) {
+      } else if (subChan === outChan) {
         try {
           const text = Buffer.from(subMsg, "base64").toString("utf8");
           if (socket.readyState === 1) {
             socket.send(JSON.stringify({ type: "output", data: text }));
           }
         } catch {}
-      } else if (subChan === `exec:exit:${sessionId}`) {
-        clearTimeout(timeoutTimer);
+      } else if (subChan === exitChan) {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
         if (socket.readyState === 1) {
           socket.send(JSON.stringify({ type: "exit" }));
           socket.close(1000, "Process exited");
         }
         cleanupBridge();
-      } else if (subChan === `exec:error:${sessionId}`) {
-        clearTimeout(timeoutTimer);
+      } else if (subChan === errorChan) {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
         try {
           const errData = JSON.parse(subMsg);
           socket.send(JSON.stringify({
@@ -1303,7 +1275,30 @@ export async function serviceRoutes(fastify: FastifyInstance) {
         socket.close(4004, "Exec error");
         cleanupBridge();
       }
-    });
+    };
+
+    const cleanupBridge = async () => {
+      if (!isSessionActive) return;
+      isSessionActive = false;
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      await redisClient.publish(`exec:close:${sessionId}`, "1").catch(() => {});
+      redisSub.off("message", onSessionMessage);
+      await redisSub.unsubscribe(readyChan, outChan, errorChan, exitChan).catch(() => {});
+    };
+
+    redisSub.on("message", onSessionMessage);
+    await redisSub.subscribe(readyChan, outChan, errorChan, exitChan).catch(() => {});
+
+    timeoutTimer = setTimeout(() => {
+      if (isSessionActive) {
+        socket.send(JSON.stringify({
+          type: "error",
+          message: `Connection timeout: Build worker did not respond. If the container is sleeping, wake it up first.`
+        }));
+        socket.close(4004, "Worker timeout");
+        cleanupBridge();
+      }
+    }, 12_000);
 
     socket.on("message", async (raw: any) => {
       if (!isSessionActive) return;

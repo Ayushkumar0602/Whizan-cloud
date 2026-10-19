@@ -1,11 +1,10 @@
 import { FastifyInstance } from "fastify";
 import { PrismaClient } from "@hostify/db";
-import { Redis } from "ioredis";
+import { redisClient } from "../lib/redis.js";
 import { signAdminPayload, isRootAdmin, ROOT_ADMIN_EMAIL } from "../lib/auth-utils.js";
 
 const prisma = new PrismaClient();
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const redis = new Redis(REDIS_URL, { maxRetriesPerRequest: null, enableReadyCheck: false });
+const redis = redisClient;
 
 async function publishAdminCommand(payload: Record<string, any>) {
   const signed = signAdminPayload(payload);

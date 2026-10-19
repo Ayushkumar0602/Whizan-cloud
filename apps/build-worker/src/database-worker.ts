@@ -1,29 +1,9 @@
-import "dotenv/config";
 import { Worker, type Job } from "bullmq";
-import { Redis } from "ioredis";
 import { PrismaClient } from "@hostify/db";
 import { DatabaseRunner, type ProvisionDatabaseOptions } from "./database-runner.js";
 import { publishLog } from "./log-streamer.js";
 import { decrypt } from "./crypto.js";
-
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-
-const redisOptions = {
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-  retryStrategy(times: number) {
-    return Math.min(times * 100, 3000);
-  },
-  reconnectOnError() {
-    return true;
-  },
-};
-
-const redisPub = new Redis(REDIS_URL, redisOptions);
-redisPub.on("error", (err) => {
-  if (err.message?.includes("Connection is closed")) return;
-  console.warn("[Database RedisPub warn]", err.message);
-});
+import { redisPub, redisOptions, Redis, REDIS_URL } from "./redis.js";
 
 const prisma = new PrismaClient();
 const databaseRunner = new DatabaseRunner();
