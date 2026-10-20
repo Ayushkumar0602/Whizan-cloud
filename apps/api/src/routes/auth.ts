@@ -22,8 +22,8 @@ const SendOtpSchema = z.object({
 });
 
 const VerifyOtpSchema = z.object({
-  email: z.string().email(),
-  passcode: z.string().min(6).max(6),
+  email: z.string().email().optional(),
+  passcode: z.string().trim().min(6).max(6),
 });
 
 const LoginSchema = z.object({
@@ -163,7 +163,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!body.success) {
       return reply.code(400).send({ error: "Invalid passcode format. Must be 6 digits." });
     }
-    const { email, passcode } = body.data;
+    const { passcode } = body.data;
+    const email = body.data.email || (request.body as any)?.email;
+    if (!email) {
+      return reply.code(400).send({ error: "Email is required for OTP verification." });
+    }
     const normalizedEmail = email.trim().toLowerCase();
 
     const entry = otpMemoryStore.get(normalizedEmail);
@@ -458,15 +462,15 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
       const { passcode } = body.data;
       const { userId, email } = request.user;
-      const normalizedEmail = email.trim().toLowerCase();
+      const targetEmail = (body.data.email || email || "").trim().toLowerCase();
 
-      const entry = otpMemoryStore.get(normalizedEmail);
+      const entry = otpMemoryStore.get(targetEmail);
       let storedCode = entry?.code;
       let isExpired = entry ? entry.expiresAt < Date.now() : true;
 
       if (!storedCode) {
         try {
-          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+          const redisCode = await redisClient.get(`otp:${targetEmail}`);
           if (redisCode) {
             storedCode = redisCode;
             isExpired = false;
@@ -483,9 +487,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       }
 
       // Consume OTP
-      otpMemoryStore.delete(normalizedEmail);
+      otpMemoryStore.delete(targetEmail);
       try {
-        await redisClient.del(`otp:${normalizedEmail}`);
+        await redisClient.del(`otp:${targetEmail}`);
       } catch {}
 
       // Mark email as verified in DB

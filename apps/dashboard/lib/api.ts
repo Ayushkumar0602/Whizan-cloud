@@ -248,7 +248,7 @@ export const auth = {
       method: "POST",
     }),
 
-  verifyEmail: (data: { passcode: string }) =>
+  verifyEmail: (data: { passcode: string; email?: string }) =>
     request<{ ok: boolean; message: string; user: User }>("/api/auth/verify-email", {
       method: "POST",
       body: JSON.stringify(data),
