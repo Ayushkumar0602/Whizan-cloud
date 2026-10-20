@@ -22,6 +22,14 @@ export const metadata: Metadata = {
   description:
     "Deploy Next.js frontends, Dockerized backends, and manage your private service mesh on the Whizan Cloud developer platform.",
   keywords: ["cloud hosting", "Next.js deployment", "Docker hosting", "developer platform"],
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/whizan_icon.png", type: "image/png" },
+    ],
+    shortcut: "/whizan_icon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
