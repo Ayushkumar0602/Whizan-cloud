@@ -33,13 +33,13 @@ services:
       - key: GITHUB_CLIENT_SECRET
         sync: false
       - key: GITHUB_CALLBACK_URL
-        sync: false # e.g. https://whizan-api.onrender.com/api/auth/github/callback
+        sync: false # e.g. https://api.whizan.cloud/api/auth/github/callback
       - key: GITHUB_TOKEN
         sync: false
       - key: DASHBOARD_URL
-        sync: false # e.g. https://whizan-dashboard.onrender.com
+        sync: false # e.g. https://dashboard.whizan.cloud
       - key: BASE_DOMAIN
-        sync: false # e.g. 20.2.136.11.nip.io
+        sync: false # e.g. whizan.cloud
       - key: INTERNAL_SECRET
         sync: false
       - key: INTERNAL_MESH_TOKEN

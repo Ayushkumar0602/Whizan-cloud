@@ -63,7 +63,12 @@ export async function agentRoutes(fastify: FastifyInstance) {
     const reqOrigin = request.headers.origin || "";
     const originAllowed =
       !reqOrigin ||
-      reqOrigin === (process.env.DASHBOARD_URL || "http://localhost:3000") ||
+      reqOrigin === (process.env.DASHBOARD_URL || "https://dashboard.whizan.cloud") ||
+      reqOrigin === "https://whizan.cloud" ||
+      reqOrigin === "https://www.whizan.cloud" ||
+      reqOrigin === "https://dashboard.whizan.cloud" ||
+      reqOrigin === "https://api.whizan.cloud" ||
+      /^https?:\/\/([a-z0-9-]+\.)*whizan\.cloud(:\d+)?$/i.test(reqOrigin) ||
       /^https?:\/\/[a-z0-9-]+\.onrender\.com$/i.test(reqOrigin) ||
       /^https?:\/\/[a-z0-9-]+\.vercel\.app$/i.test(reqOrigin) ||
       /^http:\/\/localhost(:\d+)?$/i.test(reqOrigin) ||

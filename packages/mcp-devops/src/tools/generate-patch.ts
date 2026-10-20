@@ -29,7 +29,7 @@ export function generatePatch(params: {
       return {
         issue: "cors_setup",
         description: "Enables Cross-Origin Resource Sharing (CORS) with support for credentials and frontend domains.",
-        suggestedCode: `import cors from "cors";\n\napp.use(cors({\n  origin: [\n    "${frontendOrigin}",\n    "http://localhost:3000",\n    /^https?:\\/\\/.*\\.web\\.app$/,\n    /^https?:\\/\\/.*\\.firebaseapp\\.com$/,\n    /^https?:\\/\\/.*\\.vercel\\.app$/\n  ],\n  credentials: true,\n}));`,
+        suggestedCode: `import cors from "cors";\n\napp.use(cors({\n  origin: [\n    "${frontendOrigin}",\n    "https://whizan.cloud",\n    "https://dashboard.whizan.cloud",\n    /^https?:\\/\\/([a-z0-9-]+\\.)*whizan\\.cloud$/,\n    "http://localhost:3000",\n    /^https?:\\/\\/.*\\.web\\.app$/,\n    /^https?:\\/\\/.*\\.firebaseapp\\.com$/,\n    /^https?:\\/\\/.*\\.vercel\\.app$/\n  ],\n  credentials: true,\n}));`,
         filesToUpdate: ["src/index.ts", "src/server.ts", "index.js", "server.js"],
       };
 

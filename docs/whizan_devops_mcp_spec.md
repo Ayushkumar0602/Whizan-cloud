@@ -54,7 +54,7 @@ Modern "vibe coders" and full-stack developers frequently construct complex appl
 4. **Remediation**: The AI agent modifies user code (ports, hosts, CORS, scripts).
 5. **Secure Dispatch**: MCP encrypts `.env` variables and registers the project via the Whizan API.
 6. **Live Telemetry**: MCP streams live build logs via SSE back into the agent context.
-7. **Post-Deploy Wiring**: MCP provides the live URL (e.g. `https://api-service.20.2.136.11.nip.io`); the AI agent updates client API configs.
+7. **Post-Deploy Wiring**: MCP provides the live URL (e.g. `https://api-service.whizan.cloud`); the AI agent updates client API configs.
 
 ---
 
@@ -103,7 +103,7 @@ Before code can deploy successfully on Whizan's isolated Docker architecture, th
 
 ### Feature 6: End-to-End Rewiring & Verification
 - Once the backend is `READY`:
-  - Whizan assigns a public ingress URL: `https://<service-slug>.20.2.136.11.nip.io`.
+  - Whizan assigns a public ingress URL: `https://<service-slug>.whizan.cloud`.
   - The AI agent finds frontend configuration files (e.g., `src/api/client.ts`, `.env.production`, `VITE_API_URL`, `NEXT_PUBLIC_API_URL`).
   - Automatically updates the base URL from `http://localhost:5000` to the live Whizan URL.
   - Sends a test HTTP health check request to verify the new live link.
@@ -142,7 +142,7 @@ Before code can deploy successfully on Whizan's isolated Docker architecture, th
     2. Alternatively, MCP detects the hardcoded port (e.g., `5000`) and passes `internalPort: 5000` during `whizan_create_service`, aligning Whizan's health check with user code.
 
 ### Edge Case 3: CORS Rejection Between Decoupled Frontends and Whizan Backends
-- **The Issue**: User deploys backend to Whizan (`https://api.20.2.136.11.nip.io`) while their frontend is on Firebase (`https://my-app.web.app`). When the frontend calls the backend, the browser blocks the request due to missing CORS headers.
+- **The Issue**: User deploys backend to Whizan (`https://api-service.whizan.cloud`) while their frontend is on Firebase (`https://my-app.web.app`). When the frontend calls the backend, the browser blocks the request due to missing CORS headers.
 - **Solution**:
   - MCP asks for or detects the frontend URL.
   - Automatically installs/configures `cors` middleware in Express/Fastify:

@@ -190,7 +190,7 @@ A major design goal of Whizan Edge Functions is **effortless survivability acros
 ### What happens when you turn off and restart the Azure VM?
 1. The VM powers off. Local RAM and active memory pools are cleared.
 2. The VM boots up. Systemd brings up PM2 with `edge-router` (:80) and `whizan-functions` (:9090).
-3. The first incoming request hits `http://smart-study-api.fn.20.2.136.11.nip.io/sendMessage`.
+3. The first incoming request hits `http://smart-study-api.fn.whizan.cloud/sendMessage`.
 4. `edge-router` queries Render API `/api/functions/internal/resolve/smart-study-api` if Redis key is cold.
 5. `function-runtime` compiles or loads the bundle from PostgreSQL/Redis on-the-fly.
 6. The request succeeds with **HTTP 200 OK** on the very first try without requiring any redeployment or SSH commands.

@@ -63,7 +63,7 @@ Add the following to your IDE's MCP config (e.g. `~/.gemini/antigravity-ide/mcp_
 8. `whizan_provision_database` — Provisions managed PostgreSQL, Redis, or MySQL databases with connection pooling.
 9. `whizan_get_build_logs` — **PHASE 5**: Polls execution logs and build status from the Azure VM worker.
 10. `whizan_set_env_vars` — **PHASE 2**: Encrypts and registers environment variables before build starts.
-11. `whizan_check_health` — **PHASE 6**: Pings public HTTP URL (`http://<slug>.20.2.136.11.nip.io/health`) to confirm readiness.
+11. `whizan_check_health` — **PHASE 6**: Pings public HTTPS URL (`https://<slug>.whizan.cloud/health`) to confirm readiness.
 12. `whizan_redeploy` — Triggers fresh deployment using cached source code or a specified Git branch.
 13. `whizan_link_git_repo` — Connects a public/private GitHub repository for automated builds.
 14. `whizan_delete_resource` — Completely stops, purges Docker containers, and removes disk volumes for a service/project.

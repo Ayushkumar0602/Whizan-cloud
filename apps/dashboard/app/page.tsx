@@ -118,7 +118,7 @@ export default function LandingPage() {
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
               <span className="font-mono text-xs font-semibold text-slate-600">WHIZAN CLOUD SERVICE MESH</span>
             </div>
-            <div className="text-xs text-slate-400 font-mono">20.2.136.11 • HTTP / HTTPS EDGE PROXY</div>
+            <div className="text-xs text-slate-400 font-mono">whizan.cloud • HTTP / HTTPS EDGE PROXY</div>
           </div>
           
           <div className="architecture-grid">

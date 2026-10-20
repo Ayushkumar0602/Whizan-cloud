@@ -59,16 +59,14 @@ Base64 encoding increases file payload size by ~33%. Uploading tarballs larger t
 
 ---
 
-## 4. Port 80 HTTP Ingress vs HTTPS Routing
+## 4. Cloudflare Zero-Maintenance Wildcard SSL & Custom Domain
+ 
+### Behavior:
+Deployments are accessible via `https://<slug>.whizan.cloud` with end-to-end SSL termination handled by Cloudflare Edge Proxy.
 
-### Symptom:
-`whizan_check_health` fails with SSL certificate validation error `ERR_SSL_PROTOCOL_ERROR` or connection refused when pings are sent to `https://<slug>.20.2.136.11.nip.io`.
-
-### Root Cause:
-The Azure VM Edge Router (`20.2.136.11`) currently operates on Port 80 HTTP for wildcard `*.nip.io` domains.
-
-### Solution:
-* **Protocol Rule**: Always format health check URLs as `http://<slug>.20.2.136.11.nip.io` (never `https://`).
+### Protocol Rule:
+* Format health check URLs as `https://<slug>.whizan.cloud`.
+* For legacy nip.io endpoints, use `http://<slug>.20.2.136.11.nip.io`.
 
 ---
 

@@ -701,7 +701,7 @@ func main() {
                 <div className="gui-params-grid">
                   <div className="gui-param-item">
                     <span className="gui-label">Host</span>
-                    <span className="gui-val mono">{db.externalHost || "20.2.136.11"}</span>
+                    <span className="gui-val mono">{db.externalHost || "db.whizan.cloud"}</span>
                   </div>
                   <div className="gui-param-item">
                     <span className="gui-label">Port</span>

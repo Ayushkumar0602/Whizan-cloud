@@ -274,8 +274,8 @@ When an incoming request reaches the Edge Router:
 ## 🌐 5. Edge Router Ingress & Request Dispatching
 
 The Edge Router (`apps/edge-router/src/index.ts`) intercepts wildcard function domains:
-- Format: `<slug>.fn.20.2.136.11.nip.io` or `<slug>.fn.whizan.cloud`
-- Path-based alternative: `20.2.136.11.nip.io/fn/<slug>/<path>`
+- Format: `<slug>.fn.whizan.cloud`
+- Path-based alternative: `whizan.cloud/fn/<slug>/<path>`
 
 ### Route Resolution Pipeline
 

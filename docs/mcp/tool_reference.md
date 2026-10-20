@@ -165,7 +165,7 @@ Provisions a dedicated managed database container with automatic persistent volu
 * **Input Parameters**:
   | Parameter | Type | Required | Description |
   |---|---|---|---|
-  | `url` | `string` | **Yes** | Full HTTP URL (e.g., `http://<slug>.20.2.136.11.nip.io/health`). |
+  | `url` | `string` | **Yes** | Full HTTPS URL (e.g., `https://<slug>.whizan.cloud/health`). |
 
 * **Returns**: `{ "ok": true, "statusCode": 200, "responseTimeMs": 42 }`.
 

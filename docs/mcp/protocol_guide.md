@@ -60,8 +60,8 @@ whizan_check_health   ◄── whizan_get_build_logs  ◄── whizan_deploy_d
 
 ### Phase 6: Live Health Check (`whizan_check_health`)
 * **Objective**: Perform empirical HTTP verification of the live application URL.
-* **Mandatory Action**: Call `whizan_check_health` targeting `http://<slug>.20.2.136.11.nip.io/health` (or root `/`).
-* **Critical Protocol Rule**: Always use `http://` (NEVER `https://`) when testing `*.20.2.136.11.nip.io` domain endpoints because the Azure VM Edge Router operates on Port 80 HTTP.
+* **Mandatory Action**: Call `whizan_check_health` targeting `https://<slug>.whizan.cloud/health` (or root `/`).
+* **Protocol Rule**: Use `https://<slug>.whizan.cloud` secured via Cloudflare Zero-Maintenance Wildcard SSL.
 * **Success Criteria**: Only declare deployment success after `whizan_check_health` returns `ok: true` (HTTP 200 or 204).
 
 ---
@@ -71,4 +71,4 @@ whizan_check_health   ◄── whizan_get_build_logs  ◄── whizan_deploy_d
 1. **No Blind Deployments**: Always start with `whizan_analyze_workspace`.
 2. **Never Ignore `0.0.0.0`**: If `127.0.0.1` is detected in server listening code, patch it to `0.0.0.0` before deploying.
 3. **No Premature Exit**: Never stop execution after `whizan_deploy_direct`. You MUST poll build logs until status is `READY`.
-4. **Always Health Check**: Verify live HTTP 200 status using `whizan_check_health` on Port 80 HTTP before reporting completion.
+4. **Always Health Check**: Verify live HTTPS 200 status using `whizan_check_health` on `https://<slug>.whizan.cloud` before reporting completion.

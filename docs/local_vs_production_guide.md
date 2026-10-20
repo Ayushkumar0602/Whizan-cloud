@@ -28,7 +28,7 @@ Here is the complete list of files updated:
 |---|-----------|-------|---------|
 | 1 | `apps/dashboard/lib/api.ts` | Frontend API Client | Dynamically resolve API URL: prioritize `http://localhost:8000` when accessed via `localhost`/`127.0.0.1` in the browser. |
 | 2 | `apps/dashboard/next.config.ts` | Next.js Server Config | Route `/api/:path*` rewrites to `http://localhost:8000` in development mode (`isDev`), and `https://api.whizan.cloud` in production. |
-| 3 | `apps/dashboard/lib/domains.ts` | Ingress Router Domain | Dynamically resolve Edge Router domain: use `localhost:8080` when on localhost, and `20.2.136.11.nip.io` in production. |
+| 3 | `apps/dashboard/lib/domains.ts` | Ingress Router Domain | Dynamically resolve Edge Router domain: use `localhost:8080` when on localhost, and `whizan.cloud` in production. |
 | 4 | `apps/dashboard/lib/auth.tsx` | Session Management | Call `getApiBase()` dynamically instead of static constant for session token refresh (`/api/auth/refresh`). |
 | 5 | `apps/dashboard/components/service-logs.tsx` | Backend Logs Streaming | Use `getApiBase()` for SSE log stream URL instead of hardcoded Render URL. |
 | 6 | `apps/dashboard/components/service-shell.tsx` | Interactive Web Terminal | Use `getApiBase()` to construct WebSocket (`ws://` vs `wss://`) connection to the API. |
@@ -119,7 +119,7 @@ Here is the complete list of files updated:
 +  ) {
 +    return process.env.NEXT_PUBLIC_BASE_DOMAIN || "localhost:8080";
 +  }
-+  return process.env.NEXT_PUBLIC_BASE_DOMAIN || "20.2.136.11.nip.io";
++  return process.env.NEXT_PUBLIC_BASE_DOMAIN || "whizan.cloud";
 +}
 +
 +export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
@@ -221,13 +221,13 @@ Ensure your production services have the following environment variables configu
 
 #### Vercel (`apps/dashboard`):
 - `NEXT_PUBLIC_API_URL`: `https://api.whizan.cloud`
-- `NEXT_PUBLIC_BASE_DOMAIN`: `20.2.136.11.nip.io`
+- `NEXT_PUBLIC_BASE_DOMAIN`: `whizan.cloud`
 
 #### Azure VM (`apps/build-worker` & `apps/edge-router`):
 - `DATABASE_URL`: Same Supabase connection string.
 - `REDIS_URL`: Same Upstash Redis connection string.
 - `ENCRYPTION_KEY`: Same AES key.
-- `BASE_DOMAIN`: `20.2.136.11.nip.io`
+- `BASE_DOMAIN`: `whizan.cloud`
 - Run PM2 restart:
   ```bash
   pm2 restart all

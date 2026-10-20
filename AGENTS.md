@@ -73,7 +73,7 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
 
 7. **Phase 6: Live Health Check**:
    - Once build finishes with `READY` or `ACTIVE`, call `whizan_check_health`.
-   - **Protocol rule**: Use `https://<slug>.whizan.cloud` (secured via Cloudflare Zero-Maintenance Wildcard SSL) or `http://<slug>.20.2.136.11.nip.io`.
+   - **Protocol rule**: Use `https://<slug>.whizan.cloud` (secured via Cloudflare Zero-Maintenance Wildcard SSL).
    - Only declare success after `whizan_check_health` returns `ok: true` (HTTP 200/204). Background workers are verified by continuous process running status.
 
 8. **Phase 7: Live Diagnostics, Container Exec, Inspection & Analytics (Post-Deployment Tooling)**:

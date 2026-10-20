@@ -22,7 +22,7 @@ async function runTest() {
     targetId: "srv_test_8899aabb",
     targetType: "service",
     framework: "Express",
-    liveUrl: "http://handshake-api.20.2.136.11.nip.io",
+    liveUrl: "https://handshake-api.whizan.cloud",
     lastDeployedAt: new Date().toISOString(),
   });
 
@@ -116,7 +116,7 @@ async function runTest() {
     slug: "handshake-api",
     lastDeploymentId: newDeploymentId,
     lastDeploymentStatus: "ACTIVE",
-    liveUrl: "http://handshake-api.20.2.136.11.nip.io",
+    liveUrl: "https://handshake-api.whizan.cloud",
     lastDeployedAt: new Date().toISOString(),
   });
 

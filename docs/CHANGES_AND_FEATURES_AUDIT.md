@@ -101,7 +101,7 @@ Expanded the Model Context Protocol (MCP) server for autonomous agents and DevOp
 | `whizan_exec_container_command` | Executes diagnostic commands inside running containers (`df -h`, `ps aux`, `cat`, `curl`). Blocks dangerous operations (`rm`, `dd`, `mkfs`, `poweroff`, `chmod 777`, crypto miners, reverse shells). Automatically masks JWTs, API tokens, and passwords in stdout. |
 | `whizan_inspect_deployment` | Live container runtime inspection: inspects Docker status, mapped ports, restart counters, container ID, and memory limits. |
 | `whizan_get_analytics` | Unified analytics: returns page visits, bandwidth usage, and real-time CPU/memory utilization for services. |
-| `whizan_check_health` | Probes HTTP endpoints with auto-fallback from HTTPS to HTTP for `.nip.io` domains (matching VM Port 80 Edge Router). |
+| `whizan_check_health` | Probes HTTPS endpoints on `*.whizan.cloud` with Cloudflare Wildcard SSL (and auto-fallback to HTTP for legacy `.nip.io` domains). |
 | Background Worker Support | Allows setting `internalPort: 0` and `isWorker: true` for queue workers (Celery, BullMQ, Kafka consumers), verifying process liveness instead of probing HTTP. |
 
 ---

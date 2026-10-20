@@ -127,7 +127,7 @@ Building complex multi-step pipelines can feel daunting. With Whizan Flow's buil
 * **Goal:** Zero downtime releases, automated database migrations, and QA signoff.
 * **Workflow:**
   1. **Trigger:** GitHub Pull Request opened.
-  2. **Step 1:** Deploys an isolated ephemeral Preview Environment on a temporary subdomain (`pr-42.app.nip.io`).
+  2. **Step 1:** Deploys an isolated ephemeral Preview Environment on a temporary subdomain (`pr-42.whizan.cloud`).
   3. **Step 2:** Seeds test database with mock tenant data.
   4. **Step 3:** Executes Playwright end-to-end smoke tests against the preview URL.
   5. **Step 4:** Comments on the GitHub PR with the live preview link and test results.

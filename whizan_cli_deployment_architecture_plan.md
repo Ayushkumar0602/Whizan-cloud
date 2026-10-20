@@ -43,7 +43,7 @@
 ```
 User runs: whizan login
   → CLI spins up ephemeral HTTP server on localhost random port
-  → Opens browser to https://dashboard.vercel.app/mcp/connect?port=PORT
+  → Opens browser to https://dashboard.whizan.cloud/mcp/connect?port=PORT
   → User clicks "Authorize" on dashboard
   → Dashboard POSTs token back to localhost:PORT/callback?token=xxx&email=xxx
   → CLI saves to ~/.whizan/config.json
@@ -203,12 +203,12 @@ $ whizan deploy
   ✔ Build complete: ACTIVE
 
   [6/6] 🌐 Health check...
-  ✔ HTTP 200 OK (http://my-express-api.20.2.136.11.nip.io) — 142ms
+  ✔ HTTP 200 OK (https://my-express-api.whizan.cloud) — 142ms
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   🎉 Deploy successful!
-  🔗 http://my-express-api.20.2.136.11.nip.io
-  📋 Dashboard: https://dashboard.vercel.app/dashboard/services/svc_abc123
+  🔗 https://my-express-api.whizan.cloud
+  📋 Dashboard: https://dashboard.whizan.cloud/dashboard/services/svc_abc123
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
@@ -229,7 +229,7 @@ $ whizan deploy
   [6/6] 🌐 Health check... ✔ 200 OK (128ms)
 
   🎉 Redeployed successfully!
-  🔗 http://my-express-api.20.2.136.11.nip.io
+  🔗 https://my-express-api.whizan.cloud
 ```
 
 ---
