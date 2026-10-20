@@ -258,11 +258,16 @@ const server = http.createServer(async (req, res) => {
   // Extract slug from subdomain: my-app.localhost → my-app
   // Also handles custom domains
   let slug: string;
-  if (host.endsWith(`.${BASE_DOMAIN}`) || host.endsWith(`.${BASE_DOMAIN}:${ROUTER_PORT}`)) {
-    slug = host.split(".")[0];
+  const cleanHost = host.toLowerCase().replace(/:.*$/, "");
+  if (cleanHost.endsWith(`.${BASE_DOMAIN}`)) {
+    slug = cleanHost.slice(0, -(BASE_DOMAIN.length + 1)).split(".")[0];
+  } else if (cleanHost.endsWith(".whizan.cloud")) {
+    slug = cleanHost.slice(0, -".whizan.cloud".length).split(".")[0];
+  } else if (cleanHost.endsWith(".20.2.136.11.nip.io")) {
+    slug = cleanHost.slice(0, -".20.2.136.11.nip.io".length).split(".")[0];
   } else {
     // Treat the whole host as a custom domain key
-    slug = host.replace(/:.*$/, ""); // strip port
+    slug = cleanHost;
   }
   // Sanitize slug against malicious characters / CRLF / path traversal
   slug = slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
