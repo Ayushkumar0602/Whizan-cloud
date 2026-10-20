@@ -429,6 +429,17 @@ const worker = new Worker<BuildJob>(
                 await container.remove({ force: true });
               } catch { }
             }
+            // Remove old project Docker images if this was a containerized project
+            try {
+              const allImages = await docker.listImages({ all: true }).catch(() => []);
+              const oldProjectImages = allImages.filter((img: any) =>
+                img.RepoTags?.some((t: string) => t.includes(`project-img-${slug}-${old.id.slice(0, 8)}`))
+              );
+              for (const img of oldProjectImages) {
+                await docker.getImage(img.Id).remove({ force: true }).catch(() => {});
+              }
+            } catch {}
+
             // Delete old build files (node_modules, packages, build outputs)
             await fs.rm(path.join(BUILD_BASE_DIR, old.id), { recursive: true, force: true }).catch(() => { });
             // Clear old upload chunk keys in Redis if any lingered
@@ -622,7 +633,25 @@ redisSub.on("message", async (channel, message) => {
           }
         }
 
-        // 2. Remove all build and persistent source directories on VM disk
+        // 2. Remove any Docker images built for this service
+        try {
+          const allImages = await docker.listImages({ all: true }).catch(() => []);
+          const serviceImages = allImages.filter((img: any) =>
+            img.RepoTags?.some((t: string) =>
+              t.startsWith(`service-img-${slug}-`) ||
+              t.startsWith(`service-img-${serviceId}-`) ||
+              t.startsWith(`whizan-service-${slug}`)
+            )
+          );
+          for (const img of serviceImages) {
+            await docker.getImage(img.Id).remove({ force: true }).catch(() => { });
+            console.log(`[Admin] Removed service Docker image ${img.RepoTags?.[0] || img.Id}`);
+          }
+        } catch (imgErr: any) {
+          console.warn("[Admin] Error cleaning service images:", imgErr.message);
+        }
+
+        // 3. Remove all build and persistent source directories on VM disk
         try {
           const sourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
           await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
@@ -637,10 +666,14 @@ redisSub.on("message", async (channel, message) => {
           console.error(`[Admin] Error cleaning service files:`, err.message);
         }
 
-        // 3. Clear edge-router routing key
+        // 4. Clear edge-router routing key
         if (slug) {
           await redisPub.del(`deployment:${slug}`).catch(() => { });
         }
+
+        // 5. Sweep orphaned BuildKit cache layers in background
+        const { exec } = await import("child_process");
+        exec("docker builder prune -f && docker image prune -f", () => { });
         return;
       }
 
@@ -667,7 +700,24 @@ redisSub.on("message", async (channel, message) => {
           }
         }
 
-        // 2. Remove build and persistent source directories on VM disk
+        // 2. Remove any custom Docker images built for this project
+        try {
+          const allImages = await docker.listImages({ all: true }).catch(() => []);
+          const projectImages = allImages.filter((img: any) =>
+            img.RepoTags?.some((t: string) =>
+              t.startsWith(`project-img-${slug}-`) ||
+              t.startsWith(`project-img-${projectId}-`)
+            )
+          );
+          for (const img of projectImages) {
+            await docker.getImage(img.Id).remove({ force: true }).catch(() => { });
+            console.log(`[Admin] Removed project Docker image ${img.RepoTags?.[0] || img.Id}`);
+          }
+        } catch (imgErr: any) {
+          console.warn("[Admin] Error cleaning project images:", imgErr.message);
+        }
+
+        // 3. Remove build and persistent source directories on VM disk
         try {
           const sourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
           await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
@@ -682,10 +732,14 @@ redisSub.on("message", async (channel, message) => {
           console.error(`[Admin] Error cleaning project files:`, err.message);
         }
 
-        // 3. Clear edge-router routing key
+        // 4. Clear edge-router routing key
         if (slug) {
           await redisPub.del(`deployment:${slug}`).catch(() => { });
         }
+
+        // 5. Sweep orphaned BuildKit cache layers in background
+        const { exec } = await import("child_process");
+        exec("docker builder prune -f && docker image prune -f", () => { });
         return;
       }
 

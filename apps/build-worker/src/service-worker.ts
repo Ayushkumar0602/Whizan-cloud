@@ -319,6 +319,20 @@ const worker = new Worker<ServiceBuildJob>(
           select: { id: true },
         });
 
+        // Clean up obsolete Docker images of previous deployments
+        try {
+          const allImages = await docker.listImages({ all: true }).catch(() => []);
+          const oldServiceImages = allImages.filter((img: any) =>
+            img.RepoTags?.some((t: string) =>
+              oldDeployments.some((oldD) => t.includes(`service-img-${slug}-${oldD.id.slice(0, 8)}`))
+            )
+          );
+          for (const img of oldServiceImages) {
+            await docker.getImage(img.Id).remove({ force: true }).catch(() => {});
+            console.log(`[Service Worker] Removed obsolete image ${img.RepoTags?.[0] || img.Id}`);
+          }
+        } catch {}
+
         for (const oldD of oldDeployments) {
           const oldDir = path.join(BUILD_BASE_DIR, oldD.id);
           await fs.rm(oldDir, { recursive: true, force: true }).catch(() => {});
