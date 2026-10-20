@@ -12,7 +12,14 @@ import crypto from "crypto";
 
 const ROUTER_PORT = Number(process.env.ROUTER_PORT) || 8080;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
+const rawBaseDomain = (process.env.BASE_DOMAIN || "whizan.cloud").trim();
+const BASE_DOMAIN = (
+  rawBaseDomain === "api.whizan.cloud" ||
+  rawBaseDomain.startsWith("api.") ||
+  rawBaseDomain.includes("nip.io") ||
+  rawBaseDomain.includes("onrender.com") ||
+  rawBaseDomain.includes("vercel.app")
+) ? "whizan.cloud" : rawBaseDomain;
 const FUNCTION_RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
 const API_PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
 const API_URL = process.env.API_URL || "https://api.whizan.cloud";

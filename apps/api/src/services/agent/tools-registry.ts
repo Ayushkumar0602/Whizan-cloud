@@ -6,6 +6,7 @@ import { buildQueue } from "../../routes/deployments.js";
 import { serviceQueue } from "../../routes/services.js";
 import { getAuthenticatedGitUrl } from "../../lib/github-utils.js";
 import { decrypt } from "../../lib/crypto.js";
+import { getDeploymentUrl, getFunctionUrl } from "../../lib/domain.js";
 
 export interface ToolDefinition {
   name: string;
@@ -394,7 +395,7 @@ export async function executeAgentTool(
               slug: p.slug,
               framework: p.framework,
               branch: p.branch,
-              liveUrl: latestDep?.url || `https://${p.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+              liveUrl: latestDep?.url || getDeploymentUrl(p.slug),
               latestStatus: latestDep?.status || "PENDING",
               updatedAt: p.updatedAt,
             };
@@ -422,7 +423,7 @@ export async function executeAgentTool(
               slug: s.slug,
               language: s.language,
               internalPort: s.internalPort,
-              liveUrl: `https://${s.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+              liveUrl: getDeploymentUrl(s.slug, s.internalPort === 0),
               latestStatus: latestDep?.status || "PENDING",
               autoSleep: s.autoSleep,
               updatedAt: s.updatedAt,
@@ -575,7 +576,7 @@ export async function executeAgentTool(
             name: f.name,
             slug: f.slug,
             isPublic: f.isPublic,
-            liveUrl: `http://${f.slug}.fn.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+            liveUrl: getFunctionUrl(f.slug),
             endpoints: f.endpoints.map((e) => ({ routePath: e.routePath, httpMethods: e.httpMethods, isPublic: e.isPublic })),
           })),
         };

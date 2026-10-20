@@ -7,6 +7,7 @@ import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
 import { encrypt, decrypt } from "../lib/crypto.js";
 import { checkVmOnline } from "../lib/vm-status.js";
+import { getFunctionUrl } from "../lib/domain.js";
 
 import os from "os";
 
@@ -654,7 +655,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
         key: fullKey,
         prefix: apiKey.keyPrefix,
       },
-      invocationUrl: `http://${functionService.slug}.fn.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+      invocationUrl: getFunctionUrl(functionService.slug),
     });
   });
 

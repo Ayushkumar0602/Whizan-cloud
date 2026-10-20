@@ -260,7 +260,14 @@ const worker = new Worker<ServiceBuildJob>(
       await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
 
       if (hostPort > 0) {
-        const baseDomain = process.env.BASE_DOMAIN ?? "whizan.cloud";
+        const rawBaseDomain = (process.env.BASE_DOMAIN ?? "whizan.cloud").trim();
+        const baseDomain = (
+          rawBaseDomain === "api.whizan.cloud" ||
+          rawBaseDomain.startsWith("api.") ||
+          rawBaseDomain.includes("nip.io") ||
+          rawBaseDomain.includes("onrender.com") ||
+          rawBaseDomain.includes("vercel.app")
+        ) ? "whizan.cloud" : rawBaseDomain;
         const protocol = baseDomain.includes("whizan.cloud") ? "https" : "http";
         const edgeUrl = `${protocol}://${slug}.${baseDomain}`;
         const controlPlaneUrl = (process.env.CONTROL_PLANE_URL || process.env.API_URL || "https://api.whizan.cloud").replace(/\/+$/, "");

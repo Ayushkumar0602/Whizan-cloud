@@ -35,7 +35,14 @@ const SOURCE_BASE_DIR =
     : process.platform === "darwin"
       ? path.resolve(process.cwd(), ".sources")
       : "/opt/whizan/sources";
-const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "whizan.cloud";
+const rawBaseDomain = (process.env.BASE_DOMAIN ?? "whizan.cloud").trim();
+const BASE_DOMAIN = (
+  rawBaseDomain === "api.whizan.cloud" ||
+  rawBaseDomain.startsWith("api.") ||
+  rawBaseDomain.includes("nip.io") ||
+  rawBaseDomain.includes("onrender.com") ||
+  rawBaseDomain.includes("vercel.app")
+) ? "whizan.cloud" : rawBaseDomain;
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 import { redisPub, redisSub, redisOptions } from "./redis.js";

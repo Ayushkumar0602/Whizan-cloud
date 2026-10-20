@@ -1,8 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { checkVmOnline } from "../lib/vm-status.js";
 import { triggerVmWake } from "../lib/vm-wake.js";
-
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
+import { getBaseDomain } from "../lib/domain.js";
 
 export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Universal Live Gateway Handler ──────────────────────────────────────────
@@ -17,8 +16,9 @@ export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
     const wildcard = request.params["*"] || "";
     const remainingPath = wildcard ? (wildcard.startsWith("/") ? wildcard : `/${wildcard}`) : "";
     const isFn = request.url.includes("/live/fn/");
-    const targetHost = isFn ? `${slug}.fn.${BASE_DOMAIN}` : `${slug}.${BASE_DOMAIN}`;
-    const targetProto = BASE_DOMAIN.includes("whizan.cloud") ? "https" : "http";
+    const baseDomain = getBaseDomain();
+    const targetHost = isFn ? `${slug}.fn.${baseDomain}` : `${slug}.${baseDomain}`;
+    const targetProto = baseDomain.includes("whizan.cloud") ? "https" : "http";
     const targetUrl = `${targetProto}://${targetHost}${remainingPath}`;
 
     // 1. Check VM online state (autoWake triggers Azure VM start if deallocated)
@@ -281,7 +281,7 @@ function renderGatewayBootScreen(slug: string, targetUrl: string, vmStatus: stri
 
     <div class="domain-chip">
       <span style="color: #818cf8;">⚡</span>
-      <span>${slug}.${BASE_DOMAIN}</span>
+      <span>${slug}.${getBaseDomain()}</span>
     </div>
 
     <div class="progress-bar">

@@ -1,10 +1,11 @@
 import { redisClient } from "./redis.js";
+import { getBaseDomain } from "./domain.js";
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
 
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
+const BASE_DOMAIN = getBaseDomain();
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "whizan_internal_secret";
 
 export interface VmArchiveUploadResult {

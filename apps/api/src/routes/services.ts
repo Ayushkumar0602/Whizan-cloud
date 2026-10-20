@@ -12,6 +12,7 @@ import { analyzeRepositoryWithAI } from "../lib/gemini-analyzer.js";
 import { checkVmOnline } from "../lib/vm-status.js";
 import { isUserAdmin } from "../lib/auth-utils.js";
 import { uploadArchiveToVm } from "../lib/vm-archive.js";
+import { getBaseDomain, getDeploymentUrl } from "../lib/domain.js";
 
 export const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -924,9 +925,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     const wantsJson = acceptHeader.includes("application/json") || (!isLiveRequested && !acceptHeader.includes("text/event-stream"));
 
     if (wantsJson) {
-      const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
-      const proto = BASE_DOMAIN.includes("whizan.cloud") ? "https" : "http";
-      const liveUrl = deployment.containerPort ? `${proto}://${deployment.service.slug}.${BASE_DOMAIN}` : null;
+      const liveUrl = deployment.containerPort ? getDeploymentUrl(deployment.service.slug) : null;
       return reply.send({
         deploymentId: dId,
         serviceId: deployment.serviceId,

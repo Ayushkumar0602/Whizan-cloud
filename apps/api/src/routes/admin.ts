@@ -7,6 +7,7 @@ import {
   cleanupServiceResources,
   cleanupDeploymentResources,
 } from "../lib/resource-cleaner.js";
+import { getDeploymentUrl } from "../lib/domain.js";
 
 const prisma = new PrismaClient();
 const redis = redisClient;
@@ -315,7 +316,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
         slug: p.slug,
         framework: p.framework,
         status: latest?.status || "PENDING",
-        url: latest?.url || `https://${p.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+        url: latest?.url || getDeploymentUrl(p.slug),
         deploymentId: latest?.id || null,
         deploymentType: latest?.deploymentType || "STATIC",
         containerPort: latest?.containerPort || null,
@@ -334,7 +335,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
         slug: s.slug,
         framework: s.language,
         status: latest?.status || "PENDING",
-        url: s.internalPort === 0 ? "worker://internal" : `https://${s.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+        url: getDeploymentUrl(s.slug, s.internalPort === 0),
         deploymentId: latest?.id || null,
         deploymentType: "CONTAINER",
         containerPort: latest?.containerPort || s.internalPort,

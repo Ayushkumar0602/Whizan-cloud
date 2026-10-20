@@ -5,6 +5,7 @@ import { redisClient } from "../lib/redis.js";
 import { evaluateCommandSecurity } from "../lib/container-security.js";
 import { signAdminPayload } from "../lib/auth-utils.js";
 import { checkVmOnline } from "../lib/vm-status.js";
+import { getDeploymentUrl } from "../lib/domain.js";
 
 const ExecSchema = z.object({
   targetType: z.enum(["project", "service"]),
@@ -156,7 +157,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
         slug: project.slug,
         framework: project.framework,
         branch: project.branch,
-        url: deploy?.url || `https://${project.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+        url: deploy?.url || getDeploymentUrl(project.slug),
         status: deploy?.status || "UNKNOWN",
         deploymentType: deploy?.deploymentType || "STATIC",
         containerPort: deploy?.containerPort,
@@ -180,7 +181,7 @@ export async function containerRoutes(fastify: FastifyInstance) {
         language: service.language,
         internalPort: service.internalPort,
         isWorker: service.internalPort === 0,
-        url: service.internalPort === 0 ? "worker://internal" : `https://${service.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
+        url: getDeploymentUrl(service.slug, service.internalPort === 0),
         status: deploy?.status || "UNKNOWN",
         instanceType: service.instanceType,
         autoSleep: service.autoSleep,
