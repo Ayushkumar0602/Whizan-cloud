@@ -15,6 +15,7 @@ import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { SummerDrawer } from "@/components/agent/summer-drawer";
+import { isTwoFactorTrusted } from "@/lib/webauthn";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -39,8 +40,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           : pathname;
       const safeTarget = getSafeRedirectUrl(currentTarget, "/dashboard");
       router.replace(`/login?redirect=${encodeURIComponent(safeTarget)}`);
+    } else if (!loading && user) {
+      // Strictly mandate 3-day 2FA verification on this hardware device
+      const isTrusted = isTwoFactorTrusted(user.email);
+      if (!isTrusted) {
+        logout();
+        const currentTarget =
+          typeof window !== "undefined"
+            ? window.location.pathname + window.location.search
+            : pathname;
+        const safeTarget = getSafeRedirectUrl(currentTarget, "/dashboard");
+        router.replace(`/login?redirect=${encodeURIComponent(safeTarget)}&reason=2fa_required`);
+      }
     }
-  }, [user, loading, router, pathname]);
+  }, [user, loading, router, pathname, logout]);
 
   useEffect(() => {
     setMobileMenuOpen(false);

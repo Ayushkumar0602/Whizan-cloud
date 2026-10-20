@@ -20,9 +20,27 @@ import {
   X,
   Save,
   CheckCircle2,
-  Tag
+  Tag,
+  Fingerprint,
+  Smartphone,
+  KeyRound,
+  ShieldAlert,
+  Clock,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  isBiometricEnrolled,
+  isBiometricEnrolledForEmail,
+  getBiometricUserEmail,
+  enrollBiometric,
+  removeBiometric,
+  isTwoFactorTrusted,
+  clearTwoFactorTrust,
+  saveTwoFactorTrust,
+  isPlatformBiometricSupported,
+  verifyBiometric,
+} from "@/lib/webauthn";
 
 export default function SettingsPage() {
   const { user, updateUser } = useAuth();
@@ -37,6 +55,72 @@ export default function SettingsPage() {
   const [profileOrg, setProfileOrg] = useState("Whizan Engineering");
   const [profileTitle, setProfileTitle] = useState("Cloud DevOps Engineer");
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // ─── 2FA & Biometric State ──────────────────────────────────────────────
+  const [platformSupported, setPlatformSupported] = useState(false);
+  const [biometricEnrolled, setBiometricEnrolled] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [twoFactorTrusted, setTwoFactorTrusted] = useState(false);
+
+  useEffect(() => {
+    isPlatformBiometricSupported().then(setPlatformSupported);
+    if (user?.email) {
+      setBiometricEnrolled(isBiometricEnrolledForEmail(user.email));
+      setTwoFactorTrusted(isTwoFactorTrusted(user.email));
+    }
+  }, [user]);
+
+  async function handleEnrollBiometric() {
+    if (!user) return;
+    setBiometricLoading(true);
+    try {
+      const res = await enrollBiometric(user.id, user.email);
+      if (res.success) {
+        saveTwoFactorTrust(user.email);
+        setBiometricEnrolled(true);
+        setTwoFactorTrusted(true);
+        toast.success("Touch ID / Face ID registered on this device!");
+      } else {
+        toast.error(res.error || "Biometric enrollment was cancelled.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to register biometrics.");
+    } finally {
+      setBiometricLoading(false);
+    }
+  }
+
+  async function handleTestBiometric() {
+    setBiometricLoading(true);
+    try {
+      const res = await verifyBiometric();
+      if (res.success) {
+        if (user?.email) saveTwoFactorTrust(user.email);
+        setTwoFactorTrusted(true);
+        toast.success("Touch ID / Face ID verified! Sensor is active.");
+      } else {
+        toast.error(res.error || "Biometric test failed.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Biometric test failed.");
+    } finally {
+      setBiometricLoading(false);
+    }
+  }
+
+  function handleRevokeBiometric() {
+    removeBiometric();
+    setBiometricEnrolled(false);
+    toast.success("Biometric registration removed from this device.");
+  }
+
+  function handleRevokeTrust() {
+    if (user?.email) {
+      clearTwoFactorTrust(user.email);
+      setTwoFactorTrusted(false);
+      toast.info("Device 3-day trust revoked. Next login will require 2-step verification.");
+    }
+  }
 
   useEffect(() => {
     if (user) {
@@ -387,6 +471,122 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* ── 2FA & Hardware Biometrics Card ────────────────────────── */}
+        <div className="card">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Fingerprint size={18} style={{ color: "#0284c7" }} />
+                <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+                  Two-Factor Authentication & Biometrics
+                </h2>
+              </div>
+              <p className="card-sub" style={{ marginTop: "0.25rem" }}>
+                Mandatory hardware-backed Touch ID, Face ID, and 3-day trusted session management.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.25rem" }}>
+            {/* Sensor Enrollment Box */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: "12px", padding: "1.25rem", background: "var(--card-subtle)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Smartphone size={16} className="text-sky-500" />
+                  <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>Platform Sensor (Face ID / Touch ID)</span>
+                </div>
+                {biometricEnrolled ? (
+                  <span className="badge badge-ready" style={{ fontSize: "0.72rem" }}>
+                    <CheckCircle2 size={11} /> Active
+                  </span>
+                ) : (
+                  <span className="badge" style={{ fontSize: "0.72rem", background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.25)" }}>
+                    Not Enrolled
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0 0 1rem 0", lineHeight: 1.5 }}>
+                {biometricEnrolled
+                  ? "Touch ID / Face ID is registered on this local hardware device. Logins will prompt for a 1-tap scan."
+                  : "Register this device's biometric sensor for instant 1-tap 2FA without waiting for email codes."}
+              </p>
+
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                {biometricEnrolled ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleTestBiometric}
+                      disabled={biometricLoading}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: "0.8rem" }}
+                    >
+                      {biometricLoading ? <RefreshCw size={13} className="animate-spin" /> : <Fingerprint size={13} />}
+                      <span>Test Sensor</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRevokeBiometric}
+                      className="btn btn-danger btn-sm"
+                      style={{ fontSize: "0.8rem" }}
+                    >
+                      <span>Remove Sensor</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleEnrollBiometric}
+                    disabled={biometricLoading}
+                    className="btn btn-primary btn-sm"
+                    style={{ fontSize: "0.8rem" }}
+                  >
+                    {biometricLoading ? <RefreshCw size={13} className="animate-spin" /> : <Fingerprint size={13} />}
+                    <span>Register Touch ID / Face ID</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 3-Day Device Trust Box */}
+            <div style={{ border: "1px solid var(--border)", borderRadius: "12px", padding: "1.25rem", background: "var(--card-subtle)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Clock size={16} className="text-indigo-500" />
+                  <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>3-Day Trusted Device Session</span>
+                </div>
+                {twoFactorTrusted ? (
+                  <span className="badge badge-ready" style={{ fontSize: "0.72rem" }}>
+                    <CheckCircle2 size={11} /> Trusted
+                  </span>
+                ) : (
+                  <span className="badge badge-failed" style={{ fontSize: "0.72rem" }}>
+                    Untrusted
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0 0 1rem 0", lineHeight: 1.5 }}>
+                {twoFactorTrusted
+                  ? "This device has satisfied 2-Step Verification within the last 3 days. Console access is pre-authorized."
+                  : "Device trust is expired or inactive. The next sign-in will mandate full 2-factor authentication."}
+              </p>
+
+              <div>
+                {twoFactorTrusted && (
+                  <button
+                    type="button"
+                    onClick={handleRevokeTrust}
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: "0.8rem", color: "var(--danger)" }}
+                  >
+                    <span>Revoke 3-Day Device Trust</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ── 2. Subscription & Compute Policy Card ─────────────────── */}

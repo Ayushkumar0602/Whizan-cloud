@@ -28,7 +28,8 @@ const VerifyOtpSchema = z.object({
 
 const LoginSchema = z.object({
   email: z.string().email(),
-  password: z.string(),
+  password: z.string().optional(),
+  passcode: z.string().min(6).max(6).optional(),
 });
 
 // ─── OTP In-Memory Store ─────────────────────────────────────────────────────
@@ -277,13 +278,49 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!body.success)
       return reply.code(400).send({ error: body.error.flatten() });
 
-    const { email, password } = body.data;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !user.passwordHash)
+    const { email, password, passcode } = body.data;
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (!user)
       return reply.code(401).send({ error: "Invalid credentials" });
 
-    const valid = await bcrypt.compare(password, user.passwordHash);
-    if (!valid) return reply.code(401).send({ error: "Invalid credentials" });
+    if (passcode) {
+      const entry = otpMemoryStore.get(normalizedEmail);
+      let storedCode = entry?.code;
+      let isExpired = entry ? entry.expiresAt < Date.now() : true;
+
+      if (!storedCode) {
+        try {
+          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+          if (redisCode) {
+            storedCode = redisCode;
+            isExpired = false;
+          }
+        } catch {}
+      }
+
+      if (!storedCode || isExpired) {
+        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
+      }
+
+      if (storedCode.trim() !== passcode.trim()) {
+        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
+      }
+
+      // Consume OTP
+      otpMemoryStore.delete(normalizedEmail);
+      try {
+        await redisClient.del(`otp:${normalizedEmail}`);
+      } catch {}
+    } else if (password) {
+      if (!user.passwordHash) {
+        return reply.code(401).send({ error: "Please sign in using One-Time Email OTP." });
+      }
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) return reply.code(401).send({ error: "Invalid credentials" });
+    } else {
+      return reply.code(400).send({ error: "Password or 6-digit passcode is required." });
+    }
 
     const isRoot = isRootAdmin(user);
     const isAdmin = isUserAdmin(user);

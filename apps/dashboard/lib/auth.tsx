@@ -17,6 +17,7 @@ type AuthState = {
   register: (email: string, password: string, name?: string, passcode?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updated: Partial<User>) => void;
+  setSession: (accessToken: string, user: User) => void;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -192,8 +193,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setSession = useCallback((accessToken: string, newUser: User) => {
+    setAccessToken(accessToken);
+    setUser(newUser);
+    try {
+      localStorage.setItem("hostify_user", JSON.stringify(newUser));
+      localStorage.setItem("hostify_access_token", accessToken);
+    } catch {}
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateUser, setSession }}>
       {children}
     </AuthContext.Provider>
   );

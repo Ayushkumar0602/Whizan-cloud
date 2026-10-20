@@ -254,7 +254,7 @@ export const auth = {
       body: JSON.stringify(data),
     }),
 
-  login: (data: { email: string; password: string }) =>
+  login: (data: { email: string; password?: string; passcode?: string }) =>
     request<{ accessToken: string; user: User }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify(data),

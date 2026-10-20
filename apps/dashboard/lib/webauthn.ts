@@ -54,6 +54,20 @@ export function getBiometricUserEmail(): string | null {
   }
 }
 
+/**
+ * Checks if biometric credential belongs to a specific user email
+ */
+export function isBiometricEnrolledForEmail(email: string): boolean {
+  if (typeof window === "undefined" || !email) return false;
+  try {
+    const isEnrolled = localStorage.getItem(STORAGE_KEYS.ENROLLED) === "true";
+    const enrolledEmail = localStorage.getItem(STORAGE_KEYS.USER_EMAIL);
+    return isEnrolled && enrolledEmail?.toLowerCase().trim() === email.toLowerCase().trim();
+  } catch {
+    return false;
+  }
+}
+
 function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
