@@ -607,6 +607,7 @@ redisSub.on("message", async (channel, message) => {
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
               await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
+              await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
               await redisPub.del(`build-logs:${dId}`).catch(() => { });
             }
           }
@@ -651,6 +652,7 @@ redisSub.on("message", async (channel, message) => {
           if (Array.isArray(deploymentIds)) {
             for (const dId of deploymentIds) {
               await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
+              await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
               await redisPub.del(`build-logs:${dId}`).catch(() => { });
             }
           }
@@ -683,6 +685,7 @@ redisSub.on("message", async (channel, message) => {
         }
         if (payload.action === "DELETE_CONTAINER") {
           await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
+          await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
         }
         return;
       }
