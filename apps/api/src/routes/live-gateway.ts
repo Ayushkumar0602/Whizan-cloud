@@ -18,7 +18,8 @@ export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
     const remainingPath = wildcard ? (wildcard.startsWith("/") ? wildcard : `/${wildcard}`) : "";
     const isFn = request.url.includes("/live/fn/");
     const targetHost = isFn ? `${slug}.fn.${BASE_DOMAIN}` : `${slug}.${BASE_DOMAIN}`;
-    const targetUrl = `http://${targetHost}${remainingPath}`;
+    const targetProto = BASE_DOMAIN.includes("whizan.cloud") ? "https" : "http";
+    const targetUrl = `${targetProto}://${targetHost}${remainingPath}`;
 
     // 1. Check VM online state (autoWake triggers Azure VM start if deallocated)
     const vmStatus = await checkVmOnline({ autoWake: true, reason: `gateway_${slug}` });

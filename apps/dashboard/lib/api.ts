@@ -16,8 +16,14 @@ export function getApiBase(): string {
     return "http://localhost:8000";
   }
 
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (
+    envUrl &&
+    !envUrl.includes("onrender.com") &&
+    !envUrl.includes("vercel.app") &&
+    !envUrl.includes("nip.io")
+  ) {
+    return envUrl;
   }
 
   return "https://api.whizan.cloud";

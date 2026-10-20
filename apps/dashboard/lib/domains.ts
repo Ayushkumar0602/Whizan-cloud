@@ -5,11 +5,20 @@
  */
 
 export function getBaseRouterDomain(): string {
-  const envDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN;
-  if (envDomain && !envDomain.includes("localhost") && !envDomain.includes("127.0.0.1")) {
-    return envDomain;
+  const envDomain = process.env.NEXT_PUBLIC_BASE_DOMAIN?.trim();
+  if (
+    !envDomain ||
+    envDomain.includes("localhost") ||
+    envDomain.includes("127.0.0.1") ||
+    envDomain.includes("nip.io") ||
+    envDomain.includes("onrender.com") ||
+    envDomain.includes("vercel.app") ||
+    envDomain === "api.whizan.cloud" ||
+    envDomain.startsWith("api.")
+  ) {
+    return "whizan.cloud";
   }
-  return "whizan.cloud";
+  return envDomain;
 }
 
 export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
@@ -30,7 +39,15 @@ export function getServiceIngressUrl(slug: string): string {
  */
 export function getGatewayLiveUrl(slug: string, isFn = false, path = ""): string {
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://api.whizan.cloud").replace(/\/+$/, "");
+  let apiBase = process.env.NEXT_PUBLIC_API_URL?.trim() || "https://api.whizan.cloud";
+  if (
+    apiBase.includes("onrender.com") ||
+    apiBase.includes("vercel.app") ||
+    apiBase.includes("nip.io")
+  ) {
+    apiBase = "https://api.whizan.cloud";
+  }
+  apiBase = apiBase.replace(/\/+$/, "");
   if (isFn) {
     return `${apiBase}/live/fn/${slug}${cleanPath}`;
   }
