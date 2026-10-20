@@ -25,17 +25,35 @@ function generateRefreshToken() {
   return crypto.randomBytes(48).toString("hex");
 }
 
-const REFRESH_TOKEN_TTL_DAYS = 7;
+const REFRESH_TOKEN_TTL_DAYS = 30;
 const COOKIE_NAME = "refreshToken";
+
+// 30-second token rotation grace cache: allows concurrent in-flight requests from the same client to succeed
+const rotatedTokensGraceCache = new Map<string, { accessToken: string; expiresAt: number; user: any }>();
+
+function cleanupGraceCache() {
+  const now = Date.now();
+  for (const [key, val] of rotatedTokensGraceCache.entries()) {
+    if (val.expiresAt < now) {
+      rotatedTokensGraceCache.delete(key);
+    }
+  }
+}
 
 async function issueTokens(
   fastify: FastifyInstance,
   reply: any,
   userId: string,
-  email: string
+  email: string,
+  extra?: { role?: string; subscriptionTier?: string; iamPermissions?: string }
 ) {
-  // Access token — short-lived JWT
-  const accessToken = fastify.jwt.sign({ userId, email });
+  // Access token with embedded role and tier for zero-DB-hit fast validation
+  const jwtPayload: any = { userId, email };
+  if (extra?.role) jwtPayload.role = extra.role;
+  if (extra?.subscriptionTier) jwtPayload.subscriptionTier = extra.subscriptionTier;
+  if (extra?.iamPermissions) jwtPayload.iamPermissions = extra.iamPermissions;
+
+  const accessToken = fastify.jwt.sign(jwtPayload);
 
   // Refresh token — opaque, stored in DB + HttpOnly cookie
   const refreshToken = generateRefreshToken();
@@ -80,7 +98,11 @@ export async function authRoutes(fastify: FastifyInstance) {
       data: { email, passwordHash, name, role: assignedRole },
     });
 
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
+      role: assignedRole,
+      subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+      iamPermissions: (user as any).iamPermissions || "all",
+    });
     return reply.code(201).send({
       accessToken,
       user: {
@@ -110,7 +132,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     const isRoot = isRootAdmin(user);
     const isAdmin = isUserAdmin(user);
     const resolvedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER"));
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
+      role: resolvedRole,
+      subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+      iamPermissions: (user as any).iamPermissions || "all",
+    });
     return reply.send({
       accessToken,
       user: {
@@ -129,19 +155,50 @@ export async function authRoutes(fastify: FastifyInstance) {
     const token = request.cookies[COOKIE_NAME];
     if (!token) return reply.code(401).send({ error: "No refresh token" });
 
+    // Check grace cache to protect concurrent requests from being locked out
+    cleanupGraceCache();
+    const grace = rotatedTokensGraceCache.get(token);
+    if (grace && grace.expiresAt > Date.now()) {
+      return reply.send({ accessToken: grace.accessToken, user: grace.user });
+    }
+
     const stored = await prisma.refreshToken.findUnique({ where: { token } });
     if (!stored || stored.expiresAt < new Date()) {
       return reply.code(401).send({ error: "Invalid or expired refresh token" });
     }
 
-    // Rotate the refresh token
-    await prisma.refreshToken.delete({ where: { token } });
-
     const user = await prisma.user.findUnique({ where: { id: stored.userId } });
     if (!user) return reply.code(401).send({ error: "User not found" });
 
-    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email);
-    return reply.send({ accessToken });
+    const isRoot = isRootAdmin(user);
+    const isAdmin = isUserAdmin(user);
+    const resolvedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER"));
+    const userPayload = {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+      role: resolvedRole,
+    };
+
+    // Rotate the refresh token
+    await prisma.refreshToken.delete({ where: { token } }).catch(() => {});
+
+    const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
+      role: resolvedRole,
+      subscriptionTier: userPayload.subscriptionTier,
+      iamPermissions: (user as any).iamPermissions || "all",
+    });
+
+    // Save old token into grace cache for 30s to satisfy concurrent in-flight requests
+    rotatedTokensGraceCache.set(token, {
+      accessToken,
+      user: userPayload,
+      expiresAt: Date.now() + 30_000,
+    });
+
+    return reply.send({ accessToken, user: userPayload });
   });
 
   // POST /api/auth/logout

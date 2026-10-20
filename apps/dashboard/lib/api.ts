@@ -32,24 +32,62 @@ export function getApiBase(): string {
 export const API_BASE = getApiBase();
 
 let accessToken: string | null = null;
+let refreshPromise: Promise<string | null> | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  if (typeof window !== "undefined") {
+    try {
+      if (token) {
+        localStorage.setItem("hostify_access_token", token);
+      } else {
+        localStorage.removeItem("hostify_access_token");
+      }
+    } catch {}
+  }
 }
 
-export function getAccessToken() {
+export function getAccessToken(): string | null {
+  if (!accessToken && typeof window !== "undefined") {
+    try {
+      accessToken = localStorage.getItem("hostify_access_token");
+    } catch {}
+  }
   return accessToken;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  accessToken = data.accessToken;
-  return accessToken;
+export async function refreshAccessToken(): Promise<string | null> {
+  // Deduplicate concurrent refresh requests into a single in-flight promise
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data?.accessToken) {
+        setAccessToken(data.accessToken);
+        if (data?.user && typeof window !== "undefined") {
+          try {
+            localStorage.setItem("hostify_user", JSON.stringify(data.user));
+          } catch {}
+        }
+        return data.accessToken;
+      }
+      return null;
+    } catch {
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 import { apiCache, type CacheOptions } from "./cache";
@@ -65,12 +103,13 @@ async function executeNetworkFetch<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  if (!accessToken && path !== "/api/auth/refresh" && path !== "/api/auth/login" && path !== "/api/auth/register" && typeof window !== "undefined") {
-    await refreshAccessToken().catch(() => {});
+  let token = getAccessToken();
+  if (!token && path !== "/api/auth/refresh" && path !== "/api/auth/login" && path !== "/api/auth/register" && typeof window !== "undefined") {
+    token = await refreshAccessToken().catch(() => null);
   }
 
-  if (accessToken) {
-    headers["Authorization"] = `Bearer ${accessToken}`;
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const base = getApiBase();
@@ -81,7 +120,7 @@ async function executeNetworkFetch<T>(
   });
 
   // Auto-refresh on 401
-  if (res.status === 401 && path !== "/api/auth/refresh") {
+  if (res.status === 401 && path !== "/api/auth/refresh" && path !== "/api/auth/login" && path !== "/api/auth/register") {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers["Authorization"] = `Bearer ${newToken}`;

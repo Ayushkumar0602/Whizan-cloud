@@ -22,11 +22,32 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Synchronous session hydration: restores user on frame 1 with zero lag
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("hostify_user");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
+  });
 
-  // On mount: try to restore session via refresh token (HttpOnly cookie)
+  // If user & token are already cached, don't block the UI with full-page spinner
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const savedUser = localStorage.getItem("hostify_user");
+        const savedToken = localStorage.getItem("hostify_access_token");
+        if (savedUser && savedToken) return false;
+      } catch {}
+    }
+    return true;
+  });
+
+  // Background session verification & refresh without blocking UI
   useEffect(() => {
+    let isMounted = true;
     (async () => {
       try {
         const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
@@ -35,26 +56,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (res.ok) {
           const data = await res.json();
-          setAccessToken(data.accessToken);
+          if (data?.accessToken) {
+            setAccessToken(data.accessToken);
+          }
+          if (data?.user && isMounted) {
+            setUser(data.user);
+            try {
+              localStorage.setItem("hostify_user", JSON.stringify(data.user));
+            } catch {}
+            return;
+          }
           const me = await auth.me();
-          setUser(me);
+          if (isMounted) {
+            setUser(me);
+            try {
+              localStorage.setItem("hostify_user", JSON.stringify(me));
+            } catch {}
+          }
           return;
+        } else if (res.status === 401) {
+          // If server returns 401 and there is no active token in memory/storage, clear session
+          const currentToken = typeof window !== "undefined" ? localStorage.getItem("hostify_access_token") : null;
+          if (!currentToken && isMounted) {
+            setUser(null);
+            try {
+              localStorage.removeItem("hostify_user");
+              localStorage.removeItem("hostify_access_token");
+            } catch {}
+          }
         }
       } catch {
-        // No valid session — that's fine
-      }
-
-      // Check if we have a saved user in localStorage
-      try {
-        const savedUser = localStorage.getItem("hostify_user");
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
-          return;
+        // Network drop or temporary latency: PRESERVE user session! Do not log out.
+      } finally {
+        if (isMounted) {
+          setLoading(false);
         }
-      } catch {}
-    })().finally(() => {
-      setLoading(false);
-    });
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -64,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(res.user);
       try {
         localStorage.setItem("hostify_user", JSON.stringify(res.user));
+        localStorage.setItem("hostify_access_token", res.accessToken);
       } catch {}
     } catch (err: any) {
       // Offline fallback for local development if local API backend is unreachable
@@ -100,6 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(res.user);
         try {
           localStorage.setItem("hostify_user", JSON.stringify(res.user));
+          localStorage.setItem("hostify_access_token", res.accessToken);
         } catch {}
       } catch (err: any) {
         // Offline fallback for local development if local API backend is unreachable
@@ -136,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     try {
       localStorage.removeItem("hostify_user");
+      localStorage.removeItem("hostify_access_token");
     } catch {}
   }, []);
 

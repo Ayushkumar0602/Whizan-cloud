@@ -105,10 +105,13 @@ await app.register(fastifyCookie, {
 
 await app.register(fastifyJwt, {
   secret: process.env.JWT_SECRET!,
-  sign: { expiresIn: "15m" },
+  sign: { expiresIn: "7d" },
 });
 
 import { isUserAdmin, isRootAdmin } from "./lib/auth-utils.js";
+
+// Fast memory cache for user IAM and subscription tier (60s TTL) to eliminate Postgres bottlenecks on every request
+const userMetaCache = new Map<string, { data: any; cachedAt: number }>();
 
 // Decorator so routes can use fastify.authenticate as a preHandler
 // Supports both JWT tokens (cookies or Bearer) and API keys (whz_live_...)
@@ -145,15 +148,32 @@ app.decorate("authenticate", async (request: any, reply: any) => {
   try {
     await request.jwtVerify();
     if (request.user && request.user.userId) {
-      const userRecord = await prisma.user.findUnique({
-        where: { id: request.user.userId },
-        select: { role: true, subscriptionTier: true, email: true, iamPermissions: true },
-      });
-      const isRoot = isRootAdmin({ ...userRecord, email: request.user.email });
-      const isAdmin = isUserAdmin({ ...userRecord, email: request.user.email });
-      request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? (userRecord?.role || "ADMIN") : (userRecord?.role || "USER"));
-      request.user.iamPermissions = (userRecord as any)?.iamPermissions || "all";
-      request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
+      const userId = request.user.userId;
+      const cached = userMetaCache.get(userId);
+      let userRecord = cached && (Date.now() - cached.cachedAt < 60_000) ? cached.data : null;
+
+      if (!userRecord) {
+        userRecord = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true, subscriptionTier: true, email: true, iamPermissions: true },
+        });
+        if (userRecord) {
+          userMetaCache.set(userId, { data: userRecord, cachedAt: Date.now() });
+        }
+      }
+
+      if (userRecord) {
+        const isRoot = isRootAdmin({ ...userRecord, email: request.user.email });
+        const isAdmin = isUserAdmin({ ...userRecord, email: request.user.email });
+        request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? (userRecord?.role || "ADMIN") : (userRecord?.role || "USER"));
+        request.user.iamPermissions = (userRecord as any)?.iamPermissions || "all";
+        request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
+      } else if (request.user.role) {
+        // Fallback to claims encoded in JWT token
+        const isRoot = isRootAdmin({ role: request.user.role, email: request.user.email });
+        const isAdmin = isUserAdmin({ role: request.user.role, email: request.user.email });
+        request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? request.user.role : "USER");
+      }
     }
   } catch {
     reply.code(401).send({ error: "Unauthorized" });
