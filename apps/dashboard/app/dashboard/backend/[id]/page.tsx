@@ -15,7 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ServiceLogs } from "@/components/service-logs";
 import { ServiceShell } from "@/components/service-shell";
 import { ServiceMetrics } from "@/components/service-metrics";
-import { formatDeployedUrl, getServiceIngressUrl } from "@/lib/domains";
+import { formatDeployedUrl, getServiceIngressUrl, getGatewayLiveUrl } from "@/lib/domains";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { useAuth } from "@/lib/auth";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
@@ -253,13 +253,22 @@ export default function BackendServicePage() {
   const isActive = latestDeploy?.status === "READY" && !!latestDeploy.containerPort;
   const isAsleep = latestDeploy?.status === "READY" && !latestDeploy.containerPort;
   const ingressUrl = getServiceIngressUrl(service.slug);
+  const gatewayUrl = getGatewayLiveUrl(service.slug);
   const envCount = service.envVariables.length;
+  const [copiedGateway, setCopiedGateway] = useState(false);
 
   function copyIngressUrl() {
     navigator.clipboard.writeText(ingressUrl);
     setCopiedUrl(true);
-    toast.success("URL copied");
+    toast.success("Direct Edge URL copied");
     setTimeout(() => setCopiedUrl(false), 2000);
+  }
+
+  function copyGatewayUrl() {
+    navigator.clipboard.writeText(gatewayUrl);
+    setCopiedGateway(true);
+    toast.success("Always-On Gateway URL copied");
+    setTimeout(() => setCopiedGateway(false), 2000);
   }
 
   return (
@@ -334,34 +343,79 @@ export default function BackendServicePage() {
         </div>
 
         {latestDeploy?.status === "READY" && (
-          <div className="ingress-ribbon">
-            <div className="ingress-info">
-              <div className="ingress-label">Production Cloud Ingress</div>
-              <a
-                href={ingressUrl}
-                target={vmOnline ? "_blank" : undefined}
-                rel="noreferrer"
-                className="ingress-link mono"
-                onClick={(e) => {
-                  if (!vmOnline) {
-                    e.preventDefault();
-                    setOfflineAction("visit");
-                    setOfflineModalOpen(true);
-                  }
-                }}
-              >
-                {ingressUrl} <ExternalLink size={13} />
-                {!vmOnline && (
-                  <span style={{ fontSize: "0.72rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", marginLeft: "0.5rem" }}>
-                    Service Paused
+          <div className="ingress-ribbon" style={{ display: "flex", flexDirection: "column", gap: "0.85rem", alignItems: "stretch" }}>
+            {/* Always-On Universal Gateway (Primary) */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
+              <div className="ingress-info">
+                <div className="ingress-label" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span>Always-On Live Gateway</span>
+                  <span style={{ fontSize: "0.68rem", padding: "0.1rem 0.45rem", borderRadius: "9999px", background: "rgba(99, 102, 241, 0.2)", color: "#a5b4fc", border: "1px solid rgba(99, 102, 241, 0.35)", fontWeight: 600 }}>
+                    ⚡ 24/7 Auto-Wake
                   </span>
-                )}
-              </a>
+                </div>
+                <a
+                  href={gatewayUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ingress-link mono"
+                  style={{ color: "#818cf8" }}
+                >
+                  {gatewayUrl} <ExternalLink size={13} />
+                </a>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <a
+                  href={gatewayUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-primary btn-sm"
+                  style={{ display: "inline-flex", alignItems: "center", gap: "5px" }}
+                >
+                  <Globe size={13} /> Visit Gateway
+                </a>
+                <button onClick={copyGatewayUrl} className="btn btn-secondary btn-sm">
+                  {copiedGateway ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+                  <span>{copiedGateway ? "Copied" : "Copy Live URL"}</span>
+                </button>
+              </div>
             </div>
-            <button onClick={copyIngressUrl} className="btn btn-secondary btn-sm">
-              {copiedUrl ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
-              <span>{copiedUrl ? "Copied" : "Copy URL"}</span>
-            </button>
+
+            {/* Direct High-Speed Edge Ingress */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem", paddingTop: "0.65rem", borderTop: "1px solid rgba(255, 255, 255, 0.06)" }}>
+              <div className="ingress-info">
+                <div className="ingress-label" style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: "var(--muted)" }}>
+                  <span>Direct Edge Ingress (When Host Active)</span>
+                  <span style={{ fontSize: "0.68rem", padding: "0.1rem 0.45rem", borderRadius: "9999px", background: "rgba(16, 185, 129, 0.15)", color: "#34d399", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+                    &lt;1ms
+                  </span>
+                </div>
+                <a
+                  href={ingressUrl}
+                  target={vmOnline ? "_blank" : undefined}
+                  rel="noreferrer"
+                  className="ingress-link mono"
+                  style={{ fontSize: "0.82rem", color: "var(--muted)" }}
+                  onClick={(e) => {
+                    if (!vmOnline) {
+                      e.preventDefault();
+                      setOfflineAction("visit");
+                      setOfflineModalOpen(true);
+                    }
+                  }}
+                >
+                  {ingressUrl} <ExternalLink size={12} />
+                  {!vmOnline && (
+                    <span style={{ fontSize: "0.68rem", padding: "0.12rem 0.45rem", borderRadius: "9999px", background: "rgba(245, 158, 11, 0.15)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.3)", marginLeft: "0.5rem" }}>
+                      Host Asleep
+                    </span>
+                  )}
+                </a>
+              </div>
+              <button onClick={copyIngressUrl} className="btn btn-secondary btn-sm" style={{ opacity: 0.85 }}>
+                {copiedUrl ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+                <span>{copiedUrl ? "Copied" : "Copy Edge URL"}</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -379,7 +379,9 @@ const worker = new Worker<BuildJob>(
         },
       });
 
-      await log(`✓ Deployment live at ${url}`);
+      const gatewayUrl = `https://whizan-cloud-service.onrender.com/live/${slug}`;
+      await log(`✓ Universal Always-On Gateway (auto-wakes VM from sleep): ${gatewayUrl}`);
+      await log(`✓ Direct Edge Router: ${url}`);
 
       // ── 8b. Framework-Aware Post-Build Disk Optimization ─────────────────
       // Pure static frameworks (Vite, React, Astro, static HTML) only need the compiled

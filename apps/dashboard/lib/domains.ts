@@ -15,7 +15,7 @@ export function getBaseRouterDomain(): string {
 export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
 
 /**
- * Returns the public ingress URL for a backend service or worker
+ * Returns the public ingress URL for a backend service or worker directly on Edge Router
  */
 export function getServiceIngressUrl(slug: string): string {
   const domain = getBaseRouterDomain();
@@ -23,8 +23,23 @@ export function getServiceIngressUrl(slug: string): string {
 }
 
 /**
- * Normalizes any deployment URL, automatically replacing stale/local development URLs
- * with the live cloud ingress URL.
+ * Returns the Always-On 24/7 Universal Gateway URL hosted on Render Control Plane.
+ * Resilient against cold Azure VM states ($0.00/hr deallocation), automatically waking the VM
+ * and showing the GhostFibers resource allocation screen before redirecting.
+ */
+export function getGatewayLiveUrl(slug: string, isFn = false, path = ""): string {
+  const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com").replace(/\/+$/, "");
+  if (isFn) {
+    return `${apiBase}/live/fn/${slug}${cleanPath}`;
+  }
+  return `${apiBase}/live/${slug}${cleanPath}`;
+}
+
+/**
+ * Normalizes any deployment URL.
+ * Automatically resolves to the resilient Always-On Gateway URL (or custom domain)
+ * so that visits safely awaken the VM from eco-standby ($0.00/hr) without hanging or timing out.
  */
 export function formatDeployedUrl(
   rawUrl: string | null | undefined,
@@ -35,17 +50,8 @@ export function formatDeployedUrl(
     return customDomain.startsWith("http") ? customDomain : `https://${customDomain}`;
   }
 
-  // If no URL or if URL contains localhost/127.0.0.1, always resolve to live cloud domain
-  if (!rawUrl || rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1")) {
-    return getServiceIngressUrl(slug);
-  }
-
-  // If already a valid cloud URL, format with protocol
-  if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-    return rawUrl;
-  }
-
-  return `http://${rawUrl}`;
+  // Resilient Always-On Live Gateway ensures 100% uptime and auto-wake from VM hibernation
+  return getGatewayLiveUrl(slug);
 }
 
 /**
@@ -55,7 +61,7 @@ export function getProjectLiveUrl(slug: string, customDomain?: string | null): s
   if (customDomain) {
     return customDomain.startsWith("http") ? customDomain : `https://${customDomain}`;
   }
-  return getServiceIngressUrl(slug);
+  return getGatewayLiveUrl(slug);
 }
 
 /**
@@ -76,17 +82,4 @@ export function getFunctionPathUrl(slug: string, path = ""): string {
   return `http://${domain}/fn/${slug}${cleanPath}`;
 }
 
-/**
- * Returns the Always-On 24/7 Universal Gateway URL hosted on Render Control Plane.
- * Resilient against cold Azure VM states ($0.00/hr deallocation), automatically waking the VM
- * and showing the GhostFibers resource allocation screen before redirecting.
- */
-export function getGatewayLiveUrl(slug: string, isFn = false, path = ""): string {
-  const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com").replace(/\/+$/, "");
-  if (isFn) {
-    return `${apiBase}/live/fn/${slug}${cleanPath}`;
-  }
-  return `${apiBase}/live/${slug}${cleanPath}`;
-}
 

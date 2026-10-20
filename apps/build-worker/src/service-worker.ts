@@ -260,10 +260,13 @@ const worker = new Worker<ServiceBuildJob>(
       await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
 
       if (hostPort > 0) {
+        const edgeUrl = `http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`;
+        const gatewayUrl = `https://whizan-cloud-service.onrender.com/live/${slug}`;
         if (service?.isPublic) {
-          await log(`✓ Service is publicly exposed via Edge Router at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+          await log(`✓ Universal Always-On Gateway (auto-wakes VM from sleep): ${gatewayUrl}`);
+          await log(`✓ Direct Edge Router: ${edgeUrl}`);
         } else {
-          await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`);
+          await log(`✓ Service is internal but registered in Edge Router for Wakeup/Test at ${edgeUrl}`);
         }
       } else {
         await log(`✓ Background worker is active and running in internal mesh network.`);
