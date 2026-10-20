@@ -6,13 +6,16 @@ import { useEffect } from "react";
 import { BrandMark } from "@/components/brand";
 import { Globe, Server, Database, ShieldCheck, Zap } from "lucide-react";
 import { getSafeRedirectUrl } from "@/lib/redirect";
+import { isTwoFactorTrusted } from "@/lib/webauthn";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
 
+  // Only redirect to dashboard if user is logged in AND their 2FA trust is still valid.
+  // If 2FA trust has expired, keep them on the auth page so they can re-verify.
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && isTwoFactorTrusted(user.email)) {
       const search = typeof window !== "undefined" ? window.location.search : "";
       const params = new URLSearchParams(search);
       const redirectParam = params.get("redirect");

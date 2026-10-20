@@ -15,6 +15,7 @@ import {
 } from "@/lib/webauthn";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { toast } from "sonner";
 import { getSafeRedirectUrl } from "@/lib/redirect";
 import {
@@ -22,15 +23,11 @@ import {
   Lock,
   Mail,
   Fingerprint,
-  Sparkles,
   KeyRound,
   RefreshCw,
   CheckCircle2,
   ShieldCheck,
-  Smartphone,
   ArrowLeft,
-  Clock,
-  ShieldAlert,
 } from "lucide-react";
 
 type LoginMode = "PASSWORD" | "EMAIL_OTP";
@@ -74,7 +71,7 @@ function LoginForm() {
   // Show notice if redirected because 2FA expired or was required
   useEffect(() => {
     if (reasonParam === "2fa_required" || reasonParam === "2fa_expired") {
-      toast.info("2-Factor verification required. Please verify your identity to access the console.");
+      toast.info("Two-factor verification required. Please verify your identity.");
     }
   }, [reasonParam]);
 
@@ -155,7 +152,7 @@ function LoginForm() {
         setTwoFactorMethod("EMAIL_OTP");
         await dispatchOtpToUser(email.trim());
         setResendCooldown(60);
-        toast.info("2-Step Verification required: OTP sent to your email.");
+        toast.info("Verification code sent to your email.");
         setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
       }
     } catch (err: any) {
@@ -177,10 +174,10 @@ function LoginForm() {
       if (result.success) {
         saveTwoFactorTrust(email.trim());
         setSession(pendingSession.accessToken, pendingSession.user);
-        toast.success("Touch ID / Face ID verified! Device trusted for 3 days.");
+        toast.success("Identity verified! Device trusted for 3 days.");
         router.push(destination);
       } else {
-        toast.error(result.error || "Biometric authentication failed. Please try Email OTP.");
+        toast.error(result.error || "Biometric authentication failed. Try Email OTP.");
       }
     } catch (err: any) {
       toast.error(err.message || "Biometric error. Switch to Email OTP.");
@@ -198,7 +195,7 @@ function LoginForm() {
     try {
       await dispatchOtpToUser(email.trim());
       setResendCooldown(60);
-      toast.success(`Verification code dispatched to ${email}`);
+      toast.success(`Verification code sent to ${email}`);
       setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
       toast.error(err.message || "Failed to send verification code.");
@@ -280,13 +277,16 @@ function LoginForm() {
       if (verified) {
         saveTwoFactorTrust(email.trim());
         setSession(pendingSession.accessToken, pendingSession.user);
-        toast.success("2-Step Verification verified! Device trusted for 3 days.");
+        toast.success("Verified! Device trusted for 3 days.");
         router.push(destination);
       } else {
-        toast.error("Invalid passcode. Please check your email.");
+        toast.error("Invalid code. Please check your email and try again.");
+        setOtpDigits(["", "", "", "", "", ""]);
+        setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
       }
     } catch (err: any) {
-      toast.error(err.message || "Failed to verify 2FA code.");
+      toast.error(err.message || "Failed to verify code.");
+      setOtpDigits(["", "", "", "", "", ""]);
     } finally {
       setLoading(false);
     }
@@ -299,7 +299,7 @@ function LoginForm() {
     e.preventDefault();
     const fullCode = otpDigits.join("");
     if (fullCode.length !== 6) {
-      toast.error("Please enter the complete 6-digit passcode.");
+      toast.error("Please enter the complete 6-digit code.");
       return;
     }
     handleDirectEmailOtpSubmitWithCode(fullCode);
@@ -313,39 +313,54 @@ function LoginForm() {
       const res = await auth.login({ email: email.trim(), passcode: code.trim() });
       saveTwoFactorTrust(email.trim());
       setSession(res.accessToken, res.user);
-      toast.success("Signed in successfully! Device trusted for 3 days.");
+      toast.success("Signed in successfully!");
       router.push(destination);
     } catch (err: any) {
-      toast.error(err.message || "Invalid or expired passcode. Please try again.");
+      toast.error(err.message || "Invalid or expired code. Please try again.");
+      setOtpDigits(["", "", "", "", "", ""]);
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
     } finally {
       setLoading(false);
     }
   }
 
-  return (
-    <div className="w-full">
-      {stage === "ENTER_CREDENTIALS" ? (
-        <div className="relative w-full max-w-md mx-auto bg-zinc-950/90 border border-zinc-800/90 rounded-2xl p-8 shadow-2xl backdrop-blur-xl text-zinc-100 overflow-hidden">
-          {/* Ambient top light glow */}
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
+  // OTP input row component
+  const OtpInputRow = ({ onSubmit }: { onSubmit: (code: string) => void }) => (
+    <div className="auth-otp-row" onPaste={handleOtpPaste}>
+      {otpDigits.map((digit, i) => (
+        <input
+          key={i}
+          ref={(el) => { otpInputRefs.current[i] = el; }}
+          type="text"
+          inputMode="numeric"
+          maxLength={1}
+          value={digit}
+          onChange={(e) => handleOtpDigitChange(i, e.target.value)}
+          onKeyDown={(e) => handleOtpKeyDown(i, e)}
+          className="auth-otp-input"
+          autoComplete="one-time-code"
+        />
+      ))}
+    </div>
+  );
 
-          {/* Header */}
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-400 text-xs font-semibold mb-3">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Hardware-Backed Security</span>
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
-              Sign in to Whizan Cloud
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1.5">
-              Enterprise control plane with mandatory 2-factor protection
-            </p>
+  return (
+    <div className="auth-form-root">
+      {stage === "ENTER_CREDENTIALS" ? (
+        <>
+          {/* Logo */}
+          <div className="auth-form-logo">
+            <Image src="/whizan_cloud_logo.png" alt="Whizan Cloud" width={44} height={44} className="auth-logo-img" />
           </div>
+
+          <h2 className="auth-form-title">Sign in to your account</h2>
+          <p className="auth-form-subtitle">
+            Enter your credentials to access the console
+          </p>
 
           {/* Quick Biometric Shortcut if enrolled on this device */}
           {platformSupported && isBiometricEnrolled() && (
-            <div className="mb-6">
+            <div style={{ marginBottom: "1.5rem" }}>
               <button
                 type="button"
                 onClick={async () => {
@@ -364,42 +379,38 @@ function LoginForm() {
                   }
                 }}
                 disabled={biometricLoading}
-                className="w-full py-3 px-4 rounded-xl bg-zinc-900 border border-zinc-700/80 hover:border-sky-500/50 hover:bg-zinc-850 text-white font-medium text-xs transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-sm"
+                className="auth-biometric-shortcut"
               >
                 {biometricLoading ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-sky-400" />
-                    <span>Scanning Face ID / Touch ID...</span>
+                    <RefreshCw size={16} className="spin-icon" style={{ color: "var(--accent)" }} />
+                    <span>Scanning...</span>
                   </>
                 ) : (
                   <>
-                    <Fingerprint className="w-4 h-4 text-sky-400 group-hover:scale-110 transition-transform" />
-                    <span>Hardware Sensor Active on this Device</span>
+                    <Fingerprint size={16} style={{ color: "var(--accent)" }} />
+                    <span>Sign in with biometrics</span>
                   </>
                 )}
               </button>
-              <div className="flex items-center gap-3 my-5">
-                <div className="flex-1 h-px bg-zinc-800" />
-                <span className="text-[11px] uppercase tracking-wider text-zinc-500 font-medium">
-                  sign in with credentials
-                </span>
-                <div className="flex-1 h-px bg-zinc-800" />
+
+              <div className="auth-divider">
+                <div className="auth-divider-line" />
+                <span className="auth-divider-text">or use credentials</span>
+                <div className="auth-divider-line" />
               </div>
             </div>
           )}
 
-          {/* Login Tabs */}
-          <div className="flex p-1 bg-zinc-900 border border-zinc-800 rounded-xl mb-6">
+          {/* Login Mode Tabs */}
+          <div className="auth-tab-bar">
             <button
               type="button"
               onClick={() => setMode("PASSWORD")}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                mode === "PASSWORD"
-                  ? "bg-zinc-800 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
+              className={`auth-tab ${mode === "PASSWORD" ? "auth-tab-active" : ""}`}
             >
-              Password + 2FA
+              <Lock size={14} />
+              <span>Password</span>
             </button>
             <button
               type="button"
@@ -410,213 +421,170 @@ function LoginForm() {
                   setResendCooldown(60);
                 }
               }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                mode === "EMAIL_OTP"
-                  ? "bg-zinc-800 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
+              className={`auth-tab ${mode === "EMAIL_OTP" ? "auth-tab-active" : ""}`}
             >
-              One-Time Email OTP
+              <Mail size={14} />
+              <span>Email OTP</span>
             </button>
           </div>
 
           {/* Form: Password */}
           {mode === "PASSWORD" ? (
-            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <form onSubmit={handlePasswordSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                  Email Address
-                </label>
-                <div className="relative flex items-center">
-                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                  />
-                </div>
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  className="input"
+                />
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-medium text-zinc-300">
-                    Password
-                  </label>
-                  <span className="text-[11px] text-zinc-400">2FA Enforced</span>
-                </div>
-                <div className="relative flex items-center">
-                  <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1 text-[11px] text-zinc-400">
-                <Clock className="w-3.5 h-3.5 text-sky-400 flex-shrink-0" />
-                <span>2-Step validation keeps this device logged in for 3 days.</span>
+                <label className="form-label">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="input"
+                />
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%", marginTop: "0.25rem" }}
               >
                 {loading ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                    <span>Verifying Credentials...</span>
+                    <RefreshCw size={16} className="spin-icon" />
+                    <span>Verifying...</span>
                   </>
                 ) : (
                   <>
-                    <span>Continue to 2-Step Verification</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>Continue</span>
+                    <ArrowRight size={16} />
                   </>
                 )}
               </button>
             </form>
           ) : (
             /* Form: Direct Email OTP */
-            <form onSubmit={handleDirectEmailOtpSubmit} className="space-y-4">
+            <form onSubmit={handleDirectEmailOtpSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                  Work Email Address
-                </label>
-                <div className="relative flex items-center">
-                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com"
-                    className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                  />
-                </div>
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  className="input"
+                />
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-medium text-zinc-300">
-                    6-Digit Passcode
-                  </label>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>6-Digit Code</label>
                   <button
                     type="button"
                     onClick={() => dispatchOtpToUser(email)}
                     disabled={resendCooldown > 0 || loading || !email}
-                    className="text-[11px] text-sky-400 hover:text-sky-300 disabled:opacity-40 font-medium"
+                    className="auth-resend-btn"
                   >
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Send Code"}
                   </button>
                 </div>
-
-                <div className="flex justify-between gap-2" onPaste={handleOtpPaste}>
-                  {otpDigits.map((digit, i) => (
-                    <input
-                      key={i}
-                      ref={(el) => {
-                        otpInputRefs.current[i] = el;
-                      }}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleOtpDigitChange(i, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                      className="w-12 h-13 text-center text-xl font-bold font-mono bg-zinc-900 border border-zinc-700/80 rounded-xl text-white focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:scale-[1.04] transition-all"
-                    />
-                  ))}
-                </div>
+                <OtpInputRow onSubmit={(code) => handleDirectEmailOtpSubmitWithCode(code)} />
               </div>
 
               <button
                 type="submit"
                 disabled={loading || otpDigits.join("").length !== 6}
-                className="w-full mt-2 py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%", marginTop: "0.25rem" }}
               >
                 {loading ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                    <RefreshCw size={16} className="spin-icon" />
                     <span>Signing in...</span>
                   </>
                 ) : (
                   <>
-                    <span>Verify Code & Sign In</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>Verify & Sign In</span>
+                    <ArrowRight size={16} />
                   </>
                 )}
               </button>
             </form>
           )}
 
-          <div className="mt-6 text-center text-xs text-zinc-400">
-            Don't have an account?{" "}
+          <div className="auth-form-footer">
+            Don&apos;t have an account?{" "}
             <Link
               href={redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : "/register"}
-              className="text-white hover:text-sky-400 font-semibold transition-colors"
+              className="auth-form-link"
             >
               Create Account
             </Link>
           </div>
-        </div>
+        </>
       ) : (
         /* ── STAGE 2: MANDATORY 2-STEP VERIFICATION ── */
-        <div className="relative w-full max-w-md mx-auto bg-zinc-950/95 border border-zinc-800/90 rounded-2xl p-8 shadow-2xl backdrop-blur-xl text-zinc-100 overflow-hidden">
-          {/* Ambient top light glow */}
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
-          {/* Header */}
-          <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500/15 via-indigo-500/20 to-purple-500/15 border border-sky-500/30 flex items-center justify-center mx-auto mb-3.5 text-sky-400 shadow-lg shadow-sky-500/10">
-              {twoFactorMethod === "BIOMETRIC" ? (
-                <Fingerprint className="w-7 h-7" />
-              ) : (
-                <ShieldCheck className="w-7 h-7" />
-              )}
-            </div>
-            <h2 className="text-xl font-bold tracking-tight text-white">
-              Two-Factor Authentication
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              {twoFactorMethod === "BIOMETRIC"
-                ? "Scan your hardware biometric sensor to verify identity"
-                : "Enter the 6-digit passcode dispatched to your email"}
-            </p>
-            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-mono font-medium text-sky-300">
-              {email}
-            </div>
+        <>
+          <div className="auth-form-logo">
+            {twoFactorMethod === "BIOMETRIC" ? (
+              <div className="auth-icon-circle auth-icon-accent">
+                <Fingerprint size={24} />
+              </div>
+            ) : (
+              <div className="auth-icon-circle auth-icon-accent">
+                <ShieldCheck size={24} />
+              </div>
+            )}
           </div>
 
-          <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800/60 flex items-center gap-2.5 text-xs text-zinc-400 mb-6">
-            <Clock className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>Successful verification grants a 3-day trusted session on this device.</span>
+          <h2 className="auth-form-title">Two-Factor Verification</h2>
+          <p className="auth-form-subtitle">
+            {twoFactorMethod === "BIOMETRIC"
+              ? "Use your biometric sensor to verify your identity"
+              : "Enter the 6-digit code sent to your email"}
+          </p>
+
+          <div className="auth-email-pill">
+            <Mail size={14} />
+            <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
+          </div>
+
+          <div className="auth-trust-notice">
+            <ShieldCheck size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
+            <span>Verification grants a 3-day trusted session on this device.</span>
           </div>
 
           {/* Biometric Option */}
           {twoFactorMethod === "BIOMETRIC" ? (
-            <div className="space-y-4">
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               <button
                 type="button"
                 onClick={handle2FABiometricVerify}
                 disabled={biometricLoading}
-                className="w-full py-4 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2.5 shadow-lg shadow-sky-500/25 active:scale-[0.99] cursor-pointer"
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%" }}
               >
                 {biometricLoading ? (
                   <>
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                    <span>Scanning Touch ID / Face ID...</span>
+                    <RefreshCw size={16} className="spin-icon" />
+                    <span>Scanning...</span>
                   </>
                 ) : (
                   <>
-                    <Fingerprint className="w-5 h-5" />
+                    <Fingerprint size={16} />
                     <span>Verify with Touch ID / Face ID</span>
                   </>
                 )}
@@ -625,57 +593,43 @@ function LoginForm() {
               <button
                 type="button"
                 onClick={handleSwitchToEmailOtp}
-                className="w-full py-2.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                className="btn btn-ghost"
+                style={{ width: "100%" }}
               >
-                <Mail className="w-3.5 h-3.5" />
-                <span>Device lacks sensor? Use Email OTP instead</span>
+                <Mail size={14} />
+                <span>Use Email OTP instead</span>
               </button>
             </div>
           ) : (
             /* Email OTP Option */
-            <div className="space-y-5">
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs text-zinc-300 font-medium">
-                    Enter 6-digit Code
-                  </span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>Verification Code</label>
                   <button
                     type="button"
-                    onClick={() => dispatchOtpToUser(email)}
+                    onClick={() => {
+                      dispatchOtpToUser(email);
+                      setResendCooldown(60);
+                    }}
                     disabled={resendCooldown > 0 || loading}
-                    className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-40 font-medium cursor-pointer"
+                    className="auth-resend-btn"
                   >
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
                   </button>
                 </div>
-
-                <div className="flex justify-between gap-2" onPaste={handleOtpPaste}>
-                  {otpDigits.map((digit, i) => (
-                    <input
-                      key={i}
-                      ref={(el) => {
-                        otpInputRefs.current[i] = el;
-                      }}
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={1}
-                      value={digit}
-                      onChange={(e) => handleOtpDigitChange(i, e.target.value)}
-                      onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                      className="w-12 h-13 text-center text-xl font-bold font-mono bg-zinc-900 border border-zinc-700/80 rounded-xl text-white focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:scale-[1.04] transition-all"
-                    />
-                  ))}
-                </div>
+                <OtpInputRow onSubmit={(code) => handleComplete2FAOtp(code)} />
               </div>
 
               {platformSupported && isBiometricEnrolledForEmail(email) && (
                 <button
                   type="button"
                   onClick={() => setTwoFactorMethod("BIOMETRIC")}
-                  className="w-full py-2 text-xs text-sky-400 hover:text-sky-300 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="btn btn-ghost"
+                  style={{ width: "100%" }}
                 >
-                  <Fingerprint className="w-3.5 h-3.5" />
-                  <span>Switch back to Face ID / Touch ID</span>
+                  <Fingerprint size={14} />
+                  <span>Switch to biometric</span>
                 </button>
               )}
 
@@ -683,24 +637,25 @@ function LoginForm() {
                 type="button"
                 onClick={() => handleComplete2FAOtp(otpDigits.join(""))}
                 disabled={loading || otpDigits.join("").length !== 6}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%" }}
               >
                 {loading ? (
                   <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                    <span>Verifying Code...</span>
+                    <RefreshCw size={16} className="spin-icon" />
+                    <span>Verifying...</span>
                   </>
                 ) : (
                   <>
-                    <span>Verify & Access Console</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>Verify & Sign In</span>
+                    <ArrowRight size={16} />
                   </>
                 )}
               </button>
             </div>
           )}
 
-          <div className="mt-6 pt-5 border-t border-zinc-800/80 text-center">
+          <div style={{ marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid var(--border)", textAlign: "center" }}>
             <button
               type="button"
               onClick={() => {
@@ -708,26 +663,222 @@ function LoginForm() {
                 setPendingSession(null);
                 setOtpDigits(["", "", "", "", "", ""]);
               }}
-              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center justify-center gap-1.5 mx-auto cursor-pointer"
+              className="btn btn-ghost"
+              style={{ margin: "0 auto" }}
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft size={14} />
               <span>Back to sign in</span>
             </button>
           </div>
-        </div>
+        </>
       )}
+
+      <style>{`
+        .auth-form-root {
+          animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .auth-form-logo {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 1.25rem;
+        }
+        .auth-logo-img {
+          border-radius: 12px;
+        }
+        .auth-icon-circle {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .auth-icon-accent {
+          background: var(--accent-glow);
+          border: 1px solid rgba(79, 70, 229, 0.2);
+          color: var(--accent);
+        }
+        .auth-form-title {
+          font-size: 1.35rem;
+          font-weight: 700;
+          letter-spacing: -0.025em;
+          color: var(--foreground);
+          text-align: center;
+          margin-bottom: 0.35rem;
+        }
+        .auth-form-subtitle {
+          font-size: 0.875rem;
+          color: var(--muted);
+          text-align: center;
+          margin-bottom: 1.5rem;
+          line-height: 1.5;
+        }
+        .auth-biometric-shortcut {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          padding: 0.65rem 1rem;
+          border-radius: 10px;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          font-size: 0.875rem;
+          font-weight: 550;
+          color: var(--foreground);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          font-family: inherit;
+          box-shadow: var(--shadow-sm);
+        }
+        .auth-biometric-shortcut:hover {
+          border-color: var(--card-border-hover);
+          background: var(--bg-inset);
+          box-shadow: var(--shadow);
+        }
+        .auth-divider {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-top: 1.25rem;
+        }
+        .auth-divider-line {
+          flex: 1;
+          height: 1px;
+          background: var(--border);
+        }
+        .auth-divider-text {
+          font-size: 0.75rem;
+          color: var(--muted-fg);
+          font-weight: 500;
+          white-space: nowrap;
+        }
+        .auth-tab-bar {
+          display: flex;
+          gap: 0.25rem;
+          padding: 3px;
+          background: var(--bg-subtle);
+          border-radius: 10px;
+          margin-bottom: 1.25rem;
+          border: 1px solid var(--border-light);
+        }
+        .auth-tab {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.4rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          font-weight: 550;
+          color: var(--muted);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.15s ease;
+        }
+        .auth-tab:hover {
+          color: var(--foreground);
+        }
+        .auth-tab-active {
+          background: #ffffff;
+          color: var(--foreground);
+          box-shadow: var(--shadow-sm);
+        }
+        .auth-otp-row {
+          display: flex;
+          gap: 0.5rem;
+          justify-content: space-between;
+        }
+        .auth-otp-input {
+          width: 46px;
+          height: 50px;
+          text-align: center;
+          font-size: 1.25rem;
+          font-weight: 700;
+          font-family: var(--font-geist-mono), ui-monospace, monospace;
+          background: #ffffff;
+          border: 1.5px solid var(--card-border);
+          border-radius: 10px;
+          color: var(--foreground);
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: var(--shadow-sm);
+        }
+        .auth-otp-input:focus {
+          outline: none;
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        }
+        .auth-resend-btn {
+          background: none;
+          border: none;
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--accent);
+          cursor: pointer;
+          font-family: inherit;
+          padding: 0;
+          transition: opacity 0.15s ease;
+        }
+        .auth-resend-btn:hover { opacity: 0.8; }
+        .auth-resend-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .auth-email-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          padding: 0.35rem 0.85rem;
+          border-radius: 8px;
+          background: var(--bg-subtle);
+          border: 1px solid var(--border);
+          color: var(--foreground);
+          font-size: 0.82rem;
+          font-weight: 500;
+          margin: 0 auto 1rem;
+          display: flex;
+          justify-content: center;
+          width: fit-content;
+          margin-left: auto;
+          margin-right: auto;
+        }
+        .auth-trust-notice {
+          display: flex;
+          align-items: center;
+          gap: 0.55rem;
+          padding: 0.6rem 0.85rem;
+          border-radius: 8px;
+          background: var(--accent-glow);
+          border: 1px solid rgba(79, 70, 229, 0.15);
+          font-size: 0.78rem;
+          color: var(--muted);
+          margin-bottom: 1.25rem;
+        }
+        .auth-form-footer {
+          text-align: center;
+          font-size: 0.84rem;
+          color: var(--muted);
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border);
+        }
+        .auth-form-link {
+          color: var(--accent);
+          font-weight: 600;
+          transition: opacity 0.15s;
+        }
+        .auth-form-link:hover {
+          opacity: 0.8;
+        }
+      `}</style>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen bg-black flex flex-col justify-center items-center p-4 relative selection:bg-sky-500/30 selection:text-sky-200">
-      <div className="w-full max-w-md">
-        <Suspense fallback={<div className="h-96 w-full animate-pulse bg-zinc-900 rounded-2xl" />}>
-          <LoginForm />
-        </Suspense>
-      </div>
-    </div>
+    <Suspense fallback={<div style={{ minHeight: 200 }} className="skeleton" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

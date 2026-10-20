@@ -12,6 +12,7 @@ import {
 } from "@/lib/webauthn";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { toast } from "sonner";
 import { getSafeRedirectUrl } from "@/lib/redirect";
 import {
@@ -22,10 +23,8 @@ import {
   ArrowRight,
   ArrowLeft,
   RefreshCw,
-  Sparkles,
   Lock,
   User as UserIcon,
-  Clock,
 } from "lucide-react";
 
 type RegistrationStep = "DETAILS" | "VERIFY_EMAIL" | "BIOMETRIC_SETUP";
@@ -121,10 +120,10 @@ function RegisterForm() {
       await triggerOtpDispatch(email.trim());
       setStep("VERIFY_EMAIL");
       setResendCooldown(60);
-      toast.success(`Verification code dispatched to ${email}`);
+      toast.success(`Verification code sent to ${email}`);
       setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
-      toast.error(err.message || "Failed to send verification email. Please check your address.");
+      toast.error(err.message || "Failed to send verification email.");
     } finally {
       setLoading(false);
     }
@@ -139,7 +138,7 @@ function RegisterForm() {
     try {
       await triggerOtpDispatch(email.trim());
       setResendCooldown(60);
-      toast.success(`New verification code dispatched to ${email}`);
+      toast.success(`New verification code sent to ${email}`);
       setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
       toast.error(err.message || "Failed to resend verification email.");
@@ -233,12 +232,14 @@ function RegisterForm() {
       // Save pending session in memory
       setPendingRegisterSession(res);
 
-      toast.success("Email verified and account registered!");
+      toast.success("Email verified and account created!");
 
       // 3. ALWAYS transition to Biometric Setup step!
       setStep("BIOMETRIC_SETUP");
     } catch (err: any) {
       toast.error(err.message || "Verification failed. Check the code and try again.");
+      setOtpDigits(["", "", "", "", "", ""]);
+      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
     } finally {
       setLoading(false);
     }
@@ -264,7 +265,7 @@ function RegisterForm() {
         toast.success("Biometric security enabled! Welcome to Whizan Cloud.");
         setTimeout(() => {
           router.push(destination);
-        }, 1000);
+        }, 800);
       } else {
         toast.error(result.error || "Biometric registration was cancelled.");
       }
@@ -282,167 +283,174 @@ function RegisterForm() {
     if (!pendingRegisterSession) return;
     saveTwoFactorTrust(email.trim());
     setSession(pendingRegisterSession.accessToken, pendingRegisterSession.user);
-    toast.success("Welcome to Whizan Cloud! 2-Step Verification set to Email OTP.");
+    toast.success("Welcome to Whizan Cloud! You can set up biometrics later in Settings.");
     router.push(destination);
   }
 
+  // Step indicator
+  const steps = [
+    { label: "Details", done: step !== "DETAILS" },
+    { label: "Verify Email", done: step === "BIOMETRIC_SETUP" },
+    { label: "Security", done: biometricSuccess },
+  ];
+  const currentStepIndex = step === "DETAILS" ? 0 : step === "VERIFY_EMAIL" ? 1 : 2;
+
   return (
-    <div className="w-full">
+    <div className="auth-form-root">
       {/* ── STEP 1: ACCOUNT DETAILS ── */}
       {step === "DETAILS" && (
-        <div className="relative w-full max-w-md mx-auto bg-zinc-950/90 border border-zinc-800/90 rounded-2xl p-8 shadow-2xl backdrop-blur-xl text-zinc-100 overflow-hidden">
-          {/* Ambient top light glow */}
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-400 text-xs font-semibold mb-3">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Developer Cloud Console</span>
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-white">
-              Create your Account
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1.5">
-              Deploy containers, edge functions, and databases in seconds
-            </p>
+        <>
+          <div className="auth-form-logo">
+            <Image src="/whizan_cloud_logo.png" alt="Whizan Cloud" width={44} height={44} className="auth-logo-img" />
           </div>
 
-          <form onSubmit={handleDetailsSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                Full Name
-              </label>
-              <div className="relative flex items-center">
-                <UserIcon className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  required
-                  placeholder="Alex Developer"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                />
+          <h2 className="auth-form-title">Create your account</h2>
+          <p className="auth-form-subtitle">
+            Get started with Whizan Cloud in seconds
+          </p>
+
+          {/* Step Indicator */}
+          <div className="auth-steps-bar">
+            {steps.map((s, i) => (
+              <div key={i} className={`auth-step-item ${i <= currentStepIndex ? "auth-step-active" : ""} ${s.done ? "auth-step-done" : ""}`}>
+                <div className="auth-step-dot">
+                  {s.done ? <CheckCircle2 size={14} /> : <span>{i + 1}</span>}
+                </div>
+                <span className="auth-step-label">{s.label}</span>
+                {i < steps.length - 1 && <div className="auth-step-connector" />}
               </div>
+            ))}
+          </div>
+
+          <form onSubmit={handleDetailsSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div>
+              <label className="form-label">Full Name</label>
+              <input
+                type="text"
+                required
+                placeholder="Alex Developer"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="input"
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                Work Email Address
-              </label>
-              <div className="relative flex items-center">
-                <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="email"
-                  required
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                />
-              </div>
+              <label className="form-label">Email Address</label>
+              <input
+                type="email"
+                required
+                placeholder="you@company.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input"
+              />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                Password
-              </label>
-              <div className="relative flex items-center">
-                <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="password"
-                  required
-                  placeholder="At least 8 characters"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 transition-all font-normal"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1 text-xs text-zinc-400">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>We'll verify your email with a 6-digit OTP before account creation.</span>
+              <label className="form-label">Password</label>
+              <input
+                type="password"
+                required
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input"
+              />
+              <div className="form-hint">Minimum 8 characters required</div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-2 py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+              className="btn btn-primary btn-lg"
+              style={{ width: "100%", marginTop: "0.25rem" }}
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>Dispatching verification code...</span>
+                  <RefreshCw size={16} className="spin-icon" />
+                  <span>Sending verification code...</span>
                 </>
               ) : (
                 <>
-                  <span>Continue with Email Verification</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>Continue</span>
+                  <ArrowRight size={16} />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-xs text-zinc-400">
+          <div className="auth-form-footer">
             Already have an account?{" "}
             <Link
               href={redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : "/login"}
-              className="text-white hover:text-sky-400 font-semibold transition-colors"
+              className="auth-form-link"
             >
               Sign In
             </Link>
           </div>
-        </div>
+        </>
       )}
 
       {/* ── STEP 2: VERIFY EMAIL OTP ── */}
       {step === "VERIFY_EMAIL" && (
-        <div className="relative w-full max-w-md mx-auto bg-zinc-950/90 border border-zinc-800/90 rounded-2xl p-8 shadow-2xl backdrop-blur-xl text-zinc-100 overflow-hidden">
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-sky-500/15 via-indigo-500/20 to-purple-500/15 border border-sky-500/30 flex items-center justify-center mx-auto mb-3.5 text-sky-400 shadow-lg shadow-sky-500/10">
-              <Mail className="w-7 h-7" />
-            </div>
-            <h2 className="text-xl font-bold tracking-tight text-white">
-              Verify Your Email Address
-            </h2>
-            <p className="text-xs text-zinc-400 mt-1">
-              Enter the 6-digit code dispatched to:
-            </p>
-            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-mono font-medium text-sky-300">
-              {email}
+        <>
+          <div className="auth-form-logo">
+            <div className="auth-icon-circle auth-icon-accent">
+              <Mail size={24} />
             </div>
           </div>
 
-          <div className="space-y-5">
+          <h2 className="auth-form-title">Verify your email</h2>
+          <p className="auth-form-subtitle">
+            Enter the 6-digit code we sent to:
+          </p>
+
+          <div className="auth-email-pill">
+            <Mail size={14} />
+            <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
+          </div>
+
+          {/* Step Indicator */}
+          <div className="auth-steps-bar">
+            {steps.map((s, i) => (
+              <div key={i} className={`auth-step-item ${i <= currentStepIndex ? "auth-step-active" : ""} ${s.done ? "auth-step-done" : ""}`}>
+                <div className="auth-step-dot">
+                  {s.done ? <CheckCircle2 size={14} /> : <span>{i + 1}</span>}
+                </div>
+                <span className="auth-step-label">{s.label}</span>
+                {i < steps.length - 1 && <div className="auth-step-connector" />}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div>
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs text-zinc-300 font-medium">Enter 6-digit Passcode</span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>Verification Code</label>
                 <button
                   type="button"
                   onClick={handleResendOtp}
                   disabled={resendCooldown > 0 || loading}
-                  className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-40 font-medium cursor-pointer"
+                  className="auth-resend-btn"
                 >
                   {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
                 </button>
               </div>
 
-              <div className="flex justify-between gap-2" onPaste={handlePaste}>
+              <div className="auth-otp-row" onPaste={handlePaste}>
                 {otpDigits.map((digit, i) => (
                   <input
                     key={i}
-                    ref={(el) => {
-                      otpInputRefs.current[i] = el;
-                    }}
+                    ref={(el) => { otpInputRefs.current[i] = el; }}
                     type="text"
                     inputMode="numeric"
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handleDigitChange(i, e.target.value)}
                     onKeyDown={(e) => handleKeyDown(i, e)}
-                    className="w-12 h-13 text-center text-xl font-bold font-mono bg-zinc-900 border border-zinc-700/80 rounded-xl text-white focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:scale-[1.04] transition-all"
+                    className="auth-otp-input"
+                    autoComplete="one-time-code"
                   />
                 ))}
               </div>
@@ -452,98 +460,318 @@ function RegisterForm() {
               type="button"
               onClick={() => verifyAndRegister()}
               disabled={loading || otpDigits.join("").length !== 6}
-              className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+              className="btn btn-primary btn-lg"
+              style={{ width: "100%" }}
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                  <span>Verifying Code...</span>
+                  <RefreshCw size={16} className="spin-icon" />
+                  <span>Verifying...</span>
                 </>
               ) : (
                 <>
-                  <span>Verify Email & Create Account</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>Verify & Create Account</span>
+                  <ArrowRight size={16} />
                 </>
               )}
             </button>
 
             <button
               type="button"
-              onClick={() => setStep("DETAILS")}
-              className="w-full text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer pt-2"
+              onClick={() => {
+                setStep("DETAILS");
+                setOtpDigits(["", "", "", "", "", ""]);
+              }}
+              className="btn btn-ghost"
+              style={{ width: "100%" }}
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
+              <ArrowLeft size={14} />
               <span>Change email or password</span>
             </button>
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── STEP 3: BIOMETRIC REGISTRATION PROMPT ── */}
+      {/* ── STEP 3: BIOMETRIC REGISTRATION ── */}
       {step === "BIOMETRIC_SETUP" && (
-        <div className="relative w-full max-w-md mx-auto bg-zinc-950/90 border border-zinc-800/90 rounded-2xl p-8 shadow-2xl backdrop-blur-xl text-zinc-100 overflow-hidden animate-in fade-in duration-300">
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-sky-500/20 via-indigo-500/25 to-purple-500/20 border border-sky-500/35 flex items-center justify-center mx-auto mb-4 text-sky-400 shadow-xl shadow-sky-500/15 animate-pulse">
-              <Fingerprint className="w-9 h-9" />
+        <>
+          <div className="auth-form-logo">
+            <div className={`auth-icon-circle ${biometricSuccess ? "auth-icon-success" : "auth-icon-accent"}`}>
+              {biometricSuccess ? <CheckCircle2 size={24} /> : <Fingerprint size={24} />}
             </div>
-            <h2 className="text-xl font-bold tracking-tight text-white">
-              Set Up Biometric Authentication
-            </h2>
-            <p className="text-xs text-zinc-400 mt-2 leading-relaxed">
-              Enable Touch ID, Face ID, or Windows Hello for instant 1-tap 2FA on this device. Future logins won't require manual OTPs.
-            </p>
           </div>
 
-          <div className="space-y-4">
-            <button
-              type="button"
-              onClick={handleBiometricEnroll}
-              disabled={biometricLoading || biometricSuccess}
-              className="w-full py-4 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2.5 shadow-lg shadow-sky-500/25 active:scale-[0.99] cursor-pointer"
-            >
-              {biometricLoading ? (
-                <>
-                  <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Registering Sensor...</span>
-                </>
-              ) : biometricSuccess ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-300" />
-                  <span>Sensor Registered! Redirecting...</span>
-                </>
-              ) : (
-                <>
-                  <Fingerprint className="w-5 h-5" />
-                  <span>Register Touch ID / Face ID</span>
-                </>
-              )}
-            </button>
+          <h2 className="auth-form-title">
+            {biometricSuccess ? "You're all set!" : "Set up security"}
+          </h2>
+          <p className="auth-form-subtitle">
+            {biometricSuccess
+              ? "Biometric authentication enabled. Redirecting..."
+              : biometricSupported
+                ? "Enable Touch ID, Face ID, or Windows Hello for quick 2FA on this device."
+                : "Your device doesn't support biometrics. You'll use email OTP for 2FA verification."
+            }
+          </p>
 
-            <button
-              type="button"
-              onClick={handleSkipBiometrics}
-              className="w-full py-2.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>Skip for now (Use Email OTP on this device)</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
+          {/* Step Indicator */}
+          <div className="auth-steps-bar">
+            {steps.map((s, i) => (
+              <div key={i} className={`auth-step-item ${i <= currentStepIndex ? "auth-step-active" : ""} ${s.done ? "auth-step-done" : ""}`}>
+                <div className="auth-step-dot">
+                  {s.done ? <CheckCircle2 size={14} /> : <span>{i + 1}</span>}
+                </div>
+                <span className="auth-step-label">{s.label}</span>
+                {i < steps.length - 1 && <div className="auth-step-connector" />}
+              </div>
+            ))}
           </div>
-        </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {biometricSupported && !biometricSuccess && (
+              <button
+                type="button"
+                onClick={handleBiometricEnroll}
+                disabled={biometricLoading || biometricSuccess}
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%" }}
+              >
+                {biometricLoading ? (
+                  <>
+                    <RefreshCw size={16} className="spin-icon" />
+                    <span>Registering...</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint size={16} />
+                    <span>Enable Touch ID / Face ID</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {!biometricSuccess && (
+              <button
+                type="button"
+                onClick={handleSkipBiometrics}
+                className={biometricSupported ? "btn btn-ghost" : "btn btn-primary btn-lg"}
+                style={{ width: "100%" }}
+              >
+                {biometricSupported ? (
+                  <>
+                    <span>Skip — use Email OTP</span>
+                    <ArrowRight size={14} />
+                  </>
+                ) : (
+                  <>
+                    <span>Continue with Email OTP</span>
+                    <ArrowRight size={16} />
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {!biometricSuccess && (
+            <div className="auth-trust-notice" style={{ marginTop: "1rem" }}>
+              <ShieldCheck size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
+              <span>Two-factor verification is mandatory. You can always change your method in Settings.</span>
+            </div>
+          )}
+        </>
       )}
+
+      <style>{`
+        .auth-form-root {
+          animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .auth-form-logo {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 1.25rem;
+        }
+        .auth-logo-img {
+          border-radius: 12px;
+        }
+        .auth-icon-circle {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .auth-icon-accent {
+          background: var(--accent-glow);
+          border: 1px solid rgba(79, 70, 229, 0.2);
+          color: var(--accent);
+        }
+        .auth-icon-success {
+          background: var(--success-bg);
+          border: 1px solid var(--success-border);
+          color: var(--success);
+        }
+        .auth-form-title {
+          font-size: 1.35rem;
+          font-weight: 700;
+          letter-spacing: -0.025em;
+          color: var(--foreground);
+          text-align: center;
+          margin-bottom: 0.35rem;
+        }
+        .auth-form-subtitle {
+          font-size: 0.875rem;
+          color: var(--muted);
+          text-align: center;
+          margin-bottom: 1.25rem;
+          line-height: 1.5;
+        }
+        .auth-steps-bar {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0;
+          margin-bottom: 1.5rem;
+        }
+        .auth-step-item {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+        }
+        .auth-step-dot {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.7rem;
+          font-weight: 700;
+          background: var(--bg-subtle);
+          border: 1.5px solid var(--border);
+          color: var(--muted-fg);
+          transition: all 0.2s ease;
+          flex-shrink: 0;
+        }
+        .auth-step-active .auth-step-dot {
+          background: var(--accent-glow);
+          border-color: var(--accent);
+          color: var(--accent);
+        }
+        .auth-step-done .auth-step-dot {
+          background: var(--success-bg);
+          border-color: var(--success);
+          color: var(--success);
+        }
+        .auth-step-label {
+          font-size: 0.72rem;
+          font-weight: 600;
+          color: var(--muted-fg);
+          white-space: nowrap;
+        }
+        .auth-step-active .auth-step-label {
+          color: var(--foreground);
+        }
+        .auth-step-done .auth-step-label {
+          color: var(--success);
+        }
+        .auth-step-connector {
+          width: 24px;
+          height: 1.5px;
+          background: var(--border);
+          margin: 0 0.35rem;
+        }
+        .auth-step-done + .auth-step-connector,
+        .auth-step-active .auth-step-connector {
+          background: var(--accent);
+        }
+        .auth-otp-row {
+          display: flex;
+          gap: 0.5rem;
+          justify-content: space-between;
+        }
+        .auth-otp-input {
+          width: 46px;
+          height: 50px;
+          text-align: center;
+          font-size: 1.25rem;
+          font-weight: 700;
+          font-family: var(--font-geist-mono), ui-monospace, monospace;
+          background: #ffffff;
+          border: 1.5px solid var(--card-border);
+          border-radius: 10px;
+          color: var(--foreground);
+          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: var(--shadow-sm);
+        }
+        .auth-otp-input:focus {
+          outline: none;
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        }
+        .auth-resend-btn {
+          background: none;
+          border: none;
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--accent);
+          cursor: pointer;
+          font-family: inherit;
+          padding: 0;
+          transition: opacity 0.15s ease;
+        }
+        .auth-resend-btn:hover { opacity: 0.8; }
+        .auth-resend-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .auth-email-pill {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.45rem;
+          padding: 0.35rem 0.85rem;
+          border-radius: 8px;
+          background: var(--bg-subtle);
+          border: 1px solid var(--border);
+          color: var(--foreground);
+          font-size: 0.82rem;
+          font-weight: 500;
+          width: fit-content;
+          margin: 0 auto 1rem;
+        }
+        .auth-trust-notice {
+          display: flex;
+          align-items: center;
+          gap: 0.55rem;
+          padding: 0.6rem 0.85rem;
+          border-radius: 8px;
+          background: var(--accent-glow);
+          border: 1px solid rgba(79, 70, 229, 0.15);
+          font-size: 0.78rem;
+          color: var(--muted);
+        }
+        .auth-form-footer {
+          text-align: center;
+          font-size: 0.84rem;
+          color: var(--muted);
+          margin-top: 1.5rem;
+          padding-top: 1rem;
+          border-top: 1px solid var(--border);
+        }
+        .auth-form-link {
+          color: var(--accent);
+          font-weight: 600;
+          transition: opacity 0.15s;
+        }
+        .auth-form-link:hover {
+          opacity: 0.8;
+        }
+      `}</style>
     </div>
   );
 }
 
 export default function RegisterPage() {
   return (
-    <div className="min-h-screen bg-black flex flex-col justify-center items-center p-4 relative selection:bg-sky-500/30 selection:text-sky-200">
-      <div className="w-full max-w-md">
-        <Suspense fallback={<div className="h-96 w-full animate-pulse bg-zinc-900 rounded-2xl" />}>
-          <RegisterForm />
-        </Suspense>
-      </div>
-    </div>
+    <Suspense fallback={<div style={{ minHeight: 200 }} className="skeleton" />}>
+      <RegisterForm />
+    </Suspense>
   );
 }
