@@ -6,6 +6,7 @@ import { publishLog } from "./log-streamer.js";
 import path from "path";
 import fs from "fs/promises";
 import { spawn } from "child_process";
+import { sendDeploymentFailedEmail } from "./email.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -430,16 +431,33 @@ const worker = new Worker<ServiceBuildJob>(
         console.error("Failed to check active deployment:", checkErr);
       }
 
-      // 4. Update deployment in DB
-      await prisma.serviceDeployment.update({
-        where: { id: deploymentId },
-        data: {
-          status: "FAILED",
-          buildFinishedAt: new Date(),
-          errorMessage: err.message,
-          containerPort: null,
-        },
-      }).catch((dbErr) => console.error("Failed to update deployment to FAILED:", dbErr));
+      // 4. Update deployment in DB and alert user
+      try {
+        const dep = await prisma.serviceDeployment.update({
+          where: { id: deploymentId },
+          data: {
+            status: "FAILED",
+            buildFinishedAt: new Date(),
+            errorMessage: err.message,
+            containerPort: null,
+          },
+          include: { service: { include: { user: true } } },
+        });
+
+        if (dep?.service?.user?.email) {
+          sendDeploymentFailedEmail({
+            email: dep.service.user.email,
+            userName: dep.service.user.name || undefined,
+            projectName: dep.service.name || "Backend Service",
+            deploymentId: dep.id,
+            errorMessage: err.message,
+            dashboardUrl: `https://dashboard.whizan.cloud/dashboard/services/${dep.serviceId}`,
+            time: new Date().toUTCString(),
+          }).catch((emailErr) => console.error("[Service Worker] Failed to send failure email:", emailErr));
+        }
+      } catch (dbErr) {
+        console.error("Failed to update deployment to FAILED:", dbErr);
+      }
 
       // 5. Notify streaming clients that deployment completed
       await publishLog(redisPub, deploymentId, "__DONE__");

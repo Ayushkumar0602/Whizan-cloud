@@ -6,6 +6,7 @@ import { stopDeploymentContainer, deleteBuildDir, cleanupDeploymentResources } f
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { checkVmOnline } from "../lib/vm-status.js";
 import { uploadArchiveToVm } from "../lib/vm-archive.js";
+import { sendDeploymentFailedEmail } from "../lib/email-service.js";
 
 // Shared build queue — the build-worker consumes from this
 export const buildQueue = new Queue("build", {
@@ -248,11 +249,23 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       });
 
       if (!uploadRes.ok) {
+        const errorMsg = uploadRes.error || "Failed to stage archive on VM storage";
         await prisma.deployment.update({
           where: { id: deployment.id },
-          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: uploadRes.error || "Failed to stage archive on VM storage" },
+          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: errorMsg },
         });
-        return reply.code(500).send({ error: uploadRes.error || "Failed to stage archive on VM storage" });
+        if (request.user.email) {
+          sendDeploymentFailedEmail({
+            email: request.user.email,
+            userName: request.user.email.split("@")[0],
+            projectName: project.name,
+            deploymentId: deployment.id,
+            errorMessage: errorMsg,
+            dashboardUrl: `https://dashboard.whizan.cloud/dashboard/projects/${project.id}`,
+            time: new Date().toUTCString(),
+          }).catch(() => {});
+        }
+        return reply.code(500).send({ error: errorMsg });
       }
 
       await buildQueue.add("build", {

@@ -11,6 +11,7 @@ import path from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import os from "os";
+import { sendDeploymentFailedEmail } from "./email.js";
 
 // ─── Import the Backend Services & Database Workers so they run concurrently ──
 import "./service-worker.js";
@@ -85,10 +86,27 @@ const worker = new Worker<BuildJob>(
     };
 
     const markFailed = async (msg: string): Promise<void> => {
-      await prisma.deployment.update({
-        where: { id: deploymentId },
-        data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: msg },
-      });
+      try {
+        const dep = await prisma.deployment.update({
+          where: { id: deploymentId },
+          data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: msg },
+          include: { project: { include: { user: true } } },
+        });
+
+        if (dep?.project?.user?.email) {
+          sendDeploymentFailedEmail({
+            email: dep.project.user.email,
+            userName: dep.project.user.name || undefined,
+            projectName: dep.project.name || "Web Project",
+            deploymentId: dep.id,
+            errorMessage: msg,
+            dashboardUrl: `https://dashboard.whizan.cloud/dashboard/projects/${dep.projectId}`,
+            time: new Date().toUTCString(),
+          }).catch((err) => console.error("[Worker] Error sending failure email:", err));
+        }
+      } catch (err) {
+        console.error("[Worker] Error in markFailed:", err);
+      }
     };
 
     // ── Cancellation via Redis Pub/Sub ───────────────────────────────────────

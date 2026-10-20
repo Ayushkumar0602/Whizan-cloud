@@ -225,8 +225,20 @@ export { apiCache };
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
 export const auth = {
-  register: (data: { email: string; password: string; name?: string }) =>
+  register: (data: { email: string; password: string; name?: string; passcode?: string }) =>
     request<{ accessToken: string; user: User }>("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  sendOtp: (data: { email: string }) =>
+    request<{ ok: boolean; message: string; expiresIn?: number }>("/api/auth/send-otp", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  verifyOtp: (data: { email: string; passcode: string }) =>
+    request<{ ok: boolean; verified: boolean }>("/api/auth/verify-otp", {
       method: "POST",
       body: JSON.stringify(data),
     }),

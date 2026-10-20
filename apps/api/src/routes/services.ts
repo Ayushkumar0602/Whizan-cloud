@@ -13,6 +13,7 @@ import { checkVmOnline } from "../lib/vm-status.js";
 import { isUserAdmin } from "../lib/auth-utils.js";
 import { uploadArchiveToVm } from "../lib/vm-archive.js";
 import { getBaseDomain, getDeploymentUrl } from "../lib/domain.js";
+import { sendDeploymentFailedEmail } from "../lib/email-service.js";
 
 export const serviceQueue = new Queue("service-build", {
   connection: redisClient,
@@ -656,11 +657,23 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     });
 
     if (!uploadRes.ok) {
+      const errorMsg = uploadRes.error || "Failed to stage archive on VM storage";
       await prisma.serviceDeployment.update({
         where: { id: deployment.id },
-        data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: uploadRes.error || "Failed to stage archive on VM storage" },
+        data: { status: "FAILED", buildFinishedAt: new Date(), errorMessage: errorMsg },
       });
-      return reply.code(500).send({ error: uploadRes.error || "Failed to stage archive on VM storage" });
+      if (request.user.email) {
+        sendDeploymentFailedEmail({
+          email: request.user.email,
+          userName: request.user.email.split("@")[0],
+          projectName: service.name,
+          deploymentId: deployment.id,
+          errorMessage: errorMsg,
+          dashboardUrl: `https://dashboard.whizan.cloud/dashboard/services/${service.id}`,
+          time: new Date().toUTCString(),
+        }).catch(() => {});
+      }
+      return reply.code(500).send({ error: errorMsg });
     }
 
     await serviceQueue.add("service-build", {

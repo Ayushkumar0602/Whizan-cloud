@@ -14,7 +14,7 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name?: string) => Promise<void>;
+  register: (email: string, password: string, name?: string, passcode?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updated: Partial<User>) => void;
 };
@@ -136,9 +136,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (email: string, password: string, name?: string) => {
+    async (email: string, password: string, name?: string, passcode?: string) => {
       try {
-        const res = await auth.register({ email, password, name });
+        const res = await auth.register({ email, password, name, passcode });
         setAccessToken(res.accessToken);
         setUser(res.user);
         try {

@@ -5,6 +5,7 @@ import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import crypto from "crypto";
 import { isUserAdmin, isRootAdmin } from "../lib/auth-utils.js";
+import { sendOtpEmail } from "../lib/email-service.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -12,12 +13,35 @@ const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   name: z.string().min(1).optional(),
+  passcode: z.string().min(6).max(6).optional(),
+});
+
+const SendOtpSchema = z.object({
+  email: z.string().email(),
+});
+
+const VerifyOtpSchema = z.object({
+  email: z.string().email(),
+  passcode: z.string().min(6).max(6),
 });
 
 const LoginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
 });
+
+// ─── OTP In-Memory Store ─────────────────────────────────────────────────────
+
+interface OtpRecord {
+  code: string;
+  expiresAt: number;
+  attempts: number;
+}
+const otpMemoryStore = new Map<string, OtpRecord>();
+
+function generateNumericOtp(): string {
+  return String(crypto.randomInt(100000, 999999));
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -79,23 +103,129 @@ async function issueTokens(
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 export async function authRoutes(fastify: FastifyInstance) {
+  // POST /api/auth/send-otp — Sends a 6-digit OTP via EmailJS
+  fastify.post("/send-otp", async (request, reply) => {
+    const body = SendOtpSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Invalid email format" });
+    }
+    const email = body.data.email.trim().toLowerCase();
+
+    // Check if account already exists
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return reply.code(409).send({ error: "An account with this email already exists. Please log in." });
+    }
+
+    const code = generateNumericOtp();
+    const expiresAt = Date.now() + 15 * 60 * 1000;
+    otpMemoryStore.set(email, { code, expiresAt, attempts: 0 });
+
+    try {
+      await redisClient.setex(`otp:${email}`, 900, code);
+    } catch {}
+
+    const sendRes = await sendOtpEmail({
+      email,
+      passcode: code,
+      time: "15 minutes",
+      companyName: "Whizan Cloud Services",
+    });
+
+    if (!sendRes.success) {
+      return reply.code(500).send({ error: sendRes.error || "Failed to dispatch verification email." });
+    }
+
+    return reply.send({
+      ok: true,
+      message: "Verification code sent to email",
+      expiresIn: 900,
+    });
+  });
+
+  // POST /api/auth/verify-otp — Verifies the 6-digit OTP
+  fastify.post("/verify-otp", async (request, reply) => {
+    const body = VerifyOtpSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.code(400).send({ error: "Invalid passcode format. Must be 6 digits." });
+    }
+    const { email, passcode } = body.data;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const entry = otpMemoryStore.get(normalizedEmail);
+    let storedCode = entry?.code;
+    let isExpired = entry ? entry.expiresAt < Date.now() : true;
+
+    if (!storedCode) {
+      try {
+        const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+        if (redisCode) {
+          storedCode = redisCode;
+          isExpired = false;
+        }
+      } catch {}
+    }
+
+    if (!storedCode || isExpired) {
+      return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
+    }
+
+    if (storedCode !== passcode.trim()) {
+      return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
+    }
+
+    return reply.send({ ok: true, verified: true });
+  });
+
   // POST /api/auth/register
   fastify.post("/register", async (request, reply) => {
     const body = RegisterSchema.safeParse(request.body);
     if (!body.success)
       return reply.code(400).send({ error: body.error.flatten() });
 
-    const { email, password, name } = body.data;
+    const { email, password, name, passcode } = body.data;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    // If passcode is provided, strictly verify OTP before account creation
+    if (passcode) {
+      const entry = otpMemoryStore.get(normalizedEmail);
+      let storedCode = entry?.code;
+      let isExpired = entry ? entry.expiresAt < Date.now() : true;
+
+      if (!storedCode) {
+        try {
+          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+          if (redisCode) {
+            storedCode = redisCode;
+            isExpired = false;
+          }
+        } catch {}
+      }
+
+      if (!storedCode || isExpired) {
+        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
+      }
+
+      if (storedCode !== passcode.trim()) {
+        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
+      }
+
+      // Consume OTP
+      otpMemoryStore.delete(normalizedEmail);
+      try {
+        await redisClient.del(`otp:${normalizedEmail}`);
+      } catch {}
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) return reply.code(409).send({ error: "Email already in use" });
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const isRoot = isRootAdmin({ email });
-    const isAdmin = isUserAdmin({ email });
+    const isRoot = isRootAdmin({ email: normalizedEmail });
+    const isAdmin = isUserAdmin({ email: normalizedEmail });
     const assignedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? "ADMIN" : "USER");
     const user = await prisma.user.create({
-      data: { email, passwordHash, name, role: assignedRole },
+      data: { email: normalizedEmail, passwordHash, name, role: assignedRole },
     });
 
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
