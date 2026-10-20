@@ -9,6 +9,7 @@ export const EMAILJS_CONFIG = {
   publicKey: "qzhqvM1yerb2R24T1",
   privateKey: "e9Snm4GGkiI1xLel7cLi7",
   endpoint: "https://api.emailjs.com/api/v1.0/email/send",
+  defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
 };
 
 export interface SendDeploymentFailedOptions {
@@ -19,6 +20,11 @@ export interface SendDeploymentFailedOptions {
   errorMessage: string;
   dashboardUrl?: string;
   time?: string;
+  branch?: string;
+  commitHash?: string;
+  triggerIp?: string;
+  nodeId?: string;
+  logoUrl?: string;
 }
 
 /**
@@ -41,6 +47,12 @@ export async function sendDeploymentFailedEmail(
         error_message: options.errorMessage,
         dashboard_url: options.dashboardUrl || "https://dashboard.whizan.cloud",
         time: options.time || new Date().toUTCString(),
+        branch: options.branch || "main",
+        commit_hash: options.commitHash ? options.commitHash.slice(0, 8) : "direct-upload",
+        trigger_ip: options.triggerIp || "Cloud Edge",
+        node_id: options.nodeId || "whizan-node-01",
+        logo_url: options.logoUrl || EMAILJS_CONFIG.defaultLogoUrl,
+        app_url: "https://dashboard.whizan.cloud",
       },
     };
 

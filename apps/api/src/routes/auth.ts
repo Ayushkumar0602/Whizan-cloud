@@ -125,10 +125,23 @@ export async function authRoutes(fastify: FastifyInstance) {
       await redisClient.setex(`otp:${email}`, 900, code);
     } catch {}
 
+    const xForwardedFor = request.headers["x-forwarded-for"];
+    const cfConnectingIp = request.headers["cf-connecting-ip"];
+    const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+    const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
+    const country = (request.headers["cf-ipcountry"] as string) || "Global";
+    const requestTime = new Date().toUTCString();
+    const expiryTimeString = new Date(expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+
     const sendRes = await sendOtpEmail({
       email,
       passcode: code,
-      time: "15 minutes",
+      time: `${expiryTimeString} (15 minutes)`,
+      requestTime,
+      clientIp,
+      deviceInfo: userAgent,
+      location: country,
+      requestId: request.id || `req_${Date.now().toString(36)}`,
       companyName: "Whizan Cloud Services",
     });
 

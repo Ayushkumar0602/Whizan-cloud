@@ -102,6 +102,11 @@ const worker = new Worker<BuildJob>(
             errorMessage: msg,
             dashboardUrl: `https://dashboard.whizan.cloud/dashboard/projects/${dep.projectId}`,
             time: new Date().toUTCString(),
+            branch: dep.branch || "main",
+            commitHash: dep.commitHash || "HEAD",
+            triggerIp: "Azure VM Build Cluster",
+            nodeId: process.env.VM_NODE_ID || "whizan-build-node-01",
+            logoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
           }).catch((err) => console.error("[Worker] Error sending failure email:", err));
         }
       } catch (err) {

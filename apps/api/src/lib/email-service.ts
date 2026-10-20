@@ -14,6 +14,7 @@ export const EMAILJS_CONFIG = {
   publicKey: "qzhqvM1yerb2R24T1",
   privateKey: "e9Snm4GGkiI1xLel7cLi7",
   endpoint: "https://api.emailjs.com/api/v1.0/email/send",
+  defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
 };
 
 export interface SendOtpOptions {
@@ -21,6 +22,12 @@ export interface SendOtpOptions {
   passcode: string;
   time?: string;
   companyName?: string;
+  requestTime?: string;
+  clientIp?: string;
+  deviceInfo?: string;
+  location?: string;
+  requestId?: string;
+  logoUrl?: string;
 }
 
 export interface SendDeploymentFailedOptions {
@@ -31,13 +38,30 @@ export interface SendDeploymentFailedOptions {
   errorMessage: string;
   dashboardUrl?: string;
   time?: string;
+  branch?: string;
+  commitHash?: string;
+  triggerIp?: string;
+  nodeId?: string;
+  logoUrl?: string;
 }
 
 /**
  * Sends a registration OTP code to user's email via EmailJS (template_e3lerhj)
+ * Includes app logo, request IP, device info, location, and security audit data.
  */
 export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: boolean; error?: string }> {
-  const { email, passcode, time = "15 minutes", companyName = "Whizan Cloud" } = options;
+  const {
+    email,
+    passcode,
+    time = "15 minutes",
+    companyName = "Whizan Cloud Services",
+    requestTime = new Date().toUTCString(),
+    clientIp = "N/A",
+    deviceInfo = "Standard Browser",
+    location = "Global",
+    requestId = `req_${Date.now().toString(36)}`,
+    logoUrl = EMAILJS_CONFIG.defaultLogoUrl,
+  } = options;
 
   try {
     const payload = {
@@ -50,6 +74,13 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
         passcode: passcode.trim(),
         time,
         company_name: companyName,
+        logo_url: logoUrl,
+        request_time: requestTime,
+        client_ip: clientIp,
+        device_info: deviceInfo,
+        location,
+        request_id: requestId,
+        app_url: "https://dashboard.whizan.cloud",
       },
     };
 
@@ -77,6 +108,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 
 /**
  * Sends a deployment failure notification to user's email via EmailJS (template_ernq47u)
+ * Includes app logo, failure diagnostics, commit/branch metadata, node ID, and console links.
  */
 export async function sendDeploymentFailedEmail(options: SendDeploymentFailedOptions): Promise<{ success: boolean; error?: string }> {
   try {
@@ -93,6 +125,12 @@ export async function sendDeploymentFailedEmail(options: SendDeploymentFailedOpt
         error_message: options.errorMessage,
         dashboard_url: options.dashboardUrl || "https://dashboard.whizan.cloud",
         time: options.time || new Date().toUTCString(),
+        branch: options.branch || "main",
+        commit_hash: options.commitHash ? options.commitHash.slice(0, 8) : "direct-upload",
+        trigger_ip: options.triggerIp || "Cloud Edge",
+        node_id: options.nodeId || "whizan-node-01",
+        logo_url: options.logoUrl || EMAILJS_CONFIG.defaultLogoUrl,
+        app_url: "https://dashboard.whizan.cloud",
       },
     };
 

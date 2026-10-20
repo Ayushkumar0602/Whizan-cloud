@@ -453,6 +453,11 @@ const worker = new Worker<ServiceBuildJob>(
             errorMessage: err.message,
             dashboardUrl: `https://dashboard.whizan.cloud/dashboard/services/${dep.serviceId}`,
             time: new Date().toUTCString(),
+            branch: dep.branch || "main",
+            commitHash: dep.commitHash || "HEAD",
+            triggerIp: "Azure VM Container Cluster",
+            nodeId: process.env.VM_NODE_ID || "whizan-service-node-01",
+            logoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
           }).catch((emailErr) => console.error("[Service Worker] Failed to send failure email:", emailErr));
         }
       } catch (dbErr) {

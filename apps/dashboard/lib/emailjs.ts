@@ -14,6 +14,7 @@ export const EMAILJS_CONFIG = {
   publicKey: "qzhqvM1yerb2R24T1",
   privateKey: "e9Snm4GGkiI1xLel7cLi7",
   endpoint: "https://api.emailjs.com/api/v1.0/email/send",
+  defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
 };
 
 export interface SendOtpParams {
@@ -21,6 +22,12 @@ export interface SendOtpParams {
   passcode: string;
   time?: string;
   companyName?: string;
+  requestTime?: string;
+  clientIp?: string;
+  deviceInfo?: string;
+  location?: string;
+  requestId?: string;
+  logoUrl?: string;
 }
 
 export interface SendDeploymentFailedParams {
@@ -31,13 +38,30 @@ export interface SendDeploymentFailedParams {
   errorMessage: string;
   dashboardUrl?: string;
   time?: string;
+  branch?: string;
+  commitHash?: string;
+  triggerIp?: string;
+  nodeId?: string;
+  logoUrl?: string;
 }
 
 /**
  * Sends a 6-digit verification OTP email to the user using EmailJS template_e3lerhj
+ * Includes app logo, request IP, device, and security tracking data.
  */
 export async function sendOtpEmail(params: SendOtpParams): Promise<{ success: boolean; error?: string }> {
-  const { email, passcode, time = "15 minutes", companyName = "Whizan Cloud" } = params;
+  const {
+    email,
+    passcode,
+    time = "15 minutes",
+    companyName = "Whizan Cloud Services",
+    requestTime = new Date().toUTCString(),
+    clientIp = typeof window !== "undefined" ? "Client Device" : "N/A",
+    deviceInfo = typeof navigator !== "undefined" ? navigator.userAgent : "Browser Client",
+    location = "Global",
+    requestId = `req_${Date.now().toString(36)}`,
+    logoUrl = EMAILJS_CONFIG.defaultLogoUrl,
+  } = params;
 
   try {
     const payload = {
@@ -50,6 +74,13 @@ export async function sendOtpEmail(params: SendOtpParams): Promise<{ success: bo
         passcode: passcode.trim(),
         time,
         company_name: companyName,
+        logo_url: logoUrl,
+        request_time: requestTime,
+        client_ip: clientIp,
+        device_info: deviceInfo,
+        location,
+        request_id: requestId,
+        app_url: "https://dashboard.whizan.cloud",
       },
     };
 
@@ -92,6 +123,12 @@ export async function sendDeploymentFailedEmail(params: SendDeploymentFailedPara
         error_message: params.errorMessage,
         dashboard_url: params.dashboardUrl || "https://dashboard.whizan.cloud",
         time: params.time || new Date().toUTCString(),
+        branch: params.branch || "main",
+        commit_hash: params.commitHash || "HEAD",
+        trigger_ip: params.triggerIp || "Cloud Edge",
+        node_id: params.nodeId || "whizan-node-01",
+        logo_url: params.logoUrl || EMAILJS_CONFIG.defaultLogoUrl,
+        app_url: "https://dashboard.whizan.cloud",
       },
     };
 
