@@ -10,7 +10,7 @@ export function useSystemStatus(pollIntervalMs = 20_000) {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await system.getStatus();
+      const data = await system.getStatus({ bypassCache: true });
       setStatus(data);
       setError(null);
     } catch (err: any) {

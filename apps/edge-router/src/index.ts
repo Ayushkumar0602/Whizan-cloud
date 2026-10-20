@@ -41,6 +41,26 @@ const redis = new Redis(REDIS_URL, {
 });
 redis.on("error", (err) => console.error("[Router Redis] Error:", err.message));
 
+// ── Instant Startup Boot Beacon ─────────────────────────────────────────────
+// Proactively notifies the 24/7 Render Control Plane and Redis the microsecond
+// this VM boots up and Edge Router is ready, eliminating the 60s passive delay.
+(async () => {
+  try {
+    const beaconPayload = {
+      hostname: "azure-edge-router",
+      timestamp: Date.now(),
+      bootBeacon: true,
+      service: "edge-router",
+    };
+    await redis.set("vm:stats", JSON.stringify(beaconPayload), "EX", 45).catch(() => {});
+    await redis.del("vm:wake:in_progress").catch(() => {});
+    console.log("[Router] Instant boot beacon dispatched to Redis.");
+    
+    // Also ping Render Control Plane API beacon endpoint
+    queryControlPlaneApi("/api/system/beacon", { method: "POST" }).catch(() => {});
+  } catch {}
+})();
+
 interface DeploymentInfo {
   type: "static" | "ssr" | "hybrid" | "service";
   staticDir?: string;

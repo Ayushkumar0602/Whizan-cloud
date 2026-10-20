@@ -234,7 +234,21 @@ app.route({
   method: ["GET", "HEAD"],
   url: "/api/system/status",
   handler: async () => {
-    return checkVmOnline();
+    return checkVmOnline({ autoWake: false });
+  },
+});
+
+app.route({
+  method: ["POST", "GET"],
+  url: "/api/system/beacon",
+  handler: async () => {
+    await redisClient.set("vm:stats", JSON.stringify({
+      timestamp: Date.now(),
+      hostname: "azure-vm-beacon",
+      beacon: true,
+    }), "EX", 45).catch(() => {});
+    await redisClient.del("vm:wake:in_progress").catch(() => {});
+    return { status: "acknowledged", ts: Date.now() };
   },
 });
 

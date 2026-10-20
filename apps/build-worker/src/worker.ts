@@ -1712,6 +1712,22 @@ const statsInterval = setInterval(async () => {
 // ─── Startup ─────────────────────────────────────────────────────────────────
 
 console.log("[Worker] Build worker started — waiting for jobs...");
+
+// Immediate startup telemetry beacon (eliminates 15s wait on VM boot)
+(async () => {
+  try {
+    const startupStats = {
+      timestamp: Date.now(),
+      hostname: (await import("os")).hostname(),
+      platform: (await import("os")).platform(),
+      bootBeacon: true,
+    };
+    await redisPub.set("vm:stats", JSON.stringify(startupStats), "EX", 45).catch(() => {});
+    await redisPub.del("vm:wake:in_progress").catch(() => {});
+    console.log("[Worker] Instant startup beacon published to Redis.");
+  } catch {}
+})();
+
 initRemoteExec().catch((e) => console.error("[Remote Exec Error]", e));
 startMetricsCollector();
 startVmReaper();
