@@ -749,31 +749,53 @@ export async function functionRoutes(fastify: FastifyInstance) {
       return reply.code(404).send({ error: "Function not found" });
     }
 
-    // 1. Purge Redis routing and API keys
-    await redisClient.del(`fn:service:${fn.slug}`);
+    // 1. Purge Redis routing, API keys, source cache, and logs
+    await redisClient.del(`fn:service:${fn.slug}`).catch(() => {});
     for (const key of fn.apiKeys) {
-      await redisClient.del(`fn:key:${key.keyHash}`);
+      await redisClient.del(`fn:key:${key.keyHash}`).catch(() => {});
     }
-    await redisClient.del(`fn:logs:${fn.id}`);
-    await redisClient.del(`fn:logs:history:${fn.id}`);
+    await redisClient.del(`fn:logs:${fn.id}`).catch(() => {});
+    await redisClient.del(`fn:logs:history:${fn.id}`).catch(() => {});
+    
+    // Purge cached function sources from Redis
+    const cachedSourceKeys = await redisClient.keys(`fn:source:${fn.id}:*`).catch(() => []);
+    if (cachedSourceKeys.length > 0) {
+      await redisClient.del(...cachedSourceKeys).catch(() => {});
+    }
 
-    // 2. Signal runtime to evict bundles
-    await redisClient.publish("fn:reload", JSON.stringify({ serviceId: fn.id }));
+    // 2. Signal runtime to evict isolate bundles from memory
+    await redisClient.publish("fn:reload", JSON.stringify({ serviceId: fn.id })).catch(() => {});
 
-    // 3. Wipe bundle files from disk
-    const serviceDiskPath = path.join(FUNCTIONS_BASE_DIR, fn.id);
-    if (fs.existsSync(serviceDiskPath)) {
-      try {
-        fs.rmSync(serviceDiskPath, { recursive: true, force: true });
-      } catch (err: any) {
-        console.warn(`[FunctionService] Failed to remove disk directory:`, err.message);
+    // 3. Wipe bundle files from all potential disk paths on VM
+    const candidateDirs = [
+      path.join(FUNCTIONS_BASE_DIR, fn.id),
+      path.join("/opt/whizan/apps/function-runtime/functions-storage", fn.id),
+      path.join("/opt/whizan/functions", fn.id),
+    ];
+
+    for (const dir of candidateDirs) {
+      if (fs.existsSync(dir)) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true });
+        } catch (err: any) {
+          console.warn(`[FunctionService] Failed to remove disk directory ${dir}:`, err.message);
+        }
       }
     }
 
-    // 4. Delete database records
+    // 4. Verify no disk files remain
+    const remainingDirs = candidateDirs.filter((d) => fs.existsSync(d));
+    if (remainingDirs.length > 0) {
+      return reply.code(409).send({
+        error: "Function deletion aborted: disk storage could not be completely removed.",
+        remaining: remainingDirs,
+      });
+    }
+
+    // 5. Delete database records only after all resources are confirmed detached
     await prisma.functionService.delete({ where: { id } });
 
-    return { success: true, message: `Function '${fn.name}' cleanly deleted.` };
+    return { success: true, message: `Function '${fn.name}' and all attached VM disk bundles, Redis keys, and caches cleanly released and deleted.` };
   });
 
   // POST /api/functions/:id/deploy - Deploy new version of code

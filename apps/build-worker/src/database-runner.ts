@@ -571,7 +571,8 @@ export class DatabaseRunner {
   }
 
   /**
-   * Deletes a database container and optionally purges its persistent data volume
+   * Deletes a database container and purges its persistent data volume,
+   * cleaning all Redis keys and verifying that no database resources remain.
    */
   async delete(id: string, volumePath?: string, purgeVolume = true): Promise<void> {
     const containerName = `whizan-db-${id}`;
@@ -579,24 +580,46 @@ export class DatabaseRunner {
     try {
       const pooler = docker.getContainer(poolerName);
       await pooler.stop({ t: 2 }).catch(() => {});
-      await pooler.remove({ force: true }).catch(() => {});
+      await pooler.remove({ force: true, v: true }).catch(() => {});
     } catch {}
 
     try {
       const container = docker.getContainer(containerName);
       await container.stop({ t: 5 }).catch(() => {});
-      await container.remove({ force: true }).catch(() => {});
+      await container.remove({ force: true, v: true }).catch(() => {});
     } catch {}
 
-    if (purgeVolume && volumePath) {
-      try {
-        await fs.rm(volumePath, { recursive: true, force: true });
-        // Also remove parent folder if empty
-        const parent = path.dirname(volumePath);
-        await fs.rm(parent, { recursive: true, force: true }).catch(() => {});
-      } catch (err: any) {
-        console.warn(`[DatabaseRunner] Failed to clean volume ${volumePath}:`, err.message);
+    const pathsToClean = [
+      volumePath,
+      path.join("/opt/whizan/volumes", id),
+      path.join("/opt/whizan-volumes", id),
+    ].filter(Boolean) as string[];
+
+    if (purgeVolume) {
+      for (const p of pathsToClean) {
+        try {
+          await fs.rm(p, { recursive: true, force: true }).catch(() => {});
+        } catch (err: any) {
+          console.warn(`[DatabaseRunner] Failed to clean volume ${p}:`, err.message);
+        }
       }
+    }
+
+    // Clean Redis keys
+    try {
+      const { redisPub } = await import("./redis.js");
+      await redisPub.del(`db:access:${id}`).catch(() => {});
+      await redisPub.del(`build-logs:db-${id}`).catch(() => {});
+      await redisPub.del(`db:logs:${id}`).catch(() => {});
+    } catch {}
+
+    // Verification check: ensure container is 100% gone
+    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+    const stillRunning = allContainers.filter((c: any) =>
+      c.Names?.some((n: string) => n === `/${containerName}` || n === `/${poolerName}`)
+    );
+    if (stillRunning.length > 0) {
+      throw new Error(`Database container ${containerName} is still present and could not be removed.`);
     }
   }
 

@@ -317,12 +317,13 @@ export async function cronRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Cron job not found" });
     }
 
-    await prisma.cronJob.delete({ where: { id } });
-
-    // Clean up Redis ZSET and cache
+    // 1. Clean up Redis ZSET, cache, and reschedule event
     await redisClient.zrem("cron:schedule:zset", id);
     await redisClient.del(`cron:job:${id}`);
     await redisClient.publish("cron:reschedule", JSON.stringify({ action: "DELETE", jobId: id }));
+
+    // 2. Delete database record only after Redis resources are cleared
+    await prisma.cronJob.delete({ where: { id } });
 
     return reply.send({ ok: true, message: "Cron job deleted successfully" });
   });

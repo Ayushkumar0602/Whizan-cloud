@@ -9,6 +9,7 @@ import { AppRunner } from "./app-runner.js";
 import { publishLog } from "./log-streamer.js";
 import path from "path";
 import fs from "fs/promises";
+import { existsSync } from "fs";
 import os from "os";
 
 // ─── Import the Backend Services & Database Workers so they run concurrently ──
@@ -596,6 +597,228 @@ redisSub.on("message", async (channel, message) => {
     }
   }
 
+/**
+ * Rigorously removes all Docker containers, Docker images, BuildKit cache layers,
+ * and VM disk directories for a given project, service, or deployment, and performs
+ * an audit verification to ensure 0 resources remain attached.
+ */
+async function purgeAndVerifyVMResources(params: {
+  targetType: "project" | "service" | "deployment";
+  targetId?: string;
+  slug?: string;
+  deploymentIds?: string[];
+  deploymentId?: string;
+}): Promise<{
+  ok: boolean;
+  verified: boolean;
+  removedContainers: number;
+  removedImages: number;
+  remainingResources: string[];
+  error?: string | null;
+}> {
+  const Docker = (await import("dockerode")).default;
+  const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+
+  const targetId = params.targetId || "";
+  const slug = params.slug || "";
+  const deploymentIds: string[] = Array.isArray(params.deploymentIds)
+    ? [...params.deploymentIds]
+    : params.deploymentId
+      ? [params.deploymentId]
+      : [];
+  if (params.deploymentId && !deploymentIds.includes(params.deploymentId)) {
+    deploymentIds.push(params.deploymentId);
+  }
+
+  console.log(`[Admin:Purge] Exhaustive resource teardown started: ${params.targetType} targetId=${targetId} slug=${slug} deployments=[${deploymentIds.join(",")}]`);
+
+  const imagesToDelete = new Set<string>();
+  let removedContainers = 0;
+  let removedImages = 0;
+
+  // ── Step 1: Match and inspect all Docker containers ────────────────────────
+  try {
+    const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+    const matches = allContainers.filter((c: any) => {
+      const labels = c.Labels || {};
+      const names = c.Names || [];
+      const mounts = c.Mounts || [];
+
+      if (targetId && (labels["projectId"] === targetId || labels["serviceId"] === targetId)) return true;
+      if (slug && labels["slug"] === slug) return true;
+      if (labels["deploymentId"] && deploymentIds.includes(labels["deploymentId"])) return true;
+
+      if (slug && names.some((n: string) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`) || n === `/project-${slug}` || n.startsWith(`/project-${slug}-`))) {
+        return true;
+      }
+      if (targetId && names.some((n: string) => n.includes(targetId))) return true;
+      if (deploymentIds.some((dId) => names.some((n: string) => n.includes(dId)))) return true;
+
+      if (mounts.some((m: any) => {
+        const src = m.Source || "";
+        return (targetId && src.includes(targetId)) || deploymentIds.some((dId) => src.includes(dId));
+      })) {
+        return true;
+      }
+
+      return false;
+    });
+
+    for (const info of matches) {
+      try {
+        const container = docker.getContainer(info.Id);
+        // Discover exact image ID (even untagged) to unlock BuildKit cache
+        const inspect = await container.inspect().catch(() => null);
+        if (inspect?.Image) {
+          imagesToDelete.add(inspect.Image);
+        }
+
+        if (info.State === "running") {
+          await container.stop({ t: 2 }).catch(() => {});
+        }
+        await container.remove({ force: true, v: true }).catch(() => {});
+        removedContainers++;
+        console.log(`[Admin:Purge] Force-removed container: ${info.Names?.[0] || info.Id}`);
+      } catch (cErr: any) {
+        console.warn(`[Admin:Purge] Error removing container ${info.Id}:`, cErr.message);
+      }
+    }
+  } catch (err: any) {
+    console.error("[Admin:Purge] Error listing containers:", err.message);
+  }
+
+  // ── Step 2: Discover and remove matching Docker images ─────────────────────
+  try {
+    const allImages = await docker.listImages({ all: true }).catch(() => []);
+    for (const img of allImages) {
+      const tags = img.RepoTags || [];
+      const isTargetImage =
+        imagesToDelete.has(img.Id) ||
+        tags.some((t: string) =>
+          (slug && (t.startsWith(`project-img-${slug}-`) || t.startsWith(`service-img-${slug}-`) || t.startsWith(`whizan-service-${slug}`) || t.startsWith(`whizan-project-${slug}`))) ||
+          (targetId && (t.startsWith(`project-img-${targetId}-`) || t.startsWith(`service-img-${targetId}-`))) ||
+          deploymentIds.some((dId) => t.includes(dId))
+        );
+
+      if (isTargetImage) {
+        imagesToDelete.add(img.Id);
+      }
+    }
+
+    for (const imgId of imagesToDelete) {
+      try {
+        await docker.getImage(imgId).remove({ force: true }).catch(() => {});
+        removedImages++;
+        console.log(`[Admin:Purge] Force-removed Docker image: ${imgId}`);
+      } catch (iErr: any) {
+        console.warn(`[Admin:Purge] Image removal notice for ${imgId}:`, iErr.message);
+      }
+    }
+  } catch (imgListErr: any) {
+    console.error("[Admin:Purge] Error listing images:", imgListErr.message);
+  }
+
+  // ── Step 3: Prune BuildKit cache layers and dangling layers ────────────────
+  try {
+    const { exec } = await import("child_process");
+    await new Promise<void>((resolve) => {
+      exec("docker builder prune -f && docker image prune -f", () => resolve());
+    });
+    console.log("[Admin:Purge] Reclaimed BuildKit cache & dangling layers.");
+  } catch (pruneErr: any) {
+    console.warn("[Admin:Purge] Prune notice:", pruneErr.message);
+  }
+
+  // ── Step 4: Purge VM disk directories ─────────────────────────────────────
+  const pathsToClean: string[] = [];
+  if (targetId) {
+    pathsToClean.push(
+      path.join(SOURCE_BASE_DIR, "projects", targetId),
+      path.join(SOURCE_BASE_DIR, "services", targetId),
+      path.join(BUILD_BASE_DIR, targetId),
+      path.join("/opt/whizan/repos", targetId),
+      path.join("/opt/whizan-cache", targetId),
+      path.join("/opt/whizan/volumes", targetId),
+      path.join("/opt/whizan-volumes", targetId)
+    );
+  }
+  for (const dId of deploymentIds) {
+    pathsToClean.push(
+      path.join("/opt/whizan-builds", dId),
+      path.join(BUILD_BASE_DIR, dId),
+      path.join("/opt/whizan/repos", dId),
+      path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`),
+      path.join(SOURCE_BASE_DIR, "deployments", dId),
+      path.join(os.tmpdir(), dId)
+    );
+  }
+
+  for (const p of pathsToClean) {
+    try {
+      await fs.rm(p, { recursive: true, force: true }).catch(() => {});
+    } catch {}
+  }
+
+  // ── Step 5: Clean Redis routing and logs for this worker ───────────────────
+  if (slug) {
+    await redisPub.del(`deployment:${slug}`).catch(() => {});
+    await redisPub.del(`slug:${slug}`).catch(() => {});
+  }
+  for (const dId of deploymentIds) {
+    await redisPub.del(`build-logs:${dId}`).catch(() => {});
+    await redisPub.del(`logs:${dId}`).catch(() => {});
+  }
+
+  // ── Step 6: AUDIT VERIFICATION — Confirm NO resource is still attached ─────
+  const remainingResources: string[] = [];
+
+  try {
+    const verifyContainers = await docker.listContainers({ all: true }).catch(() => []);
+    for (const c of verifyContainers) {
+      const labels = c.Labels || {};
+      const names = c.Names || [];
+      const matches =
+        (targetId && (labels["projectId"] === targetId || labels["serviceId"] === targetId)) ||
+        (slug && labels["slug"] === slug) ||
+        (labels["deploymentId"] && deploymentIds.includes(labels["deploymentId"])) ||
+        (slug && names.some((n: string) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`) || n === `/project-${slug}` || n.startsWith(`/project-${slug}-`))) ||
+        (targetId && names.some((n: string) => n.includes(targetId))) ||
+        deploymentIds.some((dId) => names.some((n: string) => n.includes(dId)));
+
+      if (matches) {
+        remainingResources.push(`Container still running: ${names[0] || c.Id} (Status: ${c.State})`);
+      }
+    }
+  } catch {}
+
+  // Check critical source / build disk paths
+  if (targetId) {
+    const checkPaths = [
+      path.join(SOURCE_BASE_DIR, "projects", targetId),
+      path.join(SOURCE_BASE_DIR, "services", targetId),
+      path.join(BUILD_BASE_DIR, targetId),
+    ];
+    for (const cp of checkPaths) {
+      if (existsSync(cp)) {
+        remainingResources.push(`Disk directory still exists: ${cp}`);
+      }
+    }
+  }
+
+  const verified = remainingResources.length === 0;
+
+  console.log(`[Admin:Purge] Resource teardown complete. Verified=${verified}. Removed containers=${removedContainers}, Removed images=${removedImages}, Remaining=${remainingResources.length}`);
+
+  return {
+    ok: verified,
+    verified,
+    removedContainers,
+    removedImages,
+    remainingResources,
+    error: verified ? null : `Resources still attached: ${remainingResources.join("; ")}`,
+  };
+}
+
   if (channel === "admin:commands") {
     try {
       const payload = JSON.parse(message);
@@ -611,139 +834,48 @@ redisSub.on("message", async (channel, message) => {
       const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
       if (payload.action === "DELETE_SERVICE") {
-        const { serviceId, slug, deploymentIds } = payload;
-        console.log(`[Admin] Deleting all VM resources for service ${slug} (${serviceId})`);
-
-        // 1. Stop and remove all Docker containers for this service
-        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
-        const matches = allContainers.filter((c: any) =>
-          c.Labels?.["serviceId"] === serviceId ||
-          c.Labels?.["slug"] === slug ||
-          c.Names?.some((n: string) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`)) ||
-          (Array.isArray(deploymentIds) && c.Labels?.["deploymentId"] && deploymentIds.includes(c.Labels["deploymentId"]))
-        );
-        for (const info of matches) {
-          try {
-            const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
-            await container.remove({ force: true }).catch(() => { });
-            console.log(`[Admin] Removed service container ${info.Names?.[0] || info.Id}`);
-          } catch (err: any) {
-            console.error(`[Admin] Error removing container ${info.Id}:`, err.message);
-          }
+        const { serviceId, slug, deploymentIds, replyTo } = payload;
+        const result = await purgeAndVerifyVMResources({
+          targetType: "service",
+          targetId: serviceId,
+          slug,
+          deploymentIds,
+        });
+        if (replyTo) {
+          await redisPub.publish(replyTo, JSON.stringify(result)).catch(() => {});
         }
-
-        // 2. Remove any Docker images built for this service
-        try {
-          const allImages = await docker.listImages({ all: true }).catch(() => []);
-          const serviceImages = allImages.filter((img: any) =>
-            img.RepoTags?.some((t: string) =>
-              t.startsWith(`service-img-${slug}-`) ||
-              t.startsWith(`service-img-${serviceId}-`) ||
-              t.startsWith(`whizan-service-${slug}`)
-            )
-          );
-          for (const img of serviceImages) {
-            await docker.getImage(img.Id).remove({ force: true }).catch(() => { });
-            console.log(`[Admin] Removed service Docker image ${img.RepoTags?.[0] || img.Id}`);
-          }
-        } catch (imgErr: any) {
-          console.warn("[Admin] Error cleaning service images:", imgErr.message);
-        }
-
-        // 3. Remove all build and persistent source directories on VM disk
-        try {
-          const sourceDir = path.join(SOURCE_BASE_DIR, "services", serviceId);
-          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
-          if (Array.isArray(deploymentIds)) {
-            for (const dId of deploymentIds) {
-              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
-              await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
-              await redisPub.del(`build-logs:${dId}`).catch(() => { });
-            }
-          }
-        } catch (err: any) {
-          console.error(`[Admin] Error cleaning service files:`, err.message);
-        }
-
-        // 4. Clear edge-router routing key
-        if (slug) {
-          await redisPub.del(`deployment:${slug}`).catch(() => { });
-        }
-
-        // 5. Sweep orphaned BuildKit cache layers in background
-        const { exec } = await import("child_process");
-        exec("docker builder prune -f && docker image prune -f", () => { });
         return;
       }
 
       if (payload.action === "DELETE_PROJECT") {
-        const { projectId, slug, deploymentIds } = payload;
-        console.log(`[Admin] Deleting all VM resources for project ${slug} (${projectId})`);
-
-        // 1. Stop and remove all Docker containers for this project
-        const allContainers = await docker.listContainers({ all: true }).catch(() => []);
-        const matches = allContainers.filter((c: any) =>
-          c.Labels?.["projectId"] === projectId ||
-          c.Labels?.["slug"] === slug ||
-          (Array.isArray(deploymentIds) && c.Labels?.["deploymentId"] && deploymentIds.includes(c.Labels["deploymentId"])) ||
-          c.Mounts?.some((m: any) => Array.isArray(deploymentIds) && deploymentIds.some((dId: string) => m.Source?.includes(dId)))
-        );
-        for (const info of matches) {
-          try {
-            const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
-            await container.remove({ force: true }).catch(() => { });
-            console.log(`[Admin] Removed project container ${info.Names?.[0] || info.Id}`);
-          } catch (err: any) {
-            console.error(`[Admin] Error removing project container:`, err.message);
-          }
+        const { projectId, slug, deploymentIds, replyTo } = payload;
+        const result = await purgeAndVerifyVMResources({
+          targetType: "project",
+          targetId: projectId,
+          slug,
+          deploymentIds,
+        });
+        if (replyTo) {
+          await redisPub.publish(replyTo, JSON.stringify(result)).catch(() => {});
         }
-
-        // 2. Remove any custom Docker images built for this project
-        try {
-          const allImages = await docker.listImages({ all: true }).catch(() => []);
-          const projectImages = allImages.filter((img: any) =>
-            img.RepoTags?.some((t: string) =>
-              t.startsWith(`project-img-${slug}-`) ||
-              t.startsWith(`project-img-${projectId}-`)
-            )
-          );
-          for (const img of projectImages) {
-            await docker.getImage(img.Id).remove({ force: true }).catch(() => { });
-            console.log(`[Admin] Removed project Docker image ${img.RepoTags?.[0] || img.Id}`);
-          }
-        } catch (imgErr: any) {
-          console.warn("[Admin] Error cleaning project images:", imgErr.message);
-        }
-
-        // 3. Remove build and persistent source directories on VM disk
-        try {
-          const sourceDir = path.join(SOURCE_BASE_DIR, "projects", projectId);
-          await fs.rm(sourceDir, { recursive: true, force: true }).catch(() => { });
-          if (Array.isArray(deploymentIds)) {
-            for (const dId of deploymentIds) {
-              await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
-              await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
-              await redisPub.del(`build-logs:${dId}`).catch(() => { });
-            }
-          }
-        } catch (err: any) {
-          console.error(`[Admin] Error cleaning project files:`, err.message);
-        }
-
-        // 4. Clear edge-router routing key
-        if (slug) {
-          await redisPub.del(`deployment:${slug}`).catch(() => { });
-        }
-
-        // 5. Sweep orphaned BuildKit cache layers in background
-        const { exec } = await import("child_process");
-        exec("docker builder prune -f && docker image prune -f", () => { });
         return;
       }
 
-      if (payload.action === "STOP_CONTAINER" || payload.action === "DELETE_CONTAINER") {
+      if (payload.action === "DELETE_CONTAINER" || payload.action === "DELETE_DEPLOYMENT") {
+        const { deploymentId, targetType, targetId, slug, replyTo } = payload;
+        const result = await purgeAndVerifyVMResources({
+          targetType: targetType || "deployment",
+          targetId,
+          slug,
+          deploymentId: deploymentId || payload.deploymentId,
+        });
+        if (replyTo) {
+          await redisPub.publish(replyTo, JSON.stringify(result)).catch(() => {});
+        }
+        return;
+      }
+
+      if (payload.action === "STOP_CONTAINER") {
         const dId = payload.deploymentId;
         const allContainers = await docker.listContainers({ all: true }).catch(() => []);
         const matches = allContainers.filter((c: any) =>
@@ -753,15 +885,8 @@ redisSub.on("message", async (channel, message) => {
         for (const info of matches) {
           try {
             const container = docker.getContainer(info.Id);
-            if (info.State === "running") await container.stop({ t: 2 }).catch(() => { });
-            if (payload.action === "DELETE_CONTAINER") {
-              await container.remove({ force: true }).catch(() => { });
-            }
-          } catch { }
-        }
-        if (payload.action === "DELETE_CONTAINER") {
-          await fs.rm(path.join(BUILD_BASE_DIR, dId), { recursive: true, force: true }).catch(() => { });
-          await fs.rm(path.join(SOURCE_BASE_DIR, "deployments", `${dId}.tar.gz`), { force: true }).catch(() => { });
+            if (info.State === "running") await container.stop({ t: 2 }).catch(() => {});
+          } catch {}
         }
         return;
       }

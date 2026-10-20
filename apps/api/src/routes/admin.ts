@@ -2,6 +2,11 @@ import { FastifyInstance } from "fastify";
 import { PrismaClient } from "@hostify/db";
 import { redisClient } from "../lib/redis.js";
 import { signAdminPayload, isRootAdmin, ROOT_ADMIN_EMAIL } from "../lib/auth-utils.js";
+import {
+  cleanupProjectResources,
+  cleanupServiceResources,
+  cleanupDeploymentResources,
+} from "../lib/resource-cleaner.js";
 
 const prisma = new PrismaClient();
 const redis = redisClient;
@@ -405,17 +410,55 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     return { success: true };
   });
 
-  // 3. Delete a deployment completely
+  // 3. Delete a deployment completely (with verified resource teardown)
   fastify.delete("/deployments/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
 
-    await publishAdminCommand({
-      action: "DELETE_CONTAINER",
-      deploymentId: id,
+    const projDeployment = await prisma.deployment.findUnique({
+      where: { id },
+      include: { project: true },
     });
 
-    await prisma.deployment.delete({ where: { id } }).catch(() => {});
-    return { success: true };
+    if (projDeployment) {
+      const result = await cleanupDeploymentResources(
+        id,
+        "project",
+        projDeployment.projectId,
+        projDeployment.project?.slug
+      );
+      if (!result.verified) {
+        return reply.code(409).send({
+          error: "Deployment deletion aborted: VM or storage resources could not be detached.",
+          details: result.error,
+        });
+      }
+      await prisma.deployment.delete({ where: { id } }).catch(() => {});
+      return { success: true, audit: result };
+    }
+
+    const svcDeployment = await prisma.serviceDeployment.findUnique({
+      where: { id },
+      include: { service: true },
+    });
+
+    if (svcDeployment) {
+      const result = await cleanupDeploymentResources(
+        id,
+        "service",
+        svcDeployment.serviceId,
+        svcDeployment.service?.slug
+      );
+      if (!result.verified) {
+        return reply.code(409).send({
+          error: "Service deployment deletion aborted: VM or storage resources could not be detached.",
+          details: result.error,
+        });
+      }
+      await prisma.serviceDeployment.delete({ where: { id } }).catch(() => {});
+      return { success: true, audit: result };
+    }
+
+    return reply.code(404).send({ error: "Deployment not found" });
   });
 
   // 4. Force-kill a specific Docker container by its container ID
@@ -453,7 +496,7 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     return { success: true };
   });
 
-  // 4c. Delete backend service
+  // 4c. Delete backend service (with verified resource teardown)
   fastify.delete("/services/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
     const service = await prisma.backendService.findUnique({
@@ -462,14 +505,19 @@ export const adminRoutes = async function (fastify: FastifyInstance) {
     });
     if (!service) return reply.code(404).send({ error: "Service not found" });
 
-    for (const d of service.deployments) {
-      await publishAdminCommand({
-        action: "DELETE_CONTAINER",
-        deploymentId: d.id,
+    const deploymentIds = service.deployments.map((d: any) => d.id);
+    const result = await cleanupServiceResources(id, service.slug, deploymentIds);
+
+    if (!result.verified) {
+      return reply.code(409).send({
+        error: "Service deletion aborted: VM or storage resources could not be detached.",
+        details: result.error,
+        remaining: result.remainingResources,
       });
     }
+
     await prisma.backendService.delete({ where: { id } }).catch(() => {});
-    return { success: true };
+    return { success: true, audit: result };
   });
 
   // 4d. Stop / pause database

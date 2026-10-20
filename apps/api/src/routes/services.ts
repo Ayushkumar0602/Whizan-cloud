@@ -444,29 +444,46 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // DELETE /api/services/:id
+  // DELETE /api/services/:id — Confirmed two-phase cascade: VM containers + images + cache + disk + Supabase + Redis + DB
   fastify.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
-    const existing = await prisma.backendService.findFirst({ where: { id, userId } });
+    const { userId, role } = request.user;
+    const existing = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+      include: { deployments: true },
+    });
     if (!existing) return reply.code(404).send({ error: "Service not found" });
 
+    const deploymentIds = existing.deployments.map((d: any) => d.id);
+    const { cleanupServiceResources } = await import("../lib/resource-cleaner.js");
+
     try {
-      const deployments = await prisma.serviceDeployment.findMany({
-        where: { serviceId: id },
-        select: { id: true },
+      // 1. Two-phase teardown: Stop & remove containers, remove Docker images, prune BuildKit cache, delete disk files, purge Supabase & Redis
+      const cleanupResult = await cleanupServiceResources(id, existing.slug, deploymentIds);
+
+      // 2. Strict Verification Guard: If ANY resource is still attached, DO NOT DELETE FROM DB
+      if (!cleanupResult.verified) {
+        return reply.code(409).send({
+          error: "Service deletion aborted: resources could not be detached or verified.",
+          details: cleanupResult.error || "Some VM containers, disk files, or storage objects could not be released.",
+          remaining: cleanupResult.remainingResources,
+        });
+      }
+
+      // 3. Database Deletion (only executed after verified release of all attached resources)
+      await prisma.backendService.delete({ where: { id } });
+
+      return reply.code(200).send({
+        ok: true,
+        message: `Service ${existing.slug} and all attached VM containers, images, disk files, Supabase archives, and Redis keys were completely released and verified.`,
+        audit: cleanupResult,
       });
-      const deploymentIds = deployments.map(d => d.id);
-
-      const { cleanupServiceResources } = await import("../lib/resource-cleaner.js");
-      await cleanupServiceResources(id, existing.slug, deploymentIds);
-    } catch (cleanupErr) {
-      console.error(`Failed to cleanup resources for service ${existing.slug}`, cleanupErr);
+    } catch (err: any) {
+      return reply.code(500).send({
+        error: "Failed to release service resources",
+        details: err.message,
+      });
     }
-
-    // Database Deletion (Cascades to Deployments & EnvVars)
-    await prisma.backendService.delete({ where: { id } });
-    return reply.code(204).send();
   });
 
   // POST /api/services/:id/deploy
@@ -795,6 +812,47 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     if (!service || (service.userId !== userId && role !== "ADMIN")) return reply.code(404).send({ error: "Not found" });
 
     return reply.send(deployment);
+  });
+
+  // DELETE /api/services/:id/deployments/:dId — Confirmed two-phase removal of service deployment
+  fastify.delete("/:id/deployments/:dId", async (request, reply) => {
+    const { id, dId } = request.params as { id: string; dId: string };
+    const { userId, role } = request.user;
+
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const deployment = await prisma.serviceDeployment.findFirst({
+      where: { id: dId, serviceId: id },
+    });
+    if (!deployment) return reply.code(404).send({ error: "Deployment not found" });
+
+    // Cancel if queued or building
+    if (deployment.status === "QUEUED" || deployment.status === "BUILDING") {
+      await redisClient.publish(`cancel:${dId}`, "CANCEL").catch(() => {});
+      await redisClient.publish(`logs:${dId}`, "__DONE__").catch(() => {});
+    }
+
+    const { cleanupDeploymentResources } = await import("../lib/resource-cleaner.js");
+    const cleanupResult = await cleanupDeploymentResources(dId, "service", id, service.slug);
+
+    if (!cleanupResult.verified) {
+      return reply.code(409).send({
+        error: "Service deployment deletion aborted: resources could not be detached or verified.",
+        details: cleanupResult.error,
+        remaining: cleanupResult.remainingResources,
+      });
+    }
+
+    await prisma.serviceDeployment.delete({ where: { id: dId } });
+
+    return reply.send({
+      ok: true,
+      message: `Service deployment ${dId} and all attached VM containers, images, disk files, Supabase archives, and Redis logs were completely released.`,
+      audit: cleanupResult,
+    });
   });
 
   // GET /api/services/deployments/:dId/logs — SSE (token auth) or JSON (API key / token)

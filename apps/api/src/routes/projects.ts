@@ -170,44 +170,47 @@ export async function projectRoutes(fastify: FastifyInstance) {
     return reply.send({ ok: true });
   });
 
-  // DELETE /api/projects/:id — Full cascade: containers + files + Redis + DB
+  // DELETE /api/projects/:id — Confirmed two-phase cascade: VM containers + images + cache + disk + Supabase + Redis + DB
   fastify.delete("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { userId } = request.user;
+    const { userId, role } = request.user;
 
     const project = await prisma.project.findFirst({
-      where: { id, userId },
+      where: role === "ADMIN" ? { id } : { id, userId },
       include: { deployments: true },
     });
     if (!project) return reply.code(404).send({ error: "Project not found" });
 
-    // 1. Clean up VM Docker containers, build/source directories, and Redis cache
     const deploymentIds = project.deployments.map((d: any) => d.id);
     const { cleanupProjectResources } = await import("../lib/resource-cleaner.js");
-    await cleanupProjectResources(id, project.slug, deploymentIds);
 
-    await Promise.all(
-      project.deployments.map(async (d: typeof project.deployments[number]) => {
-        await Promise.all([
-          redisClient.del(`build-logs:${d.id}`),
-          // Cancel any in-progress build jobs
-          ...(["QUEUED", "BUILDING"].includes(d.status)
-            ? [
-                redisClient.publish(`cancel:${d.id}`, "CANCEL"),
-                redisClient.publish(`logs:${d.id}`, "__DONE__"),
-              ]
-            : []),
-        ]);
-      })
-    );
+    try {
+      // 1. Two-phase teardown: Stop & remove containers, remove Docker images, prune BuildKit cache, delete disk files, purge Supabase & Redis
+      const cleanupResult = await cleanupProjectResources(id, project.slug, deploymentIds);
 
-    // 2. Remove edge router entry
-    await redisClient.del(`deployment:${project.slug}`);
+      // 2. Strict Verification Guard: If ANY resource is still attached, DO NOT DELETE FROM DB
+      if (!cleanupResult.verified) {
+        return reply.code(409).send({
+          error: "Project deletion aborted: resources could not be detached or verified.",
+          details: cleanupResult.error || "Some VM containers, disk files, or storage objects could not be released.",
+          remaining: cleanupResult.remainingResources,
+        });
+      }
 
-    // 3. Cascade delete: env vars + deployments + project
-    await prisma.project.delete({ where: { id } });
+      // 3. Database Deletion (only executed after verified release of all attached resources)
+      await prisma.project.delete({ where: { id } });
 
-    return reply.send({ ok: true });
+      return reply.send({
+        ok: true,
+        message: `Project ${project.slug} and all attached VM containers, images, disk files, Supabase archives, and Redis keys were completely released and verified.`,
+        audit: cleanupResult,
+      });
+    } catch (err: any) {
+      return reply.code(500).send({
+        error: "Failed to release project resources",
+        details: err.message,
+      });
+    }
   });
 }
 

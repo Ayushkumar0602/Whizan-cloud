@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { Queue } from "bullmq";
 import { prisma } from "../lib/prisma.js";
 import { redisClient, redisSub } from "../lib/redis.js";
-import { stopDeploymentContainer, deleteBuildDir } from "../lib/resource-cleaner.js";
+import { stopDeploymentContainer, deleteBuildDir, cleanupDeploymentResources } from "../lib/resource-cleaner.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { checkVmOnline } from "../lib/vm-status.js";
 import { uploadArchiveToVm } from "../lib/vm-archive.js";
@@ -385,7 +385,7 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
   );
 
   // ── DELETE /api/projects/:id/deployments/:dId ───────────────────────────────
-  // Fully removes a deployment: DB row + Docker container + build files + Redis key
+  // Confirmed two-phase removal: container + image + BuildKit cache + disk files + Supabase archive + Redis keys
   fastify.delete(
     "/:id/deployments/:dId",
     { preHandler: [fastify.authenticate] },
@@ -407,18 +407,25 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
         await redisClient.publish(`logs:${dId}`, "__DONE__");
       }
 
-      // Stop container + delete build files + remove from router
-      await Promise.all([
-        stopDeploymentContainer(dId),
-        deleteBuildDir(dId),
-        redisClient.del(`deployment:${project.slug}`),
-        redisClient.del(`build-logs:${dId}`),
-      ]);
+      // Execute verified teardown of all resources attached to this deployment
+      const cleanupResult = await cleanupDeploymentResources(dId, "project", id, project.slug);
 
-      // Delete from DB
+      if (!cleanupResult.verified) {
+        return reply.code(409).send({
+          error: "Deployment deletion aborted: resources could not be detached or verified.",
+          details: cleanupResult.error || "Container or disk files could not be removed.",
+          remaining: cleanupResult.remainingResources,
+        });
+      }
+
+      // Delete from DB only after verified
       await prisma.deployment.delete({ where: { id: dId } });
 
-      return reply.send({ ok: true });
+      return reply.send({
+        ok: true,
+        message: `Deployment ${dId} and all attached VM containers, images, disk files, Supabase archives, and Redis logs were completely released.`,
+        audit: cleanupResult,
+      });
     }
   );
 
