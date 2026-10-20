@@ -6,6 +6,7 @@ import { redisClient } from "../lib/redis.js";
 import crypto from "crypto";
 import { isUserAdmin, isRootAdmin } from "../lib/auth-utils.js";
 import { sendOtpEmail } from "../lib/email-service.js";
+import { userMetaCache } from "../lib/user-cache.js";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -238,7 +239,14 @@ export async function authRoutes(fastify: FastifyInstance) {
     const isAdmin = isUserAdmin({ email: normalizedEmail });
     const assignedRole = isRoot ? "ROOT_ADMIN" : (isAdmin ? "ADMIN" : "USER");
     const user = await prisma.user.create({
-      data: { email: normalizedEmail, passwordHash, name, role: assignedRole },
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        name,
+        role: assignedRole,
+        emailVerified: !!passcode,
+        emailVerifiedAt: passcode ? new Date() : null,
+      },
     });
 
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
@@ -254,6 +262,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         name: user.name,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: assignedRole,
+        emailVerified: user.emailVerified,
       },
     });
   });
@@ -289,6 +298,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         avatarUrl: user.avatarUrl,
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: resolvedRole,
+        emailVerified: (user as any).emailVerified ?? false,
       },
     });
   });
@@ -323,6 +333,7 @@ export async function authRoutes(fastify: FastifyInstance) {
       avatarUrl: user.avatarUrl,
       subscriptionTier: (user as any).subscriptionTier || "HOBBY",
       role: resolvedRole,
+      emailVerified: (user as any).emailVerified ?? false,
     };
 
     // Rotate the refresh token
@@ -362,7 +373,17 @@ export async function authRoutes(fastify: FastifyInstance) {
       const { userId } = request.user;
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, email: true, name: true, avatarUrl: true, subscriptionTier: true, role: true, createdAt: true },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          avatarUrl: true,
+          subscriptionTier: true,
+          role: true,
+          createdAt: true,
+          emailVerified: true,
+          emailVerifiedAt: true,
+        },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
       const isRoot = isRootAdmin(user);
@@ -373,6 +394,114 @@ export async function authRoutes(fastify: FastifyInstance) {
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: resolvedRole,
         iamPermissions: (user as any).iamPermissions || "all",
+        emailVerified: (user as any).emailVerified ?? false,
+        emailVerifiedAt: (user as any).emailVerifiedAt ?? null,
+      });
+    }
+  );
+
+  // POST /api/auth/send-verification-otp — Dispatches OTP for in-dashboard email verification
+  fastify.post(
+    "/send-verification-otp",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId, email } = request.user;
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return reply.code(404).send({ error: "User not found" });
+      if ((user as any).emailVerified) {
+        return reply.send({ ok: true, alreadyVerified: true, message: "Email is already verified." });
+      }
+
+      const code = generateNumericOtp();
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      otpMemoryStore.set(email.toLowerCase(), { code, expiresAt, attempts: 0 });
+      try {
+        await redisClient.setex(`otp:${email.toLowerCase()}`, 900, code);
+      } catch {}
+
+      const xForwardedFor = request.headers["x-forwarded-for"];
+      const cfConnectingIp = request.headers["cf-connecting-ip"];
+      const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+      const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
+      const country = (request.headers["cf-ipcountry"] as string) || "Global";
+      const requestTime = new Date().toUTCString();
+      const expiryTimeString = new Date(expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+
+      const sendRes = await sendOtpEmail({
+        email,
+        passcode: code,
+        time: `${expiryTimeString} (15 minutes)`,
+        requestTime,
+        clientIp,
+        deviceInfo: userAgent,
+        location: country,
+        requestId: request.id || `ver_${Date.now().toString(36)}`,
+        companyName: "Whizan Cloud Services",
+      });
+
+      if (!sendRes.success) {
+        return reply.code(500).send({ error: sendRes.error || "Failed to dispatch verification email." });
+      }
+
+      return reply.send({ ok: true, message: "Verification OTP dispatched to email", expiresIn: 900 });
+    }
+  );
+
+  // POST /api/auth/verify-email — Verifies the OTP and unlocks full console mutation access
+  fastify.post(
+    "/verify-email",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const body = VerifyOtpSchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Invalid passcode format. Must be 6 digits." });
+      }
+      const { passcode } = body.data;
+      const { userId, email } = request.user;
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const entry = otpMemoryStore.get(normalizedEmail);
+      let storedCode = entry?.code;
+      let isExpired = entry ? entry.expiresAt < Date.now() : true;
+
+      if (!storedCode) {
+        try {
+          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+          if (redisCode) {
+            storedCode = redisCode;
+            isExpired = false;
+          }
+        } catch {}
+      }
+
+      if (!storedCode || isExpired) {
+        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
+      }
+
+      if (storedCode !== passcode.trim()) {
+        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
+      }
+
+      // Consume OTP
+      otpMemoryStore.delete(normalizedEmail);
+      try {
+        await redisClient.del(`otp:${normalizedEmail}`);
+      } catch {}
+
+      // Mark email as verified in DB
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { emailVerified: true, emailVerifiedAt: new Date() },
+        select: { id: true, email: true, name: true, emailVerified: true, emailVerifiedAt: true },
+      });
+
+      // Clear cache so authenticate immediately recognizes verified status
+      userMetaCache.delete(userId);
+
+      return reply.send({
+        ok: true,
+        message: "Email verified successfully! Full console mutation access unlocked.",
+        user: updated,
       });
     }
   );

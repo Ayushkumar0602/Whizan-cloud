@@ -12,6 +12,7 @@ import {
   Bot, BookOpen, Terminal, Mail
 } from "lucide-react";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
+import { EmailVerificationBanner } from "@/components/email-verification-banner";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { SummerDrawer } from "@/components/agent/summer-drawer";
 
@@ -297,6 +298,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main Container with subtle Aurora Background */}
       <main className="dash-main aurora-bg">
         <MaintenanceBanner />
+        <EmailVerificationBanner />
         {children}
         <SummerDrawer />
       </main>

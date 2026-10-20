@@ -7,6 +7,7 @@ import { sendOtpEmail } from "@/lib/emailjs";
 import {
   enrollBiometric,
   isPlatformBiometricSupported,
+  saveTwoFactorTrust,
 } from "@/lib/webauthn";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -231,6 +232,7 @@ function RegisterForm() {
 
       // 2. Complete user registration
       await register(email, password, name, code);
+      saveTwoFactorTrust(email);
       toast.success("Email verified and workspace created!");
 
       // 3. Move to biometric registration step if device supports it

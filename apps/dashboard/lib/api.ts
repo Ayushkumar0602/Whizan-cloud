@@ -243,6 +243,17 @@ export const auth = {
       body: JSON.stringify(data),
     }),
 
+  sendVerificationOtp: () =>
+    request<{ ok: boolean; message: string; alreadyVerified?: boolean; expiresIn?: number }>("/api/auth/send-verification-otp", {
+      method: "POST",
+    }),
+
+  verifyEmail: (data: { passcode: string }) =>
+    request<{ ok: boolean; message: string; user: User }>("/api/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   login: (data: { email: string; password: string }) =>
     request<{ accessToken: string; user: User }>("/api/auth/login", {
       method: "POST",
@@ -397,6 +408,8 @@ export type User = {
   role?: "ROOT_ADMIN" | "IAM_ADMIN" | "ADMIN" | "DEVOPS_ADMIN" | "SUPPORT_ADMIN" | "USER" | string;
   iamPermissions?: string;
   subscriptionTier?: "HOBBY" | "PROFESSIONAL" | string;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string | null;
   createdAt: string;
 };
 

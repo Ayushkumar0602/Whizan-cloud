@@ -220,3 +220,46 @@ export function removeBiometric(): void {
     localStorage.removeItem(STORAGE_KEYS.ENROLLED_AT);
   } catch {}
 }
+
+// ─── 3-Day 2-Step / Biometric Trust Session ──────────────────────────────────
+export const TWO_FACTOR_TRUST_DURATION_MS = 3 * 24 * 60 * 60 * 1000; // 3 Days
+
+/**
+ * Checks if 2-step verification is satisfied for this email on this local device (valid for 3 days)
+ */
+export function isTwoFactorTrusted(email: string): boolean {
+  if (typeof window === "undefined" || !email) return false;
+  try {
+    const raw = localStorage.getItem(`whz_2fa_trust_${email.toLowerCase().trim()}`);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.expiresAt === "number" && parsed.expiresAt > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Saves 3-day 2FA trust timestamp for this device
+ */
+export function saveTwoFactorTrust(email: string): void {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    const payload = {
+      verifiedAt: Date.now(),
+      expiresAt: Date.now() + TWO_FACTOR_TRUST_DURATION_MS,
+    };
+    localStorage.setItem(`whz_2fa_trust_${email.toLowerCase().trim()}`, JSON.stringify(payload));
+  } catch {}
+}
+
+/**
+ * Clears 2FA trust
+ */
+export function clearTwoFactorTrust(email: string): void {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    localStorage.removeItem(`whz_2fa_trust_${email.toLowerCase().trim()}`);
+  } catch {}
+}
+

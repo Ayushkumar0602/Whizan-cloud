@@ -25,6 +25,8 @@ model User {
   subscriptionTier String @default("HOBBY") @map("subscription_tier") // HOBBY | PROFESSIONAL
   role         String    @default("USER") // ROOT_ADMIN | ADMIN | DEVOPS_ADMIN | SUPPORT_ADMIN | USER
   iamPermissions String? @default("all") @map("iam_permissions") // Comma-separated permissions or "all"
+  emailVerified Boolean   @default(false) @map("email_verified")
+  emailVerifiedAt DateTime? @map("email_verified_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 

@@ -109,9 +109,7 @@ await app.register(fastifyJwt, {
 });
 
 import { isUserAdmin, isRootAdmin } from "./lib/auth-utils.js";
-
-// Fast memory cache for user IAM and subscription tier (60s TTL) to eliminate Postgres bottlenecks on every request
-const userMetaCache = new Map<string, { data: any; cachedAt: number }>();
+import { userMetaCache } from "./lib/user-cache.js";
 
 // Decorator so routes can use fastify.authenticate as a preHandler
 // Supports both JWT tokens (cookies or Bearer) and API keys (whz_live_...)
@@ -137,6 +135,7 @@ app.decorate("authenticate", async (request: any, reply: any) => {
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER")),
         iamPermissions: (user as any).iamPermissions || "all",
+        emailVerified: (user as any).emailVerified === true,
       };
       // Update lastUsedAt asynchronously
       prisma.apiKey.update({ where: { id: apiKeyRecord.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
@@ -155,7 +154,7 @@ app.decorate("authenticate", async (request: any, reply: any) => {
       if (!userRecord) {
         userRecord = await prisma.user.findUnique({
           where: { id: userId },
-          select: { role: true, subscriptionTier: true, email: true, iamPermissions: true },
+          select: { role: true, subscriptionTier: true, email: true, iamPermissions: true, emailVerified: true },
         });
         if (userRecord) {
           userMetaCache.set(userId, { data: userRecord, cachedAt: Date.now() });
@@ -168,11 +167,38 @@ app.decorate("authenticate", async (request: any, reply: any) => {
         request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? (userRecord?.role || "ADMIN") : (userRecord?.role || "USER"));
         request.user.iamPermissions = (userRecord as any)?.iamPermissions || "all";
         request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
+        request.user.emailVerified = (userRecord as any)?.emailVerified === true;
       } else if (request.user.role) {
         // Fallback to claims encoded in JWT token
         const isRoot = isRootAdmin({ role: request.user.role, email: request.user.email });
         const isAdmin = isUserAdmin({ role: request.user.role, email: request.user.email });
         request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? request.user.role : "USER");
+        request.user.emailVerified = false;
+      }
+
+      // ─── Mandatory Email Verification Enforcement ────────────────────────────
+      // Unverified accounts (any role tier: User or Admin) are restricted to View-Only mode.
+      // They can view (GET/HEAD/OPTIONS) but cannot mutate (POST/PUT/PATCH/DELETE).
+      if (
+        request.user.emailVerified === false &&
+        !["GET", "HEAD", "OPTIONS"].includes(request.method)
+      ) {
+        const rawPath = (request.url || "").split("?")[0];
+        const allowedPaths = [
+          "/api/auth/send-verification-otp",
+          "/api/auth/verify-email",
+          "/api/auth/send-otp",
+          "/api/auth/verify-otp",
+          "/api/auth/logout",
+          "/api/auth/refresh",
+        ];
+        if (!allowedPaths.includes(rawPath)) {
+          return reply.code(403).send({
+            error: "EMAIL_VERIFICATION_REQUIRED",
+            message: "Email verification is mandatory to perform actions or mutations. Your account is restricted to View-Only mode until verified.",
+            emailVerified: false,
+          });
+        }
       }
     }
   } catch {
