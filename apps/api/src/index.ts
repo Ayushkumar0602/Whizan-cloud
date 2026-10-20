@@ -203,6 +203,7 @@ await app.register(fastifyMultipart, {
 await app.register(authRoutes, { prefix: "/api/auth" });
 await app.register(projectRoutes, { prefix: "/api/projects" });
 await app.register(deploymentRoutes, { prefix: "/api/projects" });
+await app.register(deploymentRoutes, { prefix: "/api/deployments" });
 await app.register(envRoutes, { prefix: "/api/projects" });
 await app.register(webhookRoutes, { prefix: "/api/webhooks" });
 await app.register(adminRoutes, { prefix: "/api/admin" });
