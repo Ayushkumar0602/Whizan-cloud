@@ -75,12 +75,19 @@ await app.register(fastifyCors, {
   origin: (origin, cb) => {
     // Allow:
     // - No origin (server-to-server / curl)
-    // - Configured DASHBOARD_URL (e.g. Render production URL)
+    // - whizan.cloud domain and all subdomains (*.whizan.cloud)
+    // - Configured DASHBOARD_URL
     // - Any *.onrender.com subdomain (Render preview deploys)
+    // - Any *.vercel.app subdomain (Vercel preview deploys)
     // - Any localhost / 127.0.0.1 (local dev)
     const allowed =
       !origin ||
       origin === (process.env.DASHBOARD_URL || "http://localhost:3000") ||
+      origin === "https://whizan.cloud" ||
+      origin === "https://www.whizan.cloud" ||
+      origin === "https://dashboard.whizan.cloud" ||
+      origin === "https://api.whizan.cloud" ||
+      /^https?:\/\/([a-z0-9-]+\.)*whizan\.cloud(:\d+)?$/.test(origin) ||
       /^https?:\/\/[a-z0-9-]+\.onrender\.com$/.test(origin) ||
       /^https?:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin) ||
       /^http:\/\/localhost(:\d+)?$/.test(origin) ||

@@ -467,7 +467,7 @@ export default defineWorkflow({
       "command": "npx",
       "args": ["-y", "@whizan/mcp-devops"],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_YOUR_API_KEY_HERE"
       }
     }
@@ -475,7 +475,7 @@ export default defineWorkflow({
 }`
     },
     configOptions: [
-      { key: "WHIZAN_API_URL", desc: "API control plane URL", defaultVal: "https://whizan-cloud-service.onrender.com" },
+      { key: "WHIZAN_API_URL", desc: "API control plane URL", defaultVal: "https://api.whizan.cloud" },
       { key: "WHIZAN_API_KEY", desc: "Personal or team API authentication key", defaultVal: "Required for MCP" },
       { key: "Global CLI Binary", desc: "Command line executable installed globally via npm", defaultVal: "@whizan/cli" }
     ],
@@ -505,15 +505,15 @@ export default defineWorkflow({
       dashboardSteps: [
         "Generate an API Key in 'Settings > IDE DevOps MCP & API Keys'.",
         "Include the header 'Authorization: Bearer <YOUR_API_KEY>' in all API requests.",
-        "Base URL: 'https://whizan-cloud-service.onrender.com'."
+        "Base URL: 'https://api.whizan.cloud'."
       ],
-      cliCommand: "curl -H 'Authorization: Bearer whz_live_...' https://whizan-cloud-service.onrender.com/api/services",
+      cliCommand: "curl -H 'Authorization: Bearer whz_live_...' https://api.whizan.cloud/api/services",
       mcpPrompt: "Query the Whizan API to list all active services"
     },
     sampleCode: {
       filename: "fetch-services.js",
       language: "javascript",
-      code: `const API_URL = "https://whizan-cloud-service.onrender.com";
+      code: `const API_URL = "https://api.whizan.cloud";
 const API_KEY = process.env.WHIZAN_API_KEY;
 
 async function listCloudServices() {

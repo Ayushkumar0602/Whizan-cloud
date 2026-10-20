@@ -45,17 +45,17 @@ export async function openCommand(args: string[] = []) {
   if (targetId) {
     const svc = await client.getService(targetId).catch(() => null);
     if (svc) {
-      liveUrl = svc.liveUrl || `http://${svc.slug}.20.2.136.11.nip.io`;
+      liveUrl = svc.liveUrl || `https://${svc.slug}.whizan.cloud`;
     } else {
       const proj = await client.getProject(targetId).catch(() => null);
       if (proj) {
-        liveUrl = proj.liveUrl || `http://${proj.slug}.20.2.136.11.nip.io`;
+        liveUrl = proj.liveUrl || `https://${proj.slug}.whizan.cloud`;
       }
     }
   }
 
   if (!liveUrl && slug) {
-    liveUrl = `http://${slug}.20.2.136.11.nip.io`;
+    liveUrl = `https://${slug}.whizan.cloud`;
   }
 
   if (!liveUrl) {

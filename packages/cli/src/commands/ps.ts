@@ -30,7 +30,7 @@ export async function psCommand() {
     for (const svc of services) {
       const statusColor = svc.status === "ACTIVE" || svc.status === "READY" ? c.emerald : c.amber;
       const statusIcon = svc.status === "ACTIVE" || svc.status === "READY" ? "●" : "○";
-      const url = svc.slug ? `http://${svc.slug}.20.2.136.11.nip.io` : "";
+      const url = svc.slug ? `https://${svc.slug}.whizan.cloud` : "";
       console.error(`  ${statusColor}${statusIcon}${c.reset} ${c.bold}${svc.name}${c.reset} ${c.dim}(${svc.id})${c.reset}`);
       console.error(`    ${c.dim}Language: ${svc.language || "—"} • Port: ${svc.internalPort ?? "—"} • ${url}${c.reset}`);
     }
@@ -42,7 +42,7 @@ export async function psCommand() {
     for (const proj of projects) {
       const statusColor = proj.status === "ACTIVE" || proj.status === "READY" ? c.emerald : c.amber;
       const statusIcon = proj.status === "ACTIVE" || proj.status === "READY" ? "●" : "○";
-      const url = proj.slug ? `http://${proj.slug}.20.2.136.11.nip.io` : "";
+      const url = proj.slug ? `https://${proj.slug}.whizan.cloud` : "";
       console.error(`  ${statusColor}${statusIcon}${c.reset} ${c.bold}${proj.name}${c.reset} ${c.dim}(${proj.id})${c.reset}`);
       console.error(`    ${c.dim}Framework: ${proj.framework || "—"} • ${url}${c.reset}`);
     }
@@ -52,7 +52,7 @@ export async function psCommand() {
   if (functions.length > 0) {
     console.error(`\n  ${c.bold}${c.whizanPurple}Edge Functions (${functions.length})${c.reset}`);
     for (const fn of functions) {
-      const url = fn.slug ? `http://${fn.slug}.fn.20.2.136.11.nip.io` : "";
+      const url = fn.slug ? `http://${fn.slug}.fn.whizan.cloud` : "";
       console.error(`  ${c.emerald}λ${c.reset} ${c.bold}${fn.name}${c.reset} ${c.dim}(${fn.id})${c.reset}`);
       console.error(`    ${c.dim}${url}${c.reset}`);
     }

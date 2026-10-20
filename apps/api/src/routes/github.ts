@@ -13,7 +13,7 @@ export async function githubRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: "GITHUB_CLIENT_ID is not configured" });
     }
 
-    const redirectUri = process.env.GITHUB_CALLBACK_URL || "https://whizan-cloud-service.onrender.com/api/auth/github/callback";
+    const redirectUri = process.env.GITHUB_CALLBACK_URL || "https://api.whizan.cloud/api/auth/github/callback";
     const scope = "repo,user:email,read:user";
     
     // Pass existing userId in state if user is logged in
@@ -44,7 +44,7 @@ export async function githubRoutes(fastify: FastifyInstance) {
 
     const clientId = process.env.GITHUB_CLIENT_ID;
     const clientSecret = process.env.GITHUB_CLIENT_SECRET;
-    const redirectUri = process.env.GITHUB_CALLBACK_URL || "https://whizan-cloud-service.onrender.com/api/auth/github/callback";
+    const redirectUri = process.env.GITHUB_CALLBACK_URL || "https://api.whizan.cloud/api/auth/github/callback";
 
     if (!clientId || !clientSecret) {
       return reply.code(500).send({ error: "GitHub OAuth keys not configured on server" });
@@ -185,11 +185,11 @@ export async function githubRoutes(fastify: FastifyInstance) {
       });
 
       // Redirect back to frontend dashboard with token in URL hash/query
-      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard.vercel.app";
+      const dashboardUrl = process.env.DASHBOARD_URL || "https://dashboard.whizan.cloud";
       return reply.redirect(`${dashboardUrl}/dashboard?github=connected&token=${jwtToken}`);
     } catch (err: any) {
       fastify.log.error(err, "GitHub OAuth error");
-      const dashboardUrl = process.env.DASHBOARD_URL || "https://whizan-cloud-service-dashboard.vercel.app";
+      const dashboardUrl = process.env.DASHBOARD_URL || "https://dashboard.whizan.cloud";
       return reply.redirect(`${dashboardUrl}/dashboard?error=github_failed`);
     }
   });

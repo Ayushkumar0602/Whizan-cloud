@@ -341,8 +341,8 @@ export async function deployCommand(args: string[] = []) {
         });
         targetId = project.id;
         slug = project.slug || slug;
-        liveUrl = project.liveUrl || `http://${slug}.20.2.136.11.nip.io`;
-        dashboardUrl = `https://dashboard.vercel.app/dashboard/projects/${targetId}`;
+        liveUrl = project.liveUrl || `https://${slug}.whizan.cloud`;
+        dashboardUrl = `https://dashboard.whizan.cloud/dashboard/projects/${targetId}`;
       } else {
         const service = await client.createService({
           name,
@@ -358,8 +358,8 @@ export async function deployCommand(args: string[] = []) {
         });
         targetId = service.id;
         slug = service.slug || slug;
-        liveUrl = service.liveUrl || `http://${slug}.20.2.136.11.nip.io`;
-        dashboardUrl = `https://dashboard.vercel.app/dashboard/services/${targetId}`;
+        liveUrl = service.liveUrl || `https://${slug}.whizan.cloud`;
+        dashboardUrl = `https://dashboard.whizan.cloud/dashboard/services/${targetId}`;
       }
 
       // Save/update .whizan.json immediately upon resource creation
@@ -459,7 +459,7 @@ export async function deployCommand(args: string[] = []) {
       const healthSpinner = opts.json ? null : new Spinner("Probing live endpoint...").start();
 
       if (!liveUrl) {
-        liveUrl = `http://${slug}.20.2.136.11.nip.io`;
+        liveUrl = `https://${slug}.whizan.cloud`;
       }
       // Ensure HTTP protocol for nip.io
       if (liveUrl.startsWith("https://") && liveUrl.includes("nip.io")) {

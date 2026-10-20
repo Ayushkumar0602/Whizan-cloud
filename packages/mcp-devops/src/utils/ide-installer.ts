@@ -184,7 +184,7 @@ export async function autoRegisterMcp(options: {
 
   if (options.apiKey) {
     serverConfig.env = {
-      WHIZAN_API_URL: options.apiUrl || "https://whizan-cloud-service.onrender.com",
+      WHIZAN_API_URL: options.apiUrl || "https://api.whizan.cloud",
       WHIZAN_API_KEY: options.apiKey,
     };
   }

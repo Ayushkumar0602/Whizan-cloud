@@ -59,7 +59,7 @@ whizan deploy
 3. **[3/6] 📦 Tarball Creation**: Creates a compressed tarball respecting `.gitignore`, `.whizanignore`, and the 50MB ceiling.
 4. **[4/6] 🚀 Cloud Provisioning & Upload**: Provisions service or edge project and uploads source to the build worker.
 5. **[5/6] 🛠️ Real-Time Log Streaming**: Streams live container compilation and startup logs.
-6. **[6/6] 🌐 Health Check Probe**: Probes `http://<slug>.20.2.136.11.nip.io` until HTTP 200 OK is verified.
+6. **[6/6] 🌐 Health Check Probe**: Probes `https://<slug>.whizan.cloud` until HTTP 200 OK is verified.
 
 ### Non-Interactive / CI/CD Mode
 ```bash

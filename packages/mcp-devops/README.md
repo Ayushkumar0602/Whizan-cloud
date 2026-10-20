@@ -173,7 +173,7 @@ Or pass it in your MCP config environment variables:
       "command": "npx",
       "args": ["-y", "@whizan/mcp-devops"],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_YOUR_API_KEY"
       }
     }

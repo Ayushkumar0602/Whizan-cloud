@@ -204,7 +204,7 @@ export default function NewEdgeFunctionPage() {
                       color: "var(--muted)",
                     }}
                   >
-                    .fn.20.2.136.11.nip.io
+                    .fn.whizan.cloud
                   </span>
                 </div>
               </div>

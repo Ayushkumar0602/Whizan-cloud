@@ -82,7 +82,7 @@ export class WhizanClient {
       status: "MAINTENANCE",
       message: "The administration has temporarily stopped new deployments and serving existing applications until further notice.",
       contactEmail: "ayushkumarjais0602@gmail.com",
-      contactUrl: "https://whizan-cloud-service-dashboard.vercel.app/contact",
+      contactUrl: "https://dashboard.whizan.cloud/contact",
     };
     try {
       const res = await fetch(`${await this.apiUrl()}/api/system/status`, {
@@ -298,7 +298,8 @@ export class WhizanClient {
     isWorker?: boolean;
   }> {
     let url = urlOrId;
-    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+    const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
 
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
       const svc = await this.getService(url);
@@ -316,10 +317,10 @@ export class WhizanClient {
               : `Worker '${svc.name}' is not ready (status: ${latest?.status || "UNKNOWN"}).`,
           };
         }
-        url = `http://${svc.slug}.${baseDomain}`;
+        url = `${proto}://${svc.slug}.${baseDomain}`;
       } else {
         const proj = await this.getProject(url);
-        if (proj) url = `http://${proj.slug}.${baseDomain}`;
+        if (proj) url = `${proto}://${proj.slug}.${baseDomain}`;
       }
     }
 
@@ -583,7 +584,7 @@ export class WhizanClient {
     } = {}
   ): Promise<any> {
     const targetPath = options.path || "/";
-    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
     const routerPort = process.env.ROUTER_PORT || (baseDomain.includes("localhost") ? "8080" : "80");
     const portSuffix = routerPort === "80" ? "" : `:${routerPort}`;
     const url = `http://${slug}.fn.${baseDomain}${portSuffix}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;

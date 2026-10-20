@@ -509,7 +509,7 @@ export class StepRunner {
     const { slug, type = "static", containerPort = 3000, staticDir = "dist", deploymentId } = node.config;
     const targetSlug = slug || context.workflowName?.toLowerCase().replace(/[^a-z0-9-]/g, "-") || "app";
     const depId = deploymentId || `dep_${Date.now()}`;
-    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
 
     log(`[Edge-Deploy] Deploying ${type} web application to Edge Router (Slug: ${targetSlug})...\n`);
 

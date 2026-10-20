@@ -152,7 +152,7 @@ export async function topCommand() {
       for (const s of services) {
         const latestDep = s.deployments?.[0];
         const status = latestDep?.status || (s.autoSleep ? "SLEEPING" : "ACTIVE");
-        const url = s.liveUrl || (s.internalPort > 0 ? `http://${s.slug}.20.2.136.11.nip.io` : "—");
+        const url = s.liveUrl || (s.internalPort > 0 ? `https://${s.slug}.whizan.cloud` : "—");
         newItems.push({
           type: "service",
           id: s.id,
@@ -169,7 +169,7 @@ export async function topCommand() {
       for (const p of projects) {
         const latestDep = p.deployments?.[0];
         const status = latestDep?.status || "ACTIVE";
-        const url = p.liveUrl || `http://${p.slug}.20.2.136.11.nip.io`;
+        const url = p.liveUrl || `https://${p.slug}.whizan.cloud`;
         newItems.push({
           type: "project",
           id: p.id,
@@ -184,7 +184,7 @@ export async function topCommand() {
       }
 
       for (const fn of functions) {
-        const url = `http://${fn.slug}.fn.20.2.136.11.nip.io`;
+        const url = `http://${fn.slug}.fn.whizan.cloud`;
         newItems.push({
           type: "function",
           id: fn.id,

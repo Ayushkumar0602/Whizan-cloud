@@ -4,7 +4,7 @@ const SUPABASE_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const SUPABASE_STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
 
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11";
+const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "whizan_internal_secret";
 
 export interface VmArchiveUploadResult {
@@ -87,8 +87,8 @@ export async function uploadArchiveToVm(params: {
     }
   }
 
-  // ── Strategy 2: Direct VM HTTP Storage Bridge (Bypasses Redis) ──
-  const edgeRouterUrl = `http://20.2.136.11/_internal/upload?targetType=${targetType}&targetId=${targetId}&deploymentId=${deploymentId}`;
+  const vmIp = process.env.VM_IP || "20.2.136.11";
+  const edgeRouterUrl = `http://${vmIp}/_internal/upload?targetType=${targetType}&targetId=${targetId}&deploymentId=${deploymentId}`;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);

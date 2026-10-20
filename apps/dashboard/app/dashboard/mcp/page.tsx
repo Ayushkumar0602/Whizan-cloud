@@ -59,7 +59,7 @@ export default function McpAndCliDocsPage() {
   const apiUrl =
     process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_URL.includes("localhost")
       ? process.env.NEXT_PUBLIC_API_URL
-      : "https://whizan-cloud-service.onrender.com";
+      : "https://api.whizan.cloud";
 
   useEffect(() => {
     loadKeys();
@@ -286,7 +286,7 @@ export default function McpAndCliDocsPage() {
     {
       name: "whizan_check_health",
       group: "Verification",
-      desc: "Probes public HTTP 200 readiness and verifies edge routing connectivity on *.nip.io domains.",
+      desc: "Probes public HTTP 200 readiness and verifies edge routing connectivity on *.whizan.cloud domains.",
     },
     {
       name: "whizan_create_project",
@@ -1419,7 +1419,7 @@ export default function McpAndCliDocsPage() {
                   </button>
                 </div>
                 <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: 0, lineHeight: 1.5 }}>
-                  Compresses the directory (respects <code style={{ color: "var(--accent)" }}>.gitignore</code>, skips node_modules), uploads to the build worker, streams live Docker compilation logs in your terminal, and prints the live <code style={{ color: "var(--accent)" }}>*.nip.io</code> URL upon completion.
+                  Compresses the directory (respects <code style={{ color: "var(--accent)" }}>.gitignore</code>, skips node_modules), uploads to the build worker, streams live Docker compilation logs in your terminal, and prints the live <code style={{ color: "var(--accent)" }}>*.whizan.cloud</code> URL upon completion.
                 </p>
               </div>
             </div>

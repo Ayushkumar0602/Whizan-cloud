@@ -52,13 +52,13 @@ export function generatePatch(params: {
     case "frontend_api_url": {
       let effectiveBackendUrl = backendUrl;
       if (!effectiveBackendUrl) {
-        effectiveBackendUrl = "http://<service-slug>.20.2.136.11.nip.io";
+        effectiveBackendUrl = "https://<service-slug>.whizan.cloud";
       } else if (effectiveBackendUrl.includes("nip.io") && effectiveBackendUrl.startsWith("https://")) {
         effectiveBackendUrl = effectiveBackendUrl.replace(/^https:\/\//i, "http://");
       }
       return {
         issue: "frontend_api_url",
-        description: "Updates frontend configuration to point to the newly deployed Whizan backend URL (HTTP on Port 80).",
+        description: "Updates frontend configuration to point to the newly deployed Whizan backend URL (HTTPS with Cloudflare Wildcard SSL).",
         suggestedCode: `// .env.production or frontend config:\nVITE_API_URL="${effectiveBackendUrl}"\nNEXT_PUBLIC_API_URL="${effectiveBackendUrl}"`,
         filesToUpdate: [".env", ".env.production", "src/config.ts", "src/api.ts"],
       };

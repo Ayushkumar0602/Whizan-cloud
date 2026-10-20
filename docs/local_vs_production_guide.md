@@ -8,7 +8,7 @@ This document records all changes made to enable seamless **local development an
 
 ### What Was Happening:
 1. **Admin Dashboard Was Hardcoded to the Cloud Backend**:
-   - The frontend configuration (`next.config.ts`) and API client (`lib/api.ts`) hardcoded `https://whizan-cloud-service.onrender.com` as the default API fallback.
+   - The frontend configuration (`next.config.ts`) and API client (`lib/api.ts`) hardcoded `https://api.whizan.cloud` as the default API fallback.
    - Even when running locally on `http://localhost:3000`, the browser made requests to the Render cloud backend.
 2. **Azure VM Was Powered Down**:
    - Render's backend connects to the cloud Upstash Redis.
@@ -27,7 +27,7 @@ Here is the complete list of files updated:
 | # | File Path | Scope | Purpose |
 |---|-----------|-------|---------|
 | 1 | `apps/dashboard/lib/api.ts` | Frontend API Client | Dynamically resolve API URL: prioritize `http://localhost:8000` when accessed via `localhost`/`127.0.0.1` in the browser. |
-| 2 | `apps/dashboard/next.config.ts` | Next.js Server Config | Route `/api/:path*` rewrites to `http://localhost:8000` in development mode (`isDev`), and `https://whizan-cloud-service.onrender.com` in production. |
+| 2 | `apps/dashboard/next.config.ts` | Next.js Server Config | Route `/api/:path*` rewrites to `http://localhost:8000` in development mode (`isDev`), and `https://api.whizan.cloud` in production. |
 | 3 | `apps/dashboard/lib/domains.ts` | Ingress Router Domain | Dynamically resolve Edge Router domain: use `localhost:8080` when on localhost, and `20.2.136.11.nip.io` in production. |
 | 4 | `apps/dashboard/lib/auth.tsx` | Session Management | Call `getApiBase()` dynamically instead of static constant for session token refresh (`/api/auth/refresh`). |
 | 5 | `apps/dashboard/components/service-logs.tsx` | Backend Logs Streaming | Use `getApiBase()` for SSE log stream URL instead of hardcoded Render URL. |
@@ -57,7 +57,7 @@ Here is the complete list of files updated:
 -  ) {
 -    return "http://localhost:8000";
 -  }
--  return "https://whizan-cloud-service.onrender.com";
+-  return "https://api.whizan.cloud";
 +  // When running locally in the browser, always prioritize local API on port 8000
 +  if (
 +    typeof window !== "undefined" &&
@@ -74,11 +74,11 @@ Here is the complete list of files updated:
 +    return process.env.NEXT_PUBLIC_API_URL;
 +  }
 +
-+  return "https://whizan-cloud-service.onrender.com";
++  return "https://api.whizan.cloud";
  }
 ```
 - **Why**: When Next.js compiles client components, `process.env.NEXT_PUBLIC_API_URL` is baked into the JavaScript bundle. If this had been set to the cloud URL, checking `if (process.env.NEXT_PUBLIC_API_URL)` first prevented local browser sessions from ever connecting to `localhost:8000`. By checking `window.location.hostname === "localhost"` first, local testing always talks to the local backend.
-- **Production Impact**: **Zero.** On Vercel (or any public domain like `whizan.vercel.app`), `window.location.hostname` is NOT localhost, so it automatically falls back to `NEXT_PUBLIC_API_URL` or `https://whizan-cloud-service.onrender.com`.
+- **Production Impact**: **Zero.** On Vercel (or any public domain like `whizan.vercel.app`), `window.location.hostname` is NOT localhost, so it automatically falls back to `NEXT_PUBLIC_API_URL` or `https://api.whizan.cloud`.
 
 ---
 
@@ -86,19 +86,19 @@ Here is the complete list of files updated:
 - **Change**:
 ```diff
 +const isDev = process.env.NODE_ENV !== "production";
-+const defaultApiUrl = isDev ? "http://localhost:8000" : "https://whizan-cloud-service.onrender.com";
++const defaultApiUrl = isDev ? "http://localhost:8000" : "https://api.whizan.cloud";
 +const apiUrl = process.env.NEXT_PUBLIC_API_URL || defaultApiUrl;
 +
  const nextConfig: NextConfig = {
    env: {
--    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com",
+-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "https://api.whizan.cloud",
 +    NEXT_PUBLIC_API_URL: apiUrl,
    },
    async rewrites() {
      return [
        {
          source: "/api/:path*",
--        destination: `${process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com"}/api/:path*`,
+-        destination: `${process.env.NEXT_PUBLIC_API_URL || "https://api.whizan.cloud"}/api/:path*`,
 +        destination: `${apiUrl}/api/:path*`,
        },
      ];
@@ -180,7 +180,7 @@ Here is the complete list of files updated:
   - `apps/dashboard/app/dashboard/projects/[id]/deployments/[dId]/page.tsx`
   - `apps/dashboard/app/dashboard/backend/[id]/deployments/[dId]/page.tsx`
   - `apps/dashboard/lib/auth.tsx`
-- **Change**: Replaced hardcoded `process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com"` with dynamic `getApiBase()`.
+- **Change**: Replaced hardcoded `process.env.NEXT_PUBLIC_API_URL || "https://api.whizan.cloud"` with dynamic `getApiBase()`.
 - **Why**: Keeps all stream URLs (EventSource SSE and WebSockets) consistent with the active environment.
 
 ---
@@ -216,11 +216,11 @@ Ensure your production services have the following environment variables configu
 - `ENCRYPTION_KEY`: AES-256 encryption key.
 - `GITHUB_CLIENT_ID`: OAuth Client ID (`YOUR_GITHUB_CLIENT_ID`).
 - `GITHUB_CLIENT_SECRET`: OAuth Client Secret.
-- `GITHUB_CALLBACK_URL`: `https://whizan-cloud-service.onrender.com/api/auth/github/callback`.
+- `GITHUB_CALLBACK_URL`: `https://api.whizan.cloud/api/auth/github/callback`.
 - `DASHBOARD_URL`: Your production Vercel dashboard URL.
 
 #### Vercel (`apps/dashboard`):
-- `NEXT_PUBLIC_API_URL`: `https://whizan-cloud-service.onrender.com`
+- `NEXT_PUBLIC_API_URL`: `https://api.whizan.cloud`
 - `NEXT_PUBLIC_BASE_DOMAIN`: `20.2.136.11.nip.io`
 
 #### Azure VM (`apps/build-worker` & `apps/edge-router`):

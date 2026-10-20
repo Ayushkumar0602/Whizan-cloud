@@ -490,7 +490,7 @@ export default function ConsolePage() {
               <div className="network-specs-table">
                 <div className="spec-item-row">
                   <span className="spec-item-name">Edge Ingress Gateway</span>
-                  <span className="spec-item-val font-mono">http://*.20.2.136.11.nip.io</span>
+                  <span className="spec-item-val font-mono">https://*.whizan.cloud</span>
                 </div>
                 <div className="spec-item-row">
                   <span className="spec-item-name">Ingress Traffic Port</span>

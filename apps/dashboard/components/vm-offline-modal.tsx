@@ -25,7 +25,7 @@ export function VmOfflineModal({
   const isDeploy = actionType === "deploy";
 
   const cleanSlug = (targetName || "my-service").toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const wakeupUrl = `/wakeup?slug=${encodeURIComponent(cleanSlug)}&target=${encodeURIComponent(targetUrl || `http://${cleanSlug}.20.2.136.11.nip.io`)}`;
+  const wakeupUrl = `/wakeup?slug=${encodeURIComponent(cleanSlug)}&target=${encodeURIComponent(targetUrl || `https://${cleanSlug}.whizan.cloud`)}`;
 
   return (
     <div

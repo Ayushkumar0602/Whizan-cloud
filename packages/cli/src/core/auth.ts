@@ -17,7 +17,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, "config.json");
  */
 export async function loadConfig(): Promise<WhizanLocalConfig> {
   const config: WhizanLocalConfig = {
-    apiUrl: process.env.WHIZAN_API_URL || "https://whizan-cloud-service.onrender.com",
+    apiUrl: process.env.WHIZAN_API_URL || "https://api.whizan.cloud",
     apiKey: process.env.WHIZAN_API_KEY,
   };
 
@@ -39,7 +39,7 @@ export async function loadConfig(): Promise<WhizanLocalConfig> {
  */
 export async function saveConfig(updates: Partial<WhizanLocalConfig>): Promise<void> {
   let existing: WhizanLocalConfig = {
-    apiUrl: "https://whizan-cloud-service.onrender.com",
+    apiUrl: "https://api.whizan.cloud",
   };
 
   try {

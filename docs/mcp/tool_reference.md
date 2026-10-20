@@ -30,7 +30,7 @@ Saves or updates the Whizan API key credentials in local configuration (`~/.whiz
   | Parameter | Type | Required | Description |
   |---|---|---|---|
   | `apiKey` | `string` | **Yes** | Whizan API Key starting with `whz_live_...`. |
-  | `apiUrl` | `string` | No | Optional API URL override (defaults to `https://whizan-cloud-service.onrender.com`). |
+  | `apiUrl` | `string` | No | Optional API URL override (defaults to `https://api.whizan.cloud`). |
 
 ---
 

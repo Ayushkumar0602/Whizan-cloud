@@ -924,8 +924,9 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     const wantsJson = acceptHeader.includes("application/json") || (!isLiveRequested && !acceptHeader.includes("text/event-stream"));
 
     if (wantsJson) {
-      const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-      const liveUrl = deployment.containerPort ? `http://${deployment.service.slug}.${BASE_DOMAIN}` : null;
+      const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
+      const proto = BASE_DOMAIN.includes("whizan.cloud") ? "https" : "http";
+      const liveUrl = deployment.containerPort ? `${proto}://${deployment.service.slug}.${BASE_DOMAIN}` : null;
       return reply.send({
         deploymentId: dId,
         serviceId: deployment.serviceId,

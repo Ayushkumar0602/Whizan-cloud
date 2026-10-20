@@ -166,7 +166,7 @@ A major design goal of Whizan Edge Functions is **effortless survivability acros
                                        /                \
                        esbuild on-the-fly                ▼
                                             Query Control Plane API
-                                            (whizan-cloud-service.onrender.com)
+                                            (api.whizan.cloud)
                                                         │
                                                         ▼
                                             Fetch persistent sourceCode

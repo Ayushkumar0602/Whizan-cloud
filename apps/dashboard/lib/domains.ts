@@ -1,6 +1,6 @@
 /**
  * Utility for resolving public ingress URLs in Dashboard.
- * Always resolves to the deployed cloud domain (20.2.136.11.nip.io)
+ * Always resolves to the deployed cloud domain (whizan.cloud)
  * to ensure all links in the application lead to live deployed services.
  */
 
@@ -9,7 +9,7 @@ export function getBaseRouterDomain(): string {
   if (envDomain && !envDomain.includes("localhost") && !envDomain.includes("127.0.0.1")) {
     return envDomain;
   }
-  return "20.2.136.11.nip.io";
+  return "whizan.cloud";
 }
 
 export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
@@ -19,7 +19,8 @@ export const BASE_ROUTER_DOMAIN = getBaseRouterDomain();
  */
 export function getServiceIngressUrl(slug: string): string {
   const domain = getBaseRouterDomain();
-  return `http://${slug}.${domain}`;
+  const proto = domain.includes("whizan.cloud") ? "https" : "http";
+  return `${proto}://${slug}.${domain}`;
 }
 
 /**
@@ -29,7 +30,7 @@ export function getServiceIngressUrl(slug: string): string {
  */
 export function getGatewayLiveUrl(slug: string, isFn = false, path = ""): string {
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com").replace(/\/+$/, "");
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://api.whizan.cloud").replace(/\/+$/, "");
   if (isFn) {
     return `${apiBase}/live/fn/${slug}${cleanPath}`;
   }
@@ -79,7 +80,8 @@ export function getFunctionIngressUrl(slug: string, path = ""): string {
 export function getFunctionPathUrl(slug: string, path = ""): string {
   const domain = getBaseRouterDomain();
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  return `http://${domain}/fn/${slug}${cleanPath}`;
+  const proto = domain.includes("whizan.cloud") ? "https" : "http";
+  return `${proto}://${domain}/fn/${slug}${cleanPath}`;
 }
 
 

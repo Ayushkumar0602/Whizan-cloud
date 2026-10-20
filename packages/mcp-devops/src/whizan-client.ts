@@ -28,7 +28,7 @@ export class WhizanClient {
 
   constructor() {
     this.config = {
-      apiUrl: process.env.WHIZAN_API_URL || "https://whizan-cloud-service.onrender.com",
+      apiUrl: process.env.WHIZAN_API_URL || "https://api.whizan.cloud",
       apiKey: process.env.WHIZAN_API_KEY,
     };
   }
@@ -110,7 +110,7 @@ export class WhizanClient {
       status: "MAINTENANCE",
       message: "The administration has temporarily stopped new deployments and serving existing applications until further notice.",
       contactEmail: "ayushkumarjais0602@gmail.com",
-      contactUrl: "https://whizan-cloud-service-dashboard.vercel.app/contact",
+      contactUrl: "https://dashboard.whizan.cloud/contact",
     };
     try {
       const res = await fetch(`${this.config.apiUrl}/api/system/status`, {
@@ -443,7 +443,7 @@ export class WhizanClient {
 
     // If a service/project ID or slug was passed instead of a full HTTP URL
     if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
       const svc = await this.getService(url);
       if (svc) {
         // If it's a background queue worker with internalPort: 0
@@ -460,11 +460,13 @@ export class WhizanClient {
               : `Background queue worker '${svc.name}' is not ready (current status: ${latestDeploy?.status || "UNKNOWN"}).`,
           };
         }
-        url = `http://${svc.slug}.${baseDomain}`;
+        const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+        url = `${proto}://${svc.slug}.${baseDomain}`;
       } else {
         const proj = await this.getProject(url);
         if (proj) {
-          url = `http://${proj.slug}.${baseDomain}`;
+          const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+          url = `${proto}://${proj.slug}.${baseDomain}`;
         }
       }
     }
@@ -781,7 +783,7 @@ export class WhizanClient {
   ): Promise<any> {
     await this.loadConfig();
     const targetPath = options.path || "/";
-    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+    const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
     const routerPort = process.env.ROUTER_PORT || (baseDomain.includes("localhost") ? "8080" : "80");
     const portSuffix = routerPort === "80" ? "" : `:${routerPort}`;
     const url = `http://${slug}.fn.${baseDomain}${portSuffix}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;

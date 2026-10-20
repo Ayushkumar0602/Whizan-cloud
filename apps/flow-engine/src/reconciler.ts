@@ -27,7 +27,7 @@ export class FlowBootReconciler {
   constructor(options: ReconcilerOptions) {
     this.redis = options.redis;
     this.stateMachine = options.stateMachine;
-    this.apiUrl = (options.apiUrl !== undefined ? options.apiUrl : "https://whizan-cloud-service.onrender.com").replace(/\/$/, "");
+    this.apiUrl = (options.apiUrl !== undefined ? options.apiUrl : (process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://api.whizan.cloud")).replace(/\/$/, "");
     this.meshToken = options.meshToken || process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "";
   }
 

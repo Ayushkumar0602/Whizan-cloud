@@ -54,8 +54,8 @@ async function setupMcp(args: string[]) {
     process.exit(1);
   }
 
-  const apiUrl = localConfig.apiUrl || "https://whizan-cloud-service.onrender.com";
-  const baseDomain = "20.2.136.11.nip.io";
+  const apiUrl = localConfig.apiUrl || "https://api.whizan.cloud";
+  const baseDomain = "whizan.cloud";
 
   // Standard MCP Server configuration specification
   const mcpServerConfig = {
@@ -225,8 +225,8 @@ async function infoMcp() {
 
   console.log(`  ${c.bold}Package:${c.reset}      @whizan/mcp-devops@latest`);
   console.log(`  ${c.bold}Auth Status:${c.reset}  ${auth.authenticated ? `${c.emerald}Authenticated${c.reset} (${auth.user?.email || "User"})` : `${c.red}Not Logged In${c.reset}`}`);
-  console.log(`  ${c.bold}API URL:${c.reset}      ${localConfig.apiUrl || "https://whizan-cloud-service.onrender.com"}`);
-  console.log(`  ${c.bold}Base Domain:${c.reset}  20.2.136.11.nip.io\n`);
+  console.log(`  ${c.bold}API URL:${c.reset}      ${localConfig.apiUrl || "https://api.whizan.cloud"}`);
+  console.log(`  ${c.bold}Base Domain:${c.reset}  whizan.cloud\n`);
 
   console.log(`  ${c.bold}Available MCP Tools:${c.reset}`);
   console.log(`    • ${c.whizanCyan}whizan_analyze_workspace${c.reset}     Detect stack, check failures, evaluate guardrails`);

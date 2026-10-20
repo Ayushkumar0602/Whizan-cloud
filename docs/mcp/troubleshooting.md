@@ -138,7 +138,7 @@ connection closed: calling "initialize": client is closing: EOF.
            "C:/Users/HP/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js"
          ],
          "env": {
-           "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+           "WHIZAN_API_URL": "https://api.whizan.cloud",
            "WHIZAN_API_KEY": "whz_live_YOUR_ACTUAL_KEY_HERE"
          }
        }

@@ -220,11 +220,11 @@ const TOOLS: Tool[] = [
   },
   {
     name: "whizan_check_health",
-    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200), or verifies process liveness via targetId for background queue workers (internalPort: 0). Note: Use http:// (not https://) for *.nip.io domains since the Whizan Edge Router operates on Port 80 HTTP. Agents must only declare success after health check passes.",
+    description: "PHASE 6 (FINAL VERIFICATION): Pings the deployed live URL to verify HTTP readiness (HTTP 200), or verifies process liveness via targetId for background queue workers (internalPort: 0). Agents must only declare success after health check passes.",
     inputSchema: {
       type: "object",
       properties: {
-        url: { type: "string", description: "The full public URL to ping (e.g. http://<slug>.20.2.136.11.nip.io/health). Optional if targetId is provided." },
+        url: { type: "string", description: "The full public URL to ping (e.g. https://<slug>.whizan.cloud/health). Optional if targetId is provided." },
         targetId: { type: "string", description: "Whizan service or project ID. Required if checking background queue workers without an HTTP listener." },
       },
     },
@@ -650,7 +650,7 @@ async function handleToolExecution(name: string, args: any) {
     const sysStatus = await client.getSystemStatus().catch(() => null);
     if (sysStatus && !sysStatus.vmOnline) {
       const email = sysStatus.contactEmail || "ayushkumarjais0602@gmail.com";
-      const url = sysStatus.contactUrl || "https://whizan-cloud-service-dashboard.vercel.app/contact";
+      const url = sysStatus.contactUrl || "https://dashboard.whizan.cloud/contact";
       return {
         content: [
           {
@@ -832,8 +832,9 @@ Please gently inform the user of this situation:
 
       // Step C: If match found, present redeployment guidance and synchronize .whizan.json
       if (matchedTarget) {
-        const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-        const liveUrl = matchedTarget.slug ? `http://${matchedTarget.slug}.${baseDomain}` : undefined;
+        const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+        const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+        const liveUrl = matchedTarget.slug ? `${proto}://${matchedTarget.slug}.${baseDomain}` : undefined;
 
         report.existingDeployment = {
           found: true,
@@ -1013,8 +1014,9 @@ Please gently inform the user of this situation:
         if (err instanceof WhizanApiError && err.statusCode === 409) {
           const existingService = err.data?.existingService;
           if (existingService) {
-            const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-            const liveUrl = `http://${existingService.slug}.${baseDomain}`;
+            const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+            const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+            const liveUrl = `${proto}://${existingService.slug}.${baseDomain}`;
             await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
               targetId: existingService.id,
               targetType: "service",
@@ -1046,8 +1048,9 @@ Please gently inform the user of this situation:
         throw err;
       }
 
-      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-      const expectedLiveUrl = `http://${service.slug}.${baseDomain}`;
+      const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+      const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+      const expectedLiveUrl = `${proto}://${service.slug}.${baseDomain}`;
 
       await saveLocalWhizanConfig(serviceArgs.rootDir || ".", {
         targetId: service.id,
@@ -1139,8 +1142,9 @@ Please gently inform the user of this situation:
         if (err instanceof WhizanApiError && err.statusCode === 409) {
           const existingProject = err.data?.existingProject;
           if (existingProject) {
-            const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-            const liveUrl = `http://${existingProject.slug}.${baseDomain}`;
+            const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+            const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+            const liveUrl = `${proto}://${existingProject.slug}.${baseDomain}`;
             await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
               targetId: existingProject.id,
               targetType: "project",
@@ -1172,8 +1176,9 @@ Please gently inform the user of this situation:
         throw err;
       }
 
-      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-      const expectedLiveUrl = `http://${project.slug}.${baseDomain}`;
+      const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+      const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+      const expectedLiveUrl = `${proto}://${project.slug}.${baseDomain}`;
 
       await saveLocalWhizanConfig(projectArgs.rootDir || ".", {
         targetId: project.id,
@@ -1253,9 +1258,10 @@ Please gently inform the user of this situation:
         deploymentResult = await client.uploadProjectArchive(targetId, archiveBuffer);
       }
 
-      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
       const slug = deploymentResult?.service?.slug || deploymentResult?.project?.slug || targetId;
-      const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+      const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+      const expectedLiveUrl = `${proto}://${slug}.${baseDomain}`;
 
       // Save deployment context in local .whizan.json
       await saveLocalWhizanConfig(targetDirectory, {
@@ -1352,7 +1358,7 @@ Please gently inform the user of this situation:
       const { url, targetId } = (args || {}) as any;
       const target = url || targetId;
       if (!target) {
-        throw new Error("whizan_check_health requires either 'url' (e.g. http://<slug>.20.2.136.11.nip.io) or 'targetId'.");
+        throw new Error("whizan_check_health requires either 'url' (e.g. https://<slug>.whizan.cloud) or 'targetId'.");
       }
       const health = await client.checkHealth(target);
       return {
@@ -1363,9 +1369,10 @@ Please gently inform the user of this situation:
     case "whizan_redeploy": {
       const { targetType, targetId, githubRepoUrl, branch, workspaceDir } = (args || {}) as any;
       const deployment = await client.redeploy(targetType, targetId, { githubRepoUrl, branch });
-      const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+      const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
       const slug = deployment?.service?.slug || deployment?.project?.slug || targetId;
-      const expectedLiveUrl = `http://${slug}.${baseDomain}`;
+      const proto = baseDomain.includes("whizan.cloud") ? "https" : "http";
+      const expectedLiveUrl = `${proto}://${slug}.${baseDomain}`;
       if (workspaceDir) {
         await saveLocalWhizanConfig(workspaceDir, {
           targetId,
@@ -1797,7 +1804,7 @@ function printCliHelp() {
 
   ${c.bold}${c.brightWhite}ENVIRONMENT VARIABLES:${c.reset}
     ${c.whizanCyan}WHIZAN_API_KEY${c.reset}     Explicit API Key override (bypasses ~/.whizan/config.json)
-    ${c.whizanCyan}WHIZAN_API_URL${c.reset}     Target API endpoint (defaults to https://whizan-cloud-service.onrender.com)
+    ${c.whizanCyan}WHIZAN_API_URL${c.reset}     Target API endpoint (defaults to https://api.whizan.cloud)
 `);
 }
 
@@ -1959,7 +1966,7 @@ async function handleCliLogin(args: string[]) {
   localServer.listen(0, "127.0.0.1", () => {
     const address = localServer.address() as any;
     const port = address.port;
-    const dashboardBase = customUrl || "https://whizan-cloud-service-dashboard.vercel.app";
+    const dashboardBase = customUrl || "https://dashboard.whizan.cloud";
     const authUrl = `${dashboardBase}/mcp/connect?port=${port}`;
 
     console.log(`\n  ${c.dim}Opening browser to authorize your machine...${c.reset}`);

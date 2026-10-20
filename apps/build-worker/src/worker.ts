@@ -35,7 +35,7 @@ const SOURCE_BASE_DIR =
     : process.platform === "darwin"
       ? path.resolve(process.cwd(), ".sources")
       : "/opt/whizan/sources";
-const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io";
+const BASE_DOMAIN = process.env.BASE_DOMAIN ?? "whizan.cloud";
 
 // ─── Shared singletons ───────────────────────────────────────────────────────
 import { redisPub, redisSub, redisOptions } from "./redis.js";
@@ -367,7 +367,8 @@ const worker = new Worker<BuildJob>(
       }
 
       // ── 8. Mark READY ────────────────────────────────────────────────────
-      const url = `http://${slug}.${BASE_DOMAIN}`;
+      const protocol = BASE_DOMAIN.includes("whizan.cloud") ? "https" : "http";
+      const url = `${protocol}://${slug}.${BASE_DOMAIN}`;
       await prisma.deployment.update({
         where: { id: deploymentId },
         data: {
@@ -380,7 +381,8 @@ const worker = new Worker<BuildJob>(
         },
       });
 
-      const gatewayUrl = `https://whizan-cloud-service.onrender.com/live/${slug}`;
+      const controlPlaneUrl = (process.env.CONTROL_PLANE_URL || process.env.API_URL || "https://api.whizan.cloud").replace(/\/+$/, "");
+      const gatewayUrl = `${controlPlaneUrl}/live/${slug}`;
       await log(`✓ Universal Always-On Gateway (auto-wakes VM from sleep): ${gatewayUrl}`);
       await log(`✓ Direct Edge Router: ${url}`);
 

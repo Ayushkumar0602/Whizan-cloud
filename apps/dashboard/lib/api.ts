@@ -20,7 +20,7 @@ export function getApiBase(): string {
     return process.env.NEXT_PUBLIC_API_URL;
   }
 
-  return "https://whizan-cloud-service.onrender.com";
+  return "https://api.whizan.cloud";
 }
 
 export const API_BASE = getApiBase();

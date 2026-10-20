@@ -21,7 +21,7 @@ const logger = new FunctionLogger(redis);
 const sandbox = new FunctionSandbox(logger);
 const pool = new FunctionPool(sandbox, redis);
 const bundler = new FunctionBundler();
-const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || "https://whizan-cloud-service.onrender.com";
+const CONTROL_PLANE_URL = process.env.CONTROL_PLANE_URL || process.env.API_URL || "https://api.whizan.cloud";
 
 /**
  * Ensures an executable bundle is present on disk for the given function.

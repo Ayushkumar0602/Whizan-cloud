@@ -43,8 +43,8 @@ function getRuntimeUrl(path: string): string {
   }
   const isCloudOrRender = !!process.env.RENDER || process.env.NODE_ENV === "production";
   if (isCloudOrRender) {
-    const baseDomain = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
-    return `http://${baseDomain}/_internal/runtime${cleanPath}`;
+    const vmHost = process.env.VM_IP || "20.2.136.11";
+    return `http://${vmHost}/_internal/runtime${cleanPath}`;
   }
   return `http://127.0.0.1:${RUNTIME_PORT}${cleanPath}`;
 }
@@ -654,7 +654,7 @@ export async function functionRoutes(fastify: FastifyInstance) {
         key: fullKey,
         prefix: apiKey.keyPrefix,
       },
-      invocationUrl: `http://${functionService.slug}.fn.${process.env.BASE_DOMAIN || "20.2.136.11.nip.io"}`,
+      invocationUrl: `http://${functionService.slug}.fn.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
     });
   });
 

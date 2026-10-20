@@ -46,7 +46,7 @@ Use `whizan_create_function_service` to register a function service:
 - `serviceId`: Unique identifier in database.
 - `slug`: Subdomain identifier (`payment-api`).
 - `apiKey`: Dedicated Function API Key (`whz_fn_live_...`). Store securely.
-- `invocationUrl`: `http://payment-api.fn.20.2.136.11.nip.io`
+- `invocationUrl`: `http://payment-api.fn.whizan.cloud`
 
 ### Step 2: Deploy Function Code
 Functions follow the standard Web Fetch API (`Request` -> `Response`):

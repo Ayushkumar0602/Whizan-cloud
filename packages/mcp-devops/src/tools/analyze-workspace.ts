@@ -126,7 +126,7 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       "  - IF NEW BACKEND (Node.js, Python, Go): Call whizan_create_service. Compute is strictly locked to Portfolio Forced-Idleness (0.1 vCPU, 512MB RAM, autoSleep: true with 15m idle spin-down). Only Platform Admins can choose custom tiers. Ensure 0.0.0.0 host binding.",
       "PHASE 4 (UPLOAD): Upload workspace archive using whizan_deploy_direct. Save the returned deploymentId.",
       "PHASE 5 (POLL LOGS): Call whizan_get_build_logs(deploymentId) every 5-10s until status reaches READY/ACTIVE or FAILED. Never stop before build finishes.",
-      "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). Note: Use http:// (not https://) for *.nip.io domains on Whizan Cloud."
+      "PHASE 6 (HEALTH CHECK): Ping the live URL via whizan_check_health(url). With Cloudflare Wildcard SSL, https://<slug>.whizan.cloud is fully secured."
     ],
   };
 

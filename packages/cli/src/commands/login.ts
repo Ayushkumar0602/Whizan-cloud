@@ -112,7 +112,7 @@ export async function loginCommand(args: string[]) {
   localServer.listen(0, "127.0.0.1", () => {
     const address = localServer.address() as any;
     const port = address.port;
-    const dashboardBase = customUrl || "https://whizan-cloud-service-dashboard.vercel.app";
+    const dashboardBase = customUrl || "https://dashboard.whizan.cloud";
     const authUrl = `${dashboardBase}/mcp/connect?port=${port}`;
 
     console.error(`  ${c.dim}If the browser doesn't open, visit:${c.reset}`);

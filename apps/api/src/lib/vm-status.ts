@@ -18,7 +18,7 @@ export const ADMIN_CONTACT_EMAIL = "ayushkumarjais0602@gmail.com";
 export const DEFAULT_CONTACT_URL =
   process.env.DASHBOARD_URL
     ? `${process.env.DASHBOARD_URL.replace(/\/+$/, "")}/contact`
-    : "https://whizan-cloud-service-dashboard.vercel.app/contact";
+    : "https://dashboard.whizan.cloud/contact";
 
 // ── In-Memory Active Probe Debouncing ─────────────────────────────────────────
 let lastProbeAt = 0;
@@ -31,7 +31,7 @@ async function probeVmEdgeRouter(timeoutMs = 1200): Promise<boolean> {
     return true;
   }
 
-  const vmIp = (process.env.BASE_DOMAIN || "20.2.136.11").replace(/\.nip\.io$/, "").replace(/:.*$/, "");
+  const vmIp = process.env.VM_IP || "20.2.136.11";
 
   try {
     const res = await fetch(`http://${vmIp}/health`, {

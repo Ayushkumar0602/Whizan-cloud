@@ -8,7 +8,7 @@ The **Whizan DevOps MCP Server** enables AI coding agents (inside Cursor, Windsu
 
 1. Open your Whizan Dashboard:
    - **Local**: `http://localhost:3000/dashboard/settings`
-   - **Production**: `https://whizan-cloud-service-dashboard.vercel.app/dashboard/settings`
+   - **Production**: `https://dashboard.whizan.cloud/dashboard/settings`
 2. Scroll to the **IDE DevOps MCP & API Keys** section.
 3. Enter a label (e.g., `Cursor MacBook`) and click **Generate Key**.
 4. Copy your generated key (`whz_live_...`).
@@ -31,7 +31,7 @@ On Windows: `C:\Users\<Username>\.gemini\antigravity-ide\mcp_config.json`
         "C:/Users/HP/Desktop/Whizan-cloud-service/packages/mcp-devops/dist/index.js"
       ],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_your_actual_key_here"
       }
     }
@@ -51,7 +51,7 @@ Add the following to your `.cursor/mcp.json` (or your user MCP config):
       "command": "node",
       "args": ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_your_actual_key_here"
       }
     }
@@ -70,7 +70,7 @@ Add the following to your `.cursor/mcp.json` (or your user MCP config):
       "command": "node",
       "args": ["/absolute/path/to/Whizan-cloud-service/packages/mcp-devops/dist/index.js"],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_your_actual_key_here"
       }
     }

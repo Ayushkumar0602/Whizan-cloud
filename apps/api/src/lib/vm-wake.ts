@@ -54,7 +54,7 @@ export async function triggerVmWake(reason: string = "demand"): Promise<WakeTrig
       }
 
       // 3. Fast probe: Check if Edge Router port 80 is already answering
-      const vmIp = (process.env.BASE_DOMAIN || "20.2.136.11").replace(/\.nip\.io$/, "").replace(/:.*$/, "");
+      const vmIp = process.env.VM_IP || "20.2.136.11";
       try {
         const pingRes = await fetch(`http://${vmIp}/health`, {
           method: "GET",

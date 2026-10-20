@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { checkVmOnline } from "../lib/vm-status.js";
 import { triggerVmWake } from "../lib/vm-wake.js";
 
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
 
 export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Universal Live Gateway Handler ──────────────────────────────────────────
@@ -280,7 +280,7 @@ function renderGatewayBootScreen(slug: string, targetUrl: string, vmStatus: stri
 
     <div class="domain-chip">
       <span style="color: #818cf8;">⚡</span>
-      <span>${slug}.20.2.136.11.nip.io</span>
+      <span>${slug}.${BASE_DOMAIN}</span>
     </div>
 
     <div class="progress-bar">

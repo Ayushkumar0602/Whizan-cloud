@@ -33,7 +33,7 @@ export class FlowStateMachine {
   constructor(
     redis: Redis,
     runner: StepRunner,
-    apiUrl = "https://whizan-cloud-service.onrender.com",
+    apiUrl = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://api.whizan.cloud",
     meshToken = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || ""
   ) {
     this.redis = redis;

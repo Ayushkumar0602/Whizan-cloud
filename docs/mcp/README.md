@@ -21,7 +21,7 @@ The Whizan DevOps MCP Server turns any Model Context Protocol (MCP) compliant AI
 
 ### 1. Generate Your API Key
 1. Navigate to the Whizan Dashboard:
-   - **Production**: `https://whizan-cloud-service-dashboard.vercel.app/dashboard/settings`
+   - **Production**: `https://dashboard.whizan.cloud/dashboard/settings`
    - **Local**: `http://localhost:3000/dashboard/settings`
 2. Under **IDE DevOps MCP & API Keys**, enter a label (e.g., `Cursor Mac`) and click **Generate Key**.
 3. Copy your API Key starting with `whz_live_...`.
@@ -40,7 +40,7 @@ Add the following to your IDE's MCP config (e.g. `~/.gemini/antigravity-ide/mcp_
       "command": "npx",
       "args": ["-y", "@whizan/mcp-devops"],
       "env": {
-        "WHIZAN_API_URL": "https://whizan-cloud-service.onrender.com",
+        "WHIZAN_API_URL": "https://api.whizan.cloud",
         "WHIZAN_API_KEY": "whz_live_your_api_key_here"
       }
     }

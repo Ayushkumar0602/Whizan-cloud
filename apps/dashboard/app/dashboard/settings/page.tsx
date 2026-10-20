@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const { user, updateUser } = useAuth();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  const productionApiUrl = "https://whizan-cloud-service.onrender.com";
+  const productionApiUrl = "https://api.whizan.cloud";
 
   // ─── User Profile Editable State ─────────────────────────────────────────
   const [isEditingProfile, setIsEditingProfile] = useState(false);

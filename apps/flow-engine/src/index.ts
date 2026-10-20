@@ -8,7 +8,7 @@ import { FlowStreamConsumer } from "./stream-consumer.js";
 import { FlowBootReconciler } from "./reconciler.js";
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const API_URL = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://whizan-cloud-service.onrender.com";
+const API_URL = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://api.whizan.cloud";
 const RUNTIME_URL = process.env.FUNCTION_RUNTIME_URL || "http://127.0.0.1:9090";
 const MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "";
 

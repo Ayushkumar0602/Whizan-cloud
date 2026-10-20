@@ -9,8 +9,8 @@ import { system } from "@/lib/api";
 function WakeupContent() {
   const searchParams = useSearchParams();
   const slug = searchParams.get("slug") || "my-service";
-  const targetUrl = searchParams.get("target") || `http://${slug}.20.2.136.11.nip.io`;
-  const displaySlug = `${slug}.20.2.136.11.nip.io`;
+  const targetUrl = searchParams.get("target") || `https://${slug}.whizan.cloud`;
+  const displaySlug = `${slug}.whizan.cloud`;
 
   const [elapsed, setElapsed] = useState("0.0");
   const [isReady, setIsReady] = useState(false);

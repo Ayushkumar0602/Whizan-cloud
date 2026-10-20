@@ -241,7 +241,7 @@ export const SUMMER_TOOL_DEFINITIONS: ToolDefinition[] = [
     parameters: {
       type: "OBJECT",
       properties: {
-        url: { type: "STRING", description: "The full HTTP/HTTPS URL to test (e.g. http://my-app.20.2.136.11.nip.io/health or https://api.github.com)" },
+        url: { type: "STRING", description: "The full HTTP/HTTPS URL to test (e.g. https://my-app.whizan.cloud/health or https://api.github.com)" },
         method: { type: "STRING", enum: ["GET", "HEAD", "POST"], description: "HTTP method (defaults to GET)" },
         headers: { type: "OBJECT", description: "Optional key-value HTTP headers to send" },
         body: { type: "STRING", description: "Optional request body string (for POST requests)" },
@@ -394,7 +394,7 @@ export async function executeAgentTool(
               slug: p.slug,
               framework: p.framework,
               branch: p.branch,
-              liveUrl: latestDep?.url || `http://${p.slug}.20.2.136.11.nip.io`,
+              liveUrl: latestDep?.url || `https://${p.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
               latestStatus: latestDep?.status || "PENDING",
               updatedAt: p.updatedAt,
             };
@@ -422,7 +422,7 @@ export async function executeAgentTool(
               slug: s.slug,
               language: s.language,
               internalPort: s.internalPort,
-              liveUrl: `http://${s.slug}.20.2.136.11.nip.io`,
+              liveUrl: `https://${s.slug}.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
               latestStatus: latestDep?.status || "PENDING",
               autoSleep: s.autoSleep,
               updatedAt: s.updatedAt,
@@ -575,7 +575,7 @@ export async function executeAgentTool(
             name: f.name,
             slug: f.slug,
             isPublic: f.isPublic,
-            liveUrl: `http://${f.slug}.fn.20.2.136.11.nip.io`,
+            liveUrl: `http://${f.slug}.fn.${process.env.BASE_DOMAIN || "whizan.cloud"}`,
             endpoints: f.endpoints.map((e) => ({ routePath: e.routePath, httpMethods: e.httpMethods, isPublic: e.isPublic })),
           })),
         };

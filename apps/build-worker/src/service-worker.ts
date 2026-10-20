@@ -260,8 +260,11 @@ const worker = new Worker<ServiceBuildJob>(
       await redisPub.set(`deployment:${slug}`, JSON.stringify(routeInfo));
 
       if (hostPort > 0) {
-        const edgeUrl = `http://${slug}.${process.env.BASE_DOMAIN ?? "20.2.136.11.nip.io"}`;
-        const gatewayUrl = `https://whizan-cloud-service.onrender.com/live/${slug}`;
+        const baseDomain = process.env.BASE_DOMAIN ?? "whizan.cloud";
+        const protocol = baseDomain.includes("whizan.cloud") ? "https" : "http";
+        const edgeUrl = `${protocol}://${slug}.${baseDomain}`;
+        const controlPlaneUrl = (process.env.CONTROL_PLANE_URL || process.env.API_URL || "https://api.whizan.cloud").replace(/\/+$/, "");
+        const gatewayUrl = `${controlPlaneUrl}/live/${slug}`;
         if (service?.isPublic) {
           await log(`✓ Universal Always-On Gateway (auto-wakes VM from sleep): ${gatewayUrl}`);
           await log(`✓ Direct Edge Router: ${edgeUrl}`);

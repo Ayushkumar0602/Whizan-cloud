@@ -24,7 +24,7 @@ import Link from "next/link";
 export default function McpApiKeysPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_URL.includes("localhost")
     ? process.env.NEXT_PUBLIC_API_URL
-    : "https://whizan-cloud-service.onrender.com";
+    : "https://api.whizan.cloud";
 
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [loading, setLoading] = useState(false);

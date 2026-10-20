@@ -92,12 +92,11 @@ Before creating any cloud resource or triggering any deployment:
 ---
 
 ### Phase 6: Live Health Check (`whizan_check_health`)
-1. **HTTP Protocol Invariant**:
-   - The Whizan Edge Router on Azure VM listens on **Port 80 (HTTP)**.
-   - Port 443 (HTTPS) is not bound for `*.nip.io` domains.
-   - **Always use `http://<slug>.20.2.136.11.nip.io`**, NEVER `https://`.
+1. **Domain & SSL Invariant**:
+   - For `whizan.cloud`: Always use `https://<slug>.whizan.cloud` (secured via Cloudflare Zero-Maintenance Wildcard SSL).
+   - For `*.nip.io` fallback domains: Use `http://<slug>.20.2.136.11.nip.io`.
 2. Call `whizan_check_health(url)`:
-   - Target root `http://<slug>.20.2.136.11.nip.io/` or `/health`.
+   - Target root `https://<slug>.whizan.cloud/` or `/health`.
 3. If the app is waking up from auto-sleep (returns 202 or 502 with loading screen), wait 3-5 seconds and retry.
 4. Only when `whizan_check_health` returns `ok: true` (HTTP 200/204) is the deployment complete.
 5. Report the verified public URL to the user.

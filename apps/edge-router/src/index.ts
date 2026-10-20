@@ -12,10 +12,10 @@ import crypto from "crypto";
 
 const ROUTER_PORT = Number(process.env.ROUTER_PORT) || 8080;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const BASE_DOMAIN = process.env.BASE_DOMAIN || "20.2.136.11.nip.io";
+const BASE_DOMAIN = process.env.BASE_DOMAIN || "whizan.cloud";
 const FUNCTION_RUNTIME_PORT = Number(process.env.FUNCTION_RUNTIME_PORT) || 9090;
 const API_PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
-const API_URL = process.env.API_URL || "https://whizan-cloud-service.onrender.com";
+const API_URL = process.env.API_URL || "https://api.whizan.cloud";
 
 async function queryControlPlaneApi(endpoint: string, options?: any) {
   // 1. Try local VM port 8000 if running
@@ -322,7 +322,7 @@ const server = http.createServer(async (req, res) => {
       <html><body style="font-family:sans-serif;text-align:center;padding:4rem">
         <h1>404 — Not Found</h1>
         <p>No deployment found for <strong>${slug}</strong></p>
-        <p><a href="${process.env.DASHBOARD_URL || 'https://whizan-cloud-service-dashboard.vercel.app'}">Back to Dashboard</a></p>
+        <p><a href="${process.env.DASHBOARD_URL || 'https://dashboard.whizan.cloud'}">Back to Dashboard</a></p>
       </body></html>
     `);
     return;
@@ -785,7 +785,7 @@ async function handleWakeupAndProxy(deployment: DeploymentInfo, req: http.Incomi
 }
 
 function loadingScreenHtml(title: string, message: string, slug?: string) {
-  const displaySlug = slug ? `${slug}.20.2.136.11.nip.io` : "";
+  const displaySlug = slug ? `${slug}.${BASE_DOMAIN}` : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
