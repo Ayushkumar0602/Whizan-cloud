@@ -20,7 +20,7 @@ import { mcpCommand } from "./commands/mcp.js";
 import { printBanner, colors, printError } from "./utils/terminal-ui.js";
 
 const c = colors;
-const VERSION = "1.0.7";
+const VERSION = "1.1.0";
 
 function printHelp() {
   printBanner(VERSION);

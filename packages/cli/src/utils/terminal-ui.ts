@@ -30,7 +30,7 @@ export const colors = {
 
 const c = colors;
 
-export const CLI_VERSION = "1.0.7";
+export const CLI_VERSION = "1.1.0";
 
 /**
  * Original Whizan Cloud logo rendered as ANSI truecolor half-block pixels.

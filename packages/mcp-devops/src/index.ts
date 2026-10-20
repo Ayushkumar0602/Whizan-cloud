@@ -63,7 +63,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.0.9",
+    version: "1.1.0",
   },
   {
     capabilities: {
@@ -1070,8 +1070,8 @@ Please gently inform the user of this situation:
                 message: `Service '${service.name}' registered successfully.`,
                 service,
                 expectedLiveUrl,
-                protocol: "http",
-                note: `The live URL will be active at ${expectedLiveUrl} once direct deployment completes. Note: Use http:// (not https://) as Edge Router operates on Port 80.`,
+                protocol: proto,
+                note: `The live URL will be active at ${expectedLiveUrl} once direct deployment completes.`,
                 nextStep: `Deploy your code to this service by running whizan_deploy_direct with targetType: "service" and targetId: "${service.id}".`,
               },
               null,
@@ -1198,7 +1198,7 @@ Please gently inform the user of this situation:
                 message: `Project '${project.name}' registered successfully.`,
                 project,
                 expectedLiveUrl,
-                protocol: "http",
+                protocol: proto,
                 nextStep: `Deploy your frontend code by running whizan_deploy_direct with targetType: "project" and targetId: "${project.id}".`,
               },
               null,
@@ -1287,8 +1287,8 @@ Please gently inform the user of this situation:
                 expectedLiveUrl,
                 nextSteps: [
                   `1. Monitor live build logs by calling whizan_get_build_logs with deploymentId: "${deploymentResult.id}".`,
-                  `2. Once build status reaches ACTIVE/READY, your service is live and reachable at ${expectedLiveUrl} (HTTP on Port 80).`,
-                  `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl} (use http://, not https://).`
+                  `2. Once build status reaches ACTIVE/READY, your service is live and reachable at ${expectedLiveUrl}.`,
+                  `3. Rewire your frontend (e.g. VITE_API_URL or NEXT_PUBLIC_API_URL) to ${expectedLiveUrl}.`
                 ],
                 deployment: deploymentResult,
               },
