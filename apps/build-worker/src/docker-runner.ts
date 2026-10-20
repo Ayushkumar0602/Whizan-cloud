@@ -155,7 +155,85 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
     return info.State.ExitCode;
   } finally {
     await container.remove({ force: true }).catch(() => {});
+    // Enforce LRU cache quota after build completes
+    enforceCacheLruQuota(cacheBase).catch(() => {});
   }
+}
+
+/**
+ * LRU Cache Quota Manager (Pillar 2):
+ * Keeps /opt/whizan-cache bounded (default 1.5 GB).
+ * If total cache usage exceeds maxBytes, evicts the oldest project cache directories
+ * until usage drops under targetBytes (default 1.0 GB).
+ */
+export async function enforceCacheLruQuota(
+  cacheBaseDir: string = process.env.CACHE_BASE_DIR ?? "/opt/whizan-cache",
+  maxBytes: number = 1500 * 1024 * 1024,
+  targetBytes: number = 1000 * 1024 * 1024
+): Promise<void> {
+  const fs = await import("fs/promises");
+  try {
+    const entries = await fs.readdir(cacheBaseDir, { withFileTypes: true }).catch(() => []);
+    const projectDirs: { name: string; fullPath: string; mtimeMs: number; sizeBytes: number }[] = [];
+
+    let totalBytes = 0;
+
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      const fullPath = path.join(cacheBaseDir, ent.name);
+      try {
+        const stats = await getDirStats(fullPath);
+        totalBytes += stats.size;
+        projectDirs.push({
+          name: ent.name,
+          fullPath,
+          mtimeMs: stats.mtimeMs,
+          sizeBytes: stats.size,
+        });
+      } catch {}
+    }
+
+    if (totalBytes > maxBytes) {
+      console.log(`[Cache LRU] Total cache ${(totalBytes / (1024 * 1024)).toFixed(1)}MB exceeds limit ${(maxBytes / (1024 * 1024)).toFixed(1)}MB. Evicting oldest entries...`);
+      // Sort oldest mtime first
+      projectDirs.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+      for (const p of projectDirs) {
+        if (totalBytes <= targetBytes) break;
+        console.log(`[Cache LRU] Evicting project cache: ${p.name} (${(p.sizeBytes / (1024 * 1024)).toFixed(1)}MB)`);
+        await fs.rm(p.fullPath, { recursive: true, force: true }).catch(() => {});
+        totalBytes -= p.sizeBytes;
+      }
+      console.log(`[Cache LRU] Cache usage normalized to ${(Math.max(0, totalBytes) / (1024 * 1024)).toFixed(1)}MB.`);
+    }
+  } catch (err: any) {
+    console.warn(`[Cache LRU] Failed to enforce cache quota:`, err.message);
+  }
+}
+
+async function getDirStats(dirPath: string): Promise<{ size: number; mtimeMs: number }> {
+  const fs = await import("fs/promises");
+  let total = 0;
+  let latestMtime = 0;
+
+  async function walk(current: string) {
+    const items = await fs.readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const item of items) {
+      const p = path.join(current, item.name);
+      try {
+        const s = await fs.stat(p);
+        if (s.mtimeMs > latestMtime) latestMtime = s.mtimeMs;
+        if (item.isDirectory()) {
+          await walk(p);
+        } else {
+          total += s.size;
+        }
+      } catch {}
+    }
+  }
+
+  await walk(dirPath);
+  return { size: total, mtimeMs: latestMtime };
 }
 
 /**

@@ -75,3 +75,18 @@ export function getFunctionPathUrl(slug: string, path = ""): string {
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
   return `http://${domain}/fn/${slug}${cleanPath}`;
 }
+
+/**
+ * Returns the Always-On 24/7 Universal Gateway URL hosted on Render Control Plane.
+ * Resilient against cold Azure VM states ($0.00/hr deallocation), automatically waking the VM
+ * and showing the GhostFibers resource allocation screen before redirecting.
+ */
+export function getGatewayLiveUrl(slug: string, isFn = false, path = ""): string {
+  const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || "https://whizan-cloud-service.onrender.com").replace(/\/+$/, "");
+  if (isFn) {
+    return `${apiBase}/live/fn/${slug}${cleanPath}`;
+  }
+  return `${apiBase}/live/${slug}${cleanPath}`;
+}
+

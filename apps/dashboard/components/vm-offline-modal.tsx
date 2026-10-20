@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Mail, ExternalLink, X, ArrowRight } from "lucide-react";
+import { Zap, Play, ExternalLink, X, ArrowRight, ShieldCheck } from "lucide-react";
+import { system } from "@/lib/api";
 
 export interface VmOfflineModalProps {
   isOpen: boolean;
@@ -23,14 +24,17 @@ export function VmOfflineModal({
   const isVisit = actionType === "visit";
   const isDeploy = actionType === "deploy";
 
+  const cleanSlug = (targetName || "my-service").toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const wakeupUrl = `/wakeup?slug=${encodeURIComponent(cleanSlug)}&target=${encodeURIComponent(targetUrl || `http://${cleanSlug}.20.2.136.11.nip.io`)}`;
+
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 9999,
-        background: "rgba(15, 23, 42, 0.65)",
-        backdropFilter: "blur(4px)",
+        background: "rgba(10, 8, 22, 0.72)",
+        backdropFilter: "blur(8px)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -40,13 +44,13 @@ export function VmOfflineModal({
     >
       <div
         style={{
-          background: "var(--card)",
-          borderRadius: "var(--radius-lg)",
+          background: "var(--card, #120f24)",
+          borderRadius: "var(--radius-lg, 16px)",
           maxWidth: 520,
           width: "100%",
           padding: "2rem",
-          boxShadow: "0 20px 40px -15px rgba(0, 0, 0, 0.2)",
-          border: "1px solid var(--card-border)",
+          boxShadow: "0 25px 60px -15px rgba(0, 0, 0, 0.6)",
+          border: "1px solid rgba(99, 102, 241, 0.3)",
           position: "relative",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -76,41 +80,40 @@ export function VmOfflineModal({
               width: 44,
               height: 44,
               borderRadius: "12px",
-              background: "rgba(245, 158, 11, 0.12)",
-              color: "var(--warning)",
+              background: "rgba(99, 102, 241, 0.16)",
+              color: "#818cf8",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
             }}
           >
-            <AlertTriangle size={22} />
+            <Zap size={22} />
           </div>
           <div>
-            <div style={{ fontSize: "0.8rem", color: "var(--warning)", fontWeight: 700, textTransform: "uppercase" }}>
-              Compute Host Offline
+            <div style={{ fontSize: "0.78rem", color: "#a5b4fc", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              Eco-Standby Resource Allocation
             </div>
-            <h3 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--foreground)" }}>
-              {isDeploy ? "Deployments Temporarily Paused" : "Service Temporarily Down"}
+            <h3 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--foreground, #ffffff)" }}>
+              {isDeploy ? "Awaken Node to Deploy" : isVisit ? "Launch Service from Standby" : "Allocating Compute Resources"}
             </h3>
           </div>
         </div>
 
-        <p style={{ fontSize: "0.92rem", color: "var(--muted)", lineHeight: 1.55, marginBottom: "1.25rem" }}>
+        <p style={{ fontSize: "0.92rem", color: "var(--muted, #94a3b8)", lineHeight: 1.55, marginBottom: "1.25rem" }}>
           {isDeploy ? (
             <>
-              The administration has temporarily stopped new deployments and serving existing applications until
-              further notice. The cloud build-worker cluster is currently powered down for resource optimization.
+              To ensure peak memory efficiency and $0.00/hr idle optimization, the build node is in eco-standby. 
+              Clicking below will awaken the compute host and dispatch your build job.
             </>
           ) : isVisit ? (
             <>
-              <strong>{targetName || "This application"}</strong> is hosted on our cloud edge router and container
-              engine, which is currently paused by administration. The URL will be temporarily unreachable.
+              <strong>{targetName || "This application"}</strong> is resting in eco-standby. 
+              Clicking below will spin up the compute host, allocate memory, and route to your live service.
             </>
           ) : (
             <>
-              This action requires our cloud compute cluster, which is currently paused by administration until
-              further notice.
+              This action requires our cloud compute host, which is resting in eco-standby to save resources.
             </>
           )}
         </p>
@@ -118,63 +121,94 @@ export function VmOfflineModal({
         <div
           style={{
             padding: "0.85rem 1rem",
-            borderRadius: "var(--radius)",
-            background: "var(--bg-subtle)",
-            border: "1px solid var(--border)",
+            borderRadius: "var(--radius, 10px)",
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
             fontSize: "0.84rem",
-            color: "var(--foreground)",
+            color: "var(--foreground, #e2e8f0)",
             marginBottom: "1.5rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: "3px" }}>Need this service reactivated?</div>
-          <div style={{ color: "var(--muted)" }}>
-            Contact the administrator at <code>ayushkumarjais0602@gmail.com</code> or submit a reactivation request.
+          <ShieldCheck size={18} style={{ color: "#34d399", flexShrink: 0 }} />
+          <div>
+            Zero-redundancy auto-scaling keeps platform integrity 100% stable with fast cold-boot recovery.
           </div>
         </div>
 
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {isVisit && targetUrl && (
-            <a
-              href={targetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onClose}
+          {isVisit ? (
+            <>
+              {targetUrl && (
+                <a
+                  href={targetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={onClose}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                    padding: "0.65rem 1rem",
+                    borderRadius: "var(--radius, 8px)",
+                    background: "transparent",
+                    border: "1px solid var(--border, rgba(255, 255, 255, 0.12))",
+                    color: "var(--muted, #94a3b8)",
+                    fontSize: "0.86rem",
+                    fontWeight: 500,
+                    textDecoration: "none",
+                  }}
+                >
+                  Direct Edge URL <ExternalLink size={13} />
+                </a>
+              )}
+
+              <Link
+                href={wakeupUrl}
+                onClick={onClose}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "0.65rem 1.25rem",
+                  borderRadius: "var(--radius, 8px)",
+                  background: "linear-gradient(135deg, #4f46e5, #6366f1)",
+                  color: "#ffffff",
+                  fontSize: "0.88rem",
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  boxShadow: "0 4px 15px rgba(99, 102, 241, 0.4)",
+                }}
+              >
+                <Zap size={15} /> Spin Up & Launch App <ArrowRight size={14} />
+              </Link>
+            </>
+          ) : (
+            <button
+              onClick={async () => {
+                await system.wake("dashboard_action").catch(() => {});
+                onClose();
+              }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "5px",
-                padding: "0.6rem 1rem",
-                borderRadius: "var(--radius)",
-                background: "transparent",
-                border: "1px solid var(--border)",
-                color: "var(--muted)",
-                fontSize: "0.86rem",
-                fontWeight: 500,
-                textDecoration: "none",
+                gap: "6px",
+                padding: "0.65rem 1.25rem",
+                borderRadius: "var(--radius, 8px)",
+                background: "linear-gradient(135deg, #4f46e5, #6366f1)",
+                color: "#ffffff",
+                fontSize: "0.88rem",
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 4px 15px rgba(99, 102, 241, 0.4)",
               }}
             >
-              Open URL Anyway <ExternalLink size={13} />
-            </a>
+              <Play size={15} /> Awaken Compute Host
+            </button>
           )}
-
-          <Link
-            href="/dashboard/contact"
-            onClick={onClose}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "0.65rem 1.25rem",
-              borderRadius: "var(--radius)",
-              background: "var(--accent)",
-              color: "#ffffff",
-              fontSize: "0.88rem",
-              fontWeight: 600,
-              textDecoration: "none",
-            }}
-          >
-            <Mail size={15} /> Contact Administration <ArrowRight size={14} />
-          </Link>
         </div>
       </div>
     </div>

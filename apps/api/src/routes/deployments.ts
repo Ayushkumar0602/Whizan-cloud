@@ -549,4 +549,62 @@ export async function deploymentRoutes(fastify: FastifyInstance) {
       });
     }
   );
+
+  // ── GET & POST /api/deployments/:dId/wake — Wake up deployment from eco-standby
+  const handleDeploymentWake = async (request: any, reply: any) => {
+    const { dId } = request.params as { dId: string };
+    const deployment = await prisma.deployment.findUnique({
+      where: { id: dId },
+      include: { project: true },
+    });
+
+    if (!deployment) return reply.code(404).send({ error: "Deployment not found" });
+
+    if (deployment.deploymentType === "STATIC") {
+      return {
+        status: 200,
+        state: "READY",
+        booting: false,
+        message: "Static deployment is served directly from edge router disk.",
+        slug: deployment.project.slug,
+        type: "STATIC",
+      };
+    }
+
+    const vmStatus = await checkVmOnline({ autoWake: true, reason: `deploy_wake_${deployment.project.slug}` });
+
+    if (vmStatus.status === "ONLINE" && deployment.containerPort && deployment.status === "READY") {
+      return {
+        status: 200,
+        state: "READY",
+        booting: false,
+        message: "Deployment container is active and operational.",
+        slug: deployment.project.slug,
+        containerPort: deployment.containerPort,
+      };
+    }
+
+    await redisClient.publish("wakeup", JSON.stringify({
+      slug: deployment.project.slug,
+      deploymentId: deployment.id,
+      type: deployment.deploymentType?.toLowerCase() || "ssr",
+    })).catch(() => {});
+
+    return reply
+      .code(202)
+      .header("Retry-After", "3")
+      .header("X-Whizan-Status", "ALLOCATING_RESOURCES")
+      .send({
+        status: 202,
+        state: "ALLOCATING_RESOURCES",
+        booting: true,
+        message: "Deployment container is spinning up. Memory & edge routing are allocating.",
+        vm: vmStatus.status,
+        slug: deployment.project.slug,
+        retryAfter: 3,
+      });
+  };
+
+  fastify.get("/:dId/wake", handleDeploymentWake);
+  fastify.post("/:dId/wake", handleDeploymentWake);
 }

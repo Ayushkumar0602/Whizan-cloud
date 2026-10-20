@@ -327,6 +327,58 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     return service;
   });
 
+  // ── GET & POST /api/services/:id/wake — Wake up service from eco-standby ────
+  const handleServiceWake = async (request: any, reply: any) => {
+    const { id } = request.params as { id: string };
+    const { userId, role } = request.user || {};
+
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, ...(userId ? { userId } : {}) },
+      include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const latestDeploy = service.deployments[0];
+    const vmStatus = await checkVmOnline({ autoWake: true, reason: `service_wake_${service.slug}` });
+
+    if (vmStatus.status === "ONLINE" && latestDeploy?.containerPort && latestDeploy.status === "READY") {
+      return {
+        status: 200,
+        state: "READY",
+        booting: false,
+        message: "Service is active and operational.",
+        slug: service.slug,
+        containerPort: latestDeploy.containerPort,
+      };
+    }
+
+    if (latestDeploy) {
+      await redisClient.publish("wakeup", JSON.stringify({
+        slug: service.slug,
+        deploymentId: latestDeploy.id,
+        type: "service",
+      })).catch(() => {});
+    }
+
+    return reply
+      .code(202)
+      .header("Retry-After", "3")
+      .header("X-Whizan-Status", "ALLOCATING_RESOURCES")
+      .send({
+        status: 202,
+        state: "ALLOCATING_RESOURCES",
+        booting: true,
+        message: "Service container is spinning up. Memory & edge routing are allocating.",
+        vm: vmStatus.status,
+        slug: service.slug,
+        retryAfter: 3,
+      });
+  };
+
+  fastify.get("/:id/wake", handleServiceWake);
+  fastify.post("/:id/wake", handleServiceWake);
+
   // PUT /api/services/:id
   fastify.put("/:id", async (request, reply) => {
     const { id } = request.params as { id: string };

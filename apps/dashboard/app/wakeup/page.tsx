@@ -9,6 +9,7 @@ import { system } from "@/lib/api";
 function WakeupContent() {
   const searchParams = useSearchParams();
   const slug = searchParams.get("slug") || "my-service";
+  const targetUrl = searchParams.get("target") || `http://${slug}.20.2.136.11.nip.io`;
   const displaySlug = `${slug}.20.2.136.11.nip.io`;
 
   const [elapsed, setElapsed] = useState("0.0");
@@ -30,15 +31,15 @@ function WakeupContent() {
       const elapsedMs = Date.now() - start;
       setElapsed((elapsedMs / 1000).toFixed(1));
 
-      if (elapsedMs < 1600) {
-        setStepText("Awakening compute container...");
+      if (elapsedMs < 6000) {
+        setStepText("Awakening Azure VM compute host...");
         setStepIcon("⚡");
         setProgress(25);
-      } else if (elapsedMs < 3600) {
-        setStepText("Rehydrating memory & image layers...");
+      } else if (elapsedMs < 14000) {
+        setStepText("Allocating memory & vCPU quota...");
         setStepIcon("📦");
         setProgress(55);
-      } else if (elapsedMs < 5800) {
+      } else if (elapsedMs < 22000) {
         setStepText("Binding private edge routing mesh...");
         setStepIcon("🌐");
         setProgress(80);
@@ -60,24 +61,29 @@ function WakeupContent() {
     function probe() {
       if (!active || isReady) return;
       pollAttempts++;
-      const nextDelay = Math.min(400 * Math.pow(1.15, pollAttempts), 1800);
+      const nextDelay = Math.min(800 * Math.pow(1.1, pollAttempts), 2000);
 
       setTimeout(() => {
-        fetch(typeof window !== "undefined" ? window.location.href : "", {
-          method: "HEAD",
-          cache: "no-store",
-        })
-          .then((res) => {
-            if (res.status !== 502 && res.status !== 202 && res.status !== 503) {
-              if (active) {
-                setIsReady(true);
-                setProgress(100);
-                setStepText("Application is online! Launching...");
-                setStepIcon("✅");
-                setTimeout(() => {
-                  window.location.reload();
-                }, 400);
-              }
+        system.getStatus({ bypassCache: true })
+          .then((statusData: any) => {
+            if (statusData && statusData.status === "ONLINE") {
+              fetch(targetUrl, {
+                method: "HEAD",
+                cache: "no-store",
+                mode: "no-cors",
+              })
+                .then(() => {
+                  if (active) {
+                    setIsReady(true);
+                    setProgress(100);
+                    setStepText("Application is online! Launching...");
+                    setStepIcon("✅");
+                    setTimeout(() => {
+                      window.location.href = targetUrl;
+                    }, 400);
+                  }
+                })
+                .catch(() => probe());
             } else {
               probe();
             }
@@ -91,7 +97,7 @@ function WakeupContent() {
     return () => {
       active = false;
     };
-  }, [isReady]);
+  }, [isReady, targetUrl]);
 
   return (
     <div

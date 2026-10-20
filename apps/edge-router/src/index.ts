@@ -154,17 +154,37 @@ proxy.on("error", (err, req, res) => {
       req.url === "/invoke" ||
       req.headers.accept?.includes("application/json")
     ) {
-      res.writeHead(502, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "RUNTIME_UNAVAILABLE", message: "Whizan Function Runtime is temporarily unreachable" }));
+      res.writeHead(202, {
+        "Content-Type": "application/json",
+        "Retry-After": "2",
+        "X-Whizan-Status": "ALLOCATING_RESOURCES",
+      });
+      res.end(JSON.stringify({
+        status: 202,
+        state: "ALLOCATING_RESOURCES",
+        message: "Whizan Runtime is initializing isolated container resources. Retrying in 2 seconds...",
+        slug,
+        retryAfter: 2,
+      }));
       return;
     }
     const isHtml = req.headers.accept?.includes("text/html");
     if (isHtml) {
-      res.writeHead(502, { "Content-Type": "text/html" });
+      res.writeHead(202, { "Content-Type": "text/html" });
       res.end(loadingScreenHtml("Starting Application", "Your service is spinning up. This page will auto-refresh.", slug));
     } else {
-      res.writeHead(502);
-      res.end("Bad Gateway - Application Starting");
+      res.writeHead(202, {
+        "Content-Type": "application/json",
+        "Retry-After": "3",
+        "X-Whizan-Status": "ALLOCATING_RESOURCES",
+      });
+      res.end(JSON.stringify({
+        status: 202,
+        state: "ALLOCATING_RESOURCES",
+        message: "Application container is warming up. Please retry in a few seconds.",
+        slug,
+        retryAfter: 3,
+      }));
     }
   } else if ("destroy" in res) {
     // It's a raw Socket
@@ -718,14 +738,24 @@ async function handleWakeupAndProxy(deployment: DeploymentInfo, req: http.Incomi
     })).catch(() => { });
   }
 
-  // Instantly return the loading screen so the user sees feedback immediately, instead of a hanging browser tab
+  // Instantly return 202 Accepted so the user sees feedback immediately, instead of a hanging browser tab
   const isHtml = req.headers.accept?.includes("text/html");
   if (isHtml) {
     res.writeHead(202, { "Content-Type": "text/html" });
     res.end(loadingScreenHtml("Awakening Application", "Your service was in eco-standby to save compute resources. Warming up memory & edge routing now...", slug));
   } else {
-    res.writeHead(202);
-    res.end("Application is waking up. Please retry in a few seconds.");
+    res.writeHead(202, {
+      "Content-Type": "application/json",
+      "Retry-After": "3",
+      "X-Whizan-Status": "ALLOCATING_RESOURCES",
+    });
+    res.end(JSON.stringify({
+      status: 202,
+      state: "ALLOCATING_RESOURCES",
+      message: "Application container is warming up from eco-standby. Memory & edge routing are allocating.",
+      slug,
+      retryAfter: 3,
+    }));
   }
 }
 
