@@ -268,6 +268,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: assignedRole,
         emailVerified: user.emailVerified,
+        twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
+        twoFactorMethod: (user as any).twoFactorMethod ?? null,
       },
     });
   });
@@ -340,6 +342,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         subscriptionTier: (user as any).subscriptionTier || "HOBBY",
         role: resolvedRole,
         emailVerified: (user as any).emailVerified ?? false,
+        twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
+        twoFactorMethod: (user as any).twoFactorMethod ?? null,
       },
     });
   });
@@ -375,6 +379,8 @@ export async function authRoutes(fastify: FastifyInstance) {
       subscriptionTier: (user as any).subscriptionTier || "HOBBY",
       role: resolvedRole,
       emailVerified: (user as any).emailVerified ?? false,
+      twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
+      twoFactorMethod: (user as any).twoFactorMethod ?? null,
     };
 
     // Rotate the refresh token
@@ -424,6 +430,9 @@ export async function authRoutes(fastify: FastifyInstance) {
           createdAt: true,
           emailVerified: true,
           emailVerifiedAt: true,
+          twoFactorEnrolled: true,
+          twoFactorMethod: true,
+          twoFactorVerifiedAt: true,
         },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
@@ -437,6 +446,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         iamPermissions: (user as any).iamPermissions || "all",
         emailVerified: (user as any).emailVerified ?? false,
         emailVerifiedAt: (user as any).emailVerifiedAt ?? null,
+        twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
+        twoFactorMethod: (user as any).twoFactorMethod ?? null,
+        twoFactorVerifiedAt: (user as any).twoFactorVerifiedAt ?? null,
       });
     }
   );
@@ -542,6 +554,136 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.send({
         ok: true,
         message: "Email verified successfully! Full console mutation access unlocked.",
+        user: updated,
+      });
+    }
+  );
+
+  // POST /api/auth/update-unverified-email — Allows user in registration/onboarding to fix mistyped email
+  fastify.post(
+    "/update-unverified-email",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId, email: currentEmail } = request.user;
+      const body = z.object({ newEmail: z.string().email() }).safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Invalid email address format." });
+      }
+
+      const newEmail = body.data.newEmail.trim().toLowerCase();
+      if (newEmail === currentEmail.trim().toLowerCase()) {
+        return reply.send({ ok: true, email: newEmail, message: "Email is already set to this address." });
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return reply.code(404).send({ error: "User not found." });
+
+      if (user.emailVerified) {
+        return reply.code(400).send({ error: "Cannot change an already verified email address through this endpoint." });
+      }
+
+      // Check if new email is in use
+      const existing = await prisma.user.findUnique({ where: { email: newEmail } });
+      if (existing) {
+        return reply.code(409).send({ error: "An account with this email address already exists." });
+      }
+
+      // Invalidate old OTP challenges
+      otpMemoryStore.delete(currentEmail.trim().toLowerCase());
+      try {
+        await redisClient.del(`otp:${currentEmail.trim().toLowerCase()}`);
+      } catch {}
+
+      // Update email in DB
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { email: newEmail },
+        select: { id: true, email: true, name: true, emailVerified: true },
+      });
+
+      // Generate fresh OTP for the new email address
+      const code = generateNumericOtp();
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      otpMemoryStore.set(newEmail, { code, expiresAt, attempts: 0 });
+      try {
+        await redisClient.setex(`otp:${newEmail}`, 900, code);
+      } catch {}
+
+      const expiryTimeString = new Date(expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+      await sendOtpEmail({
+        email: newEmail,
+        passcode: code,
+        time: `${expiryTimeString} (15 minutes)`,
+        requestTime: new Date().toUTCString(),
+        companyName: "Whizan Cloud Services",
+      }).catch(() => {});
+
+      userMetaCache.delete(userId);
+
+      return reply.send({
+        ok: true,
+        email: newEmail,
+        message: `Email updated to ${newEmail} and a new verification code has been dispatched.`,
+        user: updated,
+      });
+    }
+  );
+
+  // POST /api/auth/enroll-2fa — Mandatory 2FA enrollment with explicit user consent
+  fastify.post(
+    "/enroll-2fa",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const body = z.object({
+        method: z.enum(["BIOMETRIC", "EMAIL_OTP"]),
+        consent: z.boolean(),
+      }).safeParse(request.body);
+
+      if (!body.success) {
+        return reply.code(400).send({ error: "Invalid 2FA enrollment request. Explicit consent is required." });
+      }
+
+      const { method, consent } = body.data;
+      if (!consent) {
+        return reply.code(400).send({ error: "Explicit user consent is mandatory for two-factor authentication enrollment." });
+      }
+
+      const { userId } = request.user;
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return reply.code(404).send({ error: "User not found." });
+
+      if (!user.emailVerified) {
+        return reply.code(403).send({
+          error: "EMAIL_VERIFICATION_REQUIRED",
+          message: "Email must be verified before completing two-factor authentication enrollment.",
+        });
+      }
+
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          twoFactorEnrolled: true,
+          twoFactorMethod: method,
+          twoFactorVerifiedAt: new Date(),
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          subscriptionTier: true,
+          emailVerified: true,
+          twoFactorEnrolled: true,
+          twoFactorMethod: true,
+          twoFactorVerifiedAt: true,
+        },
+      });
+
+      userMetaCache.delete(userId);
+
+      return reply.send({
+        ok: true,
+        message: `Two-factor authentication successfully enrolled via ${method}.`,
         user: updated,
       });
     }

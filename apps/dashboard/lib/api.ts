@@ -264,6 +264,18 @@ export const auth = {
 
   me: () => request<User>("/api/auth/me"),
 
+  updateUnverifiedEmail: (data: { newEmail: string }) =>
+    request<{ ok: boolean; email: string; message: string; user: User }>("/api/auth/update-unverified-email", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  enroll2FA: (data: { method: "BIOMETRIC" | "EMAIL_OTP"; consent: boolean }) =>
+    request<{ ok: boolean; message: string; user: User }>("/api/auth/enroll-2fa", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   updateSubscription: (subscriptionTier: "HOBBY" | "PROFESSIONAL") =>
     request<{ success: boolean; subscriptionTier: string; message: string }>("/api/auth/subscription", {
       method: "PATCH",
@@ -410,6 +422,9 @@ export type User = {
   subscriptionTier?: "HOBBY" | "PROFESSIONAL" | string;
   emailVerified?: boolean;
   emailVerifiedAt?: string | null;
+  twoFactorEnrolled?: boolean;
+  twoFactorMethod?: "BIOMETRIC" | "EMAIL_OTP" | string | null;
+  twoFactorVerifiedAt?: string | null;
   createdAt: string;
 };
 

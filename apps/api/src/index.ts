@@ -154,7 +154,7 @@ app.decorate("authenticate", async (request: any, reply: any) => {
       if (!userRecord) {
         userRecord = await prisma.user.findUnique({
           where: { id: userId },
-          select: { role: true, subscriptionTier: true, email: true, iamPermissions: true, emailVerified: true },
+          select: { role: true, subscriptionTier: true, email: true, iamPermissions: true, emailVerified: true, twoFactorEnrolled: true, twoFactorMethod: true },
         });
         if (userRecord) {
           userMetaCache.set(userId, { data: userRecord, cachedAt: Date.now() });
@@ -168,12 +168,16 @@ app.decorate("authenticate", async (request: any, reply: any) => {
         request.user.iamPermissions = (userRecord as any)?.iamPermissions || "all";
         request.user.subscriptionTier = userRecord?.subscriptionTier || "HOBBY";
         request.user.emailVerified = (userRecord as any)?.emailVerified === true;
+        request.user.twoFactorEnrolled = (userRecord as any)?.twoFactorEnrolled === true;
+        request.user.twoFactorMethod = (userRecord as any)?.twoFactorMethod || null;
       } else if (request.user.role) {
         // Fallback to claims encoded in JWT token
         const isRoot = isRootAdmin({ role: request.user.role, email: request.user.email });
         const isAdmin = isUserAdmin({ role: request.user.role, email: request.user.email });
         request.user.role = isRoot ? "ROOT_ADMIN" : (isAdmin ? request.user.role : "USER");
         request.user.emailVerified = false;
+        request.user.twoFactorEnrolled = false;
+        request.user.twoFactorMethod = null;
       }
 
       // ─── Mandatory Email Verification Enforcement ────────────────────────────
@@ -187,6 +191,8 @@ app.decorate("authenticate", async (request: any, reply: any) => {
         const allowedPaths = [
           "/api/auth/send-verification-otp",
           "/api/auth/verify-email",
+          "/api/auth/update-unverified-email",
+          "/api/auth/enroll-2fa",
           "/api/auth/send-otp",
           "/api/auth/verify-otp",
           "/api/auth/logout",

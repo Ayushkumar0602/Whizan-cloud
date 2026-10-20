@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
 import { auth, type User } from "@/lib/api";
 import { sendOtpEmail } from "@/lib/emailjs";
@@ -15,6 +15,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { getSafeRedirectUrl } from "@/lib/redirect";
+import { SingleInputOtp } from "@/components/auth/otp-input";
 import {
   Mail,
   Fingerprint,
@@ -23,11 +24,12 @@ import {
   ArrowRight,
   ArrowLeft,
   RefreshCw,
-  Lock,
-  User as UserIcon,
+  Eye,
+  Pencil,
+  Check,
 } from "lucide-react";
 
-type RegistrationStep = "DETAILS" | "VERIFY_EMAIL" | "BIOMETRIC_SETUP";
+type RegistrationStep = "DETAILS" | "VERIFY_EMAIL" | "MANDATORY_2FA";
 
 function RegisterForm() {
   const { user, setSession } = useAuth();
@@ -43,36 +45,48 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Pending user session held in memory until Biometric step is resolved
+  // Pending user session held in memory until onboarding is completed
   const [pendingRegisterSession, setPendingRegisterSession] = useState<{
     accessToken: string;
     user: User;
   } | null>(null);
 
-  // OTP state
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  // Email correction state (Step 2)
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [editedEmail, setEditedEmail] = useState("");
+  const [emailUpdating, setEmailUpdating] = useState(false);
+
+  // OTP state — Single string value for robust mobile entry
+  const [otpCode, setOtpCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const [localGeneratedOtp, setLocalGeneratedOtp] = useState<string>("");
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [otpError, setOtpError] = useState(false);
 
-  // Biometrics state
+  // 2FA Enrollment state (Step 3)
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"BIOMETRIC" | "EMAIL_OTP">("BIOMETRIC");
   const [biometricSupported, setBiometricSupported] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
-  const [biometricSuccess, setBiometricSuccess] = useState(false);
+  const [hasConsented, setHasConsented] = useState(true);
+  const [onboardingSuccess, setOnboardingSuccess] = useState(false);
 
   // If already authenticated and 2FA verified, redirect to destination
   useEffect(() => {
-    if (user && step !== "BIOMETRIC_SETUP" && isTwoFactorTrusted(user.email)) {
+    if (user && step !== "MANDATORY_2FA" && isTwoFactorTrusted(user.email)) {
       router.replace(destination);
     }
   }, [user, destination, router, step]);
 
   // Check biometric support on mount
   useEffect(() => {
-    isPlatformBiometricSupported().then(setBiometricSupported);
+    isPlatformBiometricSupported().then((supported) => {
+      setBiometricSupported(supported);
+      if (!supported) {
+        setTwoFactorMethod("EMAIL_OTP");
+      }
+    });
   }, []);
 
-  // Cooldown countdown timer for OTP resend
+  // Cooldown countdown timer for OTP resend (clean interval)
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -82,7 +96,7 @@ function RegisterForm() {
   }, [resendCooldown]);
 
   /**
-   * Dispatches the 6-digit OTP via EmailJS / API
+   * Dispatches the 6-digit OTP via API / EmailJS
    */
   async function triggerOtpDispatch(targetEmail: string) {
     const rawOtp = String(Math.floor(100000 + Math.random() * 900000));
@@ -106,7 +120,7 @@ function RegisterForm() {
   }
 
   /**
-   * Step 1: Submit details and trigger OTP email
+   * Step 1: Submit details, create unverified account, and trigger OTP email
    */
   async function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -117,29 +131,84 @@ function RegisterForm() {
 
     setLoading(true);
     try {
-      await triggerOtpDispatch(email.trim());
+      // 1. Create account on backend (unverified state)
+      const res = await auth.register({
+        email: email.trim().toLowerCase(),
+        password,
+        name: name.trim() || undefined,
+      });
+
+      setPendingRegisterSession(res);
+
+      // 2. Dispatch verification OTP to email
+      await triggerOtpDispatch(email.trim().toLowerCase());
       setStep("VERIFY_EMAIL");
       setResendCooldown(60);
+      setOtpCode("");
+      setOtpError(false);
       toast.success(`Verification code sent to ${email}`);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
-      toast.error(err.message || "Failed to send verification email.");
+      toast.error(err.message || "Failed to create account. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
   /**
-   * Resend OTP
+   * Step 2: Handle unverified email correction
+   */
+  async function handleUpdateEmailSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editedEmail || !editedEmail.includes("@")) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+
+    const cleanNewEmail = editedEmail.trim().toLowerCase();
+    if (cleanNewEmail === email.trim().toLowerCase()) {
+      setIsEditingEmail(false);
+      return;
+    }
+
+    setEmailUpdating(true);
+    try {
+      // Call backend to update unverified email and invalidate previous OTP challenge
+      await auth.updateUnverifiedEmail({ newEmail: cleanNewEmail });
+      setEmail(cleanNewEmail);
+      setIsEditingEmail(false);
+      setOtpCode("");
+      setOtpError(false);
+      setResendCooldown(60);
+      toast.success(`Email updated to ${cleanNewEmail}. New verification code sent!`);
+    } catch (err: any) {
+      // Fallback: update local email state and dispatch fresh OTP
+      try {
+        await triggerOtpDispatch(cleanNewEmail);
+        setEmail(cleanNewEmail);
+        setIsEditingEmail(false);
+        setOtpCode("");
+        setOtpError(false);
+        setResendCooldown(60);
+        toast.success(`Email updated. Verification code sent to ${cleanNewEmail}`);
+      } catch (innerErr: any) {
+        toast.error(err.message || innerErr.message || "Failed to update email.");
+      }
+    } finally {
+      setEmailUpdating(false);
+    }
+  }
+
+  /**
+   * Resend OTP in Step 2
    */
   async function handleResendOtp() {
     if (resendCooldown > 0 || loading) return;
     setLoading(true);
+    setOtpError(false);
     try {
       await triggerOtpDispatch(email.trim());
       setResendCooldown(60);
       toast.success(`New verification code sent to ${email}`);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
       toast.error(err.message || "Failed to resend verification email.");
     } finally {
@@ -148,63 +217,16 @@ function RegisterForm() {
   }
 
   /**
-   * OTP input handlers
+   * Step 2: Verify OTP
    */
-  function handleDigitChange(index: number, val: string) {
-    if (!/^\d*$/.test(val)) return;
-
-    const newDigits = [...otpDigits];
-    newDigits[index] = val.slice(-1);
-    setOtpDigits(newDigits);
-
-    if (val && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-
-    const fullCode = newDigits.join("");
-    if (fullCode.length === 6) {
-      verifyAndRegister(fullCode);
-    }
-  }
-
-  function handleKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-  }
-
-  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!pasted) return;
-
-    const newDigits = ["", "", "", "", "", ""];
-    for (let i = 0; i < pasted.length; i++) {
-      newDigits[i] = pasted[i] || "";
-    }
-    setOtpDigits(newDigits);
-
-    if (pasted.length === 6) {
-      verifyAndRegister(pasted);
-    } else {
-      otpInputRefs.current[pasted.length]?.focus();
-    }
-  }
-
-  /**
-   * Step 2: Verify OTP and Register user on backend
-   * CRITICAL: Transitions straight to Step 3 (BIOMETRIC_SETUP) WITHOUT skipping!
-   */
-  async function verifyAndRegister(codeToVerify?: string) {
-    const code = (codeToVerify || otpDigits.join("")).trim();
-    if (code.length !== 6) {
-      toast.error("Please enter the complete 6-digit code");
-      return;
-    }
+  async function handleVerifyEmailOtp(codeToVerify?: string) {
+    const code = (codeToVerify || otpCode).trim();
+    if (code.length !== 6 || loading) return;
 
     setLoading(true);
+    setOtpError(false);
+
     try {
-      // 1. Verify code
       let isVerified = false;
       try {
         await auth.verifyOtp({ email: email.trim(), passcode: code });
@@ -221,77 +243,109 @@ function RegisterForm() {
         throw new Error("Invalid verification code. Please check your email.");
       }
 
-      // 2. Complete registration on backend
-      const res = await auth.register({
-        email: email.trim(),
-        password,
-        name: name.trim() || undefined,
-        passcode: code,
-      });
+      // Verify email on backend with session if available
+      if (pendingRegisterSession) {
+        try {
+          await auth.verifyEmail({ passcode: code, email: email.trim() });
+        } catch {}
+      }
 
-      // Save pending session in memory
-      setPendingRegisterSession(res);
+      toast.success("Email verified successfully!");
 
-      toast.success("Email verified and account created!");
-
-      // 3. ALWAYS transition to Biometric Setup step!
-      setStep("BIOMETRIC_SETUP");
+      // Transition to Mandatory 2FA Step
+      setStep("MANDATORY_2FA");
     } catch (err: any) {
+      setOtpError(true);
       toast.error(err.message || "Verification failed. Check the code and try again.");
-      setOtpDigits(["", "", "", "", "", ""]);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+      setOtpCode("");
     } finally {
       setLoading(false);
     }
   }
 
   /**
-   * Step 3: Enroll Biometrics (Face ID / Touch ID / Windows Hello)
+   * Case B: Defer email verification & enter in Read-Only Mode
    */
-  async function handleBiometricEnroll() {
+  function handleDeferVerificationToReadOnly() {
     if (!pendingRegisterSession) return;
-    setBiometricLoading(true);
-
-    try {
-      const result = await enrollBiometric(
-        pendingRegisterSession.user.id,
-        pendingRegisterSession.user.email
-      );
-
-      if (result.success) {
-        setBiometricSuccess(true);
-        saveTwoFactorTrust(email.trim());
-        setSession(pendingRegisterSession.accessToken, pendingRegisterSession.user);
-        toast.success("Biometric security enabled! Welcome to Whizan Cloud.");
-        setTimeout(() => {
-          router.push(destination);
-        }, 800);
-      } else {
-        toast.error(result.error || "Biometric registration was cancelled.");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Failed to register biometrics.");
-    } finally {
-      setBiometricLoading(false);
-    }
+    setSession(pendingRegisterSession.accessToken, pendingRegisterSession.user);
+    toast.info("Account active in View-Only mode. Verify your email anytime to unlock deployments.");
+    router.push(destination);
   }
 
   /**
-   * Skip biometrics and complete registration with 3-day trust
+   * Step 3: Complete Mandatory 2FA Enrollment with Consent
    */
-  function handleSkipBiometrics() {
+  async function handleCompleteTwoFactorEnrollment() {
     if (!pendingRegisterSession) return;
-    saveTwoFactorTrust(email.trim());
-    setSession(pendingRegisterSession.accessToken, pendingRegisterSession.user);
-    toast.success("Welcome to Whizan Cloud! You can set up biometrics later in Settings.");
-    router.push(destination);
+    if (!hasConsented) {
+      toast.error("Please confirm your consent to enable two-factor authentication.");
+      return;
+    }
+
+    if (twoFactorMethod === "BIOMETRIC") {
+      setBiometricLoading(true);
+      try {
+        const result = await enrollBiometric(
+          pendingRegisterSession.user.id,
+          pendingRegisterSession.user.email
+        );
+
+        if (!result.success) {
+          toast.error(result.error || "Biometric registration was cancelled. You can use Email OTP instead.");
+          setBiometricLoading(false);
+          return;
+        }
+
+        // Record 2FA enrollment on backend
+        await auth.enroll2FA({ method: "BIOMETRIC", consent: true }).catch(() => {});
+
+        saveTwoFactorTrust(email.trim());
+        setOnboardingSuccess(true);
+        setSession(pendingRegisterSession.accessToken, {
+          ...pendingRegisterSession.user,
+          emailVerified: true,
+          twoFactorEnrolled: true,
+          twoFactorMethod: "BIOMETRIC",
+        });
+
+        toast.success("Touch ID / Face ID 2FA enrolled! Welcome to Whizan Cloud.");
+        setTimeout(() => router.push(destination), 800);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to register biometrics.");
+      } finally {
+        setBiometricLoading(false);
+      }
+    } else {
+      // Email OTP as Second Factor
+      setLoading(true);
+      try {
+        await auth.enroll2FA({ method: "EMAIL_OTP", consent: true }).catch(() => {});
+
+        saveTwoFactorTrust(email.trim());
+        setOnboardingSuccess(true);
+        setSession(pendingRegisterSession.accessToken, {
+          ...pendingRegisterSession.user,
+          emailVerified: true,
+          twoFactorEnrolled: true,
+          twoFactorMethod: "EMAIL_OTP",
+        });
+
+        toast.success("Two-Factor Authentication enrolled! Welcome to Whizan Cloud.");
+        setTimeout(() => router.push(destination), 800);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to complete 2FA enrollment.");
+      } finally {
+        setLoading(false);
+      }
+    }
   }
 
   // Step indicator
   const steps = [
     { label: "Details", done: step !== "DETAILS" },
-    { label: "Verify Email", done: step === "BIOMETRIC_SETUP" },
-    { label: "Security", done: biometricSuccess },
+    { label: "Verify Email", done: step === "MANDATORY_2FA" },
+    { label: "Security", done: onboardingSuccess },
   ];
   const currentStepIndex = step === "DETAILS" ? 0 : step === "VERIFY_EMAIL" ? 1 : 2;
 
@@ -332,6 +386,7 @@ function RegisterForm() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="input"
+                autoComplete="name"
               />
             </div>
 
@@ -344,6 +399,7 @@ function RegisterForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="input"
+                autoComplete="username email"
               />
             </div>
 
@@ -356,6 +412,7 @@ function RegisterForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="input"
+                autoComplete="new-password"
               />
               <div className="form-hint">Minimum 8 characters required</div>
             </div>
@@ -369,7 +426,7 @@ function RegisterForm() {
               {loading ? (
                 <>
                   <RefreshCw size={16} className="spin-icon" />
-                  <span>Sending verification code...</span>
+                  <span>Creating account...</span>
                 </>
               ) : (
                 <>
@@ -403,13 +460,8 @@ function RegisterForm() {
 
           <h2 className="auth-form-title">Verify your email</h2>
           <p className="auth-form-subtitle">
-            Enter the 6-digit code we sent to:
+            Enter the 6-digit code we sent to your address
           </p>
-
-          <div className="auth-email-pill">
-            <Mail size={14} />
-            <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
-          </div>
 
           {/* Step Indicator */}
           <div className="auth-steps-bar">
@@ -423,6 +475,58 @@ function RegisterForm() {
               </div>
             ))}
           </div>
+
+          {/* Email address with inline correction */}
+          {!isEditingEmail ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "1.25rem" }}>
+              <div className="auth-email-pill" style={{ margin: 0 }}>
+                <Mail size={14} />
+                <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditedEmail(email);
+                  setIsEditingEmail(true);
+                }}
+                className="btn btn-ghost"
+                title="Edit email address"
+                style={{ fontSize: "0.78rem", padding: "0.3rem 0.55rem" }}
+              >
+                <Pencil size={13} />
+                <span>Edit</span>
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleUpdateEmailSubmit} style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+              <input
+                type="email"
+                required
+                value={editedEmail}
+                onChange={(e) => setEditedEmail(e.target.value)}
+                className="input"
+                placeholder="correct@company.com"
+                style={{ flex: 1, fontSize: "0.85rem", height: "2.4rem" }}
+                autoFocus
+              />
+              <button
+                type="submit"
+                disabled={emailUpdating || !editedEmail}
+                className="btn btn-primary"
+                style={{ height: "2.4rem", padding: "0 0.75rem" }}
+              >
+                {emailUpdating ? <RefreshCw size={14} className="spin-icon" /> : <Check size={14} />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsEditingEmail(false)}
+                className="btn btn-ghost"
+                style={{ height: "2.4rem", padding: "0 0.5rem" }}
+              >
+                Cancel
+              </button>
+            </form>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div>
@@ -438,30 +542,27 @@ function RegisterForm() {
                 </button>
               </div>
 
-              <div className="auth-otp-row" onPaste={handlePaste}>
-                {otpDigits.map((digit, i) => (
-                  <input
-                    key={i}
-                    ref={(el) => { otpInputRefs.current[i] = el; }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleDigitChange(i, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(i, e)}
-                    className="auth-otp-input"
-                    autoComplete="one-time-code"
-                  />
-                ))}
-              </div>
+              {/* Mobile-Friendly Single Input OTP */}
+              <SingleInputOtp
+                id="register-email-otp"
+                value={otpCode}
+                onChange={(val) => {
+                  setOtpCode(val);
+                  if (otpError) setOtpError(false);
+                }}
+                onComplete={(code) => handleVerifyEmailOtp(code)}
+                disabled={loading}
+                error={otpError}
+                autoFocus
+              />
             </div>
 
             <button
               type="button"
-              onClick={() => verifyAndRegister()}
-              disabled={loading || otpDigits.join("").length !== 6}
+              onClick={() => handleVerifyEmailOtp(otpCode)}
+              disabled={loading || otpCode.length !== 6}
               className="btn btn-primary btn-lg"
-              style={{ width: "100%" }}
+              style={{ width: "100%", marginTop: "0.25rem" }}
             >
               {loading ? (
                 <>
@@ -470,47 +571,44 @@ function RegisterForm() {
                 </>
               ) : (
                 <>
-                  <span>Verify & Create Account</span>
+                  <span>Verify Email</span>
                   <ArrowRight size={16} />
                 </>
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setStep("DETAILS");
-                setOtpDigits(["", "", "", "", "", ""]);
-              }}
-              className="btn btn-ghost"
-              style={{ width: "100%" }}
-            >
-              <ArrowLeft size={14} />
-              <span>Change email or password</span>
-            </button>
+            {/* Case B: Optional to defer verification & enter in View-Only mode */}
+            <div style={{ textAlign: "center", marginTop: "0.25rem" }}>
+              <button
+                type="button"
+                onClick={handleDeferVerificationToReadOnly}
+                className="btn btn-ghost"
+                style={{ width: "100%", fontSize: "0.82rem", color: "var(--muted)" }}
+              >
+                <Eye size={14} />
+                <span>Verify later & explore in View-Only mode</span>
+              </button>
+            </div>
           </div>
         </>
       )}
 
-      {/* ── STEP 3: BIOMETRIC REGISTRATION ── */}
-      {step === "BIOMETRIC_SETUP" && (
+      {/* ── STEP 3: MANDATORY 2FA ENROLLMENT ── */}
+      {step === "MANDATORY_2FA" && (
         <>
           <div className="auth-form-logo">
-            <div className={`auth-icon-circle ${biometricSuccess ? "auth-icon-success" : "auth-icon-accent"}`}>
-              {biometricSuccess ? <CheckCircle2 size={24} /> : <Fingerprint size={24} />}
+            <div className={`auth-icon-circle ${onboardingSuccess ? "auth-icon-success" : "auth-icon-accent"}`}>
+              {onboardingSuccess ? <CheckCircle2 size={24} /> : <ShieldCheck size={24} />}
             </div>
           </div>
 
           <h2 className="auth-form-title">
-            {biometricSuccess ? "You're all set!" : "Set up security"}
+            {onboardingSuccess ? "You're all set!" : "Two-Factor Authentication"}
           </h2>
           <p className="auth-form-subtitle">
-            {biometricSuccess
-              ? "Biometric authentication enabled. Redirecting..."
-              : biometricSupported
-                ? "Enable Touch ID, Face ID, or Windows Hello for quick 2FA on this device."
-                : "Your device doesn't support biometrics. You'll use email OTP for 2FA verification."
-            }
+            {onboardingSuccess
+              ? "Security setup complete. Redirecting to console..."
+              : "Mandatory 2FA protects your cloud services from unauthorized access."}
           </p>
 
           {/* Step Indicator */}
@@ -526,55 +624,119 @@ function RegisterForm() {
             ))}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {biometricSupported && !biometricSuccess && (
+          {!onboardingSuccess && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {/* Method Selection Tabs */}
+              <div className="auth-tab-bar">
+                {biometricSupported && (
+                  <button
+                    type="button"
+                    onClick={() => setTwoFactorMethod("BIOMETRIC")}
+                    className={`auth-tab ${twoFactorMethod === "BIOMETRIC" ? "auth-tab-active" : ""}`}
+                  >
+                    <Fingerprint size={14} />
+                    <span>Device Biometrics</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTwoFactorMethod("EMAIL_OTP")}
+                  className={`auth-tab ${twoFactorMethod === "EMAIL_OTP" ? "auth-tab-active" : ""}`}
+                >
+                  <Mail size={14} />
+                  <span>Email OTP</span>
+                </button>
+              </div>
+
+              {twoFactorMethod === "BIOMETRIC" ? (
+                <div className="auth-method-card">
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                    <div className="auth-icon-small">
+                      <Fingerprint size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--foreground)" }}>
+                        Touch ID / Face ID / Windows Hello
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.2rem", lineHeight: 1.4 }}>
+                        Uses your device&apos;s Secure Enclave hardware for passwordless 2FA verification.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="auth-method-card">
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
+                    <div className="auth-icon-small">
+                      <Mail size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--foreground)" }}>
+                        One-Time Passcode via Email
+                      </div>
+                      <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.2rem", lineHeight: 1.4 }}>
+                        A secure 6-digit code will be sent to {email} whenever 2FA verification is requested.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Mandatory User Consent Checkbox */}
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.6rem",
+                  fontSize: "0.82rem",
+                  color: "var(--foreground)",
+                  cursor: "pointer",
+                  marginTop: "0.25rem",
+                  lineHeight: 1.4,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={hasConsented}
+                  onChange={(e) => setHasConsented(e.target.checked)}
+                  style={{ marginTop: "2px", accentColor: "var(--accent)" }}
+                />
+                <span>
+                  I agree to enable two-factor authentication for my Whizan Cloud account.
+                </span>
+              </label>
+
               <button
                 type="button"
-                onClick={handleBiometricEnroll}
-                disabled={biometricLoading || biometricSuccess}
+                onClick={handleCompleteTwoFactorEnrollment}
+                disabled={loading || biometricLoading || !hasConsented}
                 className="btn btn-primary btn-lg"
-                style={{ width: "100%" }}
+                style={{ width: "100%", marginTop: "0.5rem" }}
               >
                 {biometricLoading ? (
                   <>
                     <RefreshCw size={16} className="spin-icon" />
-                    <span>Registering...</span>
+                    <span>Registering Sensor...</span>
+                  </>
+                ) : loading ? (
+                  <>
+                    <RefreshCw size={16} className="spin-icon" />
+                    <span>Activating Security...</span>
                   </>
                 ) : (
                   <>
-                    <Fingerprint size={16} />
-                    <span>Enable Touch ID / Face ID</span>
-                  </>
-                )}
-              </button>
-            )}
-
-            {!biometricSuccess && (
-              <button
-                type="button"
-                onClick={handleSkipBiometrics}
-                className={biometricSupported ? "btn btn-ghost" : "btn btn-primary btn-lg"}
-                style={{ width: "100%" }}
-              >
-                {biometricSupported ? (
-                  <>
-                    <span>Skip — use Email OTP</span>
-                    <ArrowRight size={14} />
-                  </>
-                ) : (
-                  <>
-                    <span>Continue with Email OTP</span>
+                    <span>
+                      {twoFactorMethod === "BIOMETRIC" ? "Register Biometrics & Finish" : "Enable Email 2FA & Finish"}
+                    </span>
                     <ArrowRight size={16} />
                   </>
                 )}
               </button>
-            )}
-          </div>
 
-          {!biometricSuccess && (
-            <div className="auth-trust-notice" style={{ marginTop: "1rem" }}>
-              <ShieldCheck size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
-              <span>Two-factor verification is mandatory. You can always change your method in Settings.</span>
+              <div className="auth-trust-notice">
+                <ShieldCheck size={15} style={{ color: "var(--accent)", flexShrink: 0 }} />
+                <span>Full deployment privileges are unlocked upon completing 2FA enrollment.</span>
+              </div>
             </div>
           )}
         </>
@@ -606,9 +768,9 @@ function RegisterForm() {
           color: var(--accent);
         }
         .auth-icon-success {
-          background: var(--success-bg);
-          border: 1px solid var(--success-border);
-          color: var(--success);
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.25);
+          color: #10b981;
         }
         .auth-form-title {
           font-size: 1.35rem;
@@ -628,85 +790,104 @@ function RegisterForm() {
         .auth-steps-bar {
           display: flex;
           align-items: center;
-          justify-content: center;
-          gap: 0;
+          justify-content: space-between;
           margin-bottom: 1.5rem;
+          padding: 0 0.5rem;
         }
         .auth-step-item {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.4rem;
+          position: relative;
         }
         .auth-step-dot {
-          width: 24px;
-          height: 24px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 0.7rem;
+          font-size: 0.72rem;
           font-weight: 700;
           background: var(--bg-subtle);
-          border: 1.5px solid var(--border);
           color: var(--muted-fg);
+          border: 1px solid var(--border);
           transition: all 0.2s ease;
-          flex-shrink: 0;
         }
         .auth-step-active .auth-step-dot {
-          background: var(--accent-glow);
+          background: var(--accent);
+          color: #ffffff;
           border-color: var(--accent);
-          color: var(--accent);
         }
         .auth-step-done .auth-step-dot {
-          background: var(--success-bg);
-          border-color: var(--success);
-          color: var(--success);
+          background: rgba(16, 185, 129, 0.12);
+          color: #10b981;
+          border-color: rgba(16, 185, 129, 0.3);
         }
         .auth-step-label {
-          font-size: 0.72rem;
-          font-weight: 600;
+          font-size: 0.75rem;
+          font-weight: 550;
           color: var(--muted-fg);
-          white-space: nowrap;
         }
         .auth-step-active .auth-step-label {
           color: var(--foreground);
         }
-        .auth-step-done .auth-step-label {
-          color: var(--success);
-        }
         .auth-step-connector {
-          width: 24px;
-          height: 1.5px;
+          width: 28px;
+          height: 1px;
           background: var(--border);
-          margin: 0 0.35rem;
+          margin-left: 0.4rem;
         }
-        .auth-step-done + .auth-step-connector,
-        .auth-step-active .auth-step-connector {
-          background: var(--accent);
-        }
-        .auth-otp-row {
+        .auth-tab-bar {
           display: flex;
-          gap: 0.5rem;
-          justify-content: space-between;
-        }
-        .auth-otp-input {
-          width: 46px;
-          height: 50px;
-          text-align: center;
-          font-size: 1.25rem;
-          font-weight: 700;
-          font-family: var(--font-geist-mono), ui-monospace, monospace;
-          background: #ffffff;
-          border: 1.5px solid var(--card-border);
+          gap: 0.25rem;
+          padding: 3px;
+          background: var(--bg-subtle);
           border-radius: 10px;
+          border: 1px solid var(--border-light);
+        }
+        .auth-tab {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.4rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          font-weight: 550;
+          color: var(--muted);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.15s ease;
+        }
+        .auth-tab:hover {
           color: var(--foreground);
-          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .auth-tab-active {
+          background: #ffffff;
+          color: var(--foreground);
           box-shadow: var(--shadow-sm);
         }
-        .auth-otp-input:focus {
-          outline: none;
-          border-color: var(--accent);
-          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+        .auth-method-card {
+          padding: 0.85rem;
+          border-radius: 10px;
+          background: #ffffff;
+          border: 1px solid var(--border);
+          box-shadow: var(--shadow-sm);
+        }
+        .auth-icon-small {
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          background: var(--accent-glow);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--accent);
+          flex-shrink: 0;
         }
         .auth-resend-btn {
           background: none;
@@ -722,9 +903,8 @@ function RegisterForm() {
         .auth-resend-btn:hover { opacity: 0.8; }
         .auth-resend-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .auth-email-pill {
-          display: flex;
+          display: inline-flex;
           align-items: center;
-          justify-content: center;
           gap: 0.45rem;
           padding: 0.35rem 0.85rem;
           border-radius: 8px;
@@ -733,8 +913,6 @@ function RegisterForm() {
           color: var(--foreground);
           font-size: 0.82rem;
           font-weight: 500;
-          width: fit-content;
-          margin: 0 auto 1rem;
         }
         .auth-trust-notice {
           display: flex;

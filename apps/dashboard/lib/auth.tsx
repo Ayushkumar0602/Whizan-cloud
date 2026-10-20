@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { auth, setAccessToken, getApiBase, type User } from "./api";
+import { clearTwoFactorTrust } from "./webauthn";
 
 type AuthState = {
   user: User | null;
@@ -173,6 +174,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    try {
+      if (user?.email) {
+        clearTwoFactorTrust(user.email);
+      }
+    } catch {}
     await auth.logout().catch(() => {});
     setAccessToken(null);
     setUser(null);
@@ -180,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("hostify_user");
       localStorage.removeItem("hostify_access_token");
     } catch {}
-  }, []);
+  }, [user]);
 
   const updateUser = useCallback((updated: Partial<User>) => {
     setUser(prev => {

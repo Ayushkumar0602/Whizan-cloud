@@ -41,10 +41,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const safeTarget = getSafeRedirectUrl(currentTarget, "/dashboard");
       router.replace(`/login?redirect=${encodeURIComponent(safeTarget)}`);
     } else if (!loading && user) {
-      // Strictly mandate 3-day 2FA verification on this hardware device
+      // 1. Unverified accounts are permitted into the dashboard in View-Only mode
+      if (user.emailVerified === false) {
+        return;
+      }
+
+      // 2. Verified accounts require active 3-day 2FA trust on this hardware device
       const isTrusted = isTwoFactorTrusted(user.email);
       if (!isTrusted) {
-        logout();
         const currentTarget =
           typeof window !== "undefined"
             ? window.location.pathname + window.location.search
@@ -53,7 +57,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         router.replace(`/login?redirect=${encodeURIComponent(safeTarget)}&reason=2fa_required`);
       }
     }
-  }, [user, loading, router, pathname, logout]);
+  }, [user, loading, router, pathname]);
 
   useEffect(() => {
     setMobileMenuOpen(false);

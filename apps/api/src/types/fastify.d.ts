@@ -28,6 +28,8 @@ declare module "fastify" {
       role?: string;
       subscriptionTier?: string;
       emailVerified?: boolean;
+      twoFactorEnrolled?: boolean;
+      twoFactorMethod?: string | null;
       iamPermissions?: string;
     };
   }
@@ -38,7 +40,7 @@ declare module "fastify" {
  */
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { userId: string; email: string; role?: string; subscriptionTier?: string; emailVerified?: boolean };
-    user: { userId: string; email: string; role?: string; subscriptionTier?: string; emailVerified?: boolean; iamPermissions?: string };
+    payload: { userId: string; email: string; role?: string; subscriptionTier?: string; emailVerified?: boolean; twoFactorEnrolled?: boolean };
+    user: { userId: string; email: string; role?: string; subscriptionTier?: string; emailVerified?: boolean; twoFactorEnrolled?: boolean; twoFactorMethod?: string | null; iamPermissions?: string };
   }
 }

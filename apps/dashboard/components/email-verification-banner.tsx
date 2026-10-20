@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { auth } from "@/lib/api";
 import { toast } from "sonner";
+import { SingleInputOtp } from "@/components/auth/otp-input";
+import {
+  enrollBiometric,
+  isPlatformBiometricSupported,
+  saveTwoFactorTrust,
+} from "@/lib/webauthn";
 import {
   ShieldAlert,
   Mail,
@@ -12,7 +18,10 @@ import {
   X,
   Lock,
   ArrowRight,
-  Sparkles,
+  Fingerprint,
+  ShieldCheck,
+  Pencil,
+  Check,
 } from "lucide-react";
 
 export function EmailVerificationBanner() {
@@ -21,9 +30,30 @@ export function EmailVerificationBanner() {
   const [loading, setLoading] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
-  const [verifiedSuccess, setVerifiedSuccess] = useState(false);
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [otpCode, setOtpCode] = useState("");
+  const [otpError, setOtpError] = useState(false);
+
+  // Email correction state
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [editedEmail, setEditedEmail] = useState("");
+  const [emailUpdating, setEmailUpdating] = useState(false);
+
+  // Modal Stage: "VERIFY_CODE" -> "ENROLL_2FA" -> "COMPLETED"
+  const [modalStage, setModalStage] = useState<"VERIFY_CODE" | "ENROLL_2FA" | "COMPLETED">("VERIFY_CODE");
+  const [twoFactorMethod, setTwoFactorMethod] = useState<"BIOMETRIC" | "EMAIL_OTP">("BIOMETRIC");
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [hasConsented, setHasConsented] = useState(true);
+
+  // Check platform biometrics
+  useEffect(() => {
+    isPlatformBiometricSupported().then((supported) => {
+      setBiometricSupported(supported);
+      if (!supported) {
+        setTwoFactorMethod("EMAIL_OTP");
+      }
+    });
+  }, []);
 
   // Resend cooldown timer
   useEffect(() => {
@@ -34,15 +64,6 @@ export function EmailVerificationBanner() {
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
-  // Focus first input whenever modal opens
-  useEffect(() => {
-    if (modalOpen) {
-      setTimeout(() => {
-        otpInputRefs.current[0]?.focus();
-      }, 150);
-    }
-  }, [modalOpen]);
-
   // If user is already verified or not logged in, show nothing
   if (!user || user.emailVerified === true) {
     return null;
@@ -51,6 +72,7 @@ export function EmailVerificationBanner() {
   async function handleSendVerificationOtp() {
     if (loading) return;
     setLoading(true);
+    setOtpError(false);
     try {
       const res = await auth.sendVerificationOtp();
       if (res.alreadyVerified) {
@@ -62,7 +84,6 @@ export function EmailVerificationBanner() {
       setOtpSent(true);
       setResendCooldown(60);
       toast.success(`Verification code dispatched to ${user?.email}`);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
       toast.error(err.message || "Failed to dispatch verification email. Please try again.");
     } finally {
@@ -70,55 +91,41 @@ export function EmailVerificationBanner() {
     }
   }
 
-  function handleDigitChange(index: number, val: string) {
-    if (!/^\d*$/.test(val)) return;
-
-    const newDigits = [...otpDigits];
-    newDigits[index] = val.slice(-1);
-    setOtpDigits(newDigits);
-
-    if (val && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-
-    const fullCode = newDigits.join("");
-    if (fullCode.length === 6) {
-      handleVerifyCode(fullCode);
-    }
-  }
-
-  function handleKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-  }
-
-  function handlePaste(e: React.ClipboardEvent) {
+  async function handleUpdateEmail(e: React.FormEvent) {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!pasted) return;
-
-    const newDigits = ["", "", "", "", "", ""];
-    for (let i = 0; i < pasted.length; i++) {
-      newDigits[i] = pasted[i] || "";
+    if (!editedEmail || !editedEmail.includes("@")) {
+      toast.error("Please enter a valid email address.");
+      return;
     }
-    setOtpDigits(newDigits);
 
-    if (pasted.length === 6) {
-      handleVerifyCode(pasted);
-    } else {
-      otpInputRefs.current[pasted.length]?.focus();
+    const clean = editedEmail.trim().toLowerCase();
+    if (clean === user?.email.toLowerCase()) {
+      setIsEditingEmail(false);
+      return;
+    }
+
+    setEmailUpdating(true);
+    try {
+      await auth.updateUnverifiedEmail({ newEmail: clean });
+      updateUser({ email: clean });
+      setIsEditingEmail(false);
+      setOtpCode("");
+      setOtpError(false);
+      setResendCooldown(60);
+      toast.success(`Email updated to ${clean}. Verification code dispatched!`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update email address.");
+    } finally {
+      setEmailUpdating(false);
     }
   }
 
   async function handleVerifyCode(code: string) {
     if (loading) return;
     const cleanCode = code.trim();
-    if (cleanCode.length !== 6) {
-      toast.error("Please enter all 6 digits of your verification code.");
-      return;
-    }
+    if (cleanCode.length !== 6) return;
     setLoading(true);
+    setOtpError(false);
 
     try {
       const res = await auth.verifyEmail({
@@ -127,167 +134,546 @@ export function EmailVerificationBanner() {
       });
 
       if (res.ok) {
-        setVerifiedSuccess(true);
         updateUser({ emailVerified: true });
-        toast.success("🎉 Email verified successfully! Full console access unlocked.");
-        setTimeout(() => {
-          setModalOpen(false);
-          setVerifiedSuccess(false);
-        }, 1200);
+        toast.success("Email verified successfully!");
+
+        // If user already has 2FA enrolled, complete immediately
+        if (user?.twoFactorEnrolled) {
+          setModalStage("COMPLETED");
+          setTimeout(() => setModalOpen(false), 1200);
+        } else {
+          // Advance to mandatory 2FA enrollment stage
+          setModalStage("ENROLL_2FA");
+        }
       }
     } catch (err: any) {
+      setOtpError(true);
       toast.error(err.message || "Invalid or expired passcode. Please try again.");
+      setOtpCode("");
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleComplete2FAEnrollment() {
+    if (!user || !hasConsented) {
+      toast.error("Please confirm your consent to enable two-factor authentication.");
+      return;
+    }
+
+    if (twoFactorMethod === "BIOMETRIC") {
+      setBiometricLoading(true);
+      try {
+        const result = await enrollBiometric(user.id, user.email);
+        if (!result.success) {
+          toast.error(result.error || "Biometric registration was cancelled. You can select Email OTP instead.");
+          setBiometricLoading(false);
+          return;
+        }
+
+        await auth.enroll2FA({ method: "BIOMETRIC", consent: true }).catch(() => {});
+        saveTwoFactorTrust(user.email);
+        updateUser({ twoFactorEnrolled: true, twoFactorMethod: "BIOMETRIC" });
+        setModalStage("COMPLETED");
+        toast.success("Touch ID / Face ID 2FA enrolled! Full access unlocked.");
+        setTimeout(() => setModalOpen(false), 1200);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to register biometrics.");
+      } finally {
+        setBiometricLoading(false);
+      }
+    } else {
+      setLoading(true);
+      try {
+        await auth.enroll2FA({ method: "EMAIL_OTP", consent: true }).catch(() => {});
+        saveTwoFactorTrust(user.email);
+        updateUser({ twoFactorEnrolled: true, twoFactorMethod: "EMAIL_OTP" });
+        setModalStage("COMPLETED");
+        toast.success("Two-Factor Authentication enrolled! Full access unlocked.");
+        setTimeout(() => setModalOpen(false), 1200);
+      } catch (err: any) {
+        toast.error(err.message || "Failed to complete 2FA enrollment.");
+      } finally {
+        setLoading(false);
+      }
+    }
+  }
+
   return (
     <>
-      {/* ─── Modern Glassmorphic Warning Banner ──────────────────────────── */}
-      <div className="bg-gradient-to-r from-sky-950/40 via-indigo-950/30 to-purple-950/40 border-b border-sky-500/25 px-4 py-2.5 backdrop-blur-md shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 font-semibold text-[11px] shadow-sm">
-              <ShieldAlert className="w-3.5 h-3.5" />
-              <span>View-Only Mode</span>
-            </span>
-            <span className="text-zinc-300">
-              Email verification required for <strong className="text-white font-medium">{user.email}</strong>. Mutation, deployment, and database operations remain locked until verified.
-            </span>
-          </div>
-
-          <button
-            onClick={() => {
-              setModalOpen(true);
-              if (!otpSent) {
-                handleSendVerificationOtp();
-              }
+      {/* ─── Modern White/Subtle Warning Banner ──────────────────────────── */}
+      <div
+        style={{
+          background: "#fffbeb",
+          borderBottom: "1px solid #fde68a",
+          padding: "0.6rem 1rem",
+          fontSize: "0.82rem",
+          color: "#92400e",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.3rem",
+              padding: "0.15rem 0.5rem",
+              borderRadius: "6px",
+              background: "#fef3c7",
+              border: "1px solid #fcd34d",
+              fontWeight: 700,
+              fontSize: "0.72rem",
+              color: "#b45309",
             }}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-semibold text-xs shadow-md shadow-sky-500/20 hover:shadow-sky-500/30 transition-all active:scale-95 cursor-pointer ml-auto"
           >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Verify Email Now</span>
-            <ArrowRight className="w-3 h-3 opacity-80" />
-          </button>
+            <ShieldAlert size={12} />
+            <span>View-Only Mode</span>
+          </span>
+          <span>
+            Email verification required for <strong>{user.email}</strong>. Deployments and mutations remain locked until verified.
+          </span>
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setModalOpen(true);
+            setModalStage("VERIFY_CODE");
+            if (!otpSent) {
+              handleSendVerificationOtp();
+            }
+          }}
+          className="btn btn-primary"
+          style={{
+            padding: "0.35rem 0.85rem",
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            borderRadius: "7px",
+            marginLeft: "auto",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "0.35rem",
+          }}
+        >
+          <Mail size={13} />
+          <span>Verify Email Now</span>
+          <ArrowRight size={13} />
+        </button>
       </div>
 
-      {/* ─── Modern Premium Verification Modal ────────────────────────────── */}
+      {/* ─── Modern White Verification Modal ────────────────────────────── */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => !loading && setModalOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+            background: "rgba(15, 23, 42, 0.45)",
+            backdropFilter: "blur(4px)",
+            animation: "fadeIn 0.2s ease-out",
+          }}
+          onClick={() => !loading && !biometricLoading && setModalOpen(false)}
         >
           <div
-            className="relative w-full max-w-md bg-zinc-950 border border-zinc-800/90 rounded-2xl p-7 shadow-2xl overflow-hidden transition-all text-zinc-100"
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: "420px",
+              background: "#ffffff",
+              border: "1px solid var(--border, #e5e7eb)",
+              borderRadius: "16px",
+              padding: "1.75rem",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+              color: "var(--foreground, #111827)",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Ambient top light glow */}
-            <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-64 h-28 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
-
             {/* Close Button */}
             <button
-              onClick={() => !loading && setModalOpen(false)}
-              className="absolute top-4 right-4 p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-900 transition-colors cursor-pointer"
+              type="button"
+              onClick={() => !loading && !biometricLoading && setModalOpen(false)}
+              className="btn btn-ghost"
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                padding: "0.35rem",
+                borderRadius: "8px",
+              }}
             >
-              <X className="w-4 h-4" />
+              <X size={16} />
             </button>
 
-            {verifiedSuccess ? (
-              <div className="text-center py-8 animate-in zoom-in-95 duration-200">
-                <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-4 text-emerald-400 shadow-lg shadow-emerald-500/10">
-                  <CheckCircle2 className="w-8 h-8" />
-                </div>
-                <h3 className="text-xl font-bold text-white tracking-tight">
-                  Email Verified!
-                </h3>
-                <p className="text-xs text-zinc-400 mt-2">
-                  Full console mutation access unlocked. Enjoy Whizan Cloud!
-                </p>
-              </div>
-            ) : (
+            {/* STAGE 1: VERIFY CODE */}
+            {modalStage === "VERIFY_CODE" && (
               <>
-                {/* Header */}
-                <div className="text-center mb-5">
-                  <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-sky-500/15 via-indigo-500/20 to-purple-500/15 border border-sky-500/30 flex items-center justify-center mx-auto mb-3.5 text-sky-400 shadow-md shadow-sky-500/10">
-                    <Mail className="w-6 h-6" />
+                <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background: "var(--accent-glow, rgba(79, 70, 229, 0.08))",
+                      border: "1px solid rgba(79, 70, 229, 0.2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 0.75rem",
+                      color: "var(--accent, #4f46e5)",
+                    }}
+                  >
+                    <Mail size={22} />
                   </div>
-                  <h3 className="text-xl font-bold text-white tracking-tight">
+                  <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>
                     Verify Your Email
                   </h3>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Enter the 6-digit verification code dispatched to:
+                  <p style={{ fontSize: "0.82rem", color: "var(--muted, #6b7280)", marginTop: "0.25rem" }}>
+                    Enter the 6-digit code dispatched to:
                   </p>
-                  <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-xs font-mono font-medium text-sky-300">
-                    {user.email}
-                  </div>
+
+                  {/* Email with inline correction */}
+                  {!isEditingEmail ? (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", marginTop: "0.5rem" }}>
+                      <span
+                        className="mono"
+                        style={{
+                          fontSize: "0.82rem",
+                          fontWeight: 600,
+                          padding: "0.25rem 0.65rem",
+                          borderRadius: "6px",
+                          background: "var(--bg-subtle, #f9fafb)",
+                          border: "1px solid var(--border, #e5e7eb)",
+                        }}
+                      >
+                        {user.email}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditedEmail(user.email);
+                          setIsEditingEmail(true);
+                        }}
+                        className="btn btn-ghost"
+                        title="Edit email address"
+                        style={{ padding: "0.25rem", fontSize: "0.75rem" }}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleUpdateEmail} style={{ display: "flex", gap: "0.35rem", marginTop: "0.5rem" }}>
+                      <input
+                        type="email"
+                        required
+                        value={editedEmail}
+                        onChange={(e) => setEditedEmail(e.target.value)}
+                        className="input"
+                        placeholder="correct@company.com"
+                        style={{ flex: 1, height: "2.2rem", fontSize: "0.82rem" }}
+                        autoFocus
+                      />
+                      <button
+                        type="submit"
+                        disabled={emailUpdating || !editedEmail}
+                        className="btn btn-primary"
+                        style={{ height: "2.2rem", padding: "0 0.65rem" }}
+                      >
+                        {emailUpdating ? <RefreshCw size={13} className="spin-icon" /> : <Check size={13} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingEmail(false)}
+                        className="btn btn-ghost"
+                        style={{ height: "2.2rem", padding: "0 0.5rem", fontSize: "0.78rem" }}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  )}
                 </div>
 
-                {/* Security info box */}
-                <div className="bg-zinc-900/70 border border-zinc-800/80 rounded-xl p-3 mb-5 text-[11px] text-zinc-300 flex items-center gap-2.5">
-                  <Lock className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>One-time verification unlocks deployments, databases, and API keys.</span>
+                <div
+                  style={{
+                    background: "var(--bg-subtle, #f9fafb)",
+                    border: "1px solid var(--border, #e5e7eb)",
+                    borderRadius: "10px",
+                    padding: "0.65rem 0.85rem",
+                    marginBottom: "1.25rem",
+                    fontSize: "0.78rem",
+                    color: "var(--muted, #6b7280)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <Lock size={14} style={{ color: "var(--accent, #4f46e5)", flexShrink: 0 }} />
+                  <span>One-time verification unlocks deployments, databases, and microservices.</span>
                 </div>
 
-                {/* Form */}
-                <div className="space-y-4">
+                {/* Single Input OTP */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                   <div>
-                    <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-xs text-zinc-300 font-medium">Enter 6-digit Code</span>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                      <label className="form-label" style={{ marginBottom: 0, fontSize: "0.82rem" }}>Verification Code</label>
                       <button
                         type="button"
                         onClick={handleSendVerificationOtp}
                         disabled={resendCooldown > 0 || loading}
-                        className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-40 font-medium transition-colors cursor-pointer"
+                        className="auth-resend-btn"
+                        style={{ fontSize: "0.78rem" }}
                       >
                         {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
                       </button>
                     </div>
 
-                    <div className="flex justify-between gap-2" onPaste={handlePaste}>
-                      {otpDigits.map((digit, i) => (
-                        <input
-                          key={i}
-                          ref={(el) => {
-                            otpInputRefs.current[i] = el;
-                          }}
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => handleDigitChange(i, e.target.value)}
-                          onKeyDown={(e) => handleKeyDown(i, e)}
-                          className="w-12 h-13 text-center text-xl font-bold font-mono bg-zinc-900 border border-zinc-700/80 rounded-xl text-white shadow-inner focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:scale-[1.04] transition-all"
-                        />
-                      ))}
-                    </div>
+                    <SingleInputOtp
+                      id="banner-verify-otp"
+                      value={otpCode}
+                      onChange={(val) => {
+                        setOtpCode(val);
+                        if (otpError) setOtpError(false);
+                      }}
+                      onComplete={(code) => handleVerifyCode(code)}
+                      disabled={loading}
+                      error={otpError}
+                      autoFocus
+                    />
                   </div>
 
                   <button
                     type="button"
-                    onClick={() => handleVerifyCode(otpDigits.join(""))}
-                    disabled={loading || otpDigits.join("").length !== 6}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-600 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-sky-500/20 hover:shadow-sky-500/30 active:scale-[0.99] cursor-pointer"
+                    onClick={() => handleVerifyCode(otpCode)}
+                    disabled={loading || otpCode.length !== 6}
+                    className="btn btn-primary btn-lg"
+                    style={{ width: "100%", marginTop: "0.25rem" }}
                   >
                     {loading ? (
                       <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                        <span>Verifying Code...</span>
+                        <RefreshCw size={15} className="spin-icon" />
+                        <span>Verifying...</span>
                       </>
                     ) : (
                       <>
-                        <span>Verify & Unlock Full Access</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <span>Verify Email</span>
+                        <ArrowRight size={15} />
                       </>
                     )}
                   </button>
                 </div>
               </>
             )}
+
+            {/* STAGE 2: MANDATORY 2FA ENROLLMENT */}
+            {modalStage === "ENROLL_2FA" && (
+              <>
+                <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "12px",
+                      background: "rgba(16, 185, 129, 0.1)",
+                      border: "1px solid rgba(16, 185, 129, 0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 0.75rem",
+                      color: "#10b981",
+                    }}
+                  >
+                    <ShieldCheck size={24} />
+                  </div>
+                  <h3 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>
+                    Enable Two-Factor Authentication
+                  </h3>
+                  <p style={{ fontSize: "0.82rem", color: "var(--muted, #6b7280)", marginTop: "0.25rem" }}>
+                    Mandatory security requirement before modifying cloud resources.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  {/* Method Tabs */}
+                  <div className="auth-tab-bar">
+                    {biometricSupported && (
+                      <button
+                        type="button"
+                        onClick={() => setTwoFactorMethod("BIOMETRIC")}
+                        className={`auth-tab ${twoFactorMethod === "BIOMETRIC" ? "auth-tab-active" : ""}`}
+                      >
+                        <Fingerprint size={14} />
+                        <span>Biometrics</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setTwoFactorMethod("EMAIL_OTP")}
+                      className={`auth-tab ${twoFactorMethod === "EMAIL_OTP" ? "auth-tab-active" : ""}`}
+                    >
+                      <Mail size={14} />
+                      <span>Email OTP</span>
+                    </button>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: "0.85rem",
+                      borderRadius: "10px",
+                      background: "var(--bg-subtle, #f9fafb)",
+                      border: "1px solid var(--border, #e5e7eb)",
+                      fontSize: "0.82rem",
+                      color: "var(--muted, #6b7280)",
+                    }}
+                  >
+                    {twoFactorMethod === "BIOMETRIC" ? (
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
+                        <Fingerprint size={16} style={{ color: "var(--accent)", flexShrink: 0, marginTop: "2px" }} />
+                        <span>Verifies your identity using Touch ID, Face ID, or Windows Hello.</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
+                        <Mail size={16} style={{ color: "var(--accent)", flexShrink: 0, marginTop: "2px" }} />
+                        <span>Sends a 6-digit one-time code to {user.email} upon sign in.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Consent checkbox */}
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "0.6rem",
+                      fontSize: "0.82rem",
+                      color: "var(--foreground)",
+                      cursor: "pointer",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={hasConsented}
+                      onChange={(e) => setHasConsented(e.target.checked)}
+                      style={{ marginTop: "2px", accentColor: "var(--accent)" }}
+                    />
+                    <span>I agree to enable two-factor authentication for my Whizan Cloud account.</span>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={handleComplete2FAEnrollment}
+                    disabled={loading || biometricLoading || !hasConsented}
+                    className="btn btn-primary btn-lg"
+                    style={{ width: "100%", marginTop: "0.25rem" }}
+                  >
+                    {biometricLoading ? (
+                      <>
+                        <RefreshCw size={15} className="spin-icon" />
+                        <span>Scanning sensor...</span>
+                      </>
+                    ) : loading ? (
+                      <>
+                        <RefreshCw size={15} className="spin-icon" />
+                        <span>Activating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{twoFactorMethod === "BIOMETRIC" ? "Register Biometrics & Unlock" : "Enable Email 2FA & Unlock"}</span>
+                        <ArrowRight size={15} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* STAGE 3: COMPLETED */}
+            {modalStage === "COMPLETED" && (
+              <div style={{ textAlign: "center", padding: "1.5rem 0" }}>
+                <div
+                  style={{
+                    width: "56px",
+                    height: "56px",
+                    borderRadius: "16px",
+                    background: "rgba(16, 185, 129, 0.12)",
+                    border: "1px solid rgba(16, 185, 129, 0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "0 auto 1rem",
+                    color: "#10b981",
+                  }}
+                >
+                  <CheckCircle2 size={28} />
+                </div>
+                <h3 style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0 }}>
+                  Account Fully Verified!
+                </h3>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted, #6b7280)", marginTop: "0.4rem" }}>
+                  Email verified and two-factor authentication enabled. Full console access unlocked.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      <style jsx>{`
+        .auth-tab-bar {
+          display: flex;
+          gap: 0.25rem;
+          padding: 3px;
+          background: var(--bg-subtle, #f9fafb);
+          border-radius: 10px;
+          border: 1px solid var(--border-light, #e5e7eb);
+        }
+        .auth-tab {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.4rem;
+          padding: 0.5rem 0.75rem;
+          border-radius: 8px;
+          font-size: 0.82rem;
+          font-weight: 550;
+          color: var(--muted, #6b7280);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          font-family: inherit;
+          transition: all 0.15s ease;
+        }
+        .auth-tab:hover {
+          color: var(--foreground, #111827);
+        }
+        .auth-tab-active {
+          background: #ffffff;
+          color: var(--foreground, #111827);
+          box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+        }
+        .auth-resend-btn {
+          background: none;
+          border: none;
+          font-size: 0.78rem;
+          font-weight: 600;
+          color: var(--accent, #4f46e5);
+          cursor: pointer;
+          font-family: inherit;
+          padding: 0;
+          transition: opacity 0.15s ease;
+        }
+        .auth-resend-btn:hover { opacity: 0.8; }
+        .auth-resend-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      `}</style>
     </>
   );
 }

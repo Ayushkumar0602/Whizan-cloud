@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
-import { auth, type User } from "@/lib/api";
+import { auth, getAccessToken, type User } from "@/lib/api";
 import { sendOtpEmail } from "@/lib/emailjs";
 import {
   isBiometricEnrolled,
@@ -18,14 +18,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { getSafeRedirectUrl } from "@/lib/redirect";
+import { SingleInputOtp } from "@/components/auth/otp-input";
 import {
   ArrowRight,
   Lock,
   Mail,
   Fingerprint,
-  KeyRound,
   RefreshCw,
-  CheckCircle2,
   ShieldCheck,
   ArrowLeft,
 } from "lucide-react";
@@ -54,12 +53,12 @@ function LoginForm() {
   const [platformSupported, setPlatformSupported] = useState(false);
   const [biometricLoading, setBiometricLoading] = useState(false);
 
-  // 2FA / OTP State
+  // 2FA / OTP State — Single string value for robust mobile entry
   const [twoFactorMethod, setTwoFactorMethod] = useState<"BIOMETRIC" | "EMAIL_OTP">("BIOMETRIC");
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
+  const [otpCode, setOtpCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const [localGeneratedOtp, setLocalGeneratedOtp] = useState("");
-  const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [otpError, setOtpError] = useState(false);
 
   // If already authenticated and 2FA verified, redirect straight to destination
   useEffect(() => {
@@ -72,21 +71,34 @@ function LoginForm() {
   useEffect(() => {
     if (reasonParam === "2fa_required" || reasonParam === "2fa_expired") {
       toast.info("Two-factor verification required. Please verify your identity.");
+      // If user session is already present in context, directly activate 2FA stage
+      if (user?.email) {
+        setEmail(user.email);
+        setPendingSession({ accessToken: getAccessToken() || "", user });
+        setStage("MANDATORY_2FA");
+        if (isBiometricEnrolledForEmail(user.email)) {
+          setTwoFactorMethod("BIOMETRIC");
+        } else {
+          setTwoFactorMethod("EMAIL_OTP");
+          dispatchOtpToUser(user.email);
+          setResendCooldown(60);
+        }
+      }
     }
-  }, [reasonParam]);
+  }, [reasonParam, user]);
 
-  // Check hardware biometric capability on mount
+  // Check hardware biometric capability once on mount
   useEffect(() => {
     isPlatformBiometricSupported().then((supported) => {
       setPlatformSupported(supported);
     });
     const enrolledEmail = getBiometricUserEmail();
-    if (enrolledEmail && !email) {
-      setEmail(enrolledEmail);
+    if (enrolledEmail) {
+      setEmail((prev) => (prev ? prev : enrolledEmail));
     }
-  }, [email]);
+  }, []);
 
-  // Cooldown timer for OTP resend
+  // Cooldown timer for OTP resend (pure timer without causing input focus loss)
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -94,6 +106,17 @@ function LoginForm() {
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCooldown]);
+
+  /**
+   * Safe email input handler:
+   * Invalidates any active OTP challenge associated with the previous email address.
+   */
+  function handleEmailChange(newVal: string) {
+    setEmail(newVal);
+    if (localGeneratedOtp) setLocalGeneratedOtp("");
+    if (otpCode) setOtpCode("");
+    setOtpError(false);
+  }
 
   /**
    * Dispatches OTP via API (with client-side fallback)
@@ -143,6 +166,8 @@ function LoginForm() {
       // Step 3: Mandatory 2FA Enforcement — HOLD SESSION IN MEMORY ONLY
       setPendingSession(res);
       setStage("MANDATORY_2FA");
+      setOtpCode("");
+      setOtpError(false);
 
       // Check if user has biometric enrolled for THIS email on this device
       const hasBiometricForUser = isBiometricEnrolledForEmail(email);
@@ -153,7 +178,6 @@ function LoginForm() {
         await dispatchOtpToUser(email.trim());
         setResendCooldown(60);
         toast.info("Verification code sent to your email.");
-        setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
       }
     } catch (err: any) {
       toast.error(err.message || "Invalid email or password");
@@ -192,11 +216,12 @@ function LoginForm() {
   async function handleSwitchToEmailOtp() {
     setTwoFactorMethod("EMAIL_OTP");
     setLoading(true);
+    setOtpCode("");
+    setOtpError(false);
     try {
       await dispatchOtpToUser(email.trim());
       setResendCooldown(60);
       toast.success(`Verification code sent to ${email}`);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 150);
     } catch (err: any) {
       toast.error(err.message || "Failed to send verification code.");
     } finally {
@@ -205,63 +230,13 @@ function LoginForm() {
   }
 
   /**
-   * Handle OTP digit changes
-   */
-  function handleOtpDigitChange(index: number, val: string) {
-    if (!/^\d*$/.test(val)) return;
-
-    const newDigits = [...otpDigits];
-    newDigits[index] = val.slice(-1);
-    setOtpDigits(newDigits);
-
-    if (val && index < 5) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-
-    const fullCode = newDigits.join("");
-    if (fullCode.length === 6) {
-      if (stage === "MANDATORY_2FA") {
-        handleComplete2FAOtp(fullCode);
-      } else if (mode === "EMAIL_OTP") {
-        handleDirectEmailOtpSubmitWithCode(fullCode);
-      }
-    }
-  }
-
-  function handleOtpKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace" && !otpDigits[index] && index > 0) {
-      otpInputRefs.current[index - 1]?.focus();
-    }
-  }
-
-  function handleOtpPaste(e: React.ClipboardEvent) {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!pasted) return;
-
-    const newDigits = ["", "", "", "", "", ""];
-    for (let i = 0; i < pasted.length; i++) {
-      newDigits[i] = pasted[i] || "";
-    }
-    setOtpDigits(newDigits);
-
-    if (pasted.length === 6) {
-      if (stage === "MANDATORY_2FA") {
-        handleComplete2FAOtp(pasted);
-      } else if (mode === "EMAIL_OTP") {
-        handleDirectEmailOtpSubmitWithCode(pasted);
-      }
-    } else {
-      otpInputRefs.current[pasted.length]?.focus();
-    }
-  }
-
-  /**
    * Complete 2FA via Email OTP
    */
   async function handleComplete2FAOtp(code: string) {
     if (!pendingSession || loading) return;
+    if (code.length !== 6) return;
     setLoading(true);
+    setOtpError(false);
 
     try {
       let verified = false;
@@ -280,13 +255,14 @@ function LoginForm() {
         toast.success("Verified! Device trusted for 3 days.");
         router.push(destination);
       } else {
-        toast.error("Invalid code. Please check your email and try again.");
-        setOtpDigits(["", "", "", "", "", ""]);
-        setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+        setOtpError(true);
+        toast.error("Invalid verification code. Please check your email and try again.");
+        setOtpCode("");
       }
     } catch (err: any) {
+      setOtpError(true);
       toast.error(err.message || "Failed to verify code.");
-      setOtpDigits(["", "", "", "", "", ""]);
+      setOtpCode("");
     } finally {
       setLoading(false);
     }
@@ -297,17 +273,17 @@ function LoginForm() {
    */
   async function handleDirectEmailOtpSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const fullCode = otpDigits.join("");
-    if (fullCode.length !== 6) {
+    if (otpCode.length !== 6) {
       toast.error("Please enter the complete 6-digit code.");
       return;
     }
-    handleDirectEmailOtpSubmitWithCode(fullCode);
+    handleDirectEmailOtpSubmitWithCode(otpCode);
   }
 
   async function handleDirectEmailOtpSubmitWithCode(code: string) {
-    if (loading) return;
+    if (loading || code.length !== 6) return;
     setLoading(true);
+    setOtpError(false);
 
     try {
       const res = await auth.login({ email: email.trim(), passcode: code.trim() });
@@ -316,33 +292,13 @@ function LoginForm() {
       toast.success("Signed in successfully!");
       router.push(destination);
     } catch (err: any) {
+      setOtpError(true);
       toast.error(err.message || "Invalid or expired code. Please try again.");
-      setOtpDigits(["", "", "", "", "", ""]);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 100);
+      setOtpCode("");
     } finally {
       setLoading(false);
     }
   }
-
-  // OTP input row component
-  const OtpInputRow = ({ onSubmit }: { onSubmit: (code: string) => void }) => (
-    <div className="auth-otp-row" onPaste={handleOtpPaste}>
-      {otpDigits.map((digit, i) => (
-        <input
-          key={i}
-          ref={(el) => { otpInputRefs.current[i] = el; }}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={digit}
-          onChange={(e) => handleOtpDigitChange(i, e.target.value)}
-          onKeyDown={(e) => handleOtpKeyDown(i, e)}
-          className="auth-otp-input"
-          autoComplete="one-time-code"
-        />
-      ))}
-    </div>
-  );
 
   return (
     <div className="auth-form-root">
@@ -406,7 +362,10 @@ function LoginForm() {
           <div className="auth-tab-bar">
             <button
               type="button"
-              onClick={() => setMode("PASSWORD")}
+              onClick={() => {
+                setMode("PASSWORD");
+                setOtpError(false);
+              }}
               className={`auth-tab ${mode === "PASSWORD" ? "auth-tab-active" : ""}`}
             >
               <Lock size={14} />
@@ -416,6 +375,7 @@ function LoginForm() {
               type="button"
               onClick={() => {
                 setMode("EMAIL_OTP");
+                setOtpError(false);
                 if (email && email.includes("@")) {
                   dispatchOtpToUser(email);
                   setResendCooldown(60);
@@ -437,9 +397,10 @@ function LoginForm() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => handleEmailChange(e.target.value)}
                   placeholder="you@company.com"
                   className="input"
+                  autoComplete="username email"
                 />
               </div>
 
@@ -452,6 +413,7 @@ function LoginForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="input"
+                  autoComplete="current-password"
                 />
               </div>
 
@@ -483,30 +445,51 @@ function LoginForm() {
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => handleEmailChange(e.target.value)}
                   placeholder="you@company.com"
                   className="input"
+                  autoComplete="username email"
                 />
               </div>
 
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
                   <label className="form-label" style={{ marginBottom: 0 }}>6-Digit Code</label>
                   <button
                     type="button"
-                    onClick={() => dispatchOtpToUser(email)}
+                    onClick={() => {
+                      if (email && email.includes("@")) {
+                        dispatchOtpToUser(email);
+                        setResendCooldown(60);
+                      } else {
+                        toast.error("Please enter a valid email address first.");
+                      }
+                    }}
                     disabled={resendCooldown > 0 || loading || !email}
                     className="auth-resend-btn"
                   >
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Send Code"}
                   </button>
                 </div>
-                <OtpInputRow onSubmit={(code) => handleDirectEmailOtpSubmitWithCode(code)} />
+
+                {/* Mobile-Friendly Single Input OTP */}
+                <SingleInputOtp
+                  id="login-direct-otp"
+                  value={otpCode}
+                  onChange={(val) => {
+                    setOtpCode(val);
+                    if (otpError) setOtpError(false);
+                  }}
+                  onComplete={(code) => handleDirectEmailOtpSubmitWithCode(code)}
+                  disabled={loading}
+                  error={otpError}
+                  autoFocus
+                />
               </div>
 
               <button
                 type="submit"
-                disabled={loading || otpDigits.join("").length !== 6}
+                disabled={loading || otpCode.length !== 6}
                 className="btn btn-primary btn-lg"
                 style={{ width: "100%", marginTop: "0.25rem" }}
               >
@@ -557,9 +540,25 @@ function LoginForm() {
               : "Enter the 6-digit code sent to your email"}
           </p>
 
-          <div className="auth-email-pill">
-            <Mail size={14} />
-            <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
+          {/* Account email pill with Change Account option */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+            <div className="auth-email-pill" style={{ margin: 0 }}>
+              <Mail size={14} />
+              <span className="mono" style={{ fontSize: "0.82rem" }}>{email}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setStage("ENTER_CREDENTIALS");
+                setPendingSession(null);
+                setOtpCode("");
+                setOtpError(false);
+              }}
+              className="btn btn-ghost"
+              style={{ fontSize: "0.78rem", padding: "0.25rem 0.5rem" }}
+            >
+              Change
+            </button>
           </div>
 
           <div className="auth-trust-notice">
@@ -611,6 +610,7 @@ function LoginForm() {
                     onClick={() => {
                       dispatchOtpToUser(email);
                       setResendCooldown(60);
+                      setOtpError(false);
                     }}
                     disabled={resendCooldown > 0 || loading}
                     className="auth-resend-btn"
@@ -618,7 +618,20 @@ function LoginForm() {
                     {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
                   </button>
                 </div>
-                <OtpInputRow onSubmit={(code) => handleComplete2FAOtp(code)} />
+
+                {/* Mobile-Friendly Single Input OTP */}
+                <SingleInputOtp
+                  id="login-2fa-otp"
+                  value={otpCode}
+                  onChange={(val) => {
+                    setOtpCode(val);
+                    if (otpError) setOtpError(false);
+                  }}
+                  onComplete={(code) => handleComplete2FAOtp(code)}
+                  disabled={loading}
+                  error={otpError}
+                  autoFocus
+                />
               </div>
 
               {platformSupported && isBiometricEnrolledForEmail(email) && (
@@ -635,8 +648,8 @@ function LoginForm() {
 
               <button
                 type="button"
-                onClick={() => handleComplete2FAOtp(otpDigits.join(""))}
-                disabled={loading || otpDigits.join("").length !== 6}
+                onClick={() => handleComplete2FAOtp(otpCode)}
+                disabled={loading || otpCode.length !== 6}
                 className="btn btn-primary btn-lg"
                 style={{ width: "100%" }}
               >
@@ -661,7 +674,8 @@ function LoginForm() {
               onClick={() => {
                 setStage("ENTER_CREDENTIALS");
                 setPendingSession(null);
-                setOtpDigits(["", "", "", "", "", ""]);
+                setOtpCode("");
+                setOtpError(false);
               }}
               className="btn btn-ghost"
               style={{ margin: "0 auto" }}
@@ -787,30 +801,6 @@ function LoginForm() {
           color: var(--foreground);
           box-shadow: var(--shadow-sm);
         }
-        .auth-otp-row {
-          display: flex;
-          gap: 0.5rem;
-          justify-content: space-between;
-        }
-        .auth-otp-input {
-          width: 46px;
-          height: 50px;
-          text-align: center;
-          font-size: 1.25rem;
-          font-weight: 700;
-          font-family: var(--font-geist-mono), ui-monospace, monospace;
-          background: #ffffff;
-          border: 1.5px solid var(--card-border);
-          border-radius: 10px;
-          color: var(--foreground);
-          transition: border-color 0.15s ease, box-shadow 0.15s ease;
-          box-shadow: var(--shadow-sm);
-        }
-        .auth-otp-input:focus {
-          outline: none;
-          border-color: var(--accent);
-          box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
-        }
         .auth-resend-btn {
           background: none;
           border: none;
@@ -835,12 +825,7 @@ function LoginForm() {
           color: var(--foreground);
           font-size: 0.82rem;
           font-weight: 500;
-          margin: 0 auto 1rem;
-          display: flex;
-          justify-content: center;
           width: fit-content;
-          margin-left: auto;
-          margin-right: auto;
         }
         .auth-trust-notice {
           display: flex;
