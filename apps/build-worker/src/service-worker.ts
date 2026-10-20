@@ -269,6 +269,13 @@ const worker = new Worker<ServiceBuildJob>(
         await log(`✓ Background worker is active and running in internal mesh network.`);
       }
 
+      // 5b. For custom Dockerfile images, the container filesystem is baked inside the Docker image.
+      // Host buildDir dependencies are completely unused by the running container.
+      if (jobConfig.language === "DOCKERFILE") {
+        await fs.rm(path.join(buildDir, "node_modules"), { recursive: true, force: true }).catch(() => {});
+        await fs.rm(path.join(buildDir, ".git"), { recursive: true, force: true }).catch(() => {});
+      }
+
       // 6. Zero-Downtime Blue/Green Cleanup:
       // Now that the new container is live & verified healthy, decommission previous containers & files
       try {

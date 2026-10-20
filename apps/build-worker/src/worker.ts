@@ -381,6 +381,26 @@ const worker = new Worker<BuildJob>(
 
       await log(`✓ Deployment live at ${url}`);
 
+      // ── 8b. Framework-Aware Post-Build Disk Optimization ─────────────────
+      // Pure static frameworks (Vite, React, Astro, static HTML) only need the compiled
+      // outputDir (e.g. dist). Their node_modules and .git are completely unused at runtime
+      // by the Edge Router. Pruning them saves ~1 GB per static deployment safely.
+      // Dynamic runtimes (Next.js SSR) RETAIN their node_modules for container startup.
+      try {
+        const isStaticApp =
+          deploymentType === "STATIC" ||
+          ["VITE", "REACT", "ASTRO", "STATIC"].includes((framework || "").toUpperCase());
+
+        if (isStaticApp) {
+          await log("🧹 Optimizing host disk: purging static build dependencies...");
+          await fs.rm(path.join(buildDir, "node_modules"), { recursive: true, force: true }).catch(() => {});
+          await fs.rm(path.join(buildDir, ".git"), { recursive: true, force: true }).catch(() => {});
+          await log("✓ Purged build-only node_modules (saved ~1 GB on host SSD).");
+        }
+      } catch (optErr: any) {
+        console.warn("[Worker] Post-build optimization notice:", optErr.message);
+      }
+
       // ── 9. Zero-downtime cleanup of old deployments ──────────────────────
       if (!isResume) {
         await log("Cleaning up previous deployments...");
