@@ -1,16 +1,17 @@
 /**
  * Build Worker EmailJS Dispatcher for Whizan Cloud
  * Dispatches failure notification emails using template_ernq47u
+ * Reads strictly from process.env with zero hardcoded credentials
  */
 
-export const EMAILJS_CONFIG = {
-  serviceId: "service_mm6n3jn",
-  templateDeploymentFailedId: "template_ernq47u",
-  publicKey: "qzhqvM1yerb2R24T1",
-  privateKey: "e9Snm4GGkiI1xLel7cLi7",
-  endpoint: "https://api.emailjs.com/api/v1.0/email/send",
-  defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
-};
+export const getEmailJsConfig = () => ({
+  serviceId: process.env.EMAILJS_SERVICE_ID || "",
+  templateDeploymentFailedId: process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "",
+  publicKey: process.env.EMAILJS_PUBLIC_KEY || "",
+  privateKey: process.env.EMAILJS_PRIVATE_KEY || "",
+  endpoint: process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send",
+  defaultLogoUrl: process.env.EMAILJS_LOGO_URL || "https://dashboard.whizan.cloud/whizan_logo.png",
+});
 
 export interface SendDeploymentFailedOptions {
   email: string;
@@ -28,17 +29,25 @@ export interface SendDeploymentFailedOptions {
 }
 
 /**
- * Sends a deployment failure notification to user's email via EmailJS (template_ernq47u)
+ * Sends a deployment failure notification to user's email via EmailJS
  */
 export async function sendDeploymentFailedEmail(
   options: SendDeploymentFailedOptions
 ): Promise<{ success: boolean; error?: string }> {
+  const config = getEmailJsConfig();
+
+  if (!config.serviceId || !config.publicKey || !config.privateKey) {
+    const errorMsg = "[BuildWorker-Email] Missing required EmailJS environment variables (EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, or EMAILJS_PRIVATE_KEY).";
+    console.error(errorMsg);
+    return { success: false, error: errorMsg };
+  }
+
   try {
     const payload = {
-      service_id: EMAILJS_CONFIG.serviceId,
-      template_id: EMAILJS_CONFIG.templateDeploymentFailedId,
-      user_id: EMAILJS_CONFIG.publicKey,
-      accessToken: EMAILJS_CONFIG.privateKey,
+      service_id: config.serviceId,
+      template_id: config.templateDeploymentFailedId,
+      user_id: config.publicKey,
+      accessToken: config.privateKey,
       template_params: {
         email: options.email.trim().toLowerCase(),
         user_name: options.userName || options.email.split("@")[0],
@@ -51,12 +60,12 @@ export async function sendDeploymentFailedEmail(
         commit_hash: options.commitHash ? options.commitHash.slice(0, 8) : "direct-upload",
         trigger_ip: options.triggerIp || "Cloud Edge",
         node_id: options.nodeId || "whizan-node-01",
-        logo_url: options.logoUrl || EMAILJS_CONFIG.defaultLogoUrl,
+        logo_url: options.logoUrl || config.defaultLogoUrl,
         app_url: "https://dashboard.whizan.cloud",
       },
     };
 
-    const res = await fetch(EMAILJS_CONFIG.endpoint, {
+    const res = await fetch(config.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

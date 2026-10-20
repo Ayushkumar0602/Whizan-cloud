@@ -1,21 +1,17 @@
 /**
  * Server-side EmailJS Dispatcher for Whizan Cloud
- * Service ID: service_mm6n3jn
- * Public Key: qzhqvM1yerb2R24T1
- * Private Key: e9Snm4GGkiI1xLel7cLi7
- * OTP Template: template_e3lerhj
- * Deployment Failed Template: template_ernq47u
+ * Reads strictly from process.env with zero hardcoded credentials
  */
 
-export const EMAILJS_CONFIG = {
-  serviceId: "service_mm6n3jn",
-  templateOtpId: "template_e3lerhj",
-  templateDeploymentFailedId: "template_ernq47u",
-  publicKey: "qzhqvM1yerb2R24T1",
-  privateKey: "e9Snm4GGkiI1xLel7cLi7",
-  endpoint: "https://api.emailjs.com/api/v1.0/email/send",
-  defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
-};
+export const getEmailJsConfig = () => ({
+  serviceId: process.env.EMAILJS_SERVICE_ID || "",
+  templateOtpId: process.env.EMAILJS_TEMPLATE_OTP_ID || "",
+  templateDeploymentFailedId: process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "",
+  publicKey: process.env.EMAILJS_PUBLIC_KEY || "",
+  privateKey: process.env.EMAILJS_PRIVATE_KEY || "",
+  endpoint: process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send",
+  defaultLogoUrl: process.env.EMAILJS_LOGO_URL || "https://dashboard.whizan.cloud/whizan_logo.png",
+});
 
 export interface SendOtpOptions {
   email: string;
@@ -46,10 +42,18 @@ export interface SendDeploymentFailedOptions {
 }
 
 /**
- * Sends a registration OTP code to user's email via EmailJS (template_e3lerhj)
+ * Sends a registration OTP code to user's email via EmailJS
  * Includes app logo, request IP, device info, location, and security audit data.
  */
 export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: boolean; error?: string }> {
+  const config = getEmailJsConfig();
+
+  if (!config.serviceId || !config.publicKey || !config.privateKey) {
+    const errorMsg = "[EmailService] Missing required EmailJS environment variables (EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, or EMAILJS_PRIVATE_KEY).";
+    console.error(errorMsg);
+    return { success: false, error: errorMsg };
+  }
+
   const {
     email,
     passcode,
@@ -60,15 +64,15 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
     deviceInfo = "Standard Browser",
     location = "Global",
     requestId = `req_${Date.now().toString(36)}`,
-    logoUrl = EMAILJS_CONFIG.defaultLogoUrl,
+    logoUrl = config.defaultLogoUrl,
   } = options;
 
   try {
     const payload = {
-      service_id: EMAILJS_CONFIG.serviceId,
-      template_id: EMAILJS_CONFIG.templateOtpId,
-      user_id: EMAILJS_CONFIG.publicKey,
-      accessToken: EMAILJS_CONFIG.privateKey,
+      service_id: config.serviceId,
+      template_id: config.templateOtpId,
+      user_id: config.publicKey,
+      accessToken: config.privateKey,
       template_params: {
         email: email.trim().toLowerCase(),
         passcode: passcode.trim(),
@@ -84,7 +88,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
       },
     };
 
-    const res = await fetch(EMAILJS_CONFIG.endpoint, {
+    const res = await fetch(config.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -107,16 +111,24 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<{ success: 
 }
 
 /**
- * Sends a deployment failure notification to user's email via EmailJS (template_ernq47u)
+ * Sends a deployment failure notification to user's email via EmailJS
  * Includes app logo, failure diagnostics, commit/branch metadata, node ID, and console links.
  */
 export async function sendDeploymentFailedEmail(options: SendDeploymentFailedOptions): Promise<{ success: boolean; error?: string }> {
+  const config = getEmailJsConfig();
+
+  if (!config.serviceId || !config.publicKey || !config.privateKey) {
+    const errorMsg = "[EmailService] Missing required EmailJS environment variables (EMAILJS_SERVICE_ID, EMAILJS_PUBLIC_KEY, or EMAILJS_PRIVATE_KEY).";
+    console.error(errorMsg);
+    return { success: false, error: errorMsg };
+  }
+
   try {
     const payload = {
-      service_id: EMAILJS_CONFIG.serviceId,
-      template_id: EMAILJS_CONFIG.templateDeploymentFailedId,
-      user_id: EMAILJS_CONFIG.publicKey,
-      accessToken: EMAILJS_CONFIG.privateKey,
+      service_id: config.serviceId,
+      template_id: config.templateDeploymentFailedId,
+      user_id: config.publicKey,
+      accessToken: config.privateKey,
       template_params: {
         email: options.email.trim().toLowerCase(),
         user_name: options.userName || options.email.split("@")[0],
@@ -129,12 +141,12 @@ export async function sendDeploymentFailedEmail(options: SendDeploymentFailedOpt
         commit_hash: options.commitHash ? options.commitHash.slice(0, 8) : "direct-upload",
         trigger_ip: options.triggerIp || "Cloud Edge",
         node_id: options.nodeId || "whizan-node-01",
-        logo_url: options.logoUrl || EMAILJS_CONFIG.defaultLogoUrl,
+        logo_url: options.logoUrl || config.defaultLogoUrl,
         app_url: "https://dashboard.whizan.cloud",
       },
     };
 
-    const res = await fetch(EMAILJS_CONFIG.endpoint, {
+    const res = await fetch(config.endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
