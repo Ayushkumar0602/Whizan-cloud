@@ -121,6 +121,9 @@ export class AppRunner {
       ? []
       : [`${path.resolve(buildDir)}:/app:ro`];
 
+    // Ensure image exists locally before creating container
+    await this.ensureImage(image);
+
     const container = await docker.createContainer({
       name: containerName,
       Image: image,
@@ -231,5 +234,26 @@ export class AppRunner {
       await new Promise((r) => setTimeout(r, 500));
     }
     throw new Error(`Web application on port ${port} did not become ready within ${timeoutMs / 1000}s`);
+  }
+
+  /**
+   * Pulls a Docker image if it's not already available locally.
+   */
+  private async ensureImage(imageName: string): Promise<void> {
+    try {
+      await docker.getImage(imageName).inspect();
+    } catch {
+      console.log(`[AppRunner] Image '${imageName}' not found locally. Auto-pulling...`);
+      await new Promise<void>((resolve, reject) => {
+        docker.pull(imageName, (err: Error, stream: NodeJS.ReadableStream) => {
+          if (err) return reject(err);
+          docker.modem.followProgress(stream, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+      });
+      console.log(`[AppRunner] ✓ Successfully pulled '${imageName}'.`);
+    }
   }
 }

@@ -597,6 +597,24 @@ redisSub.on("message", async (channel, message) => {
     }
   }
 
+const PROTECTED_BASE_IMAGE_PATTERNS = [
+  /^node(:|$)/i,
+  /^python(:|$)/i,
+  /^golang(:|$)/i,
+  /^postgres(:|$)/i,
+  /^redis(:|$)/i,
+  /^mysql(:|$)/i,
+  /^edoburu\/pgbouncer(:|$)/i,
+  /^library\//i,
+];
+
+function isProtectedBaseImage(tags: string[] = []): boolean {
+  if (!tags || tags.length === 0) return false;
+  return tags.some((t) =>
+    PROTECTED_BASE_IMAGE_PATTERNS.some((pat) => pat.test(t))
+  );
+}
+
 /**
  * Rigorously removes all Docker containers, Docker images, BuildKit cache layers,
  * and VM disk directories for a given project, service, or deployment, and performs
@@ -667,10 +685,14 @@ async function purgeAndVerifyVMResources(params: {
     for (const info of matches) {
       try {
         const container = docker.getContainer(info.Id);
-        // Discover exact image ID (even untagged) to unlock BuildKit cache
+        // Discover exact image ID — but NEVER delete base platform images (node, python, golang, etc.)
         const inspect = await container.inspect().catch(() => null);
         if (inspect?.Image) {
-          imagesToDelete.add(inspect.Image);
+          const imgInspect = await docker.getImage(inspect.Image).inspect().catch(() => null);
+          const tags = imgInspect?.RepoTags || [];
+          if (!isProtectedBaseImage(tags)) {
+            imagesToDelete.add(inspect.Image);
+          }
         }
 
         if (info.State === "running") {
@@ -687,11 +709,16 @@ async function purgeAndVerifyVMResources(params: {
     console.error("[Admin:Purge] Error listing containers:", err.message);
   }
 
-  // ── Step 2: Discover and remove matching Docker images ─────────────────────
+  // ── Step 2: Discover and remove matching custom Docker images ───────────────
   try {
     const allImages = await docker.listImages({ all: true }).catch(() => []);
     for (const img of allImages) {
       const tags = img.RepoTags || [];
+      if (isProtectedBaseImage(tags)) {
+        // Platform runtime environment images must NEVER be deleted
+        continue;
+      }
+
       const isTargetImage =
         imagesToDelete.has(img.Id) ||
         tags.some((t: string) =>
@@ -707,9 +734,14 @@ async function purgeAndVerifyVMResources(params: {
 
     for (const imgId of imagesToDelete) {
       try {
+        const imgInspect = await docker.getImage(imgId).inspect().catch(() => null);
+        const tags = imgInspect?.RepoTags || [];
+        if (isProtectedBaseImage(tags)) {
+          continue;
+        }
         await docker.getImage(imgId).remove({ force: true }).catch(() => {});
         removedImages++;
-        console.log(`[Admin:Purge] Force-removed Docker image: ${imgId}`);
+        console.log(`[Admin:Purge] Force-removed custom Docker image: ${imgId}`);
       } catch (iErr: any) {
         console.warn(`[Admin:Purge] Image removal notice for ${imgId}:`, iErr.message);
       }
