@@ -22,28 +22,25 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Synchronous session hydration: restores user on frame 1 with zero lag
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("hostify_user");
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
-    return null;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // If user & token are already cached, don't block the UI with full-page spinner
-  const [loading, setLoading] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const savedUser = localStorage.getItem("hostify_user");
-        const savedToken = localStorage.getItem("hostify_access_token");
-        if (savedUser && savedToken) return false;
-      } catch {}
-    }
-    return true;
-  });
+  // Hydrate session from localStorage on client mount to guarantee 100% SSR match
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem("hostify_user");
+      const savedToken = localStorage.getItem("hostify_access_token");
+      if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
+      if (savedToken) {
+        setAccessToken(savedToken);
+      }
+      if (savedUser || savedToken) {
+        setLoading(false);
+      }
+    } catch {}
+  }, []);
 
   // Background session verification & refresh without blocking UI
   useEffect(() => {
