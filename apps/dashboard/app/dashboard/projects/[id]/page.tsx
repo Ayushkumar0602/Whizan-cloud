@@ -43,6 +43,7 @@ export default function ProjectPage() {
   const [deploying, setDeploying] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedEdge, setCopiedEdge] = useState(false);
   const [offlineModalOpen, setOfflineModalOpen] = useState(false);
   const [offlineAction, setOfflineAction] = useState<"deploy" | "visit" | "general">("general");
 
@@ -112,7 +113,6 @@ export default function ProjectPage() {
   const isActive = latestDeploy?.status === "QUEUED" || latestDeploy?.status === "BUILDING";
   const liveUrl = formatDeployedUrl(latestDeploy?.url, project.slug, project.customDomain);
   const edgeUrl = getServiceIngressUrl(project.slug);
-  const [copiedEdge, setCopiedEdge] = useState(false);
 
   function copyUrl() {
     navigator.clipboard.writeText(liveUrl);

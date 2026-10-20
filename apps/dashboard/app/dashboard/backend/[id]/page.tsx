@@ -66,6 +66,7 @@ export default function BackendServicePage() {
   const [selectedDId, setSelectedDId] = useState<string | null>(null);
   const [bottomTab, setBottomTab] = useState<"logs" | "shell" | "metrics">("logs");
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedGateway, setCopiedGateway] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
   async function load() {
@@ -255,7 +256,6 @@ export default function BackendServicePage() {
   const ingressUrl = getServiceIngressUrl(service.slug);
   const gatewayUrl = getGatewayLiveUrl(service.slug);
   const envCount = service.envVariables.length;
-  const [copiedGateway, setCopiedGateway] = useState(false);
 
   function copyIngressUrl() {
     navigator.clipboard.writeText(ingressUrl);
