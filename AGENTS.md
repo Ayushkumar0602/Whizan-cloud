@@ -51,13 +51,19 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
 
 4. **Web Projects vs Backend Services & Routing**:
    - **Frontend & Web Apps (`whizan_create_project`)**:
-     - Use `whizan_create_project` for ALL frontend web applications, fullstack web frameworks, and web UIs (Vite, React, Next.js, Astro, or any web app that provides a Dockerfile).
+     - Use `whizan_create_project` for ALL frontend web applications, static HTML sites, fullstack web frameworks, and web UIs (Static HTML, Vite, React, Next.js, Astro, or any web app that provides a Dockerfile).
+     - **Pure Static HTML Websites (HTML, CSS, JS with no build step)**:
+       * When workspace has `index.html` and no `package.json` (or static assets):
+       * Set `framework: "CUSTOM"`, `outputDir: "."`, `buildCommand: ""`, `installCommand: ""`.
+       * Whizan Build Worker completely bypasses container builds and registers files directly with Edge Router for sub-5ms global response times with automatic client-side SPA routing fallback.
      - **Static Web Apps (Vite, React, Astro static)**: Set `framework: "VITE"` (or `"REACT"`, `"ASTRO"`), `outputDir: "dist"`. Served at ultra-low latency directly by Edge Router.
      - **Next.js SSR & Dynamic Routes (App Router, dynamic `[id]` pages, Server Actions)**:
        * Set `framework: "NEXTJS"`, `outputDir: ".next"`.
        * **CRITICAL RULE**: NEVER configure `output: 'export'` in `next.config.js/ts` if the app has dynamic routes (e.g. `/scans/[id]`), Server Actions, or API routes. Dynamic routes cannot be statically pre-rendered without `generateStaticParams()`. Whizan Cloud natively hosts Next.js server runtimes (`output: 'standalone'` or standard `next start`) with dynamic routing and edge asset routing.
      - **Containerized Web Projects (Dockerfile in frontend)**:
        * If a web frontend or fullstack repository provides its own `Dockerfile` (e.g. multi-stage Alpine build), call `whizan_create_project` (set `framework: "CUSTOM"` or `"NEXTJS"`). Whizan's build worker will automatically build the Dockerfile and launch the container on Port 3000 (or the exposed port) as a Web Project under `/dashboard/projects`.
+     - **Automatic Git Branch Resolution & Self-Healing**:
+       * When cloning Git repositories where the default branch is `master` (or not `main`), Whizan Cloud automatically detects and clones the remote repository's default branch (`HEAD`) without build failure.
    - **Backend Services & Workers (Stack Independent)**:
      - Whizan Cloud supports **ANY** backend language: Node.js, Python (Django, FastAPI, Flask), Go, Rust, Java (Spring Boot), PHP (Laravel), Ruby on Rails, and raw Dockerfiles.
      - For compiled/polyglot languages (Rust, Java, PHP, Ruby), Whizan automatically synthesizes high-performance multi-stage Dockerfiles or builds user Dockerfiles.

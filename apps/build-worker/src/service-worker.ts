@@ -190,38 +190,68 @@ const worker = new Worker<ServiceBuildJob>(
           finalRepoUrl = repoUrl.replace("https://", `https://x-access-token:${process.env.GITHUB_TOKEN}@`);
         }
 
-        // Direct execve invocation: prevents shell injection via branch or repoUrl
-        const gitArgs = ["clone", "--depth", "1", "-b", branch, finalRepoUrl, buildDir];
-        await new Promise<void>((resolve, reject) => {
-          const proc = spawn("git", gitArgs);
-          let stderrData = "";
-          proc.stdout?.on("data", (data) => {
-            const lines = data.toString().split("\n").filter(Boolean);
-            lines.forEach((l: string) => log(l).catch(() => {}));
-          });
-          proc.stderr?.on("data", (data) => {
-            const str = data.toString();
-            stderrData += str;
-            const lines = str.split("\n").filter(Boolean);
-            lines.forEach((l: string) => {
-              const safe = process.env.GITHUB_TOKEN
-                ? l.replaceAll(process.env.GITHUB_TOKEN, "***")
-                : l;
-              log(safe).catch(() => {});
+        const runGitClone = async (args: string[]) => {
+          return new Promise<void>((resolve, reject) => {
+            const proc = spawn("git", args);
+            let stderrData = "";
+            proc.stdout?.on("data", (data) => {
+              const lines = data.toString().split("\n").filter(Boolean);
+              lines.forEach((l: string) => log(l).catch(() => {}));
             });
+            proc.stderr?.on("data", (data) => {
+              const str = data.toString();
+              stderrData += str;
+              const lines = str.split("\n").filter(Boolean);
+              lines.forEach((l: string) => {
+                const safe = process.env.GITHUB_TOKEN
+                  ? l.replaceAll(process.env.GITHUB_TOKEN, "***")
+                  : l;
+                log(safe).catch(() => {});
+              });
+            });
+            proc.on("close", (code) => {
+              if (code === 0) resolve();
+              else {
+                const masked = process.env.GITHUB_TOKEN
+                  ? stderrData.replaceAll(process.env.GITHUB_TOKEN, "***")
+                  : stderrData;
+                const lastLine = masked.trim().split("\n").filter(Boolean).pop() || `Exit code ${code}`;
+                reject(new Error(`Git clone failed: ${lastLine}`));
+              }
+            });
+            proc.on("error", (err) => reject(err));
           });
-          proc.on("close", (code) => {
-            if (code === 0) resolve();
-            else {
-              const masked = process.env.GITHUB_TOKEN
-                ? stderrData.replaceAll(process.env.GITHUB_TOKEN, "***")
-                : stderrData;
-              const lastLine = masked.trim().split("\n").filter(Boolean).pop() || `Exit code ${code}`;
-              reject(new Error(`Git clone failed: ${lastLine}`));
-            }
-          });
-          proc.on("error", (err) => reject(err));
-        });
+        };
+
+        try {
+          await runGitClone(["clone", "--depth", "1", "-b", branch, finalRepoUrl, buildDir]);
+        } catch (cloneErr: any) {
+          const errStr = String(cloneErr?.message || cloneErr);
+          if (
+            errStr.includes("Remote branch") ||
+            errStr.includes("not found in upstream origin") ||
+            errStr.includes("Could not find remote branch")
+          ) {
+            await log(`⚠️ Remote branch '${branch}' not found. Auto-detecting and cloning default branch (HEAD)...`);
+            await fs.rm(buildDir, { recursive: true, force: true }).catch(() => {});
+            await fs.mkdir(buildDir, { recursive: true });
+            await runGitClone(["clone", "--depth", "1", finalRepoUrl, buildDir]);
+            try {
+              const { execFile } = await import("child_process");
+              const { promisify } = await import("util");
+              const execFileAsync = promisify(execFile);
+              const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: buildDir });
+              const actualBranch = stdout.trim();
+              await prisma.serviceDeployment.update({
+                where: { id: deploymentId },
+                data: { branch: actualBranch },
+              }).catch(() => {});
+              await log(`✓ Successfully cloned default branch: '${actualBranch}'`);
+            } catch {}
+          } else {
+            throw cloneErr;
+          }
+        }
 
         await log(`✓ Repository cloned successfully.`);
       }

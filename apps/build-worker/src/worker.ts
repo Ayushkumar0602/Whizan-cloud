@@ -269,8 +269,34 @@ const worker = new Worker<BuildJob>(
 
           await log(`Cloning ${repoUrl} (branch: ${branch})...`);
           const { simpleGit } = await import("simple-git");
-          await simpleGit().clone(repoUrl, buildDir, ["--depth=1", `--branch=${branch}`]);
-          await log("✓ Clone complete");
+          const git = simpleGit();
+          try {
+            await git.clone(repoUrl, buildDir, ["--depth=1", `--branch=${branch}`]);
+            await log("✓ Clone complete");
+          } catch (cloneErr: any) {
+            const errStr = String(cloneErr?.message || cloneErr);
+            if (
+              errStr.includes("Remote branch") ||
+              errStr.includes("not found in upstream origin") ||
+              errStr.includes("Could not find remote branch")
+            ) {
+              await log(`⚠️ Remote branch '${branch}' not found. Auto-detecting and cloning default branch (HEAD)...`);
+              await fs.rm(buildDir, { recursive: true, force: true }).catch(() => {});
+              await fs.mkdir(buildDir, { recursive: true });
+              await git.clone(repoUrl, buildDir, ["--depth=1"]);
+              let actualBranch = branch;
+              try {
+                actualBranch = (await git.cwd(buildDir).revparse(["--abbrev-ref", "HEAD"])).trim();
+                await prisma.deployment.update({
+                  where: { id: deploymentId },
+                  data: { branch: actualBranch },
+                }).catch(() => {});
+              } catch {}
+              await log(`✓ Successfully cloned default branch: '${actualBranch}'`);
+            } else {
+              throw cloneErr;
+            }
+          }
         }
       }
 
