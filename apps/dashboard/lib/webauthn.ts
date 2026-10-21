@@ -110,14 +110,20 @@ export async function enrollBiometric(
     const enc = new TextEncoder();
     const userHandle = enc.encode(userId || email);
 
-    // Host domain without port for WebAuthn RP
+    // Host domain without port for WebAuthn RP (scoped to registrable whizan.cloud over HTTPS)
     const hostDomain = window.location.hostname;
+    const rpId =
+      hostDomain === "localhost" || hostDomain === "127.0.0.1"
+        ? undefined
+        : hostDomain.endsWith("whizan.cloud")
+        ? "whizan.cloud"
+        : hostDomain;
 
     const createOptions: PublicKeyCredentialCreationOptions = {
       challenge,
       rp: {
         name: "Whizan Cloud Services",
-        id: hostDomain === "localhost" ? undefined : hostDomain,
+        id: rpId,
       },
       user: {
         id: userHandle,
@@ -185,10 +191,16 @@ export async function verifyBiometric(): Promise<{
     window.crypto.getRandomValues(challenge);
 
     const hostDomain = window.location.hostname;
+    const rpId =
+      hostDomain === "localhost" || hostDomain === "127.0.0.1"
+        ? undefined
+        : hostDomain.endsWith("whizan.cloud")
+        ? "whizan.cloud"
+        : hostDomain;
 
     const requestOptions: PublicKeyCredentialRequestOptions = {
       challenge,
-      rpId: hostDomain === "localhost" ? undefined : hostDomain,
+      rpId,
       userVerification: "required",
       timeout: 60000,
     };

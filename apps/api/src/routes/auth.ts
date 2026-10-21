@@ -408,7 +408,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (token) {
       await prisma.refreshToken.deleteMany({ where: { token } }).catch(() => {});
     }
-    reply.clearCookie(COOKIE_NAME, { path: "/" });
+    reply.clearCookie(COOKIE_NAME, {
+      path: "/",
+      secure: true,
+      sameSite: "none",
+      httpOnly: true,
+    });
     return reply.send({ ok: true });
   });
 

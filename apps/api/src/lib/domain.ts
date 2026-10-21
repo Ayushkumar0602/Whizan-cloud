@@ -31,5 +31,6 @@ export function getDeploymentUrl(slug: string, isWorker = false): string {
 export function getFunctionUrl(slug: string, path = ""): string {
   const domain = getBaseDomain();
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  return `http://${slug}.fn.${domain}${cleanPath}`;
+  const proto = domain.includes("whizan.cloud") ? "https" : "http";
+  return `${proto}://${slug}.fn.${domain}${cleanPath}`;
 }

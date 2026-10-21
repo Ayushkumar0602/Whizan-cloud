@@ -88,7 +88,8 @@ export function getProjectLiveUrl(slug: string, customDomain?: string | null): s
 export function getFunctionIngressUrl(slug: string, path = ""): string {
   const domain = getBaseRouterDomain();
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
-  return `http://${slug}.fn.${domain}${cleanPath}`;
+  const proto = domain.includes("whizan.cloud") ? "https" : "http";
+  return `${proto}://${slug}.fn.${domain}${cleanPath}`;
 }
 
 /**
