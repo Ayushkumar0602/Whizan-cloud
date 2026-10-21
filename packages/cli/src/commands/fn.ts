@@ -26,7 +26,7 @@ export async function fnCommand(args: string[] = []) {
 
       console.error(`\n  ${c.bold}Whizan Serverless Edge Functions (${functions.length}):${c.reset}\n`);
       for (const fn of functions) {
-        const url = `http://${fn.slug}.fn.whizan.cloud`;
+        const url = `https://${fn.slug}.whizan.cloud`;
         console.error(`  ${c.emerald}●${c.reset} ${c.bold}${fn.name}${c.reset} ${c.dim}(${fn.isPublic ? "Public" : "Protected"})${c.reset}`);
         console.error(`    ${c.dim}Slug:${c.reset} ${fn.slug}  ${c.dim}Version:${c.reset} v${fn.version || 1}  ${c.dim}Memory:${c.reset} ${fn.memoryMb || 128}MB`);
         console.error(`    ${c.dim}URL:${c.reset}  ${c.whizanCyan}${url}${c.reset}`);
@@ -113,7 +113,7 @@ export async function fnCommand(args: string[] = []) {
           apiKey = keyRes?.rawKey || keyRes?.apiKey || keyRes?.key;
         }
 
-        const liveUrl = `http://${slug}.fn.whizan.cloud`;
+        const liveUrl = `https://${slug}.whizan.cloud`;
         spinner.succeed(`Edge function "${name}" deployed successfully!`);
 
         console.error(`\n  ${c.bold}Function Details:${c.reset}`);

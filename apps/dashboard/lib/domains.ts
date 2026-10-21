@@ -83,13 +83,22 @@ export function getProjectLiveUrl(slug: string, customDomain?: string | null): s
 }
 
 /**
- * Returns the primary subdomain ingress URL for an Edge Function (.fn.<domain>)
+ * Returns the primary live URL for an Edge Function (<slug>.<domain>)
+ * Fully secured with Cloudflare Wildcard SSL (*.whizan.cloud).
  */
 export function getFunctionIngressUrl(slug: string, path = ""): string {
   const domain = getBaseRouterDomain();
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
   const proto = domain.includes("whizan.cloud") ? "https" : "http";
-  return `${proto}://${slug}.fn.${domain}${cleanPath}`;
+  return `${proto}://${slug}.${domain}${cleanPath}`;
+}
+
+/**
+ * Returns the secure HTTPS URL for an Edge Function (*.whizan.cloud)
+ * Fully secured with Cloudflare Wildcard SSL (*.whizan.cloud).
+ */
+export function getFunctionHttpsUrl(slug: string, path = ""): string {
+  return getFunctionIngressUrl(slug, path);
 }
 
 /**

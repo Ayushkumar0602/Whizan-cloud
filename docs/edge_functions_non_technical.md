@@ -54,7 +54,7 @@ Creating and consuming an Edge Function in Whizan Cloud Service is designed to t
   ```
 - You receive a global high-speed invocation URL:
   ```text
-  https://payment-processor.fn.whizan.cloud/charge
+  https://payment-processor.whizan.cloud/charge
   ```
 - Whizan gives you instant controls to toggle whether functions are **Public** (e.g., public webhooks from Stripe/GitHub) or **Protected** (requires the API Key in the `x-api-key` header).
 
@@ -65,7 +65,7 @@ Creating and consuming an Edge Function in Whizan Cloud Service is designed to t
 ### Step 4: Call from Anywhere
 - Invoke your function from any web application, iOS/Android mobile app, backend service, or third-party webhook:
   ```bash
-  curl -X POST https://payment-processor.fn.whizan.cloud/charge \
+  curl -X POST https://payment-processor.whizan.cloud/charge \
     -H "x-api-key: whz_fn_live_9a8b7c6d5e4f3a2b1c0d9e8f..." \
     -H "Content-Type: application/json" \
     -d '{"amount": 4900, "currency": "usd"}'
@@ -136,7 +136,7 @@ Whizan Cloud Service enforces transparent, predictable resource tiers designed t
 | **Max Concurrent Requests** | 10 concurrent requests | 100 concurrent requests | Custom dedicated concurrency |
 | **Function API Keys** | Up to 3 active keys | Up to 25 active keys | Unlimited with IAM RBAC |
 | **Cron Schedules** | Up to 3 recurring schedules | Up to 25 recurring schedules | Unlimited schedules |
-| **Custom Domains** | `<slug>.fn.whizan.cloud` | Custom domains with auto SSL | Custom domains + Multi-region CDN |
+| **Custom Domains** | `<slug>.whizan.cloud` | Custom domains with auto SSL | Custom domains + Multi-region CDN |
 
 ---
 

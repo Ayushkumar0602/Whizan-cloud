@@ -328,7 +328,7 @@ const TOOLS: Tool[] = [
       type: "object",
       properties: {
         name: { type: "string", description: "Human-readable name of the function service" },
-        slug: { type: "string", description: "Unique subdomain slug (e.g. 'payment-api' -> 'payment-api.fn.whizan.cloud')" },
+        slug: { type: "string", description: "Unique subdomain slug (e.g. 'payment-api' -> 'payment-api.whizan.cloud')" },
         runtime: { type: "string", enum: ["EDGE_TYPESCRIPT", "NODEJS_20", "PYTHON_311", "GOLANG_122"], default: "EDGE_TYPESCRIPT" },
         timeoutMs: { type: "number", default: 10000, description: "Execution timeout in ms (default 10,000ms)" },
         memoryLimit: { type: "number", default: 128, description: "Memory allocation in MB (default 128MB)" },

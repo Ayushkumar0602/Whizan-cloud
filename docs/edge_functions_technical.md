@@ -26,7 +26,7 @@ sequenceDiagram
     participant Worker as Sandboxed Worker (V8 / Worker Thread)
     participant DB as Managed PostgreSQL (via PgBouncer)
 
-    Client->>Router: HTTPS POST https://slug.fn.whizan.cloud/charge<br/>Header: x-api-key: whz_fn_live_...
+    Client->>Router: HTTPS POST https://slug.whizan.cloud/charge<br/>Header: x-api-key: whz_fn_live_...
     Router->>Redis: 1. Lookup route & API Key hash (fn:key:<hash>)
     alt API Key Invalid or Rate Limit Exceeded
         Redis-->>Router: Key not found OR Token Bucket = 0
@@ -70,7 +70,7 @@ model FunctionService {
   id             String            @id @default(uuid())
   userId         String            @map("user_id")
   name           String
-  slug           String            @unique // e.g. "payment-api" -> payment-api.fn.whizan.cloud
+  slug           String            @unique // e.g. "payment-api" -> payment-api.whizan.cloud
   runtime        FunctionRuntime   @default(EDGE_TYPESCRIPT)
   entryFile      String            @default("index.ts") @map("entry_file")
   timeoutMs      Int               @default(10000) @map("timeout_ms") // Max execution limit in ms (default 10s)
@@ -274,7 +274,7 @@ When an incoming request reaches the Edge Router:
 ## 🌐 5. Edge Router Ingress & Request Dispatching
 
 The Edge Router (`apps/edge-router/src/index.ts`) intercepts wildcard function domains:
-- Format: `<slug>.fn.whizan.cloud`
+- Format: `<slug>.whizan.cloud` (Root Subdomain with Cloudflare Wildcard SSL)
 - Path-based alternative: `whizan.cloud/fn/<slug>/<path>`
 
 ### Route Resolution Pipeline

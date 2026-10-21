@@ -32,5 +32,9 @@ export function getFunctionUrl(slug: string, path = ""): string {
   const domain = getBaseDomain();
   const cleanPath = path ? (path.startsWith("/") ? path : `/${path}`) : "";
   const proto = domain.includes("whizan.cloud") ? "https" : "http";
-  return `${proto}://${slug}.fn.${domain}${cleanPath}`;
+  return `${proto}://${slug}.${domain}${cleanPath}`;
+}
+
+export function getFunctionHttpsUrl(slug: string, path = ""): string {
+  return getFunctionUrl(slug, path);
 }

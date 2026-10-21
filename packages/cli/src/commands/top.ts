@@ -184,7 +184,7 @@ export async function topCommand() {
       }
 
       for (const fn of functions) {
-        const url = `http://${fn.slug}.fn.whizan.cloud`;
+        const url = `https://${fn.slug}.whizan.cloud`;
         newItems.push({
           type: "function",
           id: fn.id,

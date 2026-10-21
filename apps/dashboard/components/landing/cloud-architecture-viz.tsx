@@ -100,7 +100,7 @@ export function CloudArchitectureViz() {
       metrics: [
         { label: "Cold Start", value: "< 5ms" },
         { label: "Key Format", value: "whz_fn_live_*" },
-        { label: "Domain", value: "*.fn.whizan.cloud" },
+        { label: "Domain", value: "*.whizan.cloud" },
       ],
     },
     databases: {

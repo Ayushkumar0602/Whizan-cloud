@@ -31,7 +31,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { functionsApi, type FunctionServiceItem } from "@/lib/api";
-import { getFunctionIngressUrl, getFunctionPathUrl } from "@/lib/domains";
+import { getFunctionIngressUrl, getFunctionPathUrl, getFunctionHttpsUrl } from "@/lib/domains";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
 
@@ -296,7 +296,7 @@ export default function EdgeFunctionsPage() {
           {filtered.map((fn) => {
             const latestDeploy = fn.deployments?.[0];
             const isReady = latestDeploy?.status === "READY";
-            const primaryUrl = getFunctionIngressUrl(fn.slug);
+            const primaryUrl = getFunctionHttpsUrl(fn.slug);
             const invocationsCount = fn._count?.invocations || fn.stats?.totalInvocations || 0;
 
             return (

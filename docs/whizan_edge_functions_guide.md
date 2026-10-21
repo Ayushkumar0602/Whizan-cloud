@@ -22,7 +22,7 @@ Whizan Edge Functions provide serverless, event-driven compute designed for **in
 │                       EDGE INFRASTRUCTURE (Azure VM Host)                        │
 │                                                                                  │
 │   [Port 80] Edge Router                                                          │
-│     ├── Path-based & Subdomain Router (*.fn.whizan.cloud)                        │
+│     ├── Subdomain & Path Router (*.whizan.cloud)                                 │
 │     ├── Granular Security Engine (Public Webhooks vs API Key Authentication)     │
 │     ├── Redis Atomic Token Bucket Rate Limiter (RPM)                             │
 │     └── Internal Socket Proxy ──────────────────┐                                │
@@ -100,19 +100,19 @@ Whizan automatically detects and exposes multiple endpoints from a single source
 
 ### Pattern A: Modern Named ESM Exports (Recommended)
 ```typescript
-// GET or POST http://<slug>.fn.whizan.cloud/getUsers
+// GET or POST https://<slug>.whizan.cloud/getUsers
 export async function getUsers(req: Request, context: any) {
   return Response.json({ users: [{ id: 1, name: "Alice" }] });
 }
 
-// POST http://<slug>.fn.whizan.cloud/charge
+// POST https://<slug>.whizan.cloud/charge
 export async function charge(req: Request, context: any) {
   const body = await req.json();
   const stripeKey = context.env.STRIPE_SECRET_KEY;
   return Response.json({ success: true, charged: body.amount });
 }
 
-// POST http://<slug>.fn.whizan.cloud/webhook
+// POST https://<slug>.whizan.cloud/webhook
 export async function webhook(req: Request, context: any) {
   const event = await req.json();
   return Response.json({ received: true, type: event.type });
@@ -190,7 +190,7 @@ A major design goal of Whizan Edge Functions is **effortless survivability acros
 ### What happens when you turn off and restart the Azure VM?
 1. The VM powers off. Local RAM and active memory pools are cleared.
 2. The VM boots up. Systemd brings up PM2 with `edge-router` (:80) and `whizan-functions` (:9090).
-3. The first incoming request hits `http://smart-study-api.fn.whizan.cloud/sendMessage`.
+3. The first incoming request hits `https://smart-study-api.whizan.cloud/sendMessage`.
 4. `edge-router` queries Render API `/api/functions/internal/resolve/smart-study-api` if Redis key is cold.
 5. `function-runtime` compiles or loads the bundle from PostgreSQL/Redis on-the-fly.
 6. The request succeeds with **HTTP 200 OK** on the very first try without requiring any redeployment or SSH commands.

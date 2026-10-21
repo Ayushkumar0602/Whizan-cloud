@@ -52,7 +52,7 @@ export async function psCommand() {
   if (functions.length > 0) {
     console.error(`\n  ${c.bold}${c.whizanPurple}Edge Functions (${functions.length})${c.reset}`);
     for (const fn of functions) {
-      const url = fn.slug ? `http://${fn.slug}.fn.whizan.cloud` : "";
+      const url = fn.slug ? `https://${fn.slug}.whizan.cloud` : "";
       console.error(`  ${c.emerald}λ${c.reset} ${c.bold}${fn.name}${c.reset} ${c.dim}(${fn.id})${c.reset}`);
       console.error(`    ${c.dim}${url}${c.reset}`);
     }

@@ -196,7 +196,7 @@ export function ProductPreviews() {
                       </span>
                     </div>
                     <div style={{ fontSize: "0.78rem", color: "var(--wz-text-muted)", fontFamily: "var(--font-geist-mono), monospace", marginTop: "0.2rem" }}>
-                      https://tax-calculator.fn.whizan.cloud/calculate
+                      https://tax-calculator.whizan.cloud/calculate
                     </div>
                   </div>
                   <div style={{ textAlign: "right", fontFamily: "var(--font-geist-mono), monospace" }}>

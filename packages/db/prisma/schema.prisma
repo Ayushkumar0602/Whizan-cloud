@@ -350,7 +350,7 @@ model FunctionService {
   id             String            @id @default(uuid())
   userId         String            @map("user_id")
   name           String
-  slug           String            @unique // e.g. "payment-api" -> payment-api.fn.whizan.cloud
+  slug           String            @unique // e.g. "payment-api" -> payment-api.whizan.cloud
   runtime        FunctionRuntime   @default(EDGE_TYPESCRIPT)
   entryFile      String            @default("index.ts") @map("entry_file")
   timeoutMs      Int               @default(10000) @map("timeout_ms")

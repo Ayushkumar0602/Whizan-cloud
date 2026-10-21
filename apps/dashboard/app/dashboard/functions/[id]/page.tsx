@@ -53,7 +53,7 @@ import {
   type FunctionEndpointItem,
   type FunctionMetrics,
 } from "@/lib/api";
-import { getFunctionIngressUrl, getFunctionPathUrl } from "@/lib/domains";
+import { getFunctionIngressUrl, getFunctionPathUrl, getFunctionHttpsUrl } from "@/lib/domains";
 import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { VmOfflineModal } from "@/components/vm-offline-modal";
 
@@ -589,6 +589,7 @@ export default function FunctionDetailPage() {
   }
 
   const primaryUrl = getFunctionIngressUrl(service.slug);
+  const httpsUrl = getFunctionHttpsUrl(service.slug);
   const latestDeploy = service.deployments?.[0];
   const isReady = latestDeploy?.status === "READY";
   const primaryApiKey = service.apiKeys?.[0];
@@ -704,29 +705,29 @@ export default function FunctionDetailPage() {
             }}
           >
             <span style={{ fontSize: "0.82rem", fontFamily: "monospace", color: "var(--foreground)" }}>
-              {primaryUrl}
+              {httpsUrl}
             </span>
             <button
               onClick={() => {
-                navigator.clipboard.writeText(primaryUrl);
+                navigator.clipboard.writeText(httpsUrl);
                 setCopiedUrl(true);
-                toast.success("Service URL copied");
+                toast.success("HTTPS Service URL copied");
                 setTimeout(() => setCopiedUrl(false), 2000);
               }}
               style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}
-              title="Copy URL"
+              title="Copy HTTPS URL"
             >
               {copiedUrl ? <Check size={14} style={{ color: "var(--success)" }} /> : <Copy size={14} />}
             </button>
           </div>
 
           <a
-            href={primaryUrl}
+            href={httpsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-outline"
             style={{ padding: "0.5rem 0.75rem" }}
-            title="Open in Browser"
+            title="Open in Browser (HTTPS)"
           >
             <ExternalLink size={14} />
           </a>

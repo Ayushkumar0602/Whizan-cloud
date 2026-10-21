@@ -94,7 +94,7 @@ export function DeploymentCapabilities() {
         "Sub-5ms cold start execution without host Docker port overhead",
         "Granular security: isPublic toggle for open webhooks vs protected Function API Keys",
         "3-Tier self-healing disaster recovery: Disk bundle -> Redis cache -> PostgreSQL persistence",
-        "Direct invocation routing via https://<slug>.fn.whizan.cloud/<endpoint>",
+        "Direct invocation routing via https://<slug>.whizan.cloud/<endpoint>",
       ],
       codePreview: {
         title: "functions/calculate-tax.ts",

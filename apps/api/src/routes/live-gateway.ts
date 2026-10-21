@@ -17,7 +17,7 @@ export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
     const remainingPath = wildcard ? (wildcard.startsWith("/") ? wildcard : `/${wildcard}`) : "";
     const isFn = request.url.includes("/live/fn/");
     const baseDomain = getBaseDomain();
-    const targetHost = isFn ? `${slug}.fn.${baseDomain}` : `${slug}.${baseDomain}`;
+    const targetHost = `${slug}.${baseDomain}`;
     const targetProto = baseDomain.includes("whizan.cloud") ? "https" : "http";
     const targetUrl = `${targetProto}://${targetHost}${remainingPath}`;
 

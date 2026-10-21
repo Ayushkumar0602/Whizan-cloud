@@ -784,9 +784,12 @@ export class WhizanClient {
     await this.loadConfig();
     const targetPath = options.path || "/";
     const baseDomain = process.env.BASE_DOMAIN || "whizan.cloud";
+    const isWhizanCloud = baseDomain.includes("whizan.cloud");
+    const proto = isWhizanCloud ? "https" : "http";
     const routerPort = process.env.ROUTER_PORT || (baseDomain.includes("localhost") ? "8080" : "80");
-    const portSuffix = routerPort === "80" ? "" : `:${routerPort}`;
-    const url = `http://${slug}.fn.${baseDomain}${portSuffix}${targetPath.startsWith("/") ? targetPath : "/" + targetPath}`;
+    const portSuffix = routerPort === "80" || routerPort === "443" || (isWhizanCloud && !process.env.ROUTER_PORT) ? "" : `:${routerPort}`;
+    const cleanPath = targetPath.startsWith("/") ? targetPath : "/" + targetPath;
+    const url = `${proto}://${slug}.${baseDomain}${portSuffix}${cleanPath}`;
 
     const headers: Record<string, string> = {
       ...(options.headers || {}),

@@ -100,7 +100,7 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
        * *Tier 2 (Redis)*: In-memory source cache `fn:source:<id>:v<ver>`.
        * *Tier 3 (PostgreSQL)*: Persistent source code in Render Control Plane database (`FunctionDeployment.source_code`).
      - **Edge Case: Node Maintenance & Reboot**: If the compute worker restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
-   - **Invocation Format**: Always invoke via `http://<slug>.fn.whizan.cloud/<path>`. Verify responses using `whizan_invoke_function`.
+   - **Invocation Format**: Always invoke via `https://<slug>.whizan.cloud/<path>`. Verify responses using `whizan_invoke_function`.
 
 10. **Enterprise Cron & Scheduled Compute (`whizan_create_cron_job`, `whizan_list_cron_jobs`, `whizan_trigger_cron_job`, `whizan_get_cron_history`)**:
    - **Zero-Idle Super Resource Optimization Architecture**:
