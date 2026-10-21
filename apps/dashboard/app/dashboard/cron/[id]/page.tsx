@@ -180,6 +180,9 @@ export default function CronJobDetailPage() {
       if (data.executions && data.executions.length > 0 && !selectedExecution) {
         setSelectedExecution(data.executions[0]);
       }
+      // Load executions and dead letters only after job existence is confirmed
+      fetchExecutions(1);
+      fetchDeadLetters();
     } catch (err: any) {
       toast.error(err.message || "Failed to load cron task details");
     } finally {
@@ -230,8 +233,6 @@ export default function CronJobDetailPage() {
   useEffect(() => {
     if (jobId) {
       fetchJobData();
-      fetchExecutions(1);
-      fetchDeadLetters();
       fetchResources();
     }
   }, [jobId]);
@@ -460,7 +461,7 @@ export default function CronJobDetailPage() {
       setStreamingLogs([]);
 
       const streamUrl = cronApi.getLogsStreamUrl(job.id, selectedExecution.id);
-      const sse = new EventSource(streamUrl);
+      const sse = new EventSource(streamUrl, { withCredentials: true });
       sseRef.current = sse;
 
       sse.onmessage = (event) => {

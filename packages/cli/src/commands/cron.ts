@@ -25,7 +25,7 @@ export async function cronCommand(args: string[] = []) {
       for (const cron of crons) {
         const statusColor = cron.enabled ? c.emerald : c.amber;
         console.error(`  ${statusColor}●${c.reset} ${c.bold}${cron.name}${c.reset} ${c.dim}(Schedule: ${cron.schedule}, ${cron.enabled ? "Active" : "Paused"})${c.reset}`);
-        console.error(`    ${c.dim}ID:${c.reset} ${cron.id}  ${c.dim}Target:${c.reset} ${cron.target?.type || "UNKNOWN"}  ${c.dim}Next Run:${c.reset} ${cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleString() : "Pending"}`);
+        console.error(`    ${c.dim}ID:${c.reset} ${cron.id}  ${c.dim}Target:${c.reset} ${cron.targetType || cron.target?.targetType || cron.target?.type || "UNKNOWN"}  ${c.dim}Next Run:${c.reset} ${cron.nextRunAt ? new Date(cron.nextRunAt).toLocaleString() : "Pending"}`);
       }
       console.error("");
       break;
@@ -54,18 +54,30 @@ export async function cronCommand(args: string[] = []) {
       const cmdIdx = subArgs.findIndex((a) => a === "--cmd" || a === "-c");
       if (cmdIdx !== -1 && subArgs[cmdIdx + 1]) cmd = subArgs[cmdIdx + 1];
 
-      const target: any = { type: pipeline };
+      if (!targetVal) {
+        printError("Missing required flag: --target <target-id-or-url>");
+        process.exit(1);
+      }
+
+      const target: any = { targetType: pipeline };
       if (pipeline === "FUNCTION") {
-        target.functionId = targetVal;
-        target.endpoint = cmd || "/";
+        target.serviceId = targetVal;
+        target.endpointPath = cmd || "/";
+        target.method = "POST";
       } else if (pipeline === "CONTAINER_EXEC") {
         target.serviceId = targetVal;
         target.command = cmd || "python manage.py run_task";
       } else if (pipeline === "SERVICE") {
         target.serviceId = targetVal;
-        target.path = cmd || "/";
+        target.routePath = cmd || "/";
+        target.method = "POST";
+      } else if (pipeline === "PROJECT") {
+        target.projectId = targetVal;
+        target.routePath = cmd || "/";
+        target.method = "GET";
       } else if (pipeline === "WEBHOOK") {
         target.url = targetVal;
+        target.method = "POST";
       }
 
       const spinner = new Spinner(`Creating cron job "${name}" (${schedule})...`).start();
@@ -87,7 +99,8 @@ export async function cronCommand(args: string[] = []) {
         printKV("Misfire Policy", "SKIP (reboot safe)");
       } catch (err: any) {
         spinner.fail("Cron creation failed");
-        printError(err.message || String(err));
+        const msg = err.data?.message || err.message || String(err);
+        printError(msg);
         process.exit(1);
       }
       break;

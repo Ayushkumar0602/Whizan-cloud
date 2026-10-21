@@ -595,7 +595,7 @@ export default function CronDashboardPage() {
       setStreamingLogs([]);
 
       const streamUrl = cronApi.getLogsStreamUrl(selectedJob.id, selectedExecution.id);
-      const sse = new EventSource(streamUrl);
+      const sse = new EventSource(streamUrl, { withCredentials: true });
       sseRef.current = sse;
 
       sse.onmessage = (event) => {

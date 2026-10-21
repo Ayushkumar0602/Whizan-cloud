@@ -6,45 +6,80 @@ import { redisClient, redisSub } from "../lib/redis.js";
 
 const INTERNAL_MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || process.env.INTERNAL_SECRET || process.env.JWT_SECRET || "";
 
+function normalizeTargetConfig(val: unknown): unknown {
+  if (!val || typeof val !== "object") return val;
+  const obj = { ...(val as Record<string, any>) };
+  const rawType = obj.targetType || obj.type || obj.pipeline;
+  if (!rawType || typeof rawType !== "string") return val;
+
+  const type = rawType.toUpperCase();
+  obj.targetType = type;
+
+  if (type === "FUNCTION") {
+    obj.serviceId = obj.serviceId || obj.functionId || obj.id;
+    obj.endpointPath = obj.endpointPath || obj.endpoint || obj.path || "/";
+    obj.method = (obj.method || "POST").toUpperCase();
+  } else if (type === "SERVICE") {
+    obj.serviceId = obj.serviceId || obj.id;
+    obj.routePath = obj.routePath || obj.path || obj.endpoint || "/";
+    obj.method = (obj.method || "POST").toUpperCase();
+  } else if (type === "PROJECT") {
+    obj.projectId = obj.projectId || obj.id;
+    obj.routePath = obj.routePath || obj.path || "/";
+    obj.method = (obj.method || "GET").toUpperCase();
+  } else if (type === "CONTAINER_EXEC") {
+    obj.serviceId = obj.serviceId || obj.id;
+    obj.command = obj.command || obj.cmd || "echo 'cron'";
+  } else if (type === "WEBHOOK") {
+    obj.url = obj.url || obj.target || obj.targetVal;
+    obj.method = (obj.method || "POST").toUpperCase();
+  }
+
+  return obj;
+}
+
 // Zod schemas for Cron creation & updates
-const TargetConfigSchema = z.discriminatedUnion("targetType", [
-  z.object({
-    targetType: z.literal("FUNCTION"),
-    serviceId: z.string().min(1),
-    endpointPath: z.string().default("/"),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
-    payload: z.any().optional(),
-  }),
-  z.object({
-    targetType: z.literal("PROJECT"),
-    projectId: z.string().min(1),
-    routePath: z.string().default("/"),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
-    payload: z.any().optional(),
-  }),
-  z.object({
-    targetType: z.literal("SERVICE"),
-    serviceId: z.string().min(1),
-    routePath: z.string().default("/"),
-    port: z.number().int().positive().optional(),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
-    payload: z.any().optional(),
-  }),
-  z.object({
-    targetType: z.literal("CONTAINER_EXEC"),
-    serviceId: z.string().min(1),
-    command: z.union([z.string(), z.array(z.string())]),
-    workDir: z.string().optional(),
-    user: z.string().optional(),
-  }),
-  z.object({
-    targetType: z.literal("WEBHOOK"),
-    url: z.string().url(),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
-    headers: z.record(z.string()).optional(),
-    body: z.any().optional(),
-  }),
-]);
+const TargetConfigSchema = z.preprocess(
+  normalizeTargetConfig,
+  z.discriminatedUnion("targetType", [
+    z.object({
+      targetType: z.literal("FUNCTION"),
+      serviceId: z.string().min(1, "serviceId or functionId is required"),
+      endpointPath: z.string().default("/"),
+      method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+      payload: z.any().optional(),
+    }),
+    z.object({
+      targetType: z.literal("PROJECT"),
+      projectId: z.string().min(1, "projectId is required"),
+      routePath: z.string().default("/"),
+      method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+      payload: z.any().optional(),
+    }),
+    z.object({
+      targetType: z.literal("SERVICE"),
+      serviceId: z.string().min(1, "serviceId is required"),
+      routePath: z.string().default("/"),
+      port: z.number().int().positive().optional(),
+      method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+      payload: z.any().optional(),
+    }),
+    z.object({
+      targetType: z.literal("CONTAINER_EXEC"),
+      serviceId: z.string().min(1, "serviceId is required"),
+      command: z.union([z.string(), z.array(z.string())]),
+      workDir: z.string().optional(),
+      user: z.string().optional(),
+    }),
+    z.object({
+      targetType: z.literal("WEBHOOK"),
+      url: z.string().url("Valid target URL is required"),
+      method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+      headers: z.record(z.string()).optional(),
+      body: z.any().optional(),
+    }),
+  ])
+);
 
 const CreateCronJobSchema = z.object({
   name: z.string().min(1).max(100),
@@ -147,7 +182,8 @@ export async function cronRoutes(app: FastifyInstance) {
     const userId = request.user?.userId || request.user?.id;
     const parsed = CreateCronJobSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Validation error", details: parsed.error.format() });
+      const message = parsed.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
+      return reply.code(400).send({ error: "Validation error", message, details: parsed.error.format() });
     }
 
     const { target, schedule, timezone, ...rest } = parsed.data;
@@ -241,7 +277,8 @@ export async function cronRoutes(app: FastifyInstance) {
 
     const parsed = UpdateCronJobSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Validation error", details: parsed.error.format() });
+      const message = parsed.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join(", ");
+      return reply.code(400).send({ error: "Validation error", message, details: parsed.error.format() });
     }
 
     const { target, schedule, timezone, enabled, ...rest } = parsed.data;
@@ -436,25 +473,31 @@ export async function cronRoutes(app: FastifyInstance) {
   // ─── 9. LIVE LOG SSE STREAM ──────────────────────────────────────────────────
   app.get("/:id/executions/:execId/logs/stream", async (request: any, reply) => {
     const { execId } = request.params;
+    const origin = request.headers.origin || "*";
 
-    reply.raw.setHeader("Content-Type", "text/event-stream");
-    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.flushHeaders?.();
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+      "X-Accel-Buffering": "no",
+    });
 
     const channel = `cron:logs:${execId}`;
-    const onMessage = (chan: string, message: string) => {
+    const subscriber = redisSub.duplicate();
+    await subscriber.subscribe(channel);
+
+    subscriber.on("message", (chan: string, message: string) => {
       if (chan === channel) {
         reply.raw.write(`data: ${message}\n\n`);
       }
-    };
-
-    await redisSub.subscribe(channel);
-    redisSub.on("message", onMessage);
+    });
 
     request.raw.on("close", async () => {
-      redisSub.removeListener("message", onMessage);
-      await redisSub.unsubscribe(channel).catch(() => {});
+      await subscriber.quit().catch(() => {});
     });
   });
 
