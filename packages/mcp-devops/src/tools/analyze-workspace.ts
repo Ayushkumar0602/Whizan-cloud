@@ -178,6 +178,12 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
     } catch {}
   }
 
+  // 1b. Check Static HTML Frontend
+  if (!report.hasPackageJson && filesInRoot.includes("index.html")) {
+    report.projectType = "frontend";
+    report.framework = "Static HTML";
+  }
+
   // 2. Check Python
   if (filesInRoot.includes("requirements.txt") || filesInRoot.includes("pyproject.toml")) {
     report.detectedRuntimes.push("Python");
@@ -328,13 +334,14 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
   if (report.projectType === "frontend") {
     const isVite = report.framework?.includes("Vite");
     const isAstro = report.framework?.includes("Astro");
+    const isStaticHtml = report.framework === "Static HTML" || !report.hasPackageJson;
     report.recommendedDeploymentConfig = {
       targetType: "project",
       toolToCall: "whizan_create_project",
       framework: isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
-      outputDir: isVite || isAstro ? "dist" : "dist",
-      buildCommand: report.scripts.build ? "npm run build" : undefined,
-      installCommand: "npm install",
+      outputDir: isVite || isAstro ? "dist" : isStaticHtml ? "." : "dist",
+      buildCommand: isStaticHtml ? "" : (report.scripts.build ? "npm run build" : undefined),
+      installCommand: isStaticHtml ? "" : (report.hasPackageJson ? "npm install" : undefined),
     };
     report.recommendations.push(
       `FRONTEND DETECTED (${report.framework || "Web App"}): Must deploy as a frontend web project using 'whizan_create_project' with framework='${report.recommendedDeploymentConfig.framework}' and outputDir='${report.recommendedDeploymentConfig.outputDir}'. DO NOT deploy via whizan_create_service.`
@@ -397,15 +404,16 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       const isVite = aiResult.framework.includes("Vite");
       const isAstro = aiResult.framework.includes("Astro");
       const isNext = aiResult.framework.includes("Next");
+      const isStaticHtml = aiResult.framework.toLowerCase().includes("static") || aiResult.framework.toLowerCase().includes("html") || (!filesInRoot.includes("package.json") && filesInRoot.includes("index.html"));
       const hasDockerfile = filesInRoot.some((f) => f.toLowerCase() === "dockerfile");
 
       report.recommendedDeploymentConfig = {
         targetType: "project",
         toolToCall: "whizan_create_project",
         framework: hasDockerfile ? "CUSTOM" : isNext ? "NEXTJS" : isVite ? "VITE" : isAstro ? "ASTRO" : "CUSTOM",
-        outputDir: isNext ? ".next" : "dist",
-        buildCommand: aiResult.buildCommand || (report.scripts.build ? "npm run build" : undefined),
-        installCommand: aiResult.installCommand || "npm install",
+        outputDir: isNext ? ".next" : isStaticHtml ? "." : "dist",
+        buildCommand: isStaticHtml ? "" : (aiResult.buildCommand || (report.scripts.build ? "npm run build" : undefined)),
+        installCommand: isStaticHtml ? "" : (aiResult.installCommand || (report.hasPackageJson ? "npm install" : undefined)),
       };
 
       if (hasDockerfile) {

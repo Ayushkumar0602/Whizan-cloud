@@ -79,5 +79,10 @@ export async function analyzeOutput(
     if (exists(dir)) return { type: "static", staticDir: relToBuild(dir) };
   }
 
+  // ── Static HTML frontend fallback (index.html at project root) ─────────────
+  if (exists("index.html")) {
+    return { type: "static", staticDir: relToBuild(".") };
+  }
+
   throw new Error("Could not detect build output. Check your build command and output directory.");
 }

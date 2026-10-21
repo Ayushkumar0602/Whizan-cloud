@@ -5,10 +5,10 @@
  */
 
 export const getEmailJsConfig = () => ({
-  serviceId: process.env.EMAILJS_SERVICE_ID || "",
-  templateDeploymentFailedId: process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "",
-  publicKey: process.env.EMAILJS_PUBLIC_KEY || "",
-  privateKey: process.env.EMAILJS_PRIVATE_KEY || "",
+  serviceId: process.env.EMAILJS_SERVICE_ID || process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || "service_mm6n3jn",
+  templateDeploymentFailedId: process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "template_ernq47u",
+  publicKey: process.env.EMAILJS_PUBLIC_KEY || process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || "qzhqvM1yerb2R24T1",
+  privateKey: process.env.EMAILJS_PRIVATE_KEY || "e9Snm4GGkiI1xLel7cLi7",
   endpoint: process.env.EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send",
   defaultLogoUrl: process.env.EMAILJS_LOGO_URL || "https://dashboard.whizan.cloud/whizan_logo.png",
 });
@@ -43,14 +43,18 @@ export async function sendDeploymentFailedEmail(
   }
 
   try {
+    const targetEmail = options.email.trim().toLowerCase();
     const payload = {
       service_id: config.serviceId,
       template_id: config.templateDeploymentFailedId,
       user_id: config.publicKey,
       accessToken: config.privateKey,
       template_params: {
-        email: options.email.trim().toLowerCase(),
-        user_name: options.userName || options.email.split("@")[0],
+        email: targetEmail,
+        to_email: targetEmail,
+        user_email: targetEmail,
+        recipient: targetEmail,
+        user_name: options.userName || targetEmail.split("@")[0],
         project_name: options.projectName,
         deployment_id: options.deploymentId,
         error_message: options.errorMessage,
@@ -69,7 +73,8 @@ export async function sendDeploymentFailedEmail(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Origin: "https://dashboard.whizan.cloud",
+        "Origin": "https://dashboard.whizan.cloud",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
       body: JSON.stringify(payload),
     });
@@ -80,7 +85,7 @@ export async function sendDeploymentFailedEmail(
       return { success: false, error: text };
     }
 
-    console.log(`[BuildWorker-Email] Successfully dispatched deployment failure email to ${options.email}`);
+    console.log(`[BuildWorker-Email] ✓ Successfully dispatched deployment failure email to ${targetEmail} (${options.projectName})`);
     return { success: true };
   } catch (err: any) {
     console.error("[BuildWorker-Email] Network error sending failure alert:", err.message);

@@ -28,7 +28,7 @@ const FRAMEWORKS = [
   { value: "REACT", label: "React (SPA)", icon: "⚛", desc: "Single page application" },
   { value: "VITE", label: "Vite", icon: "⚡", desc: "Ultra-fast frontend tooling" },
   { value: "ASTRO", label: "Astro", icon: "🚀", desc: "Content-driven web framework" },
-  { value: "CUSTOM", label: "Custom / HTML", icon: "⚙", desc: "Custom build commands" },
+  { value: "CUSTOM", label: "Static HTML / Custom", icon: "📄", desc: "Plain HTML or custom build" },
 ];
 
 const FRAMEWORK_DEFAULTS: Record<string, Partial<CreateProjectData>> = {
@@ -36,7 +36,7 @@ const FRAMEWORK_DEFAULTS: Record<string, Partial<CreateProjectData>> = {
   REACT: { buildCommand: "npm run build", installCommand: "npm install", outputDir: "build" },
   VITE: { buildCommand: "npm run build", installCommand: "npm install", outputDir: "dist" },
   ASTRO: { buildCommand: "npm run build", installCommand: "npm install", outputDir: "dist" },
-  CUSTOM: { buildCommand: "npm run build", installCommand: "npm install", outputDir: "dist" },
+  CUSTOM: { buildCommand: "", installCommand: "", outputDir: "." },
 };
 
 const STEPS = [

@@ -352,7 +352,16 @@ const server = http.createServer(async (req, res) => {
     }
     const serve = getStaticServer(staticDir);
     const startBytes = res.socket?.bytesWritten || 0;
-    serve(req as any, res as any, finalhandler(req, res) as any);
+    serve(req as any, res as any, (err?: any) => {
+      // SPA Fallback: for clean navigation routes without file extensions, serve index.html
+      const cleanPath = (req.url || "/").split("?")[0];
+      const hasExt = path.extname(cleanPath) !== "";
+      if (!err && !hasExt && fs.existsSync(indexHtml)) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        return fs.createReadStream(indexHtml).pipe(res);
+      }
+      return (finalhandler(req, res) as any)(err);
+    });
     res.on("finish", () => {
       const bytesSent = Math.max(0, (res.socket?.bytesWritten || 0) - startBytes);
       const event = {

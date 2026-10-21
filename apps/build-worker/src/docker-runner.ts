@@ -51,12 +51,29 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
   // Format env vars for Docker
   const env = Object.entries(envVars).map(([k, v]) => `${k}=${v}`);
 
-  const cdCmd = cleanRootDir ? `cd "/app/${cleanRootDir}" && ` : "";
+  const steps: string[] = ["chmod -R 777 /app 2>/dev/null || true", "set -e"];
+  if (cleanRootDir) {
+    steps.push(`cd "/app/${cleanRootDir}"`);
+  }
+  const hasInstall = installCommand && installCommand.trim() !== "" && installCommand.trim().toLowerCase() !== "none";
+  const hasBuild = buildCommand && buildCommand.trim() !== "" && buildCommand.trim().toLowerCase() !== "none";
+
+  if (hasInstall) {
+    steps.push(`echo "--- Installing dependencies ---"`);
+    steps.push(installCommand.trim());
+  }
+  if (hasBuild) {
+    steps.push(`echo "--- Building ---"`);
+    steps.push(buildCommand.trim());
+  }
+  if (!hasInstall && !hasBuild) {
+    steps.push(`echo "--- No install or build step required ---"`);
+  }
+
   const cmd = [
     "sh",
     "-c",
-    // chmod first (suppressing stderr warnings on macOS hidden metadata files), then set -e, install + build
-    `chmod -R 777 /app 2>/dev/null || true; set -e; ${cdCmd}echo "--- Installing dependencies ---" && ${installCommand} && echo "--- Building ---" && ${buildCommand}`,
+    steps.join(" && "),
   ];
 
   await onLog(`Container image: ${BUILD_IMAGE}`);

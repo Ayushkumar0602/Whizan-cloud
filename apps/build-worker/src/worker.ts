@@ -107,7 +107,15 @@ const worker = new Worker<BuildJob>(
             triggerIp: "Azure VM Build Cluster",
             nodeId: process.env.VM_NODE_ID || "whizan-build-node-01",
             logoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
+          }).then((res) => {
+            if (res.success) {
+              console.log(`[Worker] Deployment failure email dispatched successfully to ${dep.project.user.email}`);
+            } else {
+              console.error(`[Worker] Deployment failure email dispatch failed: ${res.error}`);
+            }
           }).catch((err) => console.error("[Worker] Error sending failure email:", err));
+        } else {
+          console.warn("[Worker] No user email found for deployment failure alert:", dep?.project?.user);
         }
       } catch (err) {
         console.error("[Worker] Error in markFailed:", err);
@@ -144,7 +152,7 @@ const worker = new Worker<BuildJob>(
           const stats = await fs.stat(checkDir);
           if (stats.isDirectory()) {
             const files = await fs.readdir(checkDir);
-            if (files.some((f) => [".next", "dist", "build", "out", "node_modules"].includes(f))) {
+            if (files.some((f) => [".next", "dist", "build", "out", "node_modules", "index.html"].includes(f))) {
               canResume = true;
             }
           }
@@ -279,6 +287,8 @@ const worker = new Worker<BuildJob>(
       const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
       const filesInWorkDir = await fs.readdir(hostWorkDir).catch(() => [] as string[]);
       const hasDockerfile = filesInWorkDir.some((f) => f.toLowerCase() === "dockerfile");
+      const hasPackageJson = filesInWorkDir.some((f) => f.toLowerCase() === "package.json");
+      const hasIndexHtml = filesInWorkDir.some((f) => f.toLowerCase() === "index.html");
 
       let containerPort: number | undefined;
       let deploymentType: "STATIC" | "SSR" | "HYBRID" = "STATIC";
@@ -341,15 +351,38 @@ const worker = new Worker<BuildJob>(
           projectId,
         });
       } else {
-        // ── Standard Node.js build inside Docker ──────────────────────────
-        if (!canResume) {
+        // ── Check if project is a Static HTML Frontend or explicitly requires no build ──
+        const isStaticHtmlSite = !hasPackageJson && (hasIndexHtml || framework === "CUSTOM");
+        const hasExplicitNoBuild =
+          (!installCommand || installCommand === "none" || installCommand === "echo 'skip'" || installCommand.trim() === "") &&
+          (!buildCommand || buildCommand === "none" || buildCommand === "echo 'skip'" || buildCommand.trim() === "");
+
+        if (isStaticHtmlSite || hasExplicitNoBuild) {
+          await log("📄 Static web frontend detected. Skipping Docker build container (serving files directly from edge).");
+        } else if (!canResume) {
+          let effectiveInstallCommand = installCommand;
+          let effectiveBuildCommand = buildCommand;
+
+          if (hasPackageJson) {
+            try {
+              const pkgRaw = await fs.readFile(path.join(hostWorkDir, "package.json"), "utf8");
+              const pkg = JSON.parse(pkgRaw);
+              if (effectiveBuildCommand === "npm run build" && (!pkg.scripts || !pkg.scripts.build)) {
+                await log("ℹ️ No 'build' script found in package.json. Skipping build step.");
+                effectiveBuildCommand = "echo 'No build script required'";
+              }
+            } catch (pkgErr) {
+              await log(`⚠️ Warning: Failed to parse package.json: ${pkgErr}`);
+            }
+          }
+
           await log("Starting build container...");
           const exitCode = await runBuild({
             projectId,
             buildDir,
             rootDir,
-            installCommand,
-            buildCommand,
+            installCommand: effectiveInstallCommand,
+            buildCommand: effectiveBuildCommand,
             envVars,
             onLog: log,
             abortSignal: abortController.signal,

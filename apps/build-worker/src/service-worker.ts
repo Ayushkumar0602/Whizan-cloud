@@ -458,7 +458,15 @@ const worker = new Worker<ServiceBuildJob>(
             triggerIp: "Azure VM Container Cluster",
             nodeId: process.env.VM_NODE_ID || "whizan-service-node-01",
             logoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
+          }).then((res) => {
+            if (res.success) {
+              console.log(`[Service Worker] Deployment failure email dispatched successfully to ${dep.service.user.email}`);
+            } else {
+              console.error(`[Service Worker] Deployment failure email dispatch failed: ${res.error}`);
+            }
           }).catch((emailErr) => console.error("[Service Worker] Failed to send failure email:", emailErr));
+        } else {
+          console.warn("[Service Worker] No user email found for deployment failure alert:", dep?.service?.user);
         }
       } catch (dbErr) {
         console.error("Failed to update deployment to FAILED:", dbErr);

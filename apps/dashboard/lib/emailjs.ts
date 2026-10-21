@@ -4,11 +4,11 @@
  */
 
 export const getEmailJsConfig = () => ({
-  serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || process.env.EMAILJS_SERVICE_ID || "",
-  templateOtpId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_OTP_ID || process.env.EMAILJS_TEMPLATE_OTP_ID || "",
-  templateDeploymentFailedId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "",
-  publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || process.env.EMAILJS_PUBLIC_KEY || "",
-  privateKey: process.env.EMAILJS_PRIVATE_KEY || undefined,
+  serviceId: process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID || process.env.EMAILJS_SERVICE_ID || "service_mm6n3jn",
+  templateOtpId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_OTP_ID || process.env.EMAILJS_TEMPLATE_OTP_ID || "template_e3lerhj",
+  templateDeploymentFailedId: process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || process.env.EMAILJS_TEMPLATE_DEPLOY_FAILED_ID || "template_ernq47u",
+  publicKey: process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY || process.env.EMAILJS_PUBLIC_KEY || "qzhqvM1yerb2R24T1",
+  privateKey: process.env.EMAILJS_PRIVATE_KEY || "e9Snm4GGkiI1xLel7cLi7",
   endpoint: "https://api.emailjs.com/api/v1.0/email/send",
   defaultLogoUrl: "https://dashboard.whizan.cloud/whizan_logo.png",
 });
@@ -125,13 +125,17 @@ export async function sendDeploymentFailedEmail(params: SendDeploymentFailedPara
   }
 
   try {
+    const targetEmail = params.email.trim().toLowerCase();
     const payload: Record<string, any> = {
       service_id: config.serviceId,
       template_id: config.templateDeploymentFailedId,
       user_id: config.publicKey,
       template_params: {
-        email: params.email.trim().toLowerCase(),
-        user_name: params.userName || params.email.split("@")[0],
+        email: targetEmail,
+        to_email: targetEmail,
+        user_email: targetEmail,
+        recipient: targetEmail,
+        user_name: params.userName || targetEmail.split("@")[0],
         project_name: params.projectName,
         deployment_id: params.deploymentId,
         error_message: params.errorMessage,

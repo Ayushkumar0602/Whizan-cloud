@@ -212,6 +212,10 @@ If the repository IS deployable:
 Files in repository:
 ${filesInRoot.slice(0, 60).join("\n") || "No file list provided"}
 
+Files in repository root:
+${filesInRoot.join(", ") || "None"}
+Has index.html: ${filesInRoot.includes("index.html")}
+
 README content:
 ${readme.slice(0, 8000) || "No README provided"}
 
@@ -333,6 +337,26 @@ function localFallback(files: string[], readme: string, req: string, pkgStr: str
       requiredEnvVars: [],
       optionalEnvVars: [],
       explanation: "Desktop GUI application detected. Refusing deployment per Whizan System Guardrail policy.",
+    };
+  }
+
+  // Static HTML Frontend Check
+  if (!files.includes("package.json") && files.includes("index.html")) {
+    return {
+      isDeployable: true,
+      rejectionReason: null,
+      stack: "HTML / Static Web",
+      framework: "Static HTML",
+      targetType: "project",
+      language: "NODEJS",
+      isWorker: false,
+      recommendedPort: 80,
+      installCommand: "",
+      buildCommand: "",
+      startCommand: "",
+      requiredEnvVars: [],
+      optionalEnvVars: [],
+      explanation: "Static HTML frontend with index.html detected. Deployed directly to Whizan Edge Router.",
     };
   }
 

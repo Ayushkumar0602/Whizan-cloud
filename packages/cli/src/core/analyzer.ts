@@ -192,9 +192,32 @@ export async function analyzeStack(workspaceDir: string): Promise<StackAnalysis>
       }
       // No recognizable framework
       else {
-        result.warnings.push("No recognizable framework detected in package.json.");
+        if (files.includes("index.html")) {
+          result.projectType = "frontend";
+          result.framework = "Static Web";
+          result.targetType = "project";
+          result.frameworkEnum = "CUSTOM";
+          result.outputDir = ".";
+          result.installCommand = scripts.build ? "npm install" : "";
+          result.buildCommand = scripts.build ? "npm run build" : "";
+          result.startCommand = "";
+        } else {
+          result.warnings.push("No recognizable framework detected in package.json.");
+        }
       }
     } catch {}
+  }
+
+  // ─── Static HTML Frontend Detection (no package.json) ─────────────────
+  if (!files.includes("package.json") && files.includes("index.html")) {
+    result.projectType = "frontend";
+    result.framework = "Static HTML";
+    result.targetType = "project";
+    result.frameworkEnum = "CUSTOM";
+    result.outputDir = ".";
+    result.installCommand = "";
+    result.buildCommand = "";
+    result.startCommand = "";
   }
 
   // ─── Python Detection ────────────────────────────────────────────────
