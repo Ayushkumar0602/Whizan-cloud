@@ -320,7 +320,9 @@ export const projects = {
   list: (opts?: RequestOptions) => request<ProjectWithLatestDeploy[]>("/api/projects", opts),
 
   get: (id: string, opts?: RequestOptions) => request<ProjectWithDeployments>(`/api/projects/${id}`, opts),
-  getAnalytics: (id: string, opts?: RequestOptions) => request<any[]>(`/api/projects/${id}/analytics`, opts),
+  getAnalytics: (id: string, opts?: RequestOptions) => request<any>(`/api/projects/${id}/analytics`, opts),
+  getAdvancedAnalytics: (id: string, timeframe: "1h" | "24h" | "7d" | "30d" = "24h", opts?: RequestOptions) =>
+    request<AdvancedAnalyticsData>(`/api/projects/${id}/analytics?timeframe=${timeframe}&format=advanced`, opts),
 
   create: (data: CreateProjectData) =>
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
@@ -670,6 +672,73 @@ export type AiAnalysisResponse = {
   };
 };
 
+export type AdvancedAnalyticsData = {
+  targetId: string;
+  targetType: "service" | "project";
+  slug: string;
+  serviceName?: string;
+  projectName?: string;
+  language?: string;
+  framework?: string;
+  timeframe: "1h" | "24h" | "7d" | "30d";
+  kpis: {
+    totalRequests: number;
+    requestRatePerMin: number;
+    avgLatencyMs: number;
+    p95LatencyMs: number;
+    p99LatencyMs: number;
+    maxLatencyMs: number;
+    successRate: number;
+    errorRate: number;
+    totalBandwidthBytes: number;
+    uniqueIps: number;
+    wafMitigations: number;
+    currentCpuPercent?: number;
+    currentMemoryMb?: number;
+    cpuLimit?: number;
+    memoryLimitMb?: number;
+  };
+  statusBreakdown: {
+    status2xx: number;
+    status3xx: number;
+    status4xx: number;
+    status5xx: number;
+  };
+  methodBreakdown: Record<string, number>;
+  timeSeries: Array<{
+    timestamp: number;
+    isoTime: string;
+    requests: number;
+    status2xx: number;
+    status3xx: number;
+    status4xx: number;
+    status5xx: number;
+    avgDurationMs: number;
+    maxDurationMs: number;
+    bytesSent: number;
+    wafMitigations: number;
+  }>;
+  topEndpoints: Array<{
+    path: string;
+    requests: number;
+    percentage: number;
+  }>;
+  recentRequests: Array<{
+    id: string;
+    timestamp: string;
+    method: string;
+    path: string;
+    statusCode: number;
+    durationMs: number;
+    bytesSent: number;
+    clientIp: string;
+    clientType: "mobile" | "browser" | "cli_tool" | "scanner" | "unknown";
+    userAgent: string;
+    isWafBlocked: boolean;
+  }>;
+  dailyLogs?: any[];
+};
+
 export const services = {
   list: (opts?: RequestOptions) => request<ServiceWithLatestDeploy[]>("/api/services", opts),
   get: (id: string, opts?: RequestOptions) => request<ServiceWithDetails>(`/api/services/${id}`, opts),
@@ -683,6 +752,8 @@ export const services = {
   setBulkEnv: (id: string, envVars: Record<string, any>, isSecret = true) => request<{ success: boolean; count: number; keys: string[] }>(`/api/services/${id}/env/bulk`, { method: "POST", body: JSON.stringify({ envVars, isSecret }) }),
   deleteEnv: (id: string, key: string) => request(`/api/services/${id}/env/${key}`, { method: "DELETE" }),
   getMetrics: (id: string, opts?: RequestOptions) => request<ServiceMetricsResponse>(`/api/services/${id}/metrics`, opts),
+  getAnalytics: (id: string, timeframe: "1h" | "24h" | "7d" | "30d" = "24h", opts?: RequestOptions) =>
+    request<AdvancedAnalyticsData>(`/api/services/${id}/analytics?timeframe=${timeframe}`, opts),
   streamMetrics: (id: string): EventSource => {
     const token = getAccessToken();
     return new EventSource(`${API_BASE}/api/services/${id}/metrics/stream?token=${token}`);

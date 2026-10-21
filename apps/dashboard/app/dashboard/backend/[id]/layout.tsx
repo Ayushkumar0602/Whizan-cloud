@@ -1,7 +1,7 @@
 "use client";
 import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
-import { LayoutDashboard, Radio, Settings2 } from "lucide-react";
+import { LayoutDashboard, Radio, BarChart3, Settings2 } from "lucide-react";
 import type { ReactNode } from "react";
 
 export default function ServiceDetailLayout({ children }: { children: ReactNode }) {
@@ -14,6 +14,12 @@ export default function ServiceDetailLayout({ children }: { children: ReactNode 
       label: "Overview",
       icon: LayoutDashboard,
       active: pathname === `/dashboard/backend/${id}`,
+    },
+    {
+      href: `/dashboard/backend/${id}/analytics`,
+      label: "Analytics & Telemetry",
+      icon: BarChart3,
+      active: pathname.startsWith(`/dashboard/backend/${id}/analytics`),
     },
     {
       href: `/dashboard/backend/${id}/mesh`,

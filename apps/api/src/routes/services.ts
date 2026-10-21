@@ -1020,6 +1020,226 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // GET /api/services/:id/analytics — Advanced High-Performance Edge & Compute Analytics
+  fastify.get("/:id/analytics", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { userId, role } = request.user;
+    const { timeframe = "24h" } = request.query as { timeframe?: string };
+
+    const service = await prisma.backendService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
+    if (!service) return reply.code(404).send({ error: "Service not found" });
+
+    const now = Date.now();
+    let startTime = now - 24 * 60 * 60 * 1000;
+    let groupIntervalMs = 15 * 60 * 1000; // 15-minute intervals for 24h (96 points)
+
+    if (timeframe === "1h") {
+      startTime = now - 60 * 60 * 1000;
+      groupIntervalMs = 60 * 1000; // 1-minute intervals (60 points)
+    } else if (timeframe === "7d") {
+      startTime = now - 7 * 24 * 60 * 60 * 1000;
+      groupIntervalMs = 60 * 60 * 1000; // 1-hour intervals (168 points)
+    } else if (timeframe === "30d") {
+      startTime = now - 30 * 24 * 60 * 60 * 1000;
+      groupIntervalMs = 4 * 60 * 60 * 1000; // 4-hour intervals (180 points)
+    }
+
+    // 1. Fetch time-series buckets from Redis Sorted Set
+    const rawBuckets = await redisClient.zrangebyscore(`analytics:ts:${id}`, startTime, now).catch(() => []);
+
+    // 2. Fetch recent requests from Redis List
+    const rawRecent = await redisClient.lrange(`analytics:recent:${id}`, 0, 39).catch(() => []);
+    const recentRequests = rawRecent
+      .map((r) => {
+        try {
+          return JSON.parse(r);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    // 3. Fetch latest container compute metric
+    const rawMetrics = await redisClient.lrange(`metrics:service:${id}`, 0, 0).catch(() => []);
+    let latestCompute: any = null;
+    if (rawMetrics.length > 0) {
+      try {
+        latestCompute = JSON.parse(rawMetrics[0]);
+      } catch {}
+    }
+
+    // 4. Generate equidistant time slots
+    const slotMap = new Map<
+      number,
+      {
+        timestamp: number;
+        requests: number;
+        status2xx: number;
+        status3xx: number;
+        status4xx: number;
+        status5xx: number;
+        totalDurationMs: number;
+        maxDurationMs: number;
+        bytesSent: number;
+        wafMitigations: number;
+      }
+    >();
+
+    const startSlot = Math.floor(startTime / groupIntervalMs) * groupIntervalMs;
+    const endSlot = Math.floor(now / groupIntervalMs) * groupIntervalMs;
+    for (let t = startSlot; t <= endSlot; t += groupIntervalMs) {
+      slotMap.set(t, {
+        timestamp: t,
+        requests: 0,
+        status2xx: 0,
+        status3xx: 0,
+        status4xx: 0,
+        status5xx: 0,
+        totalDurationMs: 0,
+        maxDurationMs: 0,
+        bytesSent: 0,
+        wafMitigations: 0,
+      });
+    }
+
+    let totalRequests = 0;
+    let status2xx = 0;
+    let status3xx = 0;
+    let status4xx = 0;
+    let status5xx = 0;
+    let totalBytesSent = 0;
+    let totalDurationMs = 0;
+    let maxLatency = 0;
+    const allLatencies: number[] = [];
+    let wafMitigations = 0;
+    const pathCounts: Record<string, number> = {};
+    const methodCounts: Record<string, number> = {};
+    let uniqueIps = 0;
+
+    for (const item of rawBuckets) {
+      try {
+        const b = JSON.parse(item);
+        const reqs = b.requests || 0;
+        totalRequests += reqs;
+        status2xx += b.status2xx || 0;
+        status3xx += b.status3xx || 0;
+        status4xx += b.status4xx || 0;
+        status5xx += b.status5xx || 0;
+        totalBytesSent += b.bytesSent || 0;
+        totalDurationMs += b.totalDurationMs || 0;
+        wafMitigations += b.wafMitigations || 0;
+        uniqueIps += b.uniqueIpsCount || 0;
+
+        if ((b.maxDurationMs || 0) > maxLatency) maxLatency = b.maxDurationMs;
+        if (reqs > 0) {
+          const avgBucket = Math.round((b.totalDurationMs || 0) / reqs);
+          allLatencies.push(avgBucket);
+        }
+
+        if (b.methods) {
+          for (const [m, count] of Object.entries(b.methods)) {
+            methodCounts[m] = (methodCounts[m] || 0) + (count as number);
+          }
+        }
+
+        if (b.topPaths) {
+          for (const [p, count] of Object.entries(b.topPaths)) {
+            pathCounts[p] = (pathCounts[p] || 0) + (count as number);
+          }
+        }
+
+        const slotKey = Math.floor(b.timestamp / groupIntervalMs) * groupIntervalMs;
+        const slot = slotMap.get(slotKey);
+        if (slot) {
+          slot.requests += reqs;
+          slot.status2xx += b.status2xx || 0;
+          slot.status3xx += b.status3xx || 0;
+          slot.status4xx += b.status4xx || 0;
+          slot.status5xx += b.status5xx || 0;
+          slot.totalDurationMs += b.totalDurationMs || 0;
+          if ((b.maxDurationMs || 0) > slot.maxDurationMs) slot.maxDurationMs = b.maxDurationMs;
+          slot.bytesSent += b.bytesSent || 0;
+          slot.wafMitigations += b.wafMitigations || 0;
+        }
+      } catch {}
+    }
+
+    allLatencies.sort((a, b) => a - b);
+    const p95Idx = Math.floor(allLatencies.length * 0.95);
+    const p99Idx = Math.floor(allLatencies.length * 0.99);
+    const p95Latency = allLatencies.length > 0 ? allLatencies[p95Idx] || allLatencies[allLatencies.length - 1] : 0;
+    const p99Latency = allLatencies.length > 0 ? allLatencies[p99Idx] || allLatencies[allLatencies.length - 1] : 0;
+    const avgLatency = totalRequests > 0 ? Math.round(totalDurationMs / totalRequests) : 0;
+
+    const successfulRequests = status2xx + status3xx;
+    const successRate = totalRequests > 0 ? parseFloat(((successfulRequests / totalRequests) * 100).toFixed(2)) : 100;
+    const errorRate = totalRequests > 0 ? parseFloat((((status4xx + status5xx) / totalRequests) * 100).toFixed(2)) : 0;
+
+    const elapsedMinutes = Math.max(1, Math.round((now - startTime) / 60000));
+    const requestRatePerMin = parseFloat((totalRequests / elapsedMinutes).toFixed(2));
+
+    const timeSeries = Array.from(slotMap.values()).map((item) => ({
+      timestamp: item.timestamp,
+      isoTime: new Date(item.timestamp).toISOString(),
+      requests: item.requests,
+      status2xx: item.status2xx,
+      status3xx: item.status3xx,
+      status4xx: item.status4xx,
+      status5xx: item.status5xx,
+      avgDurationMs: item.requests > 0 ? Math.round(item.totalDurationMs / item.requests) : 0,
+      maxDurationMs: item.maxDurationMs,
+      bytesSent: item.bytesSent,
+      wafMitigations: item.wafMitigations,
+    }));
+
+    const topEndpoints = Object.entries(pathCounts)
+      .map(([path, count]) => ({
+        path,
+        requests: count,
+        percentage: totalRequests > 0 ? parseFloat(((count / totalRequests) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 10);
+
+    return reply.send({
+      targetId: id,
+      targetType: "service",
+      slug: service.slug,
+      serviceName: service.name,
+      language: service.language,
+      timeframe,
+      kpis: {
+        totalRequests,
+        requestRatePerMin,
+        avgLatencyMs: avgLatency,
+        p95LatencyMs: p95Latency,
+        p99LatencyMs: p99Latency,
+        maxLatencyMs: maxLatency,
+        successRate,
+        errorRate,
+        totalBandwidthBytes: totalBytesSent,
+        uniqueIps,
+        wafMitigations,
+        currentCpuPercent: latestCompute?.cpuPercent ?? 0,
+        currentMemoryMb: latestCompute?.memoryMb ?? 0,
+        cpuLimit: service.cpuLimit,
+        memoryLimitMb: service.memoryLimit,
+      },
+      statusBreakdown: {
+        status2xx,
+        status3xx,
+        status4xx,
+        status5xx,
+      },
+      methodBreakdown: methodCounts,
+      timeSeries,
+      topEndpoints,
+      recentRequests,
+    });
+  });
+
   // GET /api/services/:id/metrics — Snapshot & recent history
   fastify.get("/:id/metrics", async (request, reply) => {
     const { id } = request.params as { id: string };

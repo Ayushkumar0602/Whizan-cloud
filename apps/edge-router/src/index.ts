@@ -8,6 +8,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { waf } from "./waf.js";
+import { edgeAnalytics } from "./analytics.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ const redis = new Redis(REDIS_URL, {
 });
 redis.on("error", (err) => console.error("[Router Redis] Error:", err.message));
 waf.init(redis);
+edgeAnalytics.init(redis);
 
 // ── Instant Startup Boot Beacon ─────────────────────────────────────────────
 // Proactively notifies the 24/7 Render Control Plane and Redis the microsecond
@@ -235,6 +237,7 @@ function getStaticServer(staticDir: string) {
 // ─── Main HTTP Server ─────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
+  (req as any).__startTime = Date.now();
   // ── Top-level Router Health & Ping ───────────────────────────────────────
   if (req.url === "/health" || req.url === "/ping" || req.url === "/_internal/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -299,6 +302,25 @@ const server = http.createServer(async (req, res) => {
   if (!wafVerdict.allowed) {
     const statusCode = wafVerdict.statusCode || 403;
     const isHtml = (req.headers.accept || "").includes("text/html");
+
+    // Record security block in edge analytics
+    lookupDeployment(slug).then((dep) => {
+      const targetId = (dep as any)?.serviceId || (dep as any)?.projectId || slug;
+      const targetType = (dep as any)?.serviceId ? "service" : "project";
+      edgeAnalytics.record({
+        targetType,
+        targetId,
+        slug,
+        statusCode,
+        durationMs: (req as any).__startTime ? Date.now() - (req as any).__startTime : 2,
+        bytesSent: 350,
+        method: req.method || "GET",
+        path: req.url || "/",
+        ip: waf.extractClientIp(req),
+        userAgent: req.headers["user-agent"],
+        isWafBlocked: true,
+      });
+    }).catch(() => {});
 
     // Inject security response headers
     if (wafVerdict.headers) {
@@ -488,6 +510,22 @@ const server = http.createServer(async (req, res) => {
     });
     res.on("finish", () => {
       const bytesSent = Math.max(0, (res.socket?.bytesWritten || 0) - startBytes);
+      const targetId = (deployment as any).projectId || (deployment as any).serviceId;
+      if (targetId) {
+        edgeAnalytics.record({
+          targetType: (deployment as any).serviceId ? "service" : "project",
+          targetId,
+          slug,
+          statusCode: res.statusCode || 200,
+          durationMs: (req as any).__startTime ? Date.now() - (req as any).__startTime : 2,
+          bytesSent,
+          method: req.method || "GET",
+          path: req.url || "/",
+          ip: waf.extractClientIp(req),
+          userAgent: req.headers["user-agent"],
+          isWafBlocked: false,
+        });
+      }
       const event = {
         projectId: (deployment as any).projectId,
         date: new Date().toISOString().split("T")[0],
@@ -878,6 +916,24 @@ proxy.on("proxyRes", (proxyRes, req, res) => {
 
   proxyRes.on("end", () => {
     const dep: any = (req as any).__deploymentInfo || deploymentCache.get(slug)?.info;
+    const targetId = dep?.serviceId || dep?.projectId;
+    if (targetId) {
+      const targetType = dep?.serviceId ? "service" : "project";
+      edgeAnalytics.record({
+        targetType,
+        targetId,
+        slug,
+        statusCode: proxyRes.statusCode || 200,
+        durationMs: (req as any).__startTime ? Date.now() - (req as any).__startTime : 5,
+        bytesSent,
+        method: req.method || "GET",
+        path: req.url || "/",
+        ip: waf.extractClientIp(req),
+        userAgent: req.headers["user-agent"],
+        isWafBlocked: false,
+      });
+    }
+
     if (dep && dep.projectId) {
       const event = {
         projectId: dep.projectId,
