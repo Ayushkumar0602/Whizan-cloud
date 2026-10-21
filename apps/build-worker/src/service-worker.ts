@@ -260,6 +260,10 @@ const worker = new Worker<ServiceBuildJob>(
       const latestService = await prisma.backendService.findUnique({ where: { id: serviceId } });
       const jobConfig: ServiceBuildJob = {
         ...job.data,
+        language: latestService?.language ?? job.data.language,
+        startCommand: latestService?.startCommand ?? job.data.startCommand,
+        installCommand: latestService?.installCommand ?? job.data.installCommand,
+        internalPort: latestService?.internalPort ?? job.data.internalPort,
         autoSleep: latestService?.autoSleep ?? job.data.autoSleep,
         instanceType: latestService?.instanceType ?? job.data.instanceType,
         cpuLimit: latestService?.cpuLimit ?? job.data.cpuLimit,

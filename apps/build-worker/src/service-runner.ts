@@ -93,47 +93,133 @@ export class ServiceRunner {
     if (!hasDockerfile) {
       await this.writeDockerignore(hostWorkDir);
 
-      if (filesInWorkDir.includes("Cargo.toml")) {
-        await onLog("🦀 Rust project detected (Cargo.toml). Synthesizing production Rust Dockerfile...");
-        await this.writeRustDockerfile(hostWorkDir, job.internalPort);
-        hasDockerfile = true;
-      } else if (filesInWorkDir.includes("pom.xml")) {
-        await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing OpenJDK Dockerfile...");
-        await this.writeMavenDockerfile(hostWorkDir, job.internalPort);
-        hasDockerfile = true;
-      } else if (filesInWorkDir.includes("build.gradle") || filesInWorkDir.includes("build.gradle.kts")) {
-        await onLog("☕ Java / Gradle project detected. Synthesizing OpenJDK Dockerfile...");
-        await this.writeGradleDockerfile(hostWorkDir, job.internalPort);
-        hasDockerfile = true;
-      } else if (filesInWorkDir.includes("go.mod") || job.language === "GO" || filesInWorkDir.some(f => f.endsWith(".go"))) {
-        await onLog("🐹 Go project detected. Synthesizing multi-stage Go Dockerfile...");
-        await this.writeGoDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
-        hasDockerfile = true;
-      } else if (
+      const hasPackageJson = filesInWorkDir.includes("package.json");
+      const hasCargo = filesInWorkDir.includes("Cargo.toml");
+      const hasGoMod = filesInWorkDir.includes("go.mod");
+      const hasMaven = filesInWorkDir.includes("pom.xml");
+      const hasGradle = filesInWorkDir.includes("build.gradle") || filesInWorkDir.includes("build.gradle.kts");
+      const hasPythonManifest =
         filesInWorkDir.includes("requirements.txt") ||
         filesInWorkDir.includes("pyproject.toml") ||
         filesInWorkDir.includes("Pipfile") ||
-        job.language === "PYTHON" ||
-        filesInWorkDir.some(f => f.endsWith(".py"))
-      ) {
+        filesInWorkDir.includes("manage.py");
+      const hasComposer = filesInWorkDir.includes("composer.json");
+      const hasGemfile = filesInWorkDir.includes("Gemfile");
+      const hasDotnet = filesInWorkDir.some(f => f.endsWith(".csproj") || f.endsWith(".sln"));
+
+      // Priority 1: Explicit language selection from database/job
+      // Priority 2: Primary package manifests (package.json, Cargo.toml, go.mod, requirements.txt, etc.)
+      // Priority 3: Fallback source file extensions (only when no package manifest is found)
+
+      const isNode =
+        job.language === "NODEJS" ||
+        (hasPackageJson && job.language !== "PYTHON" && job.language !== "GO" && job.language !== "RUST") ||
+        (!job.language && hasPackageJson);
+
+      const isPython =
+        !isNode &&
+        (job.language === "PYTHON" ||
+          (hasPythonManifest && !hasPackageJson) ||
+          (job.language !== "NODEJS" && hasPythonManifest));
+
+      const isGo =
+        !isNode &&
+        !isPython &&
+        (job.language === "GO" || (hasGoMod && !hasPackageJson));
+
+      const isRust =
+        !isNode &&
+        !isPython &&
+        !isGo &&
+        (job.language === "RUST" || (hasCargo && !hasPackageJson));
+
+      const isJava =
+        !isNode &&
+        !isPython &&
+        !isGo &&
+        !isRust &&
+        (job.language === "JAVA" || ((hasMaven || hasGradle) && !hasPackageJson));
+
+      const isPhp =
+        !isNode &&
+        !isPython &&
+        !isGo &&
+        !isRust &&
+        !isJava &&
+        (job.language === "PHP" || (hasComposer && !hasPackageJson));
+
+      const isRuby =
+        !isNode &&
+        !isPython &&
+        !isGo &&
+        !isRust &&
+        !isJava &&
+        !isPhp &&
+        (job.language === "RUBY" || (hasGemfile && !hasPackageJson));
+
+      const isDotnet =
+        !isNode &&
+        !isPython &&
+        !isGo &&
+        !isRust &&
+        !isJava &&
+        !isPhp &&
+        !isRuby &&
+        (job.language === "DOTNET" || (hasDotnet && !hasPackageJson));
+
+      if (isNode) {
+        await onLog("🟢 Node.js project detected. Running with native high-performance Node.js runtime...");
+        // Node.js uses Whizan's native node:20-slim execution engine without Dockerfile build overhead
+        hasDockerfile = false;
+      } else if (isPython) {
         await onLog("🐍 Python project detected. Synthesizing zero-config production Python Dockerfile...");
         await this.writePythonDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
         hasDockerfile = true;
-      } else if (filesInWorkDir.includes("composer.json") || filesInWorkDir.some(f => f.endsWith(".php"))) {
+      } else if (isGo) {
+        await onLog("🐹 Go project detected. Synthesizing multi-stage Go Dockerfile...");
+        await this.writeGoDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
+      } else if (isRust) {
+        await onLog("🦀 Rust project detected (Cargo.toml). Synthesizing production Rust Dockerfile...");
+        await this.writeRustDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+      } else if (isJava) {
+        if (hasGradle) {
+          await onLog("☕ Java / Gradle project detected. Synthesizing OpenJDK Dockerfile...");
+          await this.writeGradleDockerfile(hostWorkDir, job.internalPort);
+        } else {
+          await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing OpenJDK Dockerfile...");
+          await this.writeMavenDockerfile(hostWorkDir, job.internalPort);
+        }
+        hasDockerfile = true;
+      } else if (isPhp) {
         await onLog("🐘 PHP project detected. Synthesizing PHP Dockerfile...");
         await this.writePhpDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-      } else if (filesInWorkDir.includes("Gemfile")) {
+      } else if (isRuby) {
         await onLog("💎 Ruby project detected. Synthesizing Ruby Dockerfile...");
         await this.writeRubyDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-      } else if (filesInWorkDir.some(f => f.endsWith(".csproj") || f.endsWith(".sln") || f.endsWith(".cs"))) {
+      } else if (isDotnet) {
         await onLog("🔷 .NET / C# project detected. Synthesizing .NET 8 Dockerfile...");
         await this.writeDotnetDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-      } else if (filesInWorkDir.includes("package.json") || job.language === "NODEJS" || filesInWorkDir.some(f => f.endsWith(".js") || f.endsWith(".ts"))) {
-        await onLog("🟢 Node.js project detected. Synthesizing Node.js Dockerfile...");
-        await this.writeNodeDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+      } else if (filesInWorkDir.some(f => f.endsWith(".js") || f.endsWith(".ts") || f.endsWith(".mjs"))) {
+        // Fallback for manifest-less JavaScript/TypeScript script
+        await onLog("🟢 Node.js script detected. Running with native high-performance Node.js runtime...");
+        hasDockerfile = false;
+      } else if (filesInWorkDir.some(f => f.endsWith(".py"))) {
+        // Fallback for manifest-less Python script
+        await onLog("🐍 Python project detected. Synthesizing zero-config production Python Dockerfile...");
+        await this.writePythonDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".go"))) {
+        await onLog("🐹 Go project detected. Synthesizing multi-stage Go Dockerfile...");
+        await this.writeGoDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".php"))) {
+        await onLog("🐘 PHP project detected. Synthesizing PHP Dockerfile...");
+        await this.writePhpDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
       } else {
         await onLog("⚡ Synthesizing universal backend container Dockerfile...");
@@ -244,7 +330,11 @@ export class ServiceRunner {
           effectiveStartCommand = `python -m uvicorn ${detectedModule}:app --host 0.0.0.0 --port ${job.internalPort}`;
           await onLog(`💡 FastAPI app detected in ${detectedModule}.py. Running with Uvicorn on 0.0.0.0:${job.internalPort}.`);
         }
-      } else if (job.language === "NODEJS") {
+      } else if (
+        job.language === "NODEJS" ||
+        filesInWorkDir.includes("package.json") ||
+        (!job.language && !isCustomImage)
+      ) {
         // Check if package.json has a build script (TypeScript, NestJS, etc.)
         try {
           const pkgRaw = await fs.readFile(path.join(hostWorkDir, "package.json"), "utf8");
@@ -267,7 +357,26 @@ export class ServiceRunner {
               effectiveInstallCommand += " && npm run build";
             }
           }
-        } catch {}
+
+          if (!effectiveStartCommand || effectiveStartCommand.trim() === "" || effectiveStartCommand === "npm start") {
+            if (pkg.scripts?.start) {
+              effectiveStartCommand = "npm start";
+            } else if (filesInWorkDir.includes("server.js")) {
+              effectiveStartCommand = "node server.js";
+            } else if (filesInWorkDir.includes("index.js")) {
+              effectiveStartCommand = "node index.js";
+            } else if (filesInWorkDir.includes("app.js")) {
+              effectiveStartCommand = "node app.js";
+            } else {
+              effectiveStartCommand = "npm start";
+            }
+          }
+        } catch {
+          if (!effectiveInstallCommand) effectiveInstallCommand = "npm install";
+          if (!effectiveStartCommand || effectiveStartCommand.trim() === "") {
+            effectiveStartCommand = "npm start";
+          }
+        }
       } else if (job.language === "GO") {
         if (!effectiveInstallCommand && filesInWorkDir.includes("go.mod")) {
           effectiveInstallCommand = "go mod download";
@@ -614,8 +723,19 @@ dist
     }
 
     if (!isFastApi && !isFlask && !isDjango) {
-      const firstPy = filesInWorkDir.find(f => f.endsWith(".py") && !f.startsWith("test"));
-      if (firstPy) detectedModule = firstPy.replace(/\.py$/, "");
+      const commonPyEntries = ["main.py", "app.py", "server.py", "wsgi.py", "index.py", "api.py", "run.py", "application.py"];
+      const foundEntry = commonPyEntries.find(entry => filesInWorkDir.includes(entry));
+      if (foundEntry) {
+        detectedModule = foundEntry.replace(/\.py$/, "");
+      } else {
+        const firstPy = filesInWorkDir.find(f => f.endsWith(".py") && !f.startsWith("test") && !f.includes("scraper") && !f.includes("crawler") && !f.includes("worker") && !f.includes("util"));
+        if (firstPy) {
+          detectedModule = firstPy.replace(/\.py$/, "");
+        } else {
+          const fallbackPy = filesInWorkDir.find(f => f.endsWith(".py") && !f.startsWith("test"));
+          if (fallbackPy) detectedModule = fallbackPy.replace(/\.py$/, "");
+        }
+      }
     }
 
     let startCmd = `["python", "${detectedModule}.py"]`;
