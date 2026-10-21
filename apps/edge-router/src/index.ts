@@ -238,6 +238,11 @@ function getStaticServer(staticDir: string) {
 
 const server = http.createServer(async (req, res) => {
   (req as any).__startTime = Date.now();
+
+  // ── Baseline Edge Security Headers ──────────────────────────────────────────
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
   // ── Top-level Router Health & Ping ───────────────────────────────────────
   if (req.url === "/health" || req.url === "/ping" || req.url === "/_internal/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -900,8 +905,23 @@ async function handleFunctionRequest(
   }
 }
 
-// ── Analytics Tracking ────────────────────────────────────────────────────────
+// ── Analytics & Security Headers Handling ─────────────────────────────────────
 proxy.on("proxyRes", (proxyRes, req, res) => {
+  // Strip framework fingerprinting headers
+  delete proxyRes.headers["x-powered-by"];
+  delete proxyRes.headers["x-aspnet-version"];
+
+  // Enforce baseline edge security headers on proxied traffic
+  if (!proxyRes.headers["strict-transport-security"]) {
+    proxyRes.headers["strict-transport-security"] = "max-age=31536000; includeSubDomains; preload";
+  }
+  if (!proxyRes.headers["x-content-type-options"]) {
+    proxyRes.headers["x-content-type-options"] = "nosniff";
+  }
+  if (!proxyRes.headers["x-frame-options"] && !proxyRes.headers["content-security-policy"]) {
+    proxyRes.headers["x-frame-options"] = "SAMEORIGIN";
+  }
+
   const host = req.headers.host || "";
   let slug = "";
   if (host.endsWith(`.${BASE_DOMAIN}`) || host.endsWith(`.${BASE_DOMAIN}:${ROUTER_PORT}`)) {
