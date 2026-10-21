@@ -1049,17 +1049,25 @@ export async function serviceRoutes(fastify: FastifyInstance) {
     // 1. Fetch time-series buckets from Redis Sorted Set
     const rawBuckets = await redisClient.zrangebyscore(`analytics:ts:${id}`, startTime, now).catch(() => []);
 
-    // 2. Fetch recent requests from Redis List
-    const rawRecent = await redisClient.lrange(`analytics:recent:${id}`, 0, 39).catch(() => []);
-    const recentRequests = rawRecent
-      .map((r) => {
-        try {
-          return JSON.parse(r);
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
+    // 2. Fetch recent requests from Redis
+    const rawRecent = await redisClient.get(`analytics:recent:${id}`).catch(() => null);
+    let recentRequests: any[] = [];
+    if (rawRecent) {
+      try {
+        recentRequests = JSON.parse(rawRecent);
+      } catch {}
+    } else {
+      const listItems = await redisClient.lrange(`analytics:recent:${id}`, 0, 39).catch(() => []);
+      recentRequests = listItems
+        .map((r: string) => {
+          try {
+            return JSON.parse(r);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+    }
 
     // 3. Fetch latest container compute metric
     const rawMetrics = await redisClient.lrange(`metrics:service:${id}`, 0, 0).catch(() => []);
