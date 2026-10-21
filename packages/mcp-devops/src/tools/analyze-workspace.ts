@@ -197,9 +197,37 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
   }
 
   // 3. Check Go
-  if (filesInRoot.includes("go.mod")) {
+  if (filesInRoot.includes("go.mod") || filesInRoot.some(f => f.endsWith(".go"))) {
     report.detectedRuntimes.push("Go");
     if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = report.framework || "Go";
+  }
+
+  // 3b. Check Polyglot Runtimes (Rust, Java, PHP, Ruby, .NET)
+  if (filesInRoot.includes("Cargo.toml")) {
+    report.detectedRuntimes.push("Rust");
+    if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = "Rust";
+  }
+  if (filesInRoot.includes("pom.xml") || filesInRoot.includes("build.gradle") || filesInRoot.includes("build.gradle.kts")) {
+    report.detectedRuntimes.push("Java");
+    if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = filesInRoot.includes("pom.xml") ? "Java (Maven)" : "Java (Gradle)";
+  }
+  if (filesInRoot.includes("composer.json") || filesInRoot.some(f => f.endsWith(".php"))) {
+    report.detectedRuntimes.push("PHP");
+    if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = "PHP";
+  }
+  if (filesInRoot.includes("Gemfile")) {
+    report.detectedRuntimes.push("Ruby");
+    if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = "Ruby on Rails";
+  }
+  if (filesInRoot.some(f => f.endsWith(".csproj") || f.endsWith(".sln"))) {
+    report.detectedRuntimes.push(".NET");
+    if (report.projectType === "unknown") report.projectType = "backend";
+    report.framework = ".NET 8 / C#";
   }
 
   // 4. Check for Monorepo (apps/ or packages/ or client/ and server/)
@@ -359,21 +387,24 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
       "NEXT.JS / FULLSTACK DETECTED: Deploy using 'whizan_create_project' with framework='NEXTJS' and outputDir='.next'."
     );
   } else if (report.projectType === "backend") {
+    const isPolyglot = report.detectedRuntimes.some(r => ["Rust", "Java", "PHP", "Ruby", ".NET"].includes(r));
     const language = report.detectedRuntimes.includes("Python")
       ? "PYTHON"
       : report.detectedRuntimes.includes("Go")
       ? "GO"
+      : isPolyglot
+      ? "DOCKERFILE"
       : "NODEJS";
     report.recommendedDeploymentConfig = {
       targetType: "service",
       toolToCall: "whizan_create_service",
       language,
-      internalPort: report.portConfig.detectedHardcodedPort || 8000,
+      internalPort: report.portConfig.detectedHardcodedPort || (language === "GO" || isPolyglot ? 8080 : 8000),
       startCommand: report.scripts.start ? "npm start" : undefined,
       installCommand: report.hasPackageJson ? "npm install" : undefined,
     };
     report.recommendations.push(
-      `BACKEND SERVICE DETECTED (${language}): Deploy using 'whizan_create_service' with language='${language}' and internalPort=${report.recommendedDeploymentConfig.internalPort}.`
+      `BACKEND SERVICE DETECTED (${report.framework || language}): Deploy using 'whizan_create_service' with language='${language}' and internalPort=${report.recommendedDeploymentConfig.internalPort}. Whizan Cloud automatically synthesizes and optimizes a production container without requiring a Dockerfile.`
     );
   }
 

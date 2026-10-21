@@ -287,6 +287,12 @@ export async function analyzeStack(workspaceDir: string): Promise<StackAnalysis>
     result.framework = "Ruby on Rails";
     if (result.projectType === "unknown") result.projectType = "backend";
   }
+  if (files.some((f) => f.endsWith(".csproj") || f.endsWith(".sln"))) {
+    result.language = "DOCKERFILE";
+    result.framework = ".NET 8 / C#";
+    if (result.projectType === "unknown") result.projectType = "backend";
+    result.internalPort = 8080;
+  }
 
   // ─── Static HTML site ────────────────────────────────────────────────
   if (result.projectType === "unknown" && files.includes("index.html") && !files.includes("package.json")) {

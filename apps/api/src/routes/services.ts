@@ -37,7 +37,19 @@ const BaseServiceSchema = z.object({
   slug: z.string().min(1).max(60).regex(/^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/, "Slug must be lowercase alphanumeric with internal hyphens (cannot start or end with a hyphen)"),
   githubRepoUrl: z.union([z.string().url(), z.literal("direct-upload"), z.literal("")]).default("direct-upload"),
   branch: z.string().min(1).max(100).regex(/^[a-zA-Z0-9][a-zA-Z0-9._\-\/]*$/, "Invalid git branch name. Must start with alphanumeric and not contain shell metacharacters").default("main"),
-  language: z.enum(["NODEJS", "PYTHON", "GO", "DOCKERFILE"]).default("NODEJS"),
+  language: z.preprocess(
+    (val) => {
+      if (typeof val === "string") {
+        const upper = val.toUpperCase().trim();
+        if (["RUST", "JAVA", "PHP", "RUBY", "DOTNET", "C#", "KOTLIN"].includes(upper)) {
+          return "DOCKERFILE";
+        }
+        return upper;
+      }
+      return val;
+    },
+    z.enum(["NODEJS", "PYTHON", "GO", "DOCKERFILE"]).default("NODEJS")
+  ),
   rootDir: z.string().max(200).default("."),
   installCommand: z.string().max(500).default("npm install"),
   startCommand: z.string().max(500).default("npm start"),

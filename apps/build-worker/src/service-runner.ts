@@ -86,66 +86,84 @@ export class ServiceRunner {
     const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
     const hostWorkDir = cleanRootDir ? path.join(buildDir, cleanRootDir) : buildDir;
 
-    // 2. Check for Dockerfile or Polyglot manifests (Rust, Java, PHP, Ruby, etc.)
+    // 2. Check for Dockerfile or auto-synthesize one for any runtime stack
     const filesInWorkDir = await fs.readdir(hostWorkDir).catch(() => [] as string[]);
     let hasDockerfile = filesInWorkDir.some(f => f.toLowerCase() === "dockerfile");
-    let isPolyglot = false;
-
-    // If language is DOCKERFILE or user has a Dockerfile, or stack requires synthesized container
-    if (!hasDockerfile && job.language === "DOCKERFILE") {
-      hasDockerfile = true;
-    }
 
     if (!hasDockerfile) {
-      // Check polyglot languages
+      await this.writeDockerignore(hostWorkDir);
+
       if (filesInWorkDir.includes("Cargo.toml")) {
-        await onLog("🦀 Rust project detected (Cargo.toml). Synthesizing multi-stage Rust Dockerfile...");
+        await onLog("🦀 Rust project detected (Cargo.toml). Synthesizing production Rust Dockerfile...");
         await this.writeRustDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-        isPolyglot = true;
       } else if (filesInWorkDir.includes("pom.xml")) {
-        await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing Maven OpenJDK Dockerfile...");
+        await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing OpenJDK Dockerfile...");
         await this.writeMavenDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-        isPolyglot = true;
-      } else if (filesInWorkDir.includes("build.gradle")) {
-        await onLog("☕ Java / Gradle project detected (build.gradle). Synthesizing Gradle OpenJDK Dockerfile...");
+      } else if (filesInWorkDir.includes("build.gradle") || filesInWorkDir.includes("build.gradle.kts")) {
+        await onLog("☕ Java / Gradle project detected. Synthesizing OpenJDK Dockerfile...");
         await this.writeGradleDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-        isPolyglot = true;
+      } else if (filesInWorkDir.includes("go.mod") || job.language === "GO" || filesInWorkDir.some(f => f.endsWith(".go"))) {
+        await onLog("🐹 Go project detected. Synthesizing multi-stage Go Dockerfile...");
+        await this.writeGoDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
+      } else if (
+        filesInWorkDir.includes("requirements.txt") ||
+        filesInWorkDir.includes("pyproject.toml") ||
+        filesInWorkDir.includes("Pipfile") ||
+        job.language === "PYTHON" ||
+        filesInWorkDir.some(f => f.endsWith(".py"))
+      ) {
+        await onLog("🐍 Python project detected. Synthesizing zero-config production Python Dockerfile...");
+        await this.writePythonDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
       } else if (filesInWorkDir.includes("composer.json") || filesInWorkDir.some(f => f.endsWith(".php"))) {
         await onLog("🐘 PHP project detected. Synthesizing PHP Dockerfile...");
         await this.writePhpDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-        isPolyglot = true;
       } else if (filesInWorkDir.includes("Gemfile")) {
         await onLog("💎 Ruby project detected. Synthesizing Ruby Dockerfile...");
         await this.writeRubyDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
-        isPolyglot = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".csproj") || f.endsWith(".sln") || f.endsWith(".cs"))) {
+        await onLog("🔷 .NET / C# project detected. Synthesizing .NET 8 Dockerfile...");
+        await this.writeDotnetDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+      } else if (filesInWorkDir.includes("package.json") || job.language === "NODEJS" || filesInWorkDir.some(f => f.endsWith(".js") || f.endsWith(".ts"))) {
+        await onLog("🟢 Node.js project detected. Synthesizing Node.js Dockerfile...");
+        await this.writeNodeDockerfile(hostWorkDir, job.internalPort, job.startCommand, filesInWorkDir);
+        hasDockerfile = true;
+      } else {
+        await onLog("⚡ Synthesizing universal backend container Dockerfile...");
+        await this.writeUniversalDockerfile(hostWorkDir, job.internalPort, job.startCommand);
+        hasDockerfile = true;
       }
     }
 
     let image = "node:20-slim";
     let isCustomImage = false;
 
-    if (hasDockerfile || job.language === "DOCKERFILE") {
+    if (hasDockerfile) {
       // Build Dockerfile
       const builtImageTag = `service-img-${job.slug}-${shortId}`.toLowerCase();
-      await onLog(`🐳 Building Docker image '${builtImageTag}' from Dockerfile...`);
+      await onLog(`🐳 Building Docker image '${builtImageTag}'...`);
       await this.buildDockerImage(hostWorkDir, builtImageTag, onLog);
       image = builtImageTag;
       isCustomImage = true;
       await onLog(`✓ Docker image '${builtImageTag}' built successfully.`);
-    } else if (job.language === "PYTHON") {
-      image = "python:3.11-slim";
-      await this.ensureImage(image, onLog);
-    } else if (job.language === "GO") {
-      image = "golang:1.21-alpine";
-      await this.ensureImage(image, onLog);
     } else {
-      image = "node:20-slim";
-      await this.ensureImage(image, onLog);
+      if (job.language === "PYTHON") {
+        image = "python:3.11-slim";
+        await this.ensureImage(image, onLog);
+      } else if (job.language === "GO") {
+        image = "golang:1.21-alpine";
+        await this.ensureImage(image, onLog);
+      } else {
+        image = "node:20-slim";
+        await this.ensureImage(image, onLog);
+      }
     }
 
     // 3. Find a free host port for the new container (if HTTP service)
@@ -528,13 +546,272 @@ export class ServiceRunner {
   }
 
   /**
+   * Write standard .dockerignore to keep docker context lightweight & fast
+   */
+  private async writeDockerignore(workDir: string): Promise<void> {
+    const dockerignorePath = path.join(workDir, ".dockerignore");
+    try {
+      await fs.access(dockerignorePath);
+    } catch {
+      const content = `
+.git
+.github
+node_modules
+__pycache__
+*.pyc
+.venv
+venv
+env
+target
+build/libs
+.next
+dist
+.env.local
+.whizan
+*.log
+`;
+      await fs.writeFile(dockerignorePath, content.trim()).catch(() => {});
+    }
+  }
+
+  /**
+   * Synthesize zero-config production Python Dockerfile
+   * Auto-detects FastAPI, Flask, Django, generic scripts, poetry, pipenv, requirements.txt
+   */
+  private async writePythonDockerfile(
+    workDir: string,
+    port: number,
+    customStart?: string,
+    filesInWorkDir: string[] = []
+  ): Promise<void> {
+    const candidateFiles = ["main.py", "app.py", "server.py", "wsgi.py", "index.py", "manage.py", "api.py"];
+    let detectedModule = "main";
+    let detectedAppVar = "app";
+    let isFastApi = false;
+    let isFlask = false;
+    let isDjango = filesInWorkDir.includes("manage.py");
+
+    for (const fileName of candidateFiles) {
+      if (filesInWorkDir.includes(fileName)) {
+        try {
+          const content = await fs.readFile(path.join(workDir, fileName), "utf-8");
+          if (content.includes("FastAPI(") || content.includes("from fastapi import")) {
+            isFastApi = true;
+            detectedModule = fileName.replace(/\.py$/, "");
+            const match = content.match(/([a-zA-Z0-9_]+)\s*=\s*FastAPI\(/);
+            if (match) detectedAppVar = match[1];
+            break;
+          }
+          if (content.includes("Flask(") || content.includes("from flask import") || content.includes("import flask")) {
+            isFlask = true;
+            detectedModule = fileName.replace(/\.py$/, "");
+            const match = content.match(/([a-zA-Z0-9_]+)\s*=\s*Flask\(/);
+            if (match) detectedAppVar = match[1];
+            break;
+          }
+        } catch {}
+      }
+    }
+
+    if (!isFastApi && !isFlask && !isDjango) {
+      const firstPy = filesInWorkDir.find(f => f.endsWith(".py") && !f.startsWith("test"));
+      if (firstPy) detectedModule = firstPy.replace(/\.py$/, "");
+    }
+
+    let startCmd = `["python", "${detectedModule}.py"]`;
+    if (customStart && customStart.trim() !== "" && customStart !== "npm start" && customStart !== "python main.py") {
+      startCmd = `["sh", "-c", "${customStart.replace(/"/g, '\\"')}"]`;
+    } else if (isDjango) {
+      startCmd = `["sh", "-c", "python manage.py migrate --noinput || true; python manage.py runserver 0.0.0.0:${port}"]`;
+    } else if (isFastApi) {
+      startCmd = `["uvicorn", "${detectedModule}:${detectedAppVar}", "--host", "0.0.0.0", "--port", "${port}"]`;
+    } else if (isFlask) {
+      startCmd = `["sh", "-c", "gunicorn -w 2 -b 0.0.0.0:${port} ${detectedModule}:${detectedAppVar} || python -m flask --app ${detectedModule} run --host 0.0.0.0 --port ${port}"]`;
+    }
+
+    // Auto-detect missing requirements if no manifest exists
+    const hasRequirements = filesInWorkDir.includes("requirements.txt");
+    const hasPoetry = filesInWorkDir.includes("pyproject.toml");
+    const hasPipenv = filesInWorkDir.includes("Pipfile");
+
+    if (!hasRequirements && !hasPoetry && !hasPipenv) {
+      const detectedPkgs: string[] = [];
+      try {
+        for (const f of filesInWorkDir.filter(f => f.endsWith(".py"))) {
+          const txt = await fs.readFile(path.join(workDir, f), "utf8").catch(() => "");
+          if (txt.includes("fastapi")) detectedPkgs.push("fastapi");
+          if (txt.includes("flask")) detectedPkgs.push("flask");
+          if (txt.includes("requests")) detectedPkgs.push("requests");
+          if (txt.includes("pydantic")) detectedPkgs.push("pydantic");
+          if (txt.includes("sqlalchemy")) detectedPkgs.push("sqlalchemy");
+          if (txt.includes("pymongo")) detectedPkgs.push("pymongo");
+          if (txt.includes("redis")) detectedPkgs.push("redis");
+          if (txt.includes("httpx")) detectedPkgs.push("httpx");
+          if (txt.includes("django")) detectedPkgs.push("django");
+        }
+        if (detectedPkgs.length > 0) {
+          const uniquePkgs = Array.from(new Set(detectedPkgs));
+          await fs.writeFile(path.join(workDir, "requirements.txt"), uniquePkgs.join("\n"));
+        }
+      } catch {}
+    }
+
+    const dockerfile = `
+FROM python:3.11-slim
+WORKDIR /app
+
+# Install system dependencies for C-extensions (psycopg2, cryptography, pillow, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    gcc \\
+    python3-dev \\
+    libpq-dev \\
+    libssl-dev \\
+    libffi-dev \\
+    curl \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Install package manager & dependencies
+COPY requirements.txt* pyproject.toml* Pipfile* Pipfile.lock* poetry.lock* ./
+RUN if [ -f requirements.txt ]; then \\
+        pip install --no-cache-dir -r requirements.txt; \\
+    elif [ -f pyproject.toml ]; then \\
+        pip install --no-cache-dir poetry && poetry config virtualenvs.create false && (poetry install --no-interaction --no-ansi || pip install --no-cache-dir . || true); \\
+    elif [ -f Pipfile ]; then \\
+        pip install --no-cache-dir pipenv && (pipenv install --system --deploy || pipenv install --system || true); \\
+    fi
+
+# Auto-ensure ASGI/WSGI servers are present for FastAPI/Flask
+RUN pip install --no-cache-dir "uvicorn[standard]" gunicorn || true
+
+COPY . .
+
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0 PYTHONUNBUFFERED=1
+EXPOSE ${port}
+CMD ${startCmd}
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize multi-stage Go Dockerfile
+   * Builds ultra-compact static binary (sub-15MB container)
+   */
+  private async writeGoDockerfile(
+    workDir: string,
+    port: number,
+    customStart?: string,
+    filesInWorkDir: string[] = []
+  ): Promise<void> {
+    const dockerfile = `
+FROM golang:1.22-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache git ca-certificates gcc musl-dev
+COPY . .
+RUN if [ ! -f go.mod ]; then go mod init app && go mod tidy; else go mod download; fi
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server . || go build -o /app/server .
+
+FROM alpine:3.19
+WORKDIR /app
+RUN apk add --no-cache ca-certificates tzdata
+COPY --from=builder /app/server /app/server
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["/app/server"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize .NET 8 (C# / ASP.NET Core) Dockerfile
+   */
+  private async writeDotnetDockerfile(workDir: string, port: number): Promise<void> {
+    const dockerfile = `
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS builder
+WORKDIR /app
+COPY . .
+RUN dotnet publish -c Release -o /app/out
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=builder /app/out .
+ENV PORT=${port} ASPNETCORE_URLS=http://0.0.0.0:${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ["sh", "-c", "DLL=$(find . -maxdepth 1 -name '*.dll' ! -name 'Microsoft.*' ! -name 'System.*' | head -n 1); dotnet $DLL"]
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize Node.js Dockerfile
+   */
+  private async writeNodeDockerfile(
+    workDir: string,
+    port: number,
+    customStart?: string,
+    filesInWorkDir: string[] = []
+  ): Promise<void> {
+    let startCmd = '["npm", "start"]';
+    if (customStart && customStart.trim() !== "" && customStart !== "npm start") {
+      startCmd = `["sh", "-c", "${customStart.replace(/"/g, '\\"')}"]`;
+    } else {
+      try {
+        const pkgRaw = await fs.readFile(path.join(workDir, "package.json"), "utf8");
+        const pkg = JSON.parse(pkgRaw);
+        if (pkg.scripts?.start) {
+          startCmd = '["npm", "start"]';
+        } else if (filesInWorkDir.includes("server.js")) {
+          startCmd = '["node", "server.js"]';
+        } else if (filesInWorkDir.includes("dist/index.js")) {
+          startCmd = '["node", "dist/index.js"]';
+        } else if (filesInWorkDir.includes("index.js")) {
+          startCmd = '["node", "index.js"]';
+        }
+      } catch {}
+    }
+
+    const dockerfile = `
+FROM node:20-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+COPY package*.json pnpm-lock.yaml* yarn.lock* bun.lockb* ./
+RUN if [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm install; \\
+    elif [ -f yarn.lock ]; then yarn install; \\
+    elif [ -f bun.lockb ]; then npm install -g bun && bun install; \\
+    elif [ -f package.json ]; then npm install; fi
+COPY . .
+RUN if [ -f package.json ] && grep -q '"build"' package.json; then npm run build || true; fi
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0
+EXPOSE ${port}
+CMD ${startCmd}
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
+   * Synthesize universal container Dockerfile for any script or binary
+   */
+  private async writeUniversalDockerfile(workDir: string, port: number, customStart?: string): Promise<void> {
+    const cmd = customStart && customStart.trim() !== "" ? `["sh", "-c", "${customStart.replace(/"/g, '\\"')}"]` : '["sh", "-c", "echo Ready && sleep infinity"]';
+    const dockerfile = `
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bash && rm -rf /var/lib/apt/lists/*
+COPY . .
+ENV PORT=${port} HOST=0.0.0.0
+EXPOSE ${port}
+CMD ${cmd}
+`;
+    await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
+  }
+
+  /**
    * Synthesize multi-stage Rust Dockerfile
    */
   private async writeRustDockerfile(workDir: string, port: number): Promise<void> {
     const dockerfile = `
-FROM rust:1.76-slim as builder
+FROM rust:1.77-slim as builder
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev gcc && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN cargo build --release
 
@@ -564,7 +841,7 @@ WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' | head -n 1); java -jar $JAR"]
+CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*sources.jar' | head -n 1); java -jar $JAR"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -584,7 +861,7 @@ WORKDIR /app
 COPY --from=builder /app/build/libs/*.jar app.jar
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*plain.jar' | head -n 1); java -jar $JAR"]
+CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*plain.jar' ! -name '*sources.jar' | head -n 1); java -jar $JAR"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -596,11 +873,13 @@ CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*plain.jar' | 
     const dockerfile = `
 FROM php:8.2-cli
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev unzip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev unzip git && rm -rf /var/lib/apt/lists/*
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 COPY . .
+RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader || true; fi
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["php", "-S", "0.0.0.0:${port}"]
+CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-8000}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-8000} -t public; else php -S 0.0.0.0:\${PORT:-8000}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -612,12 +891,12 @@ CMD ["php", "-S", "0.0.0.0:${port}"]
     const dockerfile = `
 FROM ruby:3.2-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN bundle install || true
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["bundle", "exec", "rackup", "--host", "0.0.0.0", "-p", "${port}"]
+CMD ["sh", "-c", "if [ -f config.ru ]; then bundle exec rackup --host 0.0.0.0 -p \${PORT:-8000}; elif [ -f app.rb ]; then ruby app.rb -o 0.0.0.0 -p \${PORT:-8000}; elif [ -f bin/rails ]; then bundle exec rails server -b 0.0.0.0 -p \${PORT:-8000}; else bundle exec puma -b tcp://0.0.0.0:\${PORT:-8000}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }

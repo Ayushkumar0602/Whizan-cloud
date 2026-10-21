@@ -448,7 +448,12 @@ export default function NewServicePage() {
             </div>
 
             <div className="form-field">
-              <label className="field-label">Language & Runtime Stack</label>
+              <label className="field-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>Language & Runtime Stack</span>
+                <span style={{ fontSize: "0.72rem", background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "0.15rem 0.5rem", borderRadius: "4px" }}>
+                  Zero-Docker Auto Synthesized
+                </span>
+              </label>
               <select
                 className="input"
                 value={formData.language}
@@ -456,31 +461,62 @@ export default function NewServicePage() {
                   const lang = e.target.value;
                   let install = "npm install";
                   let start = "npm start";
+                  let port = 8000;
                   if (lang === "PYTHON") {
                     install = "pip install -r requirements.txt";
                     start = "python main.py";
-                  }
-                  if (lang === "GO") {
+                    port = 8000;
+                  } else if (lang === "GO") {
                     install = "go mod download";
                     start = "go run main.go";
-                  }
-                  if (lang === "DOCKERFILE") {
+                    port = 8080;
+                  } else if (lang === "RUST") {
                     install = "";
                     start = "";
+                    port = 8080;
+                  } else if (lang === "JAVA") {
+                    install = "";
+                    start = "";
+                    port = 8080;
+                  } else if (lang === "PHP") {
+                    install = "composer install";
+                    start = "php artisan serve";
+                    port = 8000;
+                  } else if (lang === "RUBY") {
+                    install = "bundle install";
+                    start = "bundle exec rails server";
+                    port = 8000;
+                  } else if (lang === "DOTNET") {
+                    install = "dotnet restore";
+                    start = "dotnet run";
+                    port = 8080;
+                  } else if (lang === "DOCKERFILE") {
+                    install = "";
+                    start = "";
+                    port = 8000;
                   }
                   setFormData({
                     ...formData,
                     language: lang,
                     installCommand: install,
                     startCommand: start,
+                    internalPort: port,
                   });
                 }}
               >
-                <option value="NODEJS">Node.js (LTS 20)</option>
-                <option value="PYTHON">Python 3.11 (FastAPI, Flask, Django)</option>
-                <option value="GO">Go 1.22</option>
-                <option value="DOCKERFILE">Dockerfile / Polyglot (Rust, Java, PHP, Ruby)</option>
+                <option value="NODEJS">Node.js (Express, NestJS, Fastify, TypeScript)</option>
+                <option value="PYTHON">Python (FastAPI, Flask, Django, Celery)</option>
+                <option value="GO">Go (Gin, Fiber, Echo, net/http)</option>
+                <option value="RUST">Rust (Cargo, Actix, Axum)</option>
+                <option value="JAVA">Java / Kotlin (Spring Boot, Maven, Gradle)</option>
+                <option value="PHP">PHP / Laravel (Composer, Artisan)</option>
+                <option value="RUBY">Ruby on Rails (Bundler, Puma, Rack)</option>
+                <option value="DOTNET">.NET 8 (C# / ASP.NET Core)</option>
+                <option value="DOCKERFILE">Custom Dockerfile (Optional)</option>
               </select>
+              <span className="field-hint">
+                Whizan Cloud automatically detects your framework, installs dependencies, and synthesizes a high-performance production container. No Dockerfile required.
+              </span>
             </div>
           </div>
         </div>

@@ -64,9 +64,9 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
        * If a web frontend or fullstack repository provides its own `Dockerfile` (e.g. multi-stage Alpine build), call `whizan_create_project` (set `framework: "CUSTOM"` or `"NEXTJS"`). Whizan's build worker will automatically build the Dockerfile and launch the container on Port 3000 (or the exposed port) as a Web Project under `/dashboard/projects`.
      - **Automatic Git Branch Resolution & Self-Healing**:
        * When cloning Git repositories where the default branch is `master` (or not `main`), Whizan Cloud automatically detects and clones the remote repository's default branch (`HEAD`) without build failure.
-   - **Backend Services & Workers (Stack Independent)**:
-     - Whizan Cloud supports **ANY** backend language: Node.js, Python (Django, FastAPI, Flask), Go, Rust, Java (Spring Boot), PHP (Laravel), Ruby on Rails, and raw Dockerfiles.
-     - For compiled/polyglot languages (Rust, Java, PHP, Ruby), Whizan automatically synthesizes high-performance multi-stage Dockerfiles or builds user Dockerfiles.
+   - **Backend Services & Workers (Stack-Independent Zero-Docker Architecture)**:
+     - Whizan Cloud supports **ANY** backend language without requiring a Dockerfile: Node.js, Python (FastAPI, Flask, Django, Celery), Go, Rust, Java (Spring Boot, Maven, Gradle), PHP (Laravel), Ruby on Rails, .NET 8 (C#), and custom Dockerfiles.
+     - **Zero-Docker Synthesis**: Build Worker automatically synthesizes and optimizes production multi-stage containers on the fly for any repository lacking a Dockerfile. If a user provides a Dockerfile, Whizan builds it directly.
      - Call `whizan_create_service` with detected `language` (`NODEJS`, `PYTHON`, `GO`, `DOCKERFILE`) and `startCommand`.
      - **Background Queue Workers**: If the service is a background worker or queue consumer without an HTTP port (e.g. Celery, BullMQ, Kafka consumer), set `internalPort: 0` and `isWorker: true`. The system checks process liveness instead of probing HTTP.
 

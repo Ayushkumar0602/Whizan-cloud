@@ -334,6 +334,9 @@ function localHeuristicFallback(input: RepoAnalysisInput): AiAnalysisResult {
   const hasPython = files.some(f => f === "requirements.txt" || f === "pyproject.toml" || f.endsWith(".py"));
   const hasCargo = files.some(f => f === "Cargo.toml");
   const hasJava = files.some(f => f === "pom.xml" || f === "build.gradle");
+  const hasPhp = files.some(f => f === "composer.json" || f.endsWith(".php"));
+  const hasRuby = files.some(f => f === "Gemfile");
+  const hasDotnet = files.some(f => f.endsWith(".csproj") || f.endsWith(".sln"));
 
   let language: "NODEJS" | "PYTHON" | "GO" | "DOCKERFILE" = "NODEJS";
   let stack = "Node.js";
@@ -351,11 +354,28 @@ function localHeuristicFallback(input: RepoAnalysisInput): AiAnalysisResult {
     stack = "Rust";
     buildCommand = "cargo build --release";
     startCommand = "./target/release/server";
+    port = 8080;
   } else if (hasJava) {
     language = "DOCKERFILE";
     stack = "Java";
     buildCommand = "mvn package";
     startCommand = "java -jar target/app.jar";
+    port = 8080;
+  } else if (hasPhp) {
+    language = "DOCKERFILE";
+    stack = "PHP";
+    framework = files.includes("artisan") ? "Laravel" : "PHP";
+    port = 8000;
+  } else if (hasRuby) {
+    language = "DOCKERFILE";
+    stack = "Ruby";
+    framework = files.includes("bin/rails") ? "Ruby on Rails" : "Ruby";
+    port = 8000;
+  } else if (hasDotnet) {
+    language = "DOCKERFILE";
+    stack = ".NET";
+    framework = "ASP.NET Core";
+    port = 8080;
   } else if (hasGo) {
     language = "GO";
     stack = "Go";
