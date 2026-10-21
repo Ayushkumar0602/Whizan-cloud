@@ -737,6 +737,7 @@ export type AdvancedAnalyticsData = {
     isWafBlocked: boolean;
   }>;
   dailyLogs?: any[];
+  computeHistory?: any[];
 };
 
 export const services = {

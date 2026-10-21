@@ -1,27 +1,28 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   Activity,
-  Globe,
-  Users,
-  HardDrive,
-  Clock,
+  Zap,
   ShieldCheck,
   ShieldAlert,
+  Globe,
+  Clock,
+  HardDrive,
+  Users,
   RefreshCw,
   Search,
   Check,
   Copy,
   TrendingUp,
-  BarChart3,
+  BarChart2,
+  Sparkles,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
-import { PageHeader } from "@/components/page-header";
 import { projects, type AdvancedAnalyticsData } from "@/lib/api";
 
 function formatBytes(bytes: number) {
@@ -32,6 +33,44 @@ function formatBytes(bytes: number) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 }
 
+function formatAxisNumber(val: number): string {
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1).replace(/\.0$/, "") + "M";
+  if (val >= 1_000) return (val / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+  return Math.round(val).toString();
+}
+
+function formatTickTime(ts: number, timeframe: "1h" | "24h" | "7d" | "30d"): string {
+  const d = new Date(ts);
+  if (timeframe === "1h") {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  if (timeframe === "24h") {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// Cardinal / Catmull-Rom spline generator for smooth, continuous curves
+function getSmoothSplinePath(points: { x: number; y: number }[]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  let path = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    path += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return path;
+}
+
 export default function ProjectAnalyticsPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -40,11 +79,18 @@ export default function ProjectAnalyticsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [timeframe, setTimeframe] = useState<"1h" | "24h" | "7d" | "30d">("24h");
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [chartMode, setChartMode] = useState<"throughput" | "latency">("throughput");
-  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
+
+  // Graph Visualization Controls
+  const [activeTab, setActiveTab] = useState<"throughput" | "latency" | "waf">("throughput");
+  const [renderType, setRenderType] = useState<"area" | "bars">("area");
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+
   const [searchFilter, setSearchFilter] = useState("");
   const [logFilter, setLogFilter] = useState<"all" | "errors" | "waf">("all");
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   const fetchAnalytics = useCallback(
     async (tf: "1h" | "24h" | "7d" | "30d", isBackground = false) => {
@@ -107,24 +153,6 @@ export default function ProjectAnalyticsPage() {
     });
   }, [data?.recentRequests, logFilter, searchFilter]);
 
-  if (loading && !data) {
-    return (
-      <div className="page" style={{ padding: "3rem 2.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "2rem" }}>
-          <div className="skeleton" style={{ width: 140, height: 24, borderRadius: 6 }} />
-        </div>
-        <div className="skeleton" style={{ width: "35%", height: 38, marginBottom: 12, borderRadius: 8 }} />
-        <div className="skeleton" style={{ width: "55%", height: 18, marginBottom: 32, borderRadius: 6 }} />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="skeleton" style={{ height: 110, borderRadius: 12 }} />
-          ))}
-        </div>
-        <div className="skeleton" style={{ height: 320, borderRadius: 14, marginBottom: "2rem" }} />
-      </div>
-    );
-  }
-
   const kpis = data?.kpis || {
     totalRequests: 0,
     requestRatePerMin: 0,
@@ -146,38 +174,141 @@ export default function ProjectAnalyticsPage() {
   const dailyLogs = data?.dailyLogs || [];
 
   const maxViews = Math.max(...dailyLogs.map((d: any) => d.pageViews || 0), 1);
-  const maxReqValue = Math.max(...timeSeries.map((d) => d.requests), 1);
-  const maxLatValue = Math.max(...timeSeries.map((d) => d.maxDurationMs || d.avgDurationMs), 1);
 
-  const chartWidth = 900;
-  const chartHeight = 220;
-  const paddingX = 40;
-  const paddingY = 25;
-  const usableWidth = chartWidth - paddingX * 2;
-  const usableHeight = chartHeight - paddingY * 2;
+  // Check if traffic is recent to offer intelligent zoom recommendation
+  const hasRecentTrafficConcentration = useMemo(() => {
+    if (timeframe === "1h" || timeSeries.length < 10) return false;
+    const totalReqs = timeSeries.reduce((acc, d) => acc + d.requests, 0);
+    if (totalReqs === 0) return false;
+    const tailSlice = Math.max(1, Math.floor(timeSeries.length * 0.15));
+    const tailReqs = timeSeries.slice(-tailSlice).reduce((acc, d) => acc + d.requests, 0);
+    return tailReqs / totalReqs > 0.8;
+  }, [timeSeries, timeframe]);
+
+  // Chart Geometry
+  const chartWidth = 960;
+  const chartHeight = 280;
+  const paddingLeft = 60;
+  const paddingRight = 35;
+  const paddingTop = 30;
+  const paddingBottom = 45;
+  const usableWidth = chartWidth - paddingLeft - paddingRight;
+  const usableHeight = chartHeight - paddingTop - paddingBottom;
+  const yBase = chartHeight - paddingBottom;
 
   const pointsCount = timeSeries.length;
   const stepX = pointsCount > 1 ? usableWidth / (pointsCount - 1) : usableWidth;
 
-  const latencyPoints = timeSeries.map((d, i) => {
-    const x = paddingX + i * stepX;
-    const y = chartHeight - paddingY - (d.avgDurationMs / (maxLatValue || 1)) * usableHeight;
-    return { x, y, data: d };
-  });
+  const maxReq = Math.max(...timeSeries.map((d) => d.requests), 1);
+  const maxLat = Math.max(...timeSeries.map((d) => Math.max(d.maxDurationMs || 0, d.avgDurationMs || 0)), 50);
 
-  const latencySvgPath =
-    latencyPoints.length > 0
-      ? `M ${latencyPoints[0].x} ${latencyPoints[0].y} ` +
-        latencyPoints
-          .slice(1)
-          .map((p) => `L ${p.x} ${p.y}`)
-          .join(" ")
-      : "";
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current || pointsCount === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const xRatio = (e.clientX - rect.left) / rect.width;
+    const svgX = xRatio * chartWidth;
+    const rawIdx = (svgX - paddingLeft) / stepX;
+    const clampedIdx = Math.max(0, Math.min(pointsCount - 1, Math.round(rawIdx)));
 
-  const latencyAreaSvgPath =
-    latencyPoints.length > 0
-      ? `${latencySvgPath} L ${latencyPoints[latencyPoints.length - 1].x} ${chartHeight - paddingY} L ${latencyPoints[0].x} ${chartHeight - paddingY} Z`
-      : "";
+    setHoveredIndex(clampedIdx);
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredIndex(null);
+    setMousePos(null);
+  };
+
+  // Curves for Throughput
+  const throughputPoints = useMemo(() => {
+    return timeSeries.map((d, i) => {
+      const x = paddingLeft + i * stepX;
+      const y = yBase - (d.requests / maxReq) * usableHeight;
+      return { x, y, data: d };
+    });
+  }, [timeSeries, maxReq, stepX, paddingLeft, yBase, usableHeight]);
+
+  const throughputSpline = useMemo(() => getSmoothSplinePath(throughputPoints), [throughputPoints]);
+  const throughputArea = useMemo(() => {
+    if (throughputPoints.length === 0) return "";
+    return `${throughputSpline} L ${throughputPoints[throughputPoints.length - 1].x.toFixed(1)} ${yBase} L ${throughputPoints[0].x.toFixed(1)} ${yBase} Z`;
+  }, [throughputSpline, throughputPoints, yBase]);
+
+  const points2xx = useMemo(() => {
+    return timeSeries.map((d, i) => {
+      const x = paddingLeft + i * stepX;
+      const y = yBase - (d.status2xx / maxReq) * usableHeight;
+      return { x, y };
+    });
+  }, [timeSeries, maxReq, stepX, paddingLeft, yBase, usableHeight]);
+  const spline2xx = useMemo(() => getSmoothSplinePath(points2xx), [points2xx]);
+  const area2xx = useMemo(() => {
+    if (points2xx.length === 0) return "";
+    return `${spline2xx} L ${points2xx[points2xx.length - 1].x.toFixed(1)} ${yBase} L ${points2xx[0].x.toFixed(1)} ${yBase} Z`;
+  }, [spline2xx, points2xx, yBase]);
+
+  const points4xx = useMemo(() => {
+    return timeSeries.map((d, i) => {
+      const x = paddingLeft + i * stepX;
+      const y = yBase - (d.status4xx / maxReq) * usableHeight;
+      return { x, y };
+    });
+  }, [timeSeries, maxReq, stepX, paddingLeft, yBase, usableHeight]);
+  const spline4xx = useMemo(() => getSmoothSplinePath(points4xx), [points4xx]);
+
+  // Latency curves
+  const latencyPoints = useMemo(() => {
+    return timeSeries.map((d, i) => {
+      const x = paddingLeft + i * stepX;
+      const yAvg = yBase - ((d.avgDurationMs || 0) / maxLat) * usableHeight;
+      const yMax = yBase - ((d.maxDurationMs || 0) / maxLat) * usableHeight;
+      return { x, yAvg, yMax, data: d };
+    });
+  }, [timeSeries, maxLat, stepX, paddingLeft, yBase, usableHeight]);
+
+  const latencyAvgSpline = useMemo(
+    () => getSmoothSplinePath(latencyPoints.map((p) => ({ x: p.x, y: p.yAvg }))),
+    [latencyPoints]
+  );
+  const latencyAvgArea = useMemo(() => {
+    if (latencyPoints.length === 0) return "";
+    return `${latencyAvgSpline} L ${latencyPoints[latencyPoints.length - 1].x.toFixed(1)} ${yBase} L ${latencyPoints[0].x.toFixed(1)} ${yBase} Z`;
+  }, [latencyAvgSpline, latencyPoints, yBase]);
+
+  const xTicks = useMemo(() => {
+    if (pointsCount === 0) return [];
+    const ticksCount = Math.min(6, pointsCount);
+    const indices: number[] = [];
+    for (let i = 0; i < ticksCount; i++) {
+      const idx = Math.round((i / (ticksCount - 1)) * (pointsCount - 1));
+      indices.push(idx);
+    }
+    return Array.from(new Set(indices)).map((idx) => ({
+      idx,
+      x: paddingLeft + idx * stepX,
+      timestamp: timeSeries[idx]?.timestamp || 0,
+    }));
+  }, [pointsCount, stepX, paddingLeft, timeSeries]);
+
+  if (loading && !data) {
+    return (
+      <div className="page" style={{ padding: "3rem 2.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "2rem" }}>
+          <div className="skeleton" style={{ width: 140, height: 24, borderRadius: 6 }} />
+        </div>
+        <div className="skeleton" style={{ width: "35%", height: 38, marginBottom: 12, borderRadius: 8 }} />
+        <div className="skeleton" style={{ width: "55%", height: 18, marginBottom: 32, borderRadius: 6 }} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", marginBottom: "2rem" }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="skeleton" style={{ height: 110, borderRadius: 12 }} />
+          ))}
+        </div>
+        <div className="skeleton" style={{ height: 360, borderRadius: 14, marginBottom: "2rem" }} />
+      </div>
+    );
+  }
+
+  const currentHoveredPoint = hoveredIndex !== null ? timeSeries[hoveredIndex] : null;
 
   return (
     <div className="page" style={{ padding: "2rem 2.5rem 4rem" }}>
@@ -421,8 +552,41 @@ export default function ProjectAnalyticsPage() {
         </div>
       </div>
 
-      {/* Main Interactive Chart Card */}
-      <div className="card" style={{ padding: "1.5rem", marginBottom: "1.75rem", borderRadius: "14px" }}>
+      {/* Adaptive Recommendation Banner when traffic is concentrated */}
+      {hasRecentTrafficConcentration && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "linear-gradient(90deg, rgba(79, 70, 229, 0.08) 0%, rgba(59, 130, 246, 0.04) 100%)",
+            border: "1px solid rgba(79, 70, 229, 0.2)",
+            borderRadius: "10px",
+            padding: "0.75rem 1.25rem",
+            marginBottom: "1.5rem",
+            fontSize: "0.82rem",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <Sparkles size={16} color="var(--accent)" />
+            <span>
+              <strong>Recent Traffic Spike Detected:</strong> Over 80% of your requests occurred in the last hour.
+              Switch to <strong>1H</strong> for granular 1-minute breakdown.
+            </span>
+          </div>
+          <button
+            onClick={() => setTimeframe("1h")}
+            className="btn-primary"
+            style={{ fontSize: "0.76rem", padding: "0.3rem 0.75rem", borderRadius: "6px", cursor: "pointer" }}
+          >
+            Switch to 1H View
+          </button>
+        </div>
+      )}
+
+      {/* Main Interactive Graph Visualizer Card */}
+      <div className="card" style={{ padding: "1.5rem", marginBottom: "1.75rem", borderRadius: "14px", position: "relative" }}>
+        {/* Graph Header: Tabs & View Controls */}
         <div
           style={{
             display: "flex",
@@ -430,83 +594,224 @@ export default function ProjectAnalyticsPage() {
             justifyContent: "space-between",
             flexWrap: "wrap",
             gap: "1rem",
+            borderBottom: "1px solid var(--border)",
+            paddingBottom: "1rem",
             marginBottom: "1.25rem",
           }}
         >
-          <div>
-            <h3 style={{ fontSize: "1.05rem", fontWeight: 650, margin: 0, color: "var(--foreground)" }}>
-              {chartMode === "throughput" ? "Traffic Throughput & Response Distribution" : "Latency Curve (ms)"}
-            </h3>
-            <p style={{ fontSize: "0.8rem", color: "var(--muted)", margin: "0.2rem 0 0" }}>
-              {chartMode === "throughput"
-                ? "Breakdown across 2xx Success, 3xx Redirect, 4xx Client, and 5xx Server responses"
-                : "Edge response latency distribution over time"}
-            </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              onClick={() => setActiveTab("throughput")}
+              style={{
+                border: "none",
+                background: activeTab === "throughput" ? "var(--foreground)" : "var(--bg-subtle)",
+                color: activeTab === "throughput" ? "#ffffff" : "var(--muted)",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                padding: "0.45rem 0.9rem",
+                borderRadius: "8px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <BarChart2 size={14} />
+              Traffic Throughput
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "0.1rem 0.35rem",
+                  borderRadius: "4px",
+                  background: activeTab === "throughput" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.06)",
+                }}
+              >
+                {formatAxisNumber(kpis.totalRequests)}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("latency")}
+              style={{
+                border: "none",
+                background: activeTab === "latency" ? "var(--foreground)" : "var(--bg-subtle)",
+                color: activeTab === "latency" ? "#ffffff" : "var(--muted)",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                padding: "0.45rem 0.9rem",
+                borderRadius: "8px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <Zap size={14} />
+              Response Latency
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "0.1rem 0.35rem",
+                  borderRadius: "4px",
+                  background: activeTab === "latency" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.06)",
+                }}
+              >
+                {kpis.avgLatencyMs}ms
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("waf")}
+              style={{
+                border: "none",
+                background: activeTab === "waf" ? "var(--foreground)" : "var(--bg-subtle)",
+                color: activeTab === "waf" ? "#ffffff" : "var(--muted)",
+                fontSize: "0.8rem",
+                fontWeight: 600,
+                padding: "0.45rem 0.9rem",
+                borderRadius: "8px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.4rem",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <ShieldCheck size={14} />
+              Threat Mitigations
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  padding: "0.1rem 0.35rem",
+                  borderRadius: "4px",
+                  background: activeTab === "waf" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.06)",
+                }}
+              >
+                {kpis.wafMitigations}
+              </span>
+            </button>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div
-              style={{
-                display: "inline-flex",
-                background: "var(--bg-subtle)",
-                padding: "2px",
-                borderRadius: "8px",
-                border: "1px solid var(--border)",
-              }}
-            >
-              <button
-                onClick={() => setChartMode("throughput")}
+            {activeTab === "throughput" && (
+              <div
                 style={{
-                  border: "none",
-                  background: chartMode === "throughput" ? "var(--card)" : "transparent",
-                  color: chartMode === "throughput" ? "var(--foreground)" : "var(--muted)",
-                  fontSize: "0.78rem",
-                  fontWeight: chartMode === "throughput" ? 600 : 500,
-                  padding: "0.3rem 0.75rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
+                  display: "inline-flex",
+                  background: "var(--bg-subtle)",
+                  padding: "2px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border)",
                 }}
               >
-                Throughput
-              </button>
-              <button
-                onClick={() => setChartMode("latency")}
-                style={{
-                  border: "none",
-                  background: chartMode === "latency" ? "var(--card)" : "transparent",
-                  color: chartMode === "latency" ? "var(--foreground)" : "var(--muted)",
-                  fontSize: "0.78rem",
-                  fontWeight: chartMode === "latency" ? 600 : 500,
-                  padding: "0.3rem 0.75rem",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                }}
-              >
-                Latency
-              </button>
-            </div>
+                <button
+                  onClick={() => setRenderType("area")}
+                  style={{
+                    border: "none",
+                    background: renderType === "area" ? "var(--card)" : "transparent",
+                    color: renderType === "area" ? "var(--foreground)" : "var(--muted)",
+                    fontSize: "0.75rem",
+                    fontWeight: renderType === "area" ? 600 : 500,
+                    padding: "0.25rem 0.65rem",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Area Curve
+                </button>
+                <button
+                  onClick={() => setRenderType("bars")}
+                  style={{
+                    border: "none",
+                    background: renderType === "bars" ? "var(--card)" : "transparent",
+                    color: renderType === "bars" ? "var(--foreground)" : "var(--muted)",
+                    fontSize: "0.75rem",
+                    fontWeight: renderType === "bars" ? 600 : 500,
+                    padding: "0.25rem 0.65rem",
+                    borderRadius: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Stacked Bars
+                </button>
+              </div>
+            )}
 
-            {chartMode === "throughput" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.75rem" }}>
+            {activeTab === "throughput" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.74rem" }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "2px", background: "#10b981" }} /> 2xx
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981" }} /> 2xx
                 </span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "2px", background: "#38bdf8" }} /> 3xx
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#38bdf8" }} /> 3xx
                 </span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "2px", background: "#f59e0b" }} /> 4xx
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f59e0b" }} /> 4xx
                 </span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "2px", background: "#ef4444" }} /> 5xx
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444" }} /> 5xx
+                </span>
+              </div>
+            )}
+            {activeTab === "latency" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", fontSize: "0.74rem" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                  <span style={{ width: 12, height: 2, background: "#10b981" }} /> Avg Latency
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                  <span style={{ width: 12, height: 2, background: "#f59e0b", borderTop: "2px dashed #f59e0b" }} /> Peak Spike
                 </span>
               </div>
             )}
           </div>
         </div>
 
-        {/* SVG Chart */}
-        <div style={{ position: "relative", width: "100%", height: chartHeight }}>
+        {/* Live Metrics Ribbon */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "1.5rem",
+            fontSize: "0.78rem",
+            color: "var(--muted)",
+            marginBottom: "0.85rem",
+            paddingLeft: paddingLeft,
+          }}
+        >
+          {activeTab === "throughput" && (
+            <>
+              <span>
+                Peak Interval: <strong style={{ color: "var(--foreground)" }}>{formatAxisNumber(maxReq)} reqs</strong>
+              </span>
+              <span>
+                2xx Success: <strong style={{ color: "#10b981" }}>{statusBreakdown.status2xx.toLocaleString()}</strong>
+              </span>
+              <span>
+                4xx Client: <strong style={{ color: "#f59e0b" }}>{statusBreakdown.status4xx.toLocaleString()}</strong>
+              </span>
+              <span>
+                5xx Error: <strong style={{ color: "#ef4444" }}>{statusBreakdown.status5xx.toLocaleString()}</strong>
+              </span>
+            </>
+          )}
+          {activeTab === "latency" && (
+            <>
+              <span>
+                Current Avg: <strong style={{ color: "#10b981" }}>{kpis.avgLatencyMs}ms</strong>
+              </span>
+              <span>
+                P95 Percentile: <strong style={{ color: "var(--foreground)" }}>{kpis.p95LatencyMs}ms</strong>
+              </span>
+              <span>
+                Peak Latency: <strong style={{ color: "#f59e0b" }}>{kpis.maxLatencyMs}ms</strong>
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* SVG Graph Visualizer Canvas */}
+        <div style={{ position: "relative", width: "100%", height: chartHeight, userSelect: "none" }}>
           {timeSeries.length === 0 ? (
             <div
               style={{
@@ -520,240 +825,396 @@ export default function ProjectAnalyticsPage() {
               }}
             >
               <Activity size={28} style={{ opacity: 0.35, marginBottom: "0.5rem" }} />
-              <span>No real-time edge telemetry recorded yet for this timeframe.</span>
+              <span>No telemetry buckets recorded yet for this timeframe window.</span>
             </div>
           ) : (
             <svg
+              ref={svgRef}
               viewBox={`0 0 ${chartWidth} ${chartHeight}`}
               style={{ width: "100%", height: "100%", overflow: "visible" }}
-              onMouseLeave={() => setHoveredPointIndex(null)}
+              onMouseMove={handleMouseMove}
+              onMouseLeave={handleMouseLeave}
             >
               <defs>
-                <linearGradient id="latencyGlowProj" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.25" />
+                <linearGradient id="glowThroughputProj" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.32" />
+                  <stop offset="50%" stopColor="#4f46e5" stopOpacity="0.10" />
                   <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.0" />
+                </linearGradient>
+
+                <linearGradient id="glow2xxProj" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                </linearGradient>
+
+                <linearGradient id="glowLatencyProj" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0284c7" stopOpacity="0.30" />
+                  <stop offset="100%" stopColor="#0284c7" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
 
-              {/* Horizontal grid lines */}
+              {/* Horizontal Grid Lines & Y-Axis Labels */}
               {[0, 0.25, 0.5, 0.75, 1].map((pct, idx) => {
-                const y = chartHeight - paddingY - pct * usableHeight;
-                const labelVal =
-                  chartMode === "throughput"
-                    ? Math.round(pct * maxReqValue)
-                    : `${Math.round(pct * maxLatValue)}ms`;
+                const y = yBase - pct * usableHeight;
+                let label = "";
+                if (activeTab === "throughput" || activeTab === "waf") {
+                  label = formatAxisNumber(pct * maxReq);
+                } else if (activeTab === "latency") {
+                  label = `${formatAxisNumber(pct * maxLat)}ms`;
+                }
+
                 return (
                   <g key={idx}>
                     <line
-                      x1={paddingX}
+                      x1={paddingLeft}
                       y1={y}
-                      x2={chartWidth - paddingX}
+                      x2={chartWidth - paddingRight}
                       y2={y}
                       stroke="var(--border)"
                       strokeDasharray="4 4"
                       strokeWidth="1"
-                      opacity="0.6"
+                      opacity={idx === 0 ? 0.9 : 0.55}
                     />
                     <text
-                      x={paddingX - 8}
-                      y={y + 3}
+                      x={paddingLeft - 10}
+                      y={y + 4}
                       textAnchor="end"
-                      fontSize="9"
+                      fontSize="10"
+                      fontWeight="500"
                       fill="var(--muted)"
-                      opacity="0.8"
                     >
-                      {labelVal}
+                      {label}
                     </text>
                   </g>
                 );
               })}
 
-              {/* Stacked bars */}
-              {chartMode === "throughput" &&
-                timeSeries.map((d, i) => {
-                  const x = paddingX + i * stepX;
-                  const barWidth = Math.max(2, Math.min(12, stepX * 0.7));
+              {/* Solid Baseline Axis */}
+              <line
+                x1={paddingLeft}
+                y1={yBase}
+                x2={chartWidth - paddingRight}
+                y2={yBase}
+                stroke="var(--border)"
+                strokeWidth="1.5"
+              />
 
-                  const h2xx = (d.status2xx / maxReqValue) * usableHeight;
-                  const h3xx = (d.status3xx / maxReqValue) * usableHeight;
-                  const h4xx = (d.status4xx / maxReqValue) * usableHeight;
-                  const h5xx = (d.status5xx / maxReqValue) * usableHeight;
+              {/* X-Axis Time Ticks and Labels */}
+              {xTicks.map((tick, i) => (
+                <g key={i}>
+                  <line
+                    x1={tick.x}
+                    y1={yBase}
+                    x2={tick.x}
+                    y2={yBase + 5}
+                    stroke="var(--border)"
+                    strokeWidth="1.5"
+                  />
+                  <text
+                    x={tick.x}
+                    y={yBase + 18}
+                    textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"}
+                    fontSize="10"
+                    fill="var(--muted)"
+                    fontWeight="500"
+                  >
+                    {formatTickTime(tick.timestamp, timeframe)}
+                  </text>
+                </g>
+              ))}
 
-                  const yBase = chartHeight - paddingY;
-                  const y2xx = yBase - h2xx;
-                  const y3xx = y2xx - h3xx;
-                  const y4xx = y3xx - h4xx;
-                  const y5xx = y4xx - h5xx;
-
-                  const isHovered = hoveredPointIndex === i;
-
-                  return (
-                    <g
-                      key={i}
-                      onMouseEnter={() => setHoveredPointIndex(i)}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <rect
-                        x={x - stepX / 2}
-                        y={paddingY}
-                        width={stepX}
-                        height={usableHeight}
-                        fill="transparent"
-                      />
-
-                      {d.status2xx > 0 && (
-                        <rect
-                          x={x - barWidth / 2}
-                          y={y2xx}
-                          width={barWidth}
-                          height={h2xx}
-                          fill="#10b981"
-                          rx={d.requests === d.status2xx ? 2 : 0}
-                          opacity={isHovered ? 1 : 0.85}
-                        />
-                      )}
-                      {d.status3xx > 0 && (
-                        <rect
-                          x={x - barWidth / 2}
-                          y={y3xx}
-                          width={barWidth}
-                          height={h3xx}
-                          fill="#38bdf8"
-                          opacity={isHovered ? 1 : 0.85}
-                        />
-                      )}
-                      {d.status4xx > 0 && (
-                        <rect
-                          x={x - barWidth / 2}
-                          y={y4xx}
-                          width={barWidth}
-                          height={h4xx}
-                          fill="#f59e0b"
-                          opacity={isHovered ? 1 : 0.85}
-                        />
-                      )}
-                      {d.status5xx > 0 && (
-                        <rect
-                          x={x - barWidth / 2}
-                          y={y5xx}
-                          width={barWidth}
-                          height={h5xx}
-                          fill="#ef4444"
-                          rx={2}
-                          opacity={isHovered ? 1 : 0.85}
-                        />
-                      )}
-
-                      {isHovered && (
-                        <line
-                          x1={x}
-                          y1={paddingY}
-                          x2={x}
-                          y2={chartHeight - paddingY}
-                          stroke="var(--accent)"
-                          strokeWidth="1.5"
-                          strokeDasharray="2 2"
-                        />
-                      )}
-                    </g>
-                  );
-                })}
-
-              {/* Latency Curve */}
-              {chartMode === "latency" && (
+              {/* Throughput Area Mode */}
+              {activeTab === "throughput" && renderType === "area" && (
                 <g>
-                  {latencyAreaSvgPath && (
-                    <path d={latencyAreaSvgPath} fill="url(#latencyGlowProj)" />
-                  )}
-                  {latencySvgPath && (
+                  {throughputArea && <path d={throughputArea} fill="url(#glowThroughputProj)" />}
+                  {area2xx && <path d={area2xx} fill="url(#glow2xxProj)" />}
+
+                  {throughputSpline && (
                     <path
-                      d={latencySvgPath}
+                      d={throughputSpline}
                       fill="none"
                       stroke="var(--accent)"
                       strokeWidth="2.5"
                       strokeLinecap="round"
                     />
                   )}
-                  {latencyPoints.map((p, i) => (
-                    <circle
-                      key={i}
-                      cx={p.x}
-                      cy={p.y}
-                      r={hoveredPointIndex === i ? 5 : 2.5}
-                      fill={hoveredPointIndex === i ? "var(--foreground)" : "var(--accent)"}
-                      stroke="var(--card)"
-                      strokeWidth="1.5"
-                      style={{ cursor: "pointer", transition: "r 0.1s ease" }}
-                      onMouseEnter={() => setHoveredPointIndex(i)}
+
+                  {spline2xx && (
+                    <path
+                      d={spline2xx}
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="1.8"
+                      strokeDasharray="4 2"
+                      opacity="0.85"
                     />
-                  ))}
+                  )}
+
+                  {statusBreakdown.status4xx > 0 && spline4xx && (
+                    <path
+                      d={spline4xx}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1.8"
+                      opacity="0.9"
+                    />
+                  )}
+
+                  {throughputPoints.map((p, i) => {
+                    if (p.data.requests === 0) return null;
+                    const isHovered = hoveredIndex === i;
+                    return (
+                      <circle
+                        key={i}
+                        cx={p.x}
+                        cy={p.y}
+                        r={isHovered ? 6 : p.data.requests > maxReq * 0.5 ? 4 : 2.5}
+                        fill={isHovered ? "var(--foreground)" : "var(--accent)"}
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                        style={{ transition: "r 0.15s ease" }}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Stacked Bars Mode */}
+              {activeTab === "throughput" && renderType === "bars" && (
+                <g>
+                  {timeSeries.map((d, i) => {
+                    const x = paddingLeft + i * stepX;
+                    const barWidth = Math.max(4, Math.min(22, stepX * 0.8));
+
+                    const h2xx = (d.status2xx / maxReq) * usableHeight;
+                    const h3xx = (d.status3xx / maxReq) * usableHeight;
+                    const h4xx = (d.status4xx / maxReq) * usableHeight;
+                    const h5xx = (d.status5xx / maxReq) * usableHeight;
+
+                    const y2xx = yBase - h2xx;
+                    const y3xx = y2xx - h3xx;
+                    const y4xx = y3xx - h4xx;
+                    const y5xx = y4xx - h5xx;
+
+                    const isHovered = hoveredIndex === i;
+
+                    return (
+                      <g key={i}>
+                        {d.status2xx > 0 && (
+                          <rect
+                            x={x - barWidth / 2}
+                            y={y2xx}
+                            width={barWidth}
+                            height={h2xx}
+                            fill="#10b981"
+                            rx={d.requests === d.status2xx ? 3 : 0}
+                            opacity={isHovered ? 1 : 0.85}
+                          />
+                        )}
+                        {d.status3xx > 0 && (
+                          <rect
+                            x={x - barWidth / 2}
+                            y={y3xx}
+                            width={barWidth}
+                            height={h3xx}
+                            fill="#38bdf8"
+                            opacity={isHovered ? 1 : 0.85}
+                          />
+                        )}
+                        {d.status4xx > 0 && (
+                          <rect
+                            x={x - barWidth / 2}
+                            y={y4xx}
+                            width={barWidth}
+                            height={h4xx}
+                            fill="#f59e0b"
+                            opacity={isHovered ? 1 : 0.85}
+                          />
+                        )}
+                        {d.status5xx > 0 && (
+                          <rect
+                            x={x - barWidth / 2}
+                            y={y5xx}
+                            width={barWidth}
+                            height={h5xx}
+                            fill="#ef4444"
+                            rx={3}
+                            opacity={isHovered ? 1 : 0.85}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Latency Mode */}
+              {activeTab === "latency" && (
+                <g>
+                  {latencyAvgArea && <path d={latencyAvgArea} fill="url(#glowLatencyProj)" />}
+                  {latencyAvgSpline && (
+                    <path
+                      d={latencyAvgSpline}
+                      fill="none"
+                      stroke="#0284c7"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                  )}
+                  {getSmoothSplinePath(latencyPoints.map((p) => ({ x: p.x, y: p.yMax }))) && (
+                    <path
+                      d={getSmoothSplinePath(latencyPoints.map((p) => ({ x: p.x, y: p.yMax })))}
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1.8"
+                      strokeDasharray="4 3"
+                    />
+                  )}
+
+                  {latencyPoints.map((p, i) => {
+                    if (!p.data.requests) return null;
+                    const isHovered = hoveredIndex === i;
+                    return (
+                      <circle
+                        key={i}
+                        cx={p.x}
+                        cy={p.yAvg}
+                        r={isHovered ? 5.5 : 2.5}
+                        fill={isHovered ? "var(--foreground)" : "#0284c7"}
+                        stroke="#ffffff"
+                        strokeWidth="1.5"
+                      />
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Threat Mitigations */}
+              {activeTab === "waf" && (
+                <g>
+                  {timeSeries.map((d, i) => {
+                    const x = paddingLeft + i * stepX;
+                    const barWidth = Math.max(6, Math.min(24, stepX * 0.8));
+                    const hWaf = (d.wafMitigations / Math.max(1, kpis.wafMitigations)) * usableHeight;
+                    const yWaf = yBase - hWaf;
+                    if (d.wafMitigations === 0) return null;
+                    return (
+                      <rect
+                        key={i}
+                        x={x - barWidth / 2}
+                        y={yWaf}
+                        width={barWidth}
+                        height={hWaf}
+                        fill="#06b6d4"
+                        rx={3}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Interactive Crosshair Tracking Line */}
+              {hoveredIndex !== null && timeSeries[hoveredIndex] && (
+                <g>
+                  <line
+                    x1={paddingLeft + hoveredIndex * stepX}
+                    y1={paddingTop}
+                    x2={paddingLeft + hoveredIndex * stepX}
+                    y2={yBase}
+                    stroke="var(--accent)"
+                    strokeWidth="1.5"
+                    strokeDasharray="3 3"
+                    opacity="0.85"
+                  />
+                  {throughputPoints[hoveredIndex] && (
+                    <circle
+                      cx={throughputPoints[hoveredIndex].x}
+                      cy={throughputPoints[hoveredIndex].y}
+                      r="6"
+                      fill="var(--accent)"
+                      stroke="#ffffff"
+                      strokeWidth="2.5"
+                    />
+                  )}
                 </g>
               )}
             </svg>
           )}
 
-          {/* Tooltip Overlay */}
-          {hoveredPointIndex !== null && timeSeries[hoveredPointIndex] && (
+          {/* Floating Interactive HUD Tooltip */}
+          {currentHoveredPoint && mousePos && (
             <div
               style={{
                 position: "absolute",
-                top: 8,
-                right: 12,
+                left: Math.min(mousePos.x + 15, chartWidth - 220),
+                top: Math.max(10, mousePos.y - 120),
                 background: "var(--card)",
                 border: "1px solid var(--border)",
-                borderRadius: "8px",
-                padding: "0.6rem 0.85rem",
-                boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+                borderRadius: "10px",
+                padding: "0.75rem 0.95rem",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
                 fontSize: "0.78rem",
                 pointerEvents: "none",
-                zIndex: 10,
-                minWidth: 170,
+                zIndex: 20,
+                minWidth: 190,
               }}
             >
-              <div style={{ fontWeight: 650, color: "var(--foreground)", marginBottom: 4 }}>
-                {new Date(timeSeries[hoveredPointIndex].timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
+              <div style={{ fontWeight: 700, color: "var(--foreground)", marginBottom: 4, display: "flex", justifyContent: "space-between" }}>
+                <span>
+                  {new Date(currentHoveredPoint.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </span>
+                <span className="mono" style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                  {new Date(currentHoveredPoint.timestamp).toLocaleDateString([], { month: "short", day: "numeric" })}
+                </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "var(--muted)" }}>
-                <span>Requests:</span>
+
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "var(--muted)", margin: "3px 0" }}>
+                <span>Total Requests:</span>
                 <strong style={{ color: "var(--foreground)" }}>
-                  {timeSeries[hoveredPointIndex].requests.toLocaleString()}
+                  {currentHoveredPoint.requests.toLocaleString()}
                 </strong>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#10b981" }}>
+
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#10b981", margin: "2px 0" }}>
                 <span>2xx Success:</span>
-                <strong>{timeSeries[hoveredPointIndex].status2xx}</strong>
+                <strong>{currentHoveredPoint.status2xx}</strong>
               </div>
-              {timeSeries[hoveredPointIndex].status4xx > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#f59e0b" }}>
-                  <span>4xx Client:</span>
-                  <strong>{timeSeries[hoveredPointIndex].status4xx}</strong>
+
+              {currentHoveredPoint.status4xx > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#f59e0b", margin: "2px 0" }}>
+                  <span>4xx Client Error:</span>
+                  <strong>{currentHoveredPoint.status4xx}</strong>
                 </div>
               )}
-              {timeSeries[hoveredPointIndex].status5xx > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#ef4444" }}>
-                  <span>5xx Error:</span>
-                  <strong>{timeSeries[hoveredPointIndex].status5xx}</strong>
+
+              {currentHoveredPoint.status5xx > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "#ef4444", margin: "2px 0" }}>
+                  <span>5xx Server Error:</span>
+                  <strong>{currentHoveredPoint.status5xx}</strong>
                 </div>
               )}
+
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   gap: "1rem",
                   color: "var(--muted)",
-                  marginTop: 3,
+                  marginTop: 4,
                   borderTop: "1px solid var(--border)",
-                  paddingTop: 3,
+                  paddingTop: 4,
                 }}
               >
                 <span>Avg Latency:</span>
-                <strong style={{ color: "var(--accent)" }}>
-                  {timeSeries[hoveredPointIndex].avgDurationMs}ms
-                </strong>
+                <strong style={{ color: "var(--accent)" }}>{currentHoveredPoint.avgDurationMs}ms</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", color: "var(--muted)", margin: "2px 0" }}>
+                <span>Peak Spike:</span>
+                <strong style={{ color: "#f59e0b" }}>{currentHoveredPoint.maxDurationMs}ms</strong>
               </div>
             </div>
           )}
@@ -969,7 +1430,7 @@ export default function ProjectAnalyticsPage() {
         </div>
       </div>
 
-      {/* 30-Day Historical Traffic Logs from Postgres (Preserved for Long-Term Insights) */}
+      {/* 30-Day Historical Traffic Logs from Postgres */}
       {dailyLogs.length > 0 && (
         <div className="card" style={{ padding: "1.5rem", marginBottom: "1.75rem", borderRadius: "14px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>

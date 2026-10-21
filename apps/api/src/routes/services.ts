@@ -1069,14 +1069,19 @@ export async function serviceRoutes(fastify: FastifyInstance) {
         .filter(Boolean);
     }
 
-    // 3. Fetch latest container compute metric
-    const rawMetrics = await redisClient.lrange(`metrics:service:${id}`, 0, 0).catch(() => []);
-    let latestCompute: any = null;
-    if (rawMetrics.length > 0) {
-      try {
-        latestCompute = JSON.parse(rawMetrics[0]);
-      } catch {}
-    }
+    // 3. Fetch container compute metrics history (last 60 points)
+    const rawMetrics = await redisClient.lrange(`metrics:service:${id}`, 0, 59).catch(() => []);
+    const computeHistory = rawMetrics
+      .map((item) => {
+        try {
+          return JSON.parse(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .reverse();
+    const latestCompute = computeHistory.length > 0 ? computeHistory[computeHistory.length - 1] : null;
 
     // 4. Generate equidistant time slots
     const slotMap = new Map<
@@ -1245,6 +1250,7 @@ export async function serviceRoutes(fastify: FastifyInstance) {
       timeSeries,
       topEndpoints,
       recentRequests,
+      computeHistory,
     });
   });
 
