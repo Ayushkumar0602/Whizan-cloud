@@ -9,8 +9,8 @@ import Redis from "ioredis";
 export interface WafConfig {
   enabled: boolean;
   mode: "block" | "monitor"; // block: returns 403/429; monitor: logs only
-  rateLimitRpm: number;      // requests per minute (default: 120)
-  burstLimit: number;        // max allowed in 5-second burst (default: 30)
+  rateLimitRpm: number;      // requests per minute (default: 300)
+  burstLimit: number;        // max allowed in 5-second burst (default: 100)
   enableSqlInjectionCheck: boolean;
   enableXssCheck: boolean;
   enablePathTraversalCheck: boolean;
@@ -49,15 +49,20 @@ export interface DeviceSignature {
   userAgent: string;
 }
 
-// Limits
+// Limits & Safeguards
 const DEFAULT_GLOBAL_RPM_PER_IP = 1500;  // 1500 req/min across all domains (Volumetric DDoS protection)
 const DEFAULT_GLOBAL_BURST_PER_IP = 250; // 250 req/5s
-const DEFAULT_SLUG_RPM = 120;            // 120 req/min per specific project/service
-const DEFAULT_SLUG_BURST = 30;           // 30 req/5s burst per specific project/service
+const DEFAULT_SLUG_RPM = 300;            // 300 req/min per specific project/service
+const DEFAULT_SLUG_BURST = 100;          // 100 req/5s burst (generous for SPA asset loading)
 const JAIL_DURATION_MS = 15 * 60 * 1000; // 15 minutes ban on repeated violations
 const STRIKE_WINDOW_MS = 60 * 1000;      // 60-second window to accumulate strikes
 const STRIKES_TO_JAIL_DEVICE = 3;        // 3 WAF attacks from device on slug = Jail device on slug
 const STRIKES_TO_JAIL_SLUG_IP = 10;      // 10 WAF attacks across IP on same slug = Jail IP on slug
+
+// Memory Safeguard Bounds (Prevents V8 Heap Exhaustion under DDoS)
+const MAX_SLIDING_WINDOWS = 50_000;
+const MAX_STRIKES_ENTRIES = 20_000;
+const MAX_CONFIG_CACHE_ENTRIES = 5_000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  IN-MEMORY CACHES & METRICS (Sub-millisecond fast-path)
@@ -91,10 +96,6 @@ class WafEngine {
   private subRedis: Redis | null = null;
 
   // In-Memory Fast-Path Lookup Tables
-  // Key format:
-  // - Device on slug: `${slug}:${ip}:${deviceHash}`
-  // - IP on slug: `${slug}:${ip}`
-  // - Global IP ban: `*:${ip}`
   private jailedEntries = new Map<string, JailEntry>();
   private permanentBlacklist = new Set<string>();
   private globalWhitelist = new Set<string>([
@@ -141,6 +142,11 @@ class WafEngine {
   public async init(redisClient: Redis) {
     this.redis = redisClient;
 
+    // Attach error handler to prevent unhandled error crashes
+    this.redis.on("error", (err) => {
+      console.warn("[WAF] Redis client warning:", err?.message || err);
+    });
+
     // 1. Load permanent blacklist from Redis if present
     this.redis.smembers("waf:blacklist").then((ips) => {
       if (Array.isArray(ips)) {
@@ -176,9 +182,12 @@ class WafEngine {
       console.log(`[WAF] Hydrated ${this.jailedEntries.size} active jail entries from Redis.`);
     } catch {}
 
-    // 3. Set up Redis Pub/Sub for instant real-time synchronization across edge router nodes
+    // 3. Set up Redis Pub/Sub with dedicated error handling
     try {
       this.subRedis = this.redis.duplicate();
+      this.subRedis.on("error", (err) => {
+        console.warn("[WAF] Redis Pub/Sub subscriber warning:", err?.message || err);
+      });
       this.subRedis.subscribe("waf:alert", "waf:unjail", (err) => {
         if (err) console.error("[WAF] Failed to subscribe to Redis security channels", err);
       });
@@ -349,10 +358,6 @@ class WafEngine {
     }
 
     // 2. Automated Jail Check (Strictly Hierarchical & Deployment-Scoped)
-    // Check in order:
-    // a) Device jailed specifically on this deployment: `${slug}:${ip}:${deviceHash}`
-    // b) Entire IP jailed specifically on this deployment: `${slug}:${ip}`
-    // c) Severe global platform flood jail: `*:${ip}`
     const deviceJailKey = `${slug}:${ip}:${deviceHash}`;
     const slugIpJailKey = `${slug}:${ip}`;
     const globalJailKey = `*:${ip}`;
@@ -398,9 +403,17 @@ class WafEngine {
       );
     }
 
-    // 4. Per-Deployment Rate Limiting
-    const slugRpm = config.rateLimitRpm || DEFAULT_SLUG_RPM;
-    const slugBurst = config.burstLimit || DEFAULT_SLUG_BURST;
+    // 4. Per-Deployment Rate Limiting (With Static Asset Relaxation)
+    const isStaticAsset = Boolean(
+      req.url && /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff2?|map|webp|avif)$/i.test(req.url.split("?")[0])
+    );
+
+    const baseSlugRpm = config.rateLimitRpm || DEFAULT_SLUG_RPM;
+    const baseSlugBurst = config.burstLimit || DEFAULT_SLUG_BURST;
+
+    // Static assets get a 3x burst multiplier to prevent modern SPA bundles from false-positive rate limiting
+    const slugRpm = isStaticAsset ? baseSlugRpm * 3 : baseSlugRpm;
+    const slugBurst = isStaticAsset ? baseSlugBurst * 3 : baseSlugBurst;
 
     // 4a. Per-Device on this deployment (isolates laptop from phone on same WiFi)
     const deviceRate = this.checkRateLimit(
@@ -445,14 +458,18 @@ class WafEngine {
     // 5. Deep Packet WAF Rule Inspection
     const wafCheck = this.inspectWafRules(req, config);
     if (wafCheck.matched) {
-      // Record strike specifically against this device on this deployment
-      this.recordStrike(
-        slug,
-        ip,
-        deviceHash,
-        clientType,
-        `WAF Violation: ${wafCheck.rule}`
-      );
+      // High-severity exploits and scanner bots record strikes towards Fail2Ban jail
+      const severeCategories = ["sqli", "xss", "lfi", "rce", "bad_bot", "probe"];
+      if (wafCheck.category && severeCategories.includes(wafCheck.category)) {
+        this.recordStrike(
+          slug,
+          ip,
+          deviceHash,
+          clientType,
+          `WAF Violation: ${wafCheck.rule}`
+        );
+      }
+
       const category = (wafCheck.category as any) || "anomaly";
 
       if (config.mode === "monitor") {
@@ -477,7 +494,7 @@ class WafEngine {
     return {
       allowed: true,
       headers: {
-        "RateLimit-Limit": String(slugRpm),
+        "RateLimit-Limit": String(baseSlugRpm),
         "RateLimit-Remaining": String(deviceRate.remaining),
         "RateLimit-Reset": String(deviceRate.resetSec),
       },
@@ -498,7 +515,7 @@ class WafEngine {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  //  RATE LIMITING (Sliding Window Token Bucket)
+  //  RATE LIMITING (Sliding Window Token Bucket with LRU Memory Protection)
   // ───────────────────────────────────────────────────────────────────────────
 
   private checkRateLimit(
@@ -509,6 +526,14 @@ class WafEngine {
   ): { allowed: boolean; remaining: number; resetSec: number } {
     let window = this.slidingWindows.get(key);
     if (!window) {
+      // Capped LRU-style eviction: If map exceeds MAX_SLIDING_WINDOWS, prune oldest 10%
+      if (this.slidingWindows.size >= MAX_SLIDING_WINDOWS) {
+        let purged = 0;
+        for (const k of this.slidingWindows.keys()) {
+          this.slidingWindows.delete(k);
+          if (++purged >= 5000) break;
+        }
+      }
       window = { count: 0, burstCount: 0, windowStart: now, burstStart: now };
       this.slidingWindows.set(key, window);
     }
@@ -539,7 +564,7 @@ class WafEngine {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  //  WAF SIGNATURE & ATTACK VECTOR PATTERNS
+  //  WAF SIGNATURE & ATTACK VECTOR PATTERNS (ReDoS-Safe)
   // ───────────────────────────────────────────────────────────────────────────
 
   private inspectWafRules(
@@ -551,7 +576,7 @@ class WafEngine {
     try {
       decodedUrl = decodeURIComponent(rawUrl);
     } catch {
-      // Malformed URL encoding is an immediate anomaly
+      // Malformed percent-encoding is rejected gracefully as an anomaly (no strike penalty)
       return { matched: true, category: "anomaly", rule: "MALFORMED_URI_ENCODING" };
     }
 
@@ -636,11 +661,11 @@ class WafEngine {
       }
     }
 
-    // 5. SQL Injection (SQLi)
+    // 5. SQL Injection (SQLi) — ReDoS-Bounded Patterns
     if (config.enableSqlInjectionCheck) {
       const SQLI_PATTERNS = [
         /\bunion\b\s+(all\s+)?\bselect\b/i,
-        /\bselect\b.+\bfrom\b.+/i,
+        /\bselect\b[\s\S]{1,250}\bfrom\b/i, // Bounded search radius prevents regex backtracking
         /;\s*drop\s+(table|database)\b/i,
         /;\s*delete\s+from\b/i,
         /\binsert\s+into\b.+\bvalues\b/i,
@@ -715,6 +740,15 @@ class WafEngine {
   ): boolean {
     const now = Date.now();
     const strikeKey = `${slug}:${ip}:${deviceHash}`;
+
+    // Capped LRU safeguard
+    if (this.strikeMap.size >= MAX_STRIKES_ENTRIES) {
+      let purged = 0;
+      for (const k of this.strikeMap.keys()) {
+        this.strikeMap.delete(k);
+        if (++purged >= 2000) break;
+      }
+    }
 
     let entry = this.strikeMap.get(strikeKey);
     if (!entry || now - entry.firstStrike > STRIKE_WINDOW_MS) {
@@ -1044,7 +1078,7 @@ class WafEngine {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  //  CONFIGURATION RESOLUTION
+  //  CONFIGURATION RESOLUTION (Fail-Open Redis Timeout Protection)
   // ───────────────────────────────────────────────────────────────────────────
 
   public async getSlugConfig(slug: string): Promise<WafConfig> {
@@ -1073,15 +1107,28 @@ class WafEngine {
     }
 
     try {
-      const raw = await this.redis.get(`waf:config:${slug}`);
+      // 300ms fail-open timeout prevents slow Redis queries from stalling edge router traffic
+      const fetchPromise = this.redis.get(`waf:config:${slug}`);
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error("Redis config timeout")), 300)
+      );
+      const raw = await Promise.race([fetchPromise, timeoutPromise]);
       if (raw) {
         const parsed = JSON.parse(raw);
         const merged: WafConfig = { ...defaultConfig, ...parsed };
+        if (this.configCache.size >= MAX_CONFIG_CACHE_ENTRIES) {
+          const firstKey = this.configCache.keys().next().value;
+          if (firstKey) this.configCache.delete(firstKey);
+        }
         this.configCache.set(slug, { config: merged, cachedAt: now });
         return merged;
       }
     } catch {}
 
+    if (this.configCache.size >= MAX_CONFIG_CACHE_ENTRIES) {
+      const firstKey = this.configCache.keys().next().value;
+      if (firstKey) this.configCache.delete(firstKey);
+    }
     this.configCache.set(slug, { config: defaultConfig, cachedAt: now });
     return defaultConfig;
   }
