@@ -174,3 +174,16 @@ sudo pm2 restart edge-router
 # Check status
 sudo pm2 status
 ```
+
+---
+
+## 7. Enterprise WAF, DDoS Protection & Scoped Rate Limiting
+
+### Architectural Hardening & Isolation
+- **Deployment-Level Scope**: Strike counters, Fail2Ban temporary jails, and rate limits are scoped strictly to the targeted deployment (`slug`). Malicious activity on one deployment never leaks or restricts access to other services or the dashboard.
+- **Device Signature Fingerprinting**: Normalized SHA-256 fingerprinting from client `User-Agent` isolates attacking tools/scripts from innocent mobile phones or colleagues sharing the same NAT/WiFi public IP.
+- **Anti-Spoofing Client IP Resolution**: Binds enforcement to cryptographically verified Cloudflare `CF-Connecting-IP` (validated by `CF-Ray`) or raw TCP `socket.remoteAddress`, strictly rejecting forged `X-Forwarded-For` headers from untrusted connections.
+- **Deep Packet Inspection**: Full inline protection against SQL Injection, XSS, Path Traversal/LFI, Remote Code Execution, and Scanner bots (`sqlmap`, `nikto`, `nmap`).
+- **Distributed Redis Sync**: Sub-second synchronization across all edge router instances via Redis Pub/Sub (`waf:alert`, `waf:unjail`).
+- **Full Architectural Documentation**: See [waf_ddos_rate_limiting_architecture.md](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/docs/waf_ddos_rate_limiting_architecture.md) for the complete design and 10-scenario regression test specification.
+
