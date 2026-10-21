@@ -169,10 +169,17 @@ The UI (`apps/dashboard/app/dashboard/backend/[id]/analytics/page.tsx` and `apps
    - **Bandwidth**: Egress data transferred with unique client IP count.
    - **WAF Security**: Real-time threat defense count (DDoS, IP jail, rate limit mitigations).
 
-2. **Interactive SVG Visualization**:
-   - **Throughput Mode**: Stacked multi-color bars for 2xx (emerald), 3xx (sky), 4xx (amber), and 5xx (rose).
-   - **Latency Mode**: Smooth cubic bezier curve with gradient glow area fill and hover inspection markers.
-   - **Tooltip HUD**: Hovering over any bar or line point displays exact timestamp, request breakdown, and latency metrics.
+2. **State-of-the-Art Graph Visualizer**:
+   - **Continuous Cardinal / Catmull-Rom Spline**: Replaces raw discrete slivers with smooth cubic bezier curves (`getSmoothSplinePath`) and multi-layer gradient fills for total volume and individual HTTP status layers (`2xx` emerald, `3xx` sky, `4xx` amber, `5xx` rose).
+   - **Full X-Axis Timeline & Baseline**: Renders 5 to 6 equidistant timestamps across the chart bottom (`formatTickTime`), tick marks, and baseline axis.
+   - **Clean Y-Axis Formatting**: Automatic dynamic scaling with abbreviated metric values (`2.0k`, `1.5k`, `1.0k`, `500`, `0`).
+   - **Multi-Metric Category Tabs**:
+     1. `📊 Traffic Throughput`: Volume curve with toggle between `Area Curve` (smooth spline) and `Stacked Bars` (discrete rounded bars).
+     2. `⚡ Response Latency`: Average response duration curve with P95 & peak spike threshold lines.
+     3. `💻 Container Compute Load`: Real-time container CPU % load and memory MB usage timeline against vCPU quotas.
+     4. `🛡️ Threat Mitigations`: Real-time blocked DDoS/WAF events over time.
+   - **Interactive Cursor Scrubber & Dynamic HUD Tooltip**: Real-time cursor tracker with vertical dashed crosshair guide line, glowing curve snap markers, and a floating hover card displaying exact time, requests, status breakdown, and latency.
+   - **Intelligent Traffic Concentration Recommendation**: Automatically detects when traffic is concentrated in a recent window and suggests switching to `1H` for minute-by-minute granularity.
 
 3. **Route & Protocol Breakdown**:
    - **Top 10 Visited Routes**: Ranked route traffic bars with request percentage of total.
