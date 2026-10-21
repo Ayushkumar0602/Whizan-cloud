@@ -35,8 +35,8 @@ export const wafRoutes: FastifyPluginAsync = async (fastify) => {
           totalJailed: 0,
           categoryCounts: {},
         },
-        activeJailedIpsCount: 0,
-        activeJailedIps: [],
+        activeJailedCount: 0,
+        activeJailedEntries: [],
         recentEvents: [],
       });
     } catch (err: any) {
@@ -50,8 +50,9 @@ export const wafRoutes: FastifyPluginAsync = async (fastify) => {
   }, async (request: any, reply) => {
     try {
       const limit = Math.min(Number(request.query?.limit) || 50, 100);
-      const rawEvents = await redisClient.lrange("waf:events", 0, limit - 1);
-      const events = (rawEvents || []).map((e) => {
+      const slugFilter = request.query?.slug?.toLowerCase()?.trim();
+      const rawEvents = await redisClient.lrange("waf:events", 0, limit * 2);
+      let events = (rawEvents || []).map((e) => {
         try {
           return JSON.parse(e);
         } catch {
@@ -59,7 +60,11 @@ export const wafRoutes: FastifyPluginAsync = async (fastify) => {
         }
       }).filter(Boolean);
 
-      return reply.send({ events, count: events.length });
+      if (slugFilter) {
+        events = events.filter((e: any) => e.slug === slugFilter);
+      }
+
+      return reply.send({ events: events.slice(0, limit), count: events.length });
     } catch (err: any) {
       return reply.status(500).send({ error: "Failed to fetch WAF events", message: err.message });
     }
@@ -123,32 +128,62 @@ export const wafRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // ── 5. POST /api/waf/jail/:ip — Manually ban/jail an abusive IP ───────────────
-  fastify.post("/jail/:ip", {
-    preHandler: [(fastify as any).requireAdmin],
+  // ── 5. POST /api/waf/jail/:slug/:ip — Manually jail an abusive IP for a specific deployment
+  fastify.post("/jail/:slug/:ip", {
+    preHandler: [(fastify as any).authenticate],
   }, async (request: any, reply) => {
+    const slug = request.params.slug?.toLowerCase().trim();
     const ip = request.params.ip?.trim();
-    if (!ip) return reply.status(400).send({ error: "IP address is required" });
+    if (!slug || !ip) return reply.status(400).send({ error: "Slug and IP are required" });
 
     const durationSec = Math.max(60, Number(request.body?.durationSec) || 3600); // Default 1 hour
-    const reason = String(request.body?.reason || "Admin Manual Block");
+    const reason = String(request.body?.reason || "Admin Manual Block on " + slug);
     const until = Date.now() + durationSec * 1000;
+    const jailKey = `${slug}:${ip}`;
 
     try {
-      await redisClient.set(`waf:jail:${ip}`, JSON.stringify({ until, reason }), "EX", durationSec);
+      const payload = {
+        until,
+        reason,
+        slug,
+        ip,
+        jailedAt: new Date().toISOString(),
+      };
+      await redisClient.set(`waf:jail:${jailKey}`, JSON.stringify(payload), "EX", durationSec);
       await redisClient.publish("waf:alert", JSON.stringify({
-        type: "IP_MANUALLY_JAILED",
+        type: "SLUG_IP_JAILED",
+        slug,
         ip,
         reason,
         until: new Date(until).toISOString(),
       }));
-      return reply.send({ success: true, ip, until: new Date(until).toISOString(), reason });
+      return reply.send({ success: true, slug, ip, until: new Date(until).toISOString(), reason });
     } catch (err: any) {
-      return reply.status(500).send({ error: "Failed to jail IP", message: err.message });
+      return reply.status(500).send({ error: "Failed to jail IP on deployment", message: err.message });
     }
   });
 
-  // ── 6. DELETE /api/waf/jail/:ip — Unjail/unban an IP ─────────────────────────
+  // ── 6. DELETE /api/waf/jail/:slug/:ip — Unjail an IP for a specific deployment
+  fastify.delete("/jail/:slug/:ip", {
+    preHandler: [(fastify as any).authenticate],
+  }, async (request: any, reply) => {
+    const slug = request.params.slug?.toLowerCase().trim();
+    const ip = request.params.ip?.trim();
+    if (!slug || !ip) return reply.status(400).send({ error: "Slug and IP are required" });
+
+    try {
+      const keys = await redisClient.keys(`waf:jail:${slug}:${ip}*`);
+      for (const k of keys) {
+        await redisClient.del(k);
+      }
+      await redisClient.publish("waf:unjail", JSON.stringify({ slug, ip }));
+      return reply.send({ success: true, message: `IP ${ip} unjailed successfully on ${slug}` });
+    } catch (err: any) {
+      return reply.status(500).send({ error: "Failed to unjail IP", message: err.message });
+    }
+  });
+
+  // ── 7. DELETE /api/waf/jail/:ip — Global Admin Unjail across all deployments ──
   fastify.delete("/jail/:ip", {
     preHandler: [(fastify as any).requireAdmin],
   }, async (request: any, reply) => {
@@ -156,10 +191,15 @@ export const wafRoutes: FastifyPluginAsync = async (fastify) => {
     if (!ip) return reply.status(400).send({ error: "IP address is required" });
 
     try {
+      const keys = await redisClient.keys(`waf:jail:*${ip}*`);
+      for (const k of keys) {
+        await redisClient.del(k);
+      }
       await redisClient.del(`waf:jail:${ip}`);
-      return reply.send({ success: true, message: `IP ${ip} unjailed successfully` });
+      await redisClient.publish("waf:unjail", JSON.stringify({ ip, global: true }));
+      return reply.send({ success: true, message: `IP ${ip} completely unjailed across all deployments` });
     } catch (err: any) {
-      return reply.status(500).send({ error: "Failed to unjail IP", message: err.message });
+      return reply.status(500).send({ error: "Failed to globally unjail IP", message: err.message });
     }
   });
 };

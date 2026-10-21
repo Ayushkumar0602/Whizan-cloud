@@ -1,4 +1,5 @@
 import http from "http";
+import crypto from "crypto";
 import Redis from "ioredis";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ export interface WafSecurityEvent {
   timestamp: string;
   ip: string;
   slug: string;
+  clientType?: string;
   path: string;
   method: string;
   category: string;
@@ -41,14 +43,21 @@ export interface WafSecurityEvent {
   userAgent: string;
 }
 
-// Default Global Limits
-const DEFAULT_GLOBAL_RPM_PER_IP = 600;   // 600 req/min across all domains (Volumetric DDoS protection)
-const DEFAULT_GLOBAL_BURST_PER_IP = 100; // 100 req/5s
+export interface DeviceSignature {
+  deviceHash: string;
+  clientType: "mobile" | "browser" | "cli_tool" | "scanner" | "unknown";
+  userAgent: string;
+}
+
+// Limits
+const DEFAULT_GLOBAL_RPM_PER_IP = 1500;  // 1500 req/min across all domains (Volumetric DDoS protection)
+const DEFAULT_GLOBAL_BURST_PER_IP = 250; // 250 req/5s
 const DEFAULT_SLUG_RPM = 120;            // 120 req/min per specific project/service
 const DEFAULT_SLUG_BURST = 30;           // 30 req/5s burst per specific project/service
 const JAIL_DURATION_MS = 15 * 60 * 1000; // 15 minutes ban on repeated violations
 const STRIKE_WINDOW_MS = 60 * 1000;      // 60-second window to accumulate strikes
-const STRIKES_TO_JAIL = 3;               // 3 WAF attacks or 5 rate violations = Jail
+const STRIKES_TO_JAIL_DEVICE = 3;        // 3 WAF attacks from device on slug = Jail device on slug
+const STRIKES_TO_JAIL_SLUG_IP = 10;      // 10 WAF attacks across IP on same slug = Jail IP on slug
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  IN-MEMORY CACHES & METRICS (Sub-millisecond fast-path)
@@ -61,10 +70,15 @@ interface SlidingWindow {
   burstStart: number;
 }
 
-interface JailEntry {
+export interface JailEntry {
   until: number;
   reason: string;
   strikes: number;
+  slug: string;        // Deployment slug or "*" for global ban
+  ip: string;
+  deviceHash?: string; // Specific device signature if device-scoped
+  clientType?: string;
+  jailedAt: string;
 }
 
 interface StrikeEntry {
@@ -74,9 +88,14 @@ interface StrikeEntry {
 
 class WafEngine {
   private redis: Redis | null = null;
+  private subRedis: Redis | null = null;
 
   // In-Memory Fast-Path Lookup Tables
-  private jailedIps = new Map<string, JailEntry>();
+  // Key format:
+  // - Device on slug: `${slug}:${ip}:${deviceHash}`
+  // - IP on slug: `${slug}:${ip}`
+  // - Global IP ban: `*:${ip}`
+  private jailedEntries = new Map<string, JailEntry>();
   private permanentBlacklist = new Set<string>();
   private globalWhitelist = new Set<string>([
     "127.0.0.1",
@@ -85,8 +104,7 @@ class WafEngine {
   ]);
 
   // Rate Limiting Sliding Windows
-  private globalRateLimits = new Map<string, SlidingWindow>(); // key: clientIp
-  private slugRateLimits = new Map<string, SlidingWindow>();   // key: clientIp + ":" + slug
+  private slidingWindows = new Map<string, SlidingWindow>();
   private strikeMap = new Map<string, StrikeEntry>();
 
   // Configuration Cache per Slug
@@ -120,48 +138,140 @@ class WafEngine {
     setInterval(() => this.cleanupMemory(), 60_000);
   }
 
-  public init(redisClient: Redis) {
+  public async init(redisClient: Redis) {
     this.redis = redisClient;
 
-    // Load initial blacklist from Redis if present
+    // 1. Load permanent blacklist from Redis if present
     this.redis.smembers("waf:blacklist").then((ips) => {
       if (Array.isArray(ips)) {
         ips.forEach((ip) => this.permanentBlacklist.add(ip.trim()));
       }
     }).catch(() => {});
 
-    // Sync metrics and jailed IPs with Redis every 15s
+    // 2. Hydrate active jails from Redis
+    try {
+      const jailKeys = await this.redis.keys("waf:jail:*");
+      const now = Date.now();
+      for (const k of jailKeys) {
+        const raw = await this.redis.get(k);
+        if (raw) {
+          try {
+            const data = JSON.parse(raw);
+            if (data.until && data.until > now) {
+              const jailKey = k.replace(/^waf:jail:/, "");
+              this.jailedEntries.set(jailKey, {
+                until: data.until,
+                reason: data.reason || "Malicious activity",
+                strikes: data.strikes || 3,
+                slug: data.slug || "*",
+                ip: data.ip || "unknown",
+                deviceHash: data.deviceHash,
+                clientType: data.clientType,
+                jailedAt: data.jailedAt || new Date().toISOString(),
+              });
+            }
+          } catch {}
+        }
+      }
+      console.log(`[WAF] Hydrated ${this.jailedEntries.size} active jail entries from Redis.`);
+    } catch {}
+
+    // 3. Set up Redis Pub/Sub for instant real-time synchronization across edge router nodes
+    try {
+      this.subRedis = this.redis.duplicate();
+      this.subRedis.subscribe("waf:alert", "waf:unjail", (err) => {
+        if (err) console.error("[WAF] Failed to subscribe to Redis security channels", err);
+      });
+      this.subRedis.on("message", (channel, message) => {
+        try {
+          const data = JSON.parse(message);
+          if (channel === "waf:unjail") {
+            if (data.global && data.ip) {
+              this.unjailAll(data.ip);
+            } else if (data.slug && data.ip) {
+              this.unjail(data.slug, data.ip);
+            }
+          } else if (channel === "waf:alert") {
+            if (data.slug && data.ip && data.until) {
+              const jailKey = data.deviceHash ? `${data.slug}:${data.ip}:${data.deviceHash}` : `${data.slug}:${data.ip}`;
+              this.jailedEntries.set(jailKey, {
+                until: new Date(data.until).getTime(),
+                reason: data.reason || "Security restriction",
+                strikes: 3,
+                slug: data.slug,
+                ip: data.ip,
+                deviceHash: data.deviceHash,
+                clientType: data.clientType,
+                jailedAt: new Date().toISOString(),
+              });
+            }
+          }
+        } catch {}
+      });
+    } catch {}
+
+    // Sync metrics and jailed entries with Redis every 15s
     setInterval(() => this.syncToRedis(), 15_000);
 
-    console.log("[WAF] Enterprise DDoS Protection & Web Application Firewall initialized.");
+    console.log("[WAF] Enterprise DDoS Protection & Scoped Web Application Firewall initialized.");
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  //  CLIENT IP RESOLUTION (Authoritative from Cloudflare & Reverse Proxies)
+  //  CLIENT & DEVICE RESOLUTION (Anti-Spoofing & NAT-Aware)
   // ───────────────────────────────────────────────────────────────────────────
 
   public extractClientIp(req: http.IncomingMessage): string {
-    // 1. Cloudflare True-Client-IP / CF-Connecting-IP (cannot be spoofed if behind Cloudflare)
+    const rawSocketIp = req.socket?.remoteAddress || "127.0.0.1";
+    const socketIp = this.cleanIp(rawSocketIp);
+
+    // 1. Cloudflare authoritative headers (Cloudflare sets cf-ray on all routed requests)
+    const cfRay = req.headers["cf-ray"];
     const cfIp = req.headers["cf-connecting-ip"] || req.headers["true-client-ip"];
-    if (typeof cfIp === "string" && cfIp.trim()) {
+    if (cfRay && typeof cfIp === "string" && cfIp.trim()) {
       return this.cleanIp(cfIp.trim());
     }
 
-    // 2. Standard X-Real-IP
-    const realIp = req.headers["x-real-ip"];
-    if (typeof realIp === "string" && realIp.trim()) {
-      return this.cleanIp(realIp.trim());
+    // 2. Trusted internal proxy / loopback / container network
+    const isTrustedProxy =
+      socketIp === "127.0.0.1" ||
+      socketIp === "::1" ||
+      socketIp.startsWith("10.") ||
+      socketIp.startsWith("172.16.") ||
+      socketIp.startsWith("172.17.") ||
+      socketIp.startsWith("172.18.") ||
+      socketIp.startsWith("172.19.") ||
+      socketIp.startsWith("172.20.") ||
+      socketIp.startsWith("172.21.") ||
+      socketIp.startsWith("172.22.") ||
+      socketIp.startsWith("172.23.") ||
+      socketIp.startsWith("172.24.") ||
+      socketIp.startsWith("172.25.") ||
+      socketIp.startsWith("172.26.") ||
+      socketIp.startsWith("172.27.") ||
+      socketIp.startsWith("172.28.") ||
+      socketIp.startsWith("172.29.") ||
+      socketIp.startsWith("172.30.") ||
+      socketIp.startsWith("172.31.") ||
+      socketIp.startsWith("192.168.");
+
+    if (isTrustedProxy) {
+      if (typeof cfIp === "string" && cfIp.trim()) return this.cleanIp(cfIp.trim());
+
+      const forwarded = req.headers["x-forwarded-for"];
+      if (typeof forwarded === "string" && forwarded.trim()) {
+        const parts = forwarded.split(",");
+        const first = parts[0]?.trim();
+        if (first) return this.cleanIp(first);
+      }
+
+      const realIp = req.headers["x-real-ip"];
+      if (typeof realIp === "string" && realIp.trim()) {
+        return this.cleanIp(realIp.trim());
+      }
     }
 
-    // 3. X-Forwarded-For (Leftmost IP is the original client)
-    const forwarded = req.headers["x-forwarded-for"];
-    if (typeof forwarded === "string" && forwarded.trim()) {
-      const parts = forwarded.split(",");
-      const first = parts[0]?.trim();
-      if (first) return this.cleanIp(first);
-    }
-
-    return this.cleanIp(req.socket.remoteAddress || "127.0.0.1");
+    // 3. For any untrusted direct public TCP connection, NEVER trust client-supplied X-Forwarded-For!
+    return socketIp;
   }
 
   private cleanIp(ip: string): string {
@@ -169,13 +279,56 @@ class WafEngine {
     return ip;
   }
 
+  public normalizeDeviceHash(raw: string): string {
+    if (!raw || !raw.trim()) return "no-ua";
+    if (/^[a-f0-9]{16}$/i.test(raw)) return raw.toLowerCase();
+    return crypto.createHash("sha256").update(raw.trim()).digest("hex").slice(0, 16);
+  }
+
+  public extractDeviceSignature(req: http.IncomingMessage): DeviceSignature {
+    const ua = (req.headers["user-agent"] || "").trim();
+    if (!ua) {
+      return {
+        deviceHash: "no-ua",
+        clientType: "unknown",
+        userAgent: "",
+      };
+    }
+
+    const deviceHash = this.normalizeDeviceHash(ua);
+    const lower = ua.toLowerCase();
+
+    let clientType: DeviceSignature["clientType"] = "browser";
+    if (lower.includes("mobile") || lower.includes("iphone") || lower.includes("android")) {
+      clientType = "mobile";
+    } else if (
+      lower.includes("curl") ||
+      lower.includes("wget") ||
+      lower.includes("postman") ||
+      lower.includes("httpie") ||
+      lower.includes("python-requests")
+    ) {
+      clientType = "cli_tool";
+    } else if (
+      lower.includes("sqlmap") ||
+      lower.includes("nikto") ||
+      lower.includes("nmap") ||
+      lower.includes("masscan")
+    ) {
+      clientType = "scanner";
+    }
+
+    return { deviceHash, clientType, userAgent: ua };
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
-  //  MAIN INSPECTION PIPELINE
+  //  MAIN INSPECTION PIPELINE (Strict Per-Deployment Isolation)
   // ───────────────────────────────────────────────────────────────────────────
 
   public async inspectRequest(req: http.IncomingMessage, slug: string): Promise<WafResult> {
     this.metrics.totalInspected++;
     const ip = this.extractClientIp(req);
+    const { deviceHash, clientType, userAgent } = this.extractDeviceSignature(req);
     const now = Date.now();
     const config = await this.getSlugConfig(slug);
 
@@ -195,29 +348,37 @@ class WafEngine {
       return this.reject(ip, slug, req, 403, "Forbidden: IP address is blacklisted", "jailed", "PERMANENT_IP_BLACKLIST");
     }
 
-    // 2. Automated Jail Check (Temporary Fail2Ban)
-    const jailEntry = this.jailedIps.get(ip);
-    if (jailEntry) {
-      if (now < jailEntry.until) {
-        const remainingSec = Math.ceil((jailEntry.until - now) / 1000);
-        return {
-          allowed: false,
-          statusCode: 403,
-          reason: `Access blocked: IP has been temporarily banned for malicious activity. Reason: ${jailEntry.reason}`,
-          category: "jailed",
-          ruleMatched: "TEMPORARY_IP_JAIL",
-          headers: {
-            "Retry-After": String(remainingSec),
-            "X-Waf-Action": "JAILED",
-          },
-        };
-      } else {
-        // Expired jail
-        this.jailedIps.delete(ip);
-      }
+    // 2. Automated Jail Check (Strictly Hierarchical & Deployment-Scoped)
+    // Check in order:
+    // a) Device jailed specifically on this deployment: `${slug}:${ip}:${deviceHash}`
+    // b) Entire IP jailed specifically on this deployment: `${slug}:${ip}`
+    // c) Severe global platform flood jail: `*:${ip}`
+    const deviceJailKey = `${slug}:${ip}:${deviceHash}`;
+    const slugIpJailKey = `${slug}:${ip}`;
+    const globalJailKey = `*:${ip}`;
+
+    const activeJail =
+      this.checkAndPruneJail(deviceJailKey, now) ||
+      this.checkAndPruneJail(slugIpJailKey, now) ||
+      this.checkAndPruneJail(globalJailKey, now);
+
+    if (activeJail) {
+      const remainingSec = Math.ceil((activeJail.until - now) / 1000);
+      return {
+        allowed: false,
+        statusCode: 403,
+        reason: `Access blocked on ${slug}: Client has been temporarily restricted for suspicious activity. (${activeJail.reason})`,
+        category: "jailed",
+        ruleMatched: activeJail.deviceHash ? "DEPLOYMENT_DEVICE_JAIL" : "DEPLOYMENT_IP_JAIL",
+        headers: {
+          "Retry-After": String(remainingSec),
+          "X-Waf-Action": "JAILED",
+          "X-Waf-Target": slug,
+        },
+      };
     }
 
-    // 3. Volumetric DDoS Protection (Global per-IP Rate Limit)
+    // 3. Volumetric DDoS Protection (Global per-IP Rate Limit - prevents crashing edge router)
     const globalRate = this.checkRateLimit(
       `global:${ip}`,
       DEFAULT_GLOBAL_RPM_PER_IP,
@@ -225,32 +386,77 @@ class WafEngine {
       now
     );
     if (!globalRate.allowed) {
-      this.recordStrike(ip, "Volumetric Global Rate Limit Exceeded");
-      return this.rejectRateLimit(ip, slug, req, globalRate.remaining, DEFAULT_GLOBAL_RPM_PER_IP, globalRate.resetSec, "Global volumetric rate limit exceeded.");
+      this.recordGlobalStrike(ip, "Global Volumetric Flood Detected");
+      return this.rejectRateLimit(
+        ip,
+        slug,
+        req,
+        globalRate.remaining,
+        DEFAULT_GLOBAL_RPM_PER_IP,
+        globalRate.resetSec,
+        "Global network flood threshold exceeded."
+      );
     }
 
-    // 4. Per-Slug / Per-Service Rate Limiting
+    // 4. Per-Deployment Rate Limiting
     const slugRpm = config.rateLimitRpm || DEFAULT_SLUG_RPM;
     const slugBurst = config.burstLimit || DEFAULT_SLUG_BURST;
-    const slugRate = this.checkRateLimit(
-      `slug:${ip}:${slug}`,
+
+    // 4a. Per-Device on this deployment (isolates laptop from phone on same WiFi)
+    const deviceRate = this.checkRateLimit(
+      `rate:${slug}:${ip}:${deviceHash}`,
       slugRpm,
       slugBurst,
       now
     );
-    if (!slugRate.allowed) {
-      this.recordStrike(ip, `Service Rate Limit Exceeded on ${slug}`);
-      return this.rejectRateLimit(ip, slug, req, slugRate.remaining, slugRpm, slugRate.resetSec, `Rate limit of ${slugRpm} req/min exceeded.`);
+    if (!deviceRate.allowed) {
+      this.recordStrike(slug, ip, deviceHash, clientType, `Device Rate Limit Exceeded on ${slug}`);
+      return this.rejectRateLimit(
+        ip,
+        slug,
+        req,
+        deviceRate.remaining,
+        slugRpm,
+        deviceRate.resetSec,
+        `Rate limit of ${slugRpm} req/min exceeded for this client on ${slug}.`
+      );
+    }
+
+    // 4b. Aggregate IP on this deployment (protects against single-IP distributed bot tools)
+    const aggregateIpRate = this.checkRateLimit(
+      `rate:${slug}:${ip}`,
+      slugRpm * 4,
+      slugBurst * 4,
+      now
+    );
+    if (!aggregateIpRate.allowed) {
+      this.recordIpStrike(slug, ip, `Aggregate IP Rate Limit Exceeded on ${slug}`);
+      return this.rejectRateLimit(
+        ip,
+        slug,
+        req,
+        aggregateIpRate.remaining,
+        slugRpm * 4,
+        aggregateIpRate.resetSec,
+        `Total IP rate limit exceeded on ${slug}.`
+      );
     }
 
     // 5. Deep Packet WAF Rule Inspection
     const wafCheck = this.inspectWafRules(req, config);
     if (wafCheck.matched) {
-      const isJailed = this.recordStrike(ip, `WAF Violation: ${wafCheck.rule}`);
+      // Record strike specifically against this device on this deployment
+      this.recordStrike(
+        slug,
+        ip,
+        deviceHash,
+        clientType,
+        `WAF Violation: ${wafCheck.rule}`
+      );
       const category = (wafCheck.category as any) || "anomaly";
 
       if (config.mode === "monitor") {
-        this.logEvent(ip, slug, req, "MONITORED", category, wafCheck.rule || "WAF_SUSPICIOUS");
+        this.logEvent(ip, slug, req, "MONITORED", category, wafCheck.rule || "WAF_SUSPICIOUS", clientType);
         this.metrics.totalAllowed++;
         return { allowed: true };
       }
@@ -272,10 +478,23 @@ class WafEngine {
       allowed: true,
       headers: {
         "RateLimit-Limit": String(slugRpm),
-        "RateLimit-Remaining": String(slugRate.remaining),
-        "RateLimit-Reset": String(slugRate.resetSec),
+        "RateLimit-Remaining": String(deviceRate.remaining),
+        "RateLimit-Reset": String(deviceRate.resetSec),
       },
     };
+  }
+
+  private checkAndPruneJail(key: string, now: number): JailEntry | null {
+    const entry = this.jailedEntries.get(key);
+    if (!entry) return null;
+    if (now >= entry.until) {
+      this.jailedEntries.delete(key);
+      if (this.redis) {
+        this.redis.del(`waf:jail:${key}`).catch(() => {});
+      }
+      return null;
+    }
+    return entry;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -288,10 +507,10 @@ class WafEngine {
     burstLimit: number,
     now: number
   ): { allowed: boolean; remaining: number; resetSec: number } {
-    let window = this.slugRateLimits.get(key);
+    let window = this.slidingWindows.get(key);
     if (!window) {
       window = { count: 0, burstCount: 0, windowStart: now, burstStart: now };
-      this.slugRateLimits.set(key, window);
+      this.slidingWindows.set(key, window);
     }
 
     // Reset 60s window
@@ -349,7 +568,6 @@ class WafEngine {
     }
 
     const userAgent = (req.headers["user-agent"] || "").toLowerCase();
-    const payloadToScan = `${decodedUrl} ${userAgent}`;
 
     // 3. Vulnerability Scanners & Bad Bot Detection
     if (config.enableScannerCheck) {
@@ -448,34 +666,35 @@ class WafEngine {
         /<script\b[^>]*>/i,
         /<\/script>/i,
         /javascript:\s*/i,
-        /on(error|load|click|mouseover|submit|focus|blur)\s*=/i,
-        /<iframe\b/i,
-        /<object\b/i,
-        /<embed\b/i,
-        /document\.(cookie|location|write)/i,
+        /onerror\s*=/i,
+        /onload\s*=/i,
+        /onclick\s*=/i,
+        /<iframe\b[^>]*>/i,
+        /<svg\b[^>]*\bonload\b/i,
+        /<img\b[^>]*\bonerror\b/i,
       ];
       for (const pattern of XSS_PATTERNS) {
         if (pattern.test(decodedUrl)) {
-          return { matched: true, category: "xss", rule: "XSS_VECTOR_DETECTED" };
+          return { matched: true, category: "xss", rule: "CROSS_SITE_SCRIPTING_XSS" };
         }
       }
     }
 
-    // 7. Remote Code Execution (RCE) & Command Injection
+    // 7. Remote Code Execution (RCE)
     if (config.enableRceCheck) {
       const RCE_PATTERNS = [
-        /;\s*(cat|ls|rm|chmod|chown|wget|curl|nc|bash|sh|python|perl|php)\s+/i,
-        /\|\s*(bash|sh|nc|curl|wget)\b/i,
-        /\$\(\s*(cat|id|whoami|uname|curl|wget)/i,
-        /`[^`]*(whoami|uname|cat\s+\/etc)[^`]*`/i,
+        /;\s*(cat|ls|whoami|id|uname|curl|wget|nc|bash|sh|powershell|cmd)\b/i,
+        /\|\s*(cat|ls|whoami|id|uname|curl|wget|nc|bash|sh)\b/i,
+        /`[^`]*`/,
+        /\$\([^\)]*\)/,
+        /\bphpinfo\(\)/i,
         /\beval\s*\(/i,
-        /\bsystem\s*\(/i,
         /\bpassthru\s*\(/i,
-        /\bshell_exec\s*\(/i,
+        /\bsystem\s*\(/i,
       ];
       for (const pattern of RCE_PATTERNS) {
         if (pattern.test(decodedUrl)) {
-          return { matched: true, category: "rce", rule: "RCE_COMMAND_INJECTION" };
+          return { matched: true, category: "rce", rule: "REMOTE_CODE_EXECUTION_RCE" };
         }
       }
     }
@@ -484,51 +703,247 @@ class WafEngine {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  //  AUTOMATED FAIL2BAN / JAIL ESCALATION
+  //  AUTOMATED FAIL2BAN & STRIKE ESCALATION (Strict Deployment Isolation)
   // ───────────────────────────────────────────────────────────────────────────
 
-  private recordStrike(ip: string, reason: string): boolean {
+  private recordStrike(
+    slug: string,
+    ip: string,
+    deviceHash: string,
+    clientType: string,
+    reason: string
+  ): boolean {
     const now = Date.now();
-    let entry = this.strikeMap.get(ip);
+    const strikeKey = `${slug}:${ip}:${deviceHash}`;
+
+    let entry = this.strikeMap.get(strikeKey);
     if (!entry || now - entry.firstStrike > STRIKE_WINDOW_MS) {
       entry = { count: 1, firstStrike: now };
-      this.strikeMap.set(ip, entry);
+      this.strikeMap.set(strikeKey, entry);
     } else {
       entry.count++;
     }
 
-    if (entry.count >= STRIKES_TO_JAIL) {
-      this.jailIp(ip, reason, JAIL_DURATION_MS);
+    // 1. Check if device has reached threshold on this deployment
+    if (entry.count >= STRIKES_TO_JAIL_DEVICE) {
+      this.jailDevice(slug, ip, deviceHash, clientType, reason, JAIL_DURATION_MS);
+      return true;
+    }
+
+    // 2. Also increment IP aggregate strikes on this deployment
+    this.recordIpStrike(slug, ip, reason);
+
+    return false;
+  }
+
+  private recordIpStrike(slug: string, ip: string, reason: string): boolean {
+    const now = Date.now();
+    const ipKey = `${slug}:${ip}`;
+
+    let entry = this.strikeMap.get(ipKey);
+    if (!entry || now - entry.firstStrike > STRIKE_WINDOW_MS * 2) {
+      entry = { count: 1, firstStrike: now };
+      this.strikeMap.set(ipKey, entry);
+    } else {
+      entry.count++;
+    }
+
+    // If an attacker is rotating user-agents on the same IP against the same slug
+    if (entry.count >= STRIKES_TO_JAIL_SLUG_IP) {
+      this.jailIpOnSlug(slug, ip, `Excessive aggregate attacks on ${slug}`, JAIL_DURATION_MS);
+      return true;
+    }
+
+    return false;
+  }
+
+  private recordGlobalStrike(ip: string, reason: string): boolean {
+    const now = Date.now();
+    const globalKey = `global:${ip}`;
+
+    let entry = this.strikeMap.get(globalKey);
+    if (!entry || now - entry.firstStrike > STRIKE_WINDOW_MS) {
+      entry = { count: 1, firstStrike: now };
+      this.strikeMap.set(globalKey, entry);
+    } else {
+      entry.count++;
+    }
+
+    if (entry.count >= 20) {
+      this.jailGlobalIp(ip, reason, JAIL_DURATION_MS);
       return true;
     }
     return false;
   }
 
-  public jailIp(ip: string, reason: string, durationMs: number = JAIL_DURATION_MS) {
+  // ───────────────────────────────────────────────────────────────────────────
+  //  JAIL ACTIONS (Scoped to Deployment / Device)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  public jailDevice(
+    slug: string,
+    ip: string,
+    deviceOrUa: string,
+    clientType: string = "browser",
+    reason: string = "Repeated Malicious Attacks",
+    durationMs: number = JAIL_DURATION_MS
+  ) {
     const until = Date.now() + durationMs;
-    this.jailedIps.set(ip, { until, reason, strikes: STRIKES_TO_JAIL });
+    const deviceHash = this.normalizeDeviceHash(deviceOrUa);
+    const jailKey = `${slug}:${ip}:${deviceHash}`;
+
+    const entry: JailEntry = {
+      until,
+      reason,
+      strikes: STRIKES_TO_JAIL_DEVICE,
+      slug,
+      ip,
+      deviceHash,
+      clientType,
+      jailedAt: new Date().toISOString(),
+    };
+
+    this.jailedEntries.set(jailKey, entry);
     this.metrics.totalJailed++;
 
     if (this.redis) {
       const ttlSec = Math.ceil(durationMs / 1000);
-      this.redis.set(`waf:jail:${ip}`, JSON.stringify({ until, reason }), "EX", ttlSec).catch(() => {});
+      this.redis.set(`waf:jail:${jailKey}`, JSON.stringify(entry), "EX", ttlSec).catch(() => {});
       this.redis.publish("waf:alert", JSON.stringify({
-        type: "IP_JAILED",
+        type: "DEVICE_JAILED",
+        slug,
+        ip,
+        deviceHash,
+        clientType,
+        reason,
+        until: new Date(until).toISOString(),
+      })).catch(() => {});
+    }
+
+    console.warn(`[WAF JAIL] 🚨 Device [${clientType}:${deviceHash}] on IP ${ip} jailed on deployment '${slug}' for ${Math.round(durationMs / 60000)}m. Reason: ${reason}`);
+  }
+
+  public jailIpOnSlug(
+    slug: string,
+    ip: string,
+    reason: string = "Excessive Deployment Attacks",
+    durationMs: number = JAIL_DURATION_MS
+  ) {
+    const until = Date.now() + durationMs;
+    const jailKey = `${slug}:${ip}`;
+
+    const entry: JailEntry = {
+      until,
+      reason,
+      strikes: STRIKES_TO_JAIL_SLUG_IP,
+      slug,
+      ip,
+      jailedAt: new Date().toISOString(),
+    };
+
+    this.jailedEntries.set(jailKey, entry);
+    this.metrics.totalJailed++;
+
+    if (this.redis) {
+      const ttlSec = Math.ceil(durationMs / 1000);
+      this.redis.set(`waf:jail:${jailKey}`, JSON.stringify(entry), "EX", ttlSec).catch(() => {});
+      this.redis.publish("waf:alert", JSON.stringify({
+        type: "SLUG_IP_JAILED",
+        slug,
         ip,
         reason,
         until: new Date(until).toISOString(),
       })).catch(() => {});
     }
 
-    console.warn(`[WAF JAIL] 🚨 IP ${ip} has been jailed for ${Math.round(durationMs / 60000)}m. Reason: ${reason}`);
+    console.warn(`[WAF JAIL] 🚨 IP ${ip} jailed on deployment '${slug}' for ${Math.round(durationMs / 60000)}m. Other deployments remain accessible. Reason: ${reason}`);
+  }
+
+  public jailGlobalIp(
+    ip: string,
+    reason: string = "Global Volumetric DDoS Attack",
+    durationMs: number = JAIL_DURATION_MS
+  ) {
+    const until = Date.now() + durationMs;
+    const jailKey = `*:${ip}`;
+
+    const entry: JailEntry = {
+      until,
+      reason,
+      strikes: 20,
+      slug: "*",
+      ip,
+      jailedAt: new Date().toISOString(),
+    };
+
+    this.jailedEntries.set(jailKey, entry);
+    this.metrics.totalJailed++;
+
+    if (this.redis) {
+      const ttlSec = Math.ceil(durationMs / 1000);
+      this.redis.set(`waf:jail:${jailKey}`, JSON.stringify(entry), "EX", ttlSec).catch(() => {});
+    }
+
+    console.warn(`[WAF JAIL] 🚨 IP ${ip} globally jailed for platform protection. Reason: ${reason}`);
+  }
+
+  // Backwards compatibility helper
+  public jailIp(ip: string, reason: string, durationMs: number = JAIL_DURATION_MS) {
+    this.jailGlobalIp(ip, reason, durationMs);
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  //  UNJAIL METHODS
+  // ───────────────────────────────────────────────────────────────────────────
+
+  public async unjail(slug: string, ip: string, deviceOrUa?: string) {
+    if (deviceOrUa) {
+      const deviceHash = this.normalizeDeviceHash(deviceOrUa);
+      const key = `${slug}:${ip}:${deviceHash}`;
+      this.jailedEntries.delete(key);
+      this.strikeMap.delete(key);
+      if (this.redis) await this.redis.del(`waf:jail:${key}`).catch(() => {});
+    } else {
+      // Unjail this IP for this slug (both device-specific and IP-wide on this slug)
+      for (const k of Array.from(this.jailedEntries.keys())) {
+        if (k === `${slug}:${ip}` || k.startsWith(`${slug}:${ip}:`)) {
+          this.jailedEntries.delete(k);
+          if (this.redis) await this.redis.del(`waf:jail:${k}`).catch(() => {});
+        }
+      }
+      for (const k of Array.from(this.strikeMap.keys())) {
+        if (k === `${slug}:${ip}` || k.startsWith(`${slug}:${ip}:`)) {
+          this.strikeMap.delete(k);
+        }
+      }
+    }
+  }
+
+  public async unjailAll(ip: string) {
+    const cleanedIp = this.cleanIp(ip.trim());
+    for (const k of Array.from(this.jailedEntries.keys())) {
+      if (k === cleanedIp || k.includes(`:${cleanedIp}:`) || k.endsWith(`:${cleanedIp}`)) {
+        this.jailedEntries.delete(k);
+      }
+    }
+    for (const k of Array.from(this.strikeMap.keys())) {
+      if (k === cleanedIp || k.includes(`:${cleanedIp}:`) || k.endsWith(`:${cleanedIp}`)) {
+        this.strikeMap.delete(k);
+      }
+    }
+    if (this.redis) {
+      try {
+        const keys = await this.redis.keys(`waf:jail:*${cleanedIp}*`);
+        for (const key of keys) {
+          await this.redis.del(key);
+        }
+        await this.redis.del(`waf:jail:${cleanedIp}`);
+      } catch {}
+    }
   }
 
   public unjailIp(ip: string) {
-    this.jailedIps.delete(ip);
-    this.strikeMap.delete(ip);
-    if (this.redis) {
-      this.redis.del(`waf:jail:${ip}`).catch(() => {});
-    }
+    this.unjailAll(ip);
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -559,6 +974,7 @@ class WafEngine {
       headers: {
         "X-Waf-Blocked": "true",
         "X-Waf-Rule": rule,
+        "X-Waf-Target": slug,
       },
     };
   }
@@ -588,6 +1004,7 @@ class WafEngine {
         "RateLimit-Reset": String(resetSec),
         "Retry-After": String(resetSec),
         "X-Waf-RateLimited": "true",
+        "X-Waf-Target": slug,
       },
     };
   }
@@ -598,13 +1015,15 @@ class WafEngine {
     req: http.IncomingMessage,
     action: WafSecurityEvent["action"],
     category: string,
-    rule: string
+    rule: string,
+    clientType?: string
   ) {
     const event: WafSecurityEvent = {
       id: Math.random().toString(36).substring(2, 10),
       timestamp: new Date().toISOString(),
       ip,
       slug,
+      clientType,
       path: req.url || "/",
       method: req.method || "GET",
       category,
@@ -676,16 +1095,25 @@ class WafEngine {
   // ───────────────────────────────────────────────────────────────────────────
 
   public getStats() {
+    const now = Date.now();
+    const activeJails = Array.from(this.jailedEntries.entries())
+      .filter(([_, data]) => data.until > now)
+      .map(([key, data]) => ({
+        key,
+        slug: data.slug,
+        ip: data.ip,
+        clientType: data.clientType || "unknown",
+        deviceHash: data.deviceHash || "none",
+        reason: data.reason,
+        expiresAt: new Date(data.until).toISOString(),
+        secondsRemaining: Math.max(0, Math.ceil((data.until - now) / 1000)),
+      }));
+
     return {
       status: "ACTIVE",
       metrics: this.metrics,
-      activeJailedIpsCount: this.jailedIps.size,
-      activeJailedIps: Array.from(this.jailedIps.entries()).map(([ip, data]) => ({
-        ip,
-        reason: data.reason,
-        expiresAt: new Date(data.until).toISOString(),
-        secondsRemaining: Math.max(0, Math.ceil((data.until - Date.now()) / 1000)),
-      })),
+      activeJailedCount: activeJails.length,
+      activeJailedEntries: activeJails,
       recentEvents: this.recentEvents.slice(0, 30),
       permanentBlacklistCount: this.permanentBlacklist.size,
       uptimeSeconds: Math.round(process.uptime()),
@@ -703,22 +1131,22 @@ class WafEngine {
   private cleanupMemory() {
     const now = Date.now();
     // Prune expired jail entries
-    for (const [ip, entry] of this.jailedIps.entries()) {
+    for (const [key, entry] of this.jailedEntries.entries()) {
       if (now > entry.until) {
-        this.jailedIps.delete(ip);
+        this.jailedEntries.delete(key);
       }
     }
 
     // Prune stale sliding windows
-    for (const [key, window] of this.slugRateLimits.entries()) {
+    for (const [key, window] of this.slidingWindows.entries()) {
       if (now - window.windowStart > 120_000) {
-        this.slugRateLimits.delete(key);
+        this.slidingWindows.delete(key);
       }
     }
 
-    for (const [ip, strike] of this.strikeMap.entries()) {
+    for (const [key, strike] of this.strikeMap.entries()) {
       if (now - strike.firstStrike > STRIKE_WINDOW_MS * 2) {
-        this.strikeMap.delete(ip);
+        this.strikeMap.delete(key);
       }
     }
   }
