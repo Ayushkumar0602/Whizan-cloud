@@ -7,6 +7,7 @@ import Redis from "ioredis";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { waf } from "./waf.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ const redis = new Redis(REDIS_URL, {
   maxRetriesPerRequest: null,
 });
 redis.on("error", (err) => console.error("[Router Redis] Error:", err.message));
+waf.init(redis);
 
 // ── Instant Startup Boot Beacon ─────────────────────────────────────────────
 // Proactively notifies the 24/7 Render Control Plane and Redis the microsecond
@@ -240,6 +242,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── WAF & DDoS Telemetry Endpoint ─────────────────────────────────────────
+  if (req.url === "/_internal/waf/stats" || req.url === "/waf/stats") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(waf.getStats(), null, 2));
+    return;
+  }
+
   // ── Internal Runtime Bridge (Secure VM bridge for Control Plane / API) ────
   if (req.url?.startsWith("/_internal/runtime/")) {
     const internalSecret = req.headers["x-whizan-internal"];
@@ -283,6 +292,121 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(400, { "Content-Type": "text/plain" });
     res.end("Bad Request: Invalid Host");
     return;
+  }
+
+  // ── ENTERPRISE WAF, DDOS PROTECTION & IP RATE LIMITING ───────────────────
+  const wafVerdict = await waf.inspectRequest(req, slug);
+  if (!wafVerdict.allowed) {
+    const statusCode = wafVerdict.statusCode || 403;
+    const isHtml = (req.headers.accept || "").includes("text/html");
+
+    // Inject security response headers
+    if (wafVerdict.headers) {
+      for (const [hk, hv] of Object.entries(wafVerdict.headers)) {
+        res.setHeader(hk, hv);
+      }
+    }
+
+    if (isHtml) {
+      res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${statusCode === 429 ? "429 Too Many Requests" : "403 Access Denied"} — Whizan Edge Defense</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: #09090b;
+      color: #fafafa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .card {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 16px;
+      padding: 2.5rem;
+      max-width: 520px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+    .icon {
+      font-size: 2.75rem;
+      margin-bottom: 1rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: ${statusCode === 429 ? "#eab308" : "#ef4444"};
+      margin-bottom: 0.75rem;
+    }
+    p {
+      color: #a1a1aa;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+    .badge {
+      display: inline-block;
+      background: #27272a;
+      color: #f43f5e;
+      border: 1px solid #3f3f46;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      word-break: break-all;
+    }
+    .meta {
+      border-top: 1px solid #27272a;
+      padding-top: 1.25rem;
+      font-size: 0.75rem;
+      color: #71717a;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${statusCode === 429 ? "⏳" : "🛡️"}</div>
+    <h1>${statusCode === 429 ? "Too Many Requests" : "Request Blocked by Security Rule"}</h1>
+    <p>${wafVerdict.reason || "Your request was flagged and mitigated by Whizan Cloud Edge Defense."}</p>
+    <div class="badge">Rule: ${wafVerdict.ruleMatched || "SECURITY_POLICY_VIOLATION"}</div>
+    <div class="meta">
+      <span>Target: <strong>${slug}</strong></span>
+      <span>Whizan WAF • Zero-Trust Edge</span>
+    </div>
+  </div>
+</body>
+</html>`);
+    } else {
+      res.writeHead(statusCode, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: statusCode === 429 ? "TOO_MANY_REQUESTS" : "WAF_REQUEST_BLOCKED",
+        statusCode,
+        message: wafVerdict.reason,
+        rule: wafVerdict.ruleMatched,
+        category: wafVerdict.category,
+        retryAfter: wafVerdict.headers?.["Retry-After"] ? Number(wafVerdict.headers["Retry-After"]) : undefined,
+      }, null, 2));
+    }
+    return;
+  }
+
+  // Inject rate limit transparency headers onto allowed requests
+  if (wafVerdict.headers) {
+    for (const [hk, hv] of Object.entries(wafVerdict.headers)) {
+      res.setHeader(hk, hv);
+    }
   }
 
   // ── Edge Functions Routing (.fn.<domain> or /fn/<slug>) ───────────────────
@@ -1185,6 +1309,15 @@ server.on("upgrade", async (req, socket, head) => {
 
   if (!slug) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  // WAF & DDoS Check for WebSockets
+  const wafVerdict = await waf.inspectRequest(req, slug);
+  if (!wafVerdict.allowed) {
+    const code = wafVerdict.statusCode || 403;
+    socket.write(`HTTP/1.1 ${code} Forbidden\r\nX-Waf-Blocked: true\r\n\r\n`);
     socket.destroy();
     return;
   }
