@@ -727,6 +727,14 @@ export async function functionRoutes(fastify: FastifyInstance) {
       data: dataToUpdate,
     });
 
+    // If isPublic was toggled on the service, synchronize the default root endpoint
+    if (typeof dataToUpdate.isPublic === "boolean") {
+      await prisma.functionEndpoint.updateMany({
+        where: { serviceId: id, name: "default" },
+        data: { isPublic: dataToUpdate.isPublic },
+      }).catch(() => {});
+    }
+
     // Update Redis routing metadata
     await syncServiceMetadataToRedis(updated.id);
 
@@ -1644,24 +1652,51 @@ export async function functionRoutes(fastify: FastifyInstance) {
       },
     });
 
-    // Rehydrate Redis service metadata with all decrypted env vars
-    const allEnvs = await prisma.functionEnvVariable.findMany({ where: { serviceId: id } });
-    const decryptedMap: Record<string, string> = {};
-    for (const ev of allEnvs) {
-      try {
-        decryptedMap[ev.key] = decrypt(ev.value);
-      } catch {}
-    }
-
-    const rawMeta = await redisClient.get(`fn:service:${fn.slug}`);
-    if (rawMeta) {
-      const meta = JSON.parse(rawMeta);
-      meta.decryptedEnv = decryptedMap;
-      await redisClient.set(`fn:service:${fn.slug}`, JSON.stringify(meta));
-      await redisClient.publish("fn:reload", JSON.stringify({ serviceId: id }));
-    }
+    // Rehydrate Redis service metadata with all decrypted env vars and sync to runtime
+    await syncServiceMetadataToRedis(id);
+    await redisClient.publish("fn:reload", JSON.stringify({ serviceId: id }));
 
     return { success: true, key };
+  });
+
+  // POST /api/functions/:id/env/bulk - Bulk set environment variables
+  fastify.post("/:id/env/bulk", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { userId, role } = request.user;
+    const { envVars = {}, isSecret = true } = (request.body as any) || {};
+
+    const fn = await prisma.functionService.findFirst({
+      where: role === "ADMIN" ? { id } : { id, userId },
+    });
+    if (!fn) return reply.code(404).send({ error: "Function Service not found" });
+
+    const operations = Object.entries(envVars).map(([rawK, rawV]) => {
+      const key = String(rawK).trim();
+      const valStr = typeof rawV === "object" && rawV !== null ? JSON.stringify(rawV) : String(rawV ?? "");
+      const encryptedVal = encrypt(valStr);
+      return prisma.functionEnvVariable.upsert({
+        where: { serviceId_key: { serviceId: id, key } },
+        create: {
+          serviceId: id,
+          key,
+          value: encryptedVal,
+          isSecret: Boolean(isSecret),
+        },
+        update: {
+          value: encryptedVal,
+          isSecret: Boolean(isSecret),
+        },
+      });
+    });
+
+    if (operations.length > 0) {
+      await prisma.$transaction(operations);
+    }
+
+    await syncServiceMetadataToRedis(id);
+    await redisClient.publish("fn:reload", JSON.stringify({ serviceId: id }));
+
+    return { success: true, count: operations.length };
   });
 
   // DELETE /api/functions/:id/env/:key - Delete a shared environment variable
@@ -1679,21 +1714,8 @@ export async function functionRoutes(fastify: FastifyInstance) {
     });
 
     // Rehydrate Redis
-    const allEnvs = await prisma.functionEnvVariable.findMany({ where: { serviceId: id } });
-    const decryptedMap: Record<string, string> = {};
-    for (const ev of allEnvs) {
-      try {
-        decryptedMap[ev.key] = decrypt(ev.value);
-      } catch {}
-    }
-
-    const rawMeta = await redisClient.get(`fn:service:${fn.slug}`);
-    if (rawMeta) {
-      const meta = JSON.parse(rawMeta);
-      meta.decryptedEnv = decryptedMap;
-      await redisClient.set(`fn:service:${fn.slug}`, JSON.stringify(meta));
-      await redisClient.publish("fn:reload", JSON.stringify({ serviceId: id }));
-    }
+    await syncServiceMetadataToRedis(id);
+    await redisClient.publish("fn:reload", JSON.stringify({ serviceId: id }));
 
     return { success: true, message: `Environment variable '${key}' deleted.` };
   });

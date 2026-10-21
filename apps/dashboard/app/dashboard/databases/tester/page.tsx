@@ -381,9 +381,9 @@ export default function DatabaseUrlTesterPage() {
                     padding: "0.35rem 0.65rem",
                     fontSize: "0.78rem",
                     borderRadius: 6,
-                    background: "var(--card-bg, #18181b)",
-                    border: "1px solid var(--border-color, #27272a)",
-                    color: "var(--foreground, #f4f4f5)",
+                    background: "var(--card)",
+                    border: "1px solid var(--card-border)",
+                    color: "var(--foreground)",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
@@ -402,12 +402,12 @@ export default function DatabaseUrlTesterPage() {
       {/* URL Connection Bar Card */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 12,
           padding: "1.25rem",
           marginBottom: "1.5rem",
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -451,9 +451,9 @@ export default function DatabaseUrlTesterPage() {
                 width: "100%",
                 padding: "0.75rem 2.8rem 0.75rem 1rem",
                 borderRadius: 8,
-                background: "var(--bg, #09090b)",
-                border: "1px solid var(--border-color, #27272a)",
-                color: "var(--foreground, #fafafa)",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--card-border)",
+                color: "var(--foreground)",
                 fontSize: "0.9rem",
                 fontFamily: "monospace",
                 outline: "none",
@@ -555,14 +555,14 @@ export default function DatabaseUrlTesterPage() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: "#34d399", fontWeight: 600 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", color: "#059669", fontWeight: 600 }}>
                 <CheckCircle2 size={18} />
                 Connected ({connectionInfo.type})
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", fontSize: "0.82rem", color: "var(--muted)" }}>
                 <Clock size={14} />
-                Latency: <span style={{ color: "#34d399", fontWeight: 600 }}>{connectionInfo.latencyMs}ms</span>
+                Latency: <span style={{ color: "#059669", fontWeight: 600 }}>{connectionInfo.latencyMs}ms</span>
               </div>
 
               {connectionInfo.database && (
@@ -596,7 +596,7 @@ export default function DatabaseUrlTesterPage() {
                 padding: "0.25rem 0.6rem",
                 borderRadius: 4,
                 background: "transparent",
-                border: "1px solid var(--border-color, #3f3f46)",
+                border: "1px solid var(--card-border)",
                 color: "var(--muted)",
                 cursor: "pointer",
               }}
@@ -612,7 +612,7 @@ export default function DatabaseUrlTesterPage() {
         style={{
           display: "flex",
           gap: "0.5rem",
-          borderBottom: "1px solid var(--border-color, #27272a)",
+          borderBottom: "1px solid var(--card-border)",
           marginBottom: "1.5rem",
         }}
       >
@@ -622,8 +622,8 @@ export default function DatabaseUrlTesterPage() {
             padding: "0.65rem 1.15rem",
             fontSize: "0.9rem",
             fontWeight: 600,
-            color: activeTab === "tables" ? "#38bdf8" : "var(--muted)",
-            borderBottom: activeTab === "tables" ? "2px solid #38bdf8" : "2px solid transparent",
+            color: activeTab === "tables" ? "var(--accent)" : "var(--muted)",
+            borderBottom: activeTab === "tables" ? "2px solid var(--accent)" : "2px solid transparent",
             background: "transparent",
             borderTop: "none",
             borderLeft: "none",
@@ -644,8 +644,8 @@ export default function DatabaseUrlTesterPage() {
             padding: "0.65rem 1.15rem",
             fontSize: "0.9rem",
             fontWeight: 600,
-            color: activeTab === "query" ? "#38bdf8" : "var(--muted)",
-            borderBottom: activeTab === "query" ? "2px solid #38bdf8" : "2px solid transparent",
+            color: activeTab === "query" ? "var(--accent)" : "var(--muted)",
+            borderBottom: activeTab === "query" ? "2px solid var(--accent)" : "2px solid transparent",
             background: "transparent",
             borderTop: "none",
             borderLeft: "none",
@@ -666,8 +666,8 @@ export default function DatabaseUrlTesterPage() {
             padding: "0.65rem 1.15rem",
             fontSize: "0.9rem",
             fontWeight: 600,
-            color: activeTab === "script" ? "#38bdf8" : "var(--muted)",
-            borderBottom: activeTab === "script" ? "2px solid #38bdf8" : "2px solid transparent",
+            color: activeTab === "script" ? "var(--accent)" : "var(--muted)",
+            borderBottom: activeTab === "script" ? "2px solid var(--accent)" : "2px solid transparent",
             background: "transparent",
             borderTop: "none",
             borderLeft: "none",
@@ -689,13 +689,14 @@ export default function DatabaseUrlTesterPage() {
           {/* Table List Column */}
           <div
             style={{
-              background: "var(--card-bg, #18181b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
               borderRadius: 10,
               padding: "1rem",
               display: "flex",
               flexDirection: "column",
               height: 600,
+              boxShadow: "var(--shadow-sm)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
@@ -727,9 +728,9 @@ export default function DatabaseUrlTesterPage() {
                   padding: "0.45rem 0.65rem 0.45rem 2rem",
                   fontSize: "0.8rem",
                   borderRadius: 6,
-                  background: "var(--bg, #09090b)",
-                  border: "1px solid var(--border-color, #27272a)",
-                  color: "var(--foreground, #fafafa)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--card-border)",
+                  color: "var(--foreground)",
                   outline: "none",
                 }}
               />
@@ -758,12 +759,12 @@ export default function DatabaseUrlTesterPage() {
                       justifyContent: "space-between",
                       padding: "0.5rem 0.75rem",
                       borderRadius: 6,
-                      background: selectedTable?.tableName === t.tableName ? "rgba(56, 189, 248, 0.12)" : "transparent",
+                      background: selectedTable?.tableName === t.tableName ? "rgba(79, 70, 229, 0.08)" : "transparent",
                       border:
                         selectedTable?.tableName === t.tableName
-                          ? "1px solid rgba(56, 189, 248, 0.3)"
+                          ? "1px solid rgba(79, 70, 229, 0.25)"
                           : "1px solid transparent",
-                      color: selectedTable?.tableName === t.tableName ? "#38bdf8" : "var(--foreground)",
+                      color: selectedTable?.tableName === t.tableName ? "var(--accent)" : "var(--foreground)",
                       textAlign: "left",
                       cursor: "pointer",
                       fontSize: "0.85rem",
@@ -780,7 +781,7 @@ export default function DatabaseUrlTesterPage() {
                         fontSize: "0.7rem",
                         padding: "0.1rem 0.35rem",
                         borderRadius: 4,
-                        background: "rgba(255, 255, 255, 0.05)",
+                        background: "var(--bg-subtle)",
                         color: "var(--muted)",
                       }}
                     >
@@ -795,13 +796,14 @@ export default function DatabaseUrlTesterPage() {
           {/* Selected Table Schema & Actions */}
           <div
             style={{
-              background: "var(--card-bg, #18181b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
               borderRadius: 10,
               padding: "1.25rem",
               display: "flex",
               flexDirection: "column",
               height: 600,
+              boxShadow: "var(--shadow-sm)",
             }}
           >
             {selectedTable ? (
@@ -818,7 +820,7 @@ export default function DatabaseUrlTesterPage() {
                 >
                   <div>
                     <h2 style={{ fontSize: "1.2rem", fontWeight: 700, margin: 0 }}>
-                      Table: <span style={{ color: "#38bdf8" }}>{selectedTable.tableName}</span>
+                      Table: <span style={{ color: "var(--accent)" }}>{selectedTable.tableName}</span>
                     </h2>
                     <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
                       Schema: {selectedTable.schema} • ~{selectedTable.rowCount.toLocaleString()} rows • {selectedTable.columnCount} columns
@@ -836,9 +838,9 @@ export default function DatabaseUrlTesterPage() {
                         fontSize: "0.82rem",
                         fontWeight: 600,
                         borderRadius: 6,
-                        background: "rgba(56, 189, 248, 0.15)",
-                        color: "#38bdf8",
-                        border: "1px solid rgba(56, 189, 248, 0.3)",
+                        background: "var(--accent-subtle)",
+                        color: "var(--accent)",
+                        border: "1px solid rgba(79, 70, 229, 0.25)",
                         cursor: "pointer",
                       }}
                     >
@@ -849,10 +851,10 @@ export default function DatabaseUrlTesterPage() {
                 </div>
 
                 {/* Column Table */}
-                <div style={{ flex: 1, overflowY: "auto", border: "1px solid var(--border-color, #27272a)", borderRadius: 6 }}>
+                <div style={{ flex: 1, overflowY: "auto", border: "1px solid var(--card-border)", borderRadius: 6 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83rem" }}>
                     <thead>
-                      <tr style={{ background: "rgba(255, 255, 255, 0.02)", borderBottom: "1px solid var(--border-color, #27272a)" }}>
+                      <tr style={{ background: "var(--bg-inset)", borderBottom: "1px solid var(--card-border)" }}>
                         <th style={{ textAlign: "left", padding: "0.6rem 0.85rem", fontWeight: 600, color: "var(--muted)" }}>Column</th>
                         <th style={{ textAlign: "left", padding: "0.6rem 0.85rem", fontWeight: 600, color: "var(--muted)" }}>Type</th>
                         <th style={{ textAlign: "left", padding: "0.6rem 0.85rem", fontWeight: 600, color: "var(--muted)" }}>Nullable</th>
@@ -865,7 +867,7 @@ export default function DatabaseUrlTesterPage() {
                         <tr
                           key={col.name}
                           style={{
-                            borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
+                            borderBottom: "1px solid var(--card-border-subtle)",
                           }}
                         >
                           <td style={{ padding: "0.55rem 0.85rem", fontWeight: 600, fontFamily: "monospace" }}>
@@ -931,15 +933,16 @@ export default function DatabaseUrlTesterPage() {
           {/* Query Editor Box */}
           <div
             style={{
-              background: "var(--card-bg, #18181b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
               borderRadius: 10,
               padding: "1.25rem",
+              boxShadow: "var(--shadow-sm)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <Terminal size={16} style={{ color: "#38bdf8" }} />
+                <Terminal size={16} style={{ color: "var(--accent)" }} />
                 <span style={{ fontSize: "0.88rem", fontWeight: 600 }}>SQL / Command Editor</span>
                 <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>(Press Cmd+Enter or Ctrl+Enter to execute)</span>
               </div>
@@ -953,8 +956,8 @@ export default function DatabaseUrlTesterPage() {
                     padding: "0.2rem 0.5rem",
                     fontSize: "0.75rem",
                     borderRadius: 4,
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid var(--border-color, #27272a)",
+                    background: "var(--bg-subtle)",
+                    border: "1px solid var(--card-border)",
                     color: "var(--foreground)",
                     cursor: "pointer",
                   }}
@@ -967,8 +970,8 @@ export default function DatabaseUrlTesterPage() {
                     padding: "0.2rem 0.5rem",
                     fontSize: "0.75rem",
                     borderRadius: 4,
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid var(--border-color, #27272a)",
+                    background: "var(--bg-subtle)",
+                    border: "1px solid var(--card-border)",
                     color: "var(--foreground)",
                     cursor: "pointer",
                   }}
@@ -981,8 +984,8 @@ export default function DatabaseUrlTesterPage() {
                     padding: "0.2rem 0.5rem",
                     fontSize: "0.75rem",
                     borderRadius: 4,
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid var(--border-color, #27272a)",
+                    background: "var(--bg-subtle)",
+                    border: "1px solid var(--card-border)",
                     color: "var(--foreground)",
                     cursor: "pointer",
                   }}
@@ -1006,9 +1009,9 @@ export default function DatabaseUrlTesterPage() {
                 width: "100%",
                 padding: "0.75rem 1rem",
                 borderRadius: 8,
-                background: "var(--bg, #09090b)",
-                border: "1px solid var(--border-color, #27272a)",
-                color: "#f4f4f5",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--card-border)",
+                color: "var(--foreground)",
                 fontSize: "0.9rem",
                 fontFamily: "monospace",
                 lineHeight: 1.5,
@@ -1031,13 +1034,14 @@ export default function DatabaseUrlTesterPage() {
                   gap: "0.5rem",
                   padding: "0.55rem 1.25rem",
                   borderRadius: 6,
-                  background: "linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)",
+                  background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
                   color: "#fff",
                   fontWeight: 600,
                   fontSize: "0.85rem",
                   border: "none",
                   cursor: isExecutingQuery || !sqlQuery.trim() ? "not-allowed" : "pointer",
                   opacity: isExecutingQuery || !sqlQuery.trim() ? 0.6 : 1,
+                  boxShadow: "0 2px 8px rgba(79, 70, 229, 0.25)",
                 }}
               >
                 {isExecutingQuery ? (
@@ -1063,7 +1067,7 @@ export default function DatabaseUrlTesterPage() {
                 borderRadius: 8,
                 background: "rgba(239, 68, 68, 0.1)",
                 border: "1px solid rgba(239, 68, 68, 0.25)",
-                color: "#f87171",
+                color: "#ef4444",
                 fontSize: "0.85rem",
                 display: "flex",
                 alignItems: "flex-start",
@@ -1084,10 +1088,11 @@ export default function DatabaseUrlTesterPage() {
           {queryResult && (
             <div
               style={{
-                background: "var(--card-bg, #18181b)",
-                border: "1px solid var(--border-color, #27272a)",
+                background: "var(--card)",
+                border: "1px solid var(--card-border)",
                 borderRadius: 10,
                 padding: "1.25rem",
+                boxShadow: "var(--shadow-sm)",
               }}
             >
               <div
@@ -1102,7 +1107,7 @@ export default function DatabaseUrlTesterPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                   <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Results</span>
-                  <span style={{ fontSize: "0.75rem", padding: "0.15rem 0.45rem", borderRadius: 4, background: "rgba(16, 185, 129, 0.15)", color: "#34d399", fontWeight: 600 }}>
+                  <span style={{ fontSize: "0.75rem", padding: "0.15rem 0.45rem", borderRadius: 4, background: "rgba(16, 185, 129, 0.15)", color: "#059669", fontWeight: 600 }}>
                     {queryResult.rowCount} rows
                   </span>
                   <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
@@ -1117,9 +1122,9 @@ export default function DatabaseUrlTesterPage() {
                       padding: "0.3rem 0.6rem",
                       fontSize: "0.75rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
-                      color: revealQuerySecrets ? "#f59e0b" : "var(--foreground)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
+                      color: revealQuerySecrets ? "#d97706" : "var(--foreground)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
@@ -1137,8 +1142,8 @@ export default function DatabaseUrlTesterPage() {
                       padding: "0.3rem 0.6rem",
                       fontSize: "0.75rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
                       color: "var(--foreground)",
                       cursor: "pointer",
                     }}
@@ -1153,8 +1158,8 @@ export default function DatabaseUrlTesterPage() {
                       padding: "0.3rem 0.6rem",
                       fontSize: "0.75rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
                       color: "var(--foreground)",
                       cursor: "pointer",
                       display: "flex",
@@ -1172,8 +1177,8 @@ export default function DatabaseUrlTesterPage() {
                       padding: "0.3rem 0.6rem",
                       fontSize: "0.75rem",
                       borderRadius: 4,
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
                       color: "var(--foreground)",
                       cursor: "pointer",
                       display: "flex",
@@ -1188,15 +1193,15 @@ export default function DatabaseUrlTesterPage() {
               </div>
 
               {resultView === "table" ? (
-                <div style={{ overflowX: "auto", border: "1px solid var(--border-color, #27272a)", borderRadius: 6, maxHeight: 450 }}>
+                <div style={{ overflowX: "auto", border: "1px solid var(--card-border)", borderRadius: 6, maxHeight: 450 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83rem" }}>
                     <thead>
-                      <tr style={{ background: "rgba(255, 255, 255, 0.03)", borderBottom: "1px solid var(--border-color, #27272a)", position: "sticky", top: 0, zIndex: 1 }}>
+                      <tr style={{ background: "var(--bg-inset)", borderBottom: "1px solid var(--card-border)", position: "sticky", top: 0, zIndex: 1 }}>
                         <th style={{ padding: "0.55rem 0.75rem", textAlign: "left", color: "var(--muted)", fontWeight: 600, width: 45 }}>#</th>
                         {queryResult.fields.map((f) => {
                           const isSecret = isConfidentialKey(f.name);
                           return (
-                            <th key={f.name} style={{ padding: "0.55rem 0.75rem", textAlign: "left", color: "#38bdf8", fontWeight: 600, fontFamily: "monospace" }}>
+                            <th key={f.name} style={{ padding: "0.55rem 0.75rem", textAlign: "left", color: "var(--accent)", fontWeight: 600, fontFamily: "monospace" }}>
                               <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
                                 {f.name}
                                 {isSecret && <ConfidentialBadge size="xs" label="Secret" />}
@@ -1211,7 +1216,7 @@ export default function DatabaseUrlTesterPage() {
                         <tr
                           key={rIdx}
                           style={{
-                            borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
+                            borderBottom: "1px solid var(--card-border-subtle)",
                           }}
                         >
                           <td style={{ padding: "0.5rem 0.75rem", color: "var(--muted)", fontSize: "0.75rem" }}>
@@ -1231,7 +1236,7 @@ export default function DatabaseUrlTesterPage() {
                                 style={{
                                   padding: "0.5rem 0.75rem",
                                   fontFamily: "monospace",
-                                  color: val === null ? "var(--muted)" : isSecret && !revealQuerySecrets ? "#f59e0b" : "var(--foreground)",
+                                  color: val === null ? "var(--muted)" : isSecret && !revealQuerySecrets ? "#d97706" : "var(--foreground)",
                                   whiteSpace: "nowrap",
                                   maxWidth: 320,
                                   overflow: "hidden",
@@ -1259,14 +1264,15 @@ export default function DatabaseUrlTesterPage() {
               ) : (
                 <pre
                   style={{
-                    background: "var(--bg, #09090b)",
+                    background: "var(--bg-inset)",
+                    border: "1px solid var(--card-border)",
                     padding: "1rem",
                     borderRadius: 6,
                     fontSize: "0.82rem",
                     fontFamily: "monospace",
                     maxHeight: 450,
                     overflowY: "auto",
-                    color: "#a1a1aa",
+                    color: "var(--foreground)",
                   }}
                 >
                   {JSON.stringify(queryResult.rows, null, 2)}
@@ -1283,15 +1289,16 @@ export default function DatabaseUrlTesterPage() {
           {/* Upload / Script box */}
           <div
             style={{
-              background: "var(--card-bg, #18181b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--card)",
+              border: "1px solid var(--card-border)",
               borderRadius: 10,
               padding: "1.25rem",
+              boxShadow: "var(--shadow-sm)",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <FileCode size={16} style={{ color: "#38bdf8" }} />
+                <FileCode size={16} style={{ color: "var(--accent)" }} />
                 <span style={{ fontSize: "0.88rem", fontWeight: 600 }}>Execute SQL Script File</span>
                 <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>(e.g. database schema migrations or dump files)</span>
               </div>
@@ -1314,9 +1321,9 @@ export default function DatabaseUrlTesterPage() {
                     padding: "0.4rem 0.8rem",
                     fontSize: "0.8rem",
                     borderRadius: 6,
-                    background: "rgba(56, 189, 248, 0.15)",
-                    color: "#38bdf8",
-                    border: "1px solid rgba(56, 189, 248, 0.3)",
+                    background: "var(--accent-subtle)",
+                    color: "var(--accent)",
+                    border: "1px solid rgba(79, 70, 229, 0.25)",
                     cursor: "pointer",
                   }}
                 >
@@ -1332,10 +1339,10 @@ export default function DatabaseUrlTesterPage() {
                   marginBottom: "0.75rem",
                   padding: "0.45rem 0.75rem",
                   borderRadius: 6,
-                  background: "rgba(255, 255, 255, 0.03)",
-                  border: "1px solid var(--border-color, #27272a)",
+                  background: "var(--bg-subtle)",
+                  border: "1px solid var(--card-border)",
                   fontSize: "0.8rem",
-                  color: "#38bdf8",
+                  color: "var(--accent)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
@@ -1363,9 +1370,9 @@ export default function DatabaseUrlTesterPage() {
                 width: "100%",
                 padding: "0.75rem 1rem",
                 borderRadius: 8,
-                background: "var(--bg, #09090b)",
-                border: "1px solid var(--border-color, #27272a)",
-                color: "#f4f4f5",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--card-border)",
+                color: "var(--foreground)",
                 fontSize: "0.85rem",
                 fontFamily: "monospace",
                 lineHeight: 1.5,

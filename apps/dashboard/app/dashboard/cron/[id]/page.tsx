@@ -197,8 +197,12 @@ export default function CronJobDetailPage() {
       setExecutions(res.executions || []);
       setHistoryTotal(res.total || 0);
       setHistoryPage(page);
-      if (res.executions && res.executions.length > 0 && !selectedExecution) {
-        setSelectedExecution(res.executions[0]);
+      if (res.executions && res.executions.length > 0) {
+        setSelectedExecution((prev) => {
+          if (!prev) return res.executions[0];
+          const updated = res.executions.find((e: any) => e.id === prev.id);
+          return updated || prev;
+        });
       }
     } catch (err: any) {
       toast.error(err.message || "Failed to load execution runs");
@@ -206,6 +210,23 @@ export default function CronJobDetailPage() {
       setLoadingExecutions(false);
     }
   };
+
+  // Auto-poll active/scheduled executions until finished
+  useEffect(() => {
+    const isPending =
+      selectedExecution?.status === "SCHEDULED" ||
+      selectedExecution?.status === "RUNNING" ||
+      executions.some((e) => e.status === "SCHEDULED" || e.status === "RUNNING");
+
+    if (!isPending || !jobId) return;
+
+    const interval = setInterval(() => {
+      fetchExecutions(historyPage);
+      cronApi.get(jobId).then((d) => setJob(d)).catch(() => {});
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [selectedExecution?.status, executions, historyPage, jobId]);
 
   const fetchDeadLetters = async () => {
     setLoadingDlq(true);

@@ -528,10 +528,10 @@ async function handleFunctionRequest(
   }
 
   // Determine if authentication is required:
-  // Explicit endpoint setting takes precedence; if unspecified, fallback to service-level isPublic.
-  const isEndpointPublic = (matchedEndpoint && typeof matchedEndpoint.isPublic === "boolean")
+  // Explicit endpoint setting takes precedence (except default root defaults to service-level protection).
+  const isEndpointPublic = (matchedEndpoint && typeof matchedEndpoint.isPublic === "boolean" && matchedEndpoint.name !== "default")
     ? matchedEndpoint.isPublic
-    : Boolean(fnMeta.isPublic);
+    : Boolean(fnMeta.isPublic && (matchedEndpoint ? matchedEndpoint.isPublic : true));
 
   const requiresAuth = !isEndpointPublic;
 

@@ -128,17 +128,18 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
         {/* Cache Hit Ratio */}
         <div
           style={{
-            background: "var(--card-bg, #18181b)",
-            border: "1px solid var(--border-color, #27272a)",
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
             borderRadius: 10,
             padding: "1.25rem",
+            boxShadow: "var(--shadow-sm)",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
             <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 600 }}>BUFFER CACHE HIT RATIO</span>
             <Zap size={16} style={{ color: isCacheHealthy ? "#10b981" : "#f59e0b" }} />
           </div>
-          <div style={{ fontSize: "1.75rem", fontWeight: 800, color: isCacheHealthy ? "#34d399" : "#fbbf24" }}>
+          <div style={{ fontSize: "1.75rem", fontWeight: 800, color: isCacheHealthy ? "#059669" : "#d97706" }}>
             {cacheHit}%
           </div>
           <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.35rem" }}>
@@ -149,15 +150,16 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
         {/* Database Disk Size */}
         <div
           style={{
-            background: "var(--card-bg, #18181b)",
-            border: "1px solid var(--border-color, #27272a)",
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
             borderRadius: 10,
             padding: "1.25rem",
+            boxShadow: "var(--shadow-sm)",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
             <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 600 }}>DATABASE DISK SIZE</span>
-            <HardDrive size={16} style={{ color: "#38bdf8" }} />
+            <HardDrive size={16} style={{ color: "#0284c7" }} />
           </div>
           <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--foreground)" }}>
             {insights?.databaseSize || "0 MB"}
@@ -170,15 +172,16 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
         {/* Active Connections */}
         <div
           style={{
-            background: "var(--card-bg, #18181b)",
-            border: "1px solid var(--border-color, #27272a)",
+            background: "var(--card)",
+            border: "1px solid var(--card-border)",
             borderRadius: 10,
             padding: "1.25rem",
+            boxShadow: "var(--shadow-sm)",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
             <span style={{ fontSize: "0.8rem", color: "var(--muted)", fontWeight: 600 }}>ACTIVE CLIENT SESSIONS</span>
-            <Activity size={16} style={{ color: "#818cf8" }} />
+            <Activity size={16} style={{ color: "var(--accent)" }} />
           </div>
           <div style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--foreground)" }}>
             {totalConnections}
@@ -194,10 +197,11 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
       {/* Live Running Queries & Locks */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 10,
           padding: "1.25rem",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
@@ -301,10 +305,11 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
       {/* Top 15 Slowest Queries (pg_stat_statements) */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 10,
           padding: "1.25rem",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>

@@ -349,12 +349,12 @@ export class WhizanClient {
   }
 
   async setEnvVars(
-    targetType: "service" | "project",
+    targetType: "service" | "project" | "function",
     targetId: string,
     envVars: Record<string, any>
   ): Promise<Record<string, boolean>> {
     await this.loadConfig();
-    const endpoint = targetType === "service" ? "services" : "projects";
+    const endpoint = targetType === "function" ? "functions" : (targetType === "service" ? "services" : "projects");
     const results: Record<string, boolean> = {};
 
     // 1. Try single-request bulk endpoint

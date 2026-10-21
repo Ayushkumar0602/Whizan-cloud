@@ -100,10 +100,11 @@ export default function DatabaseSecurityPanel({
       {/* SSL / TLS Status Card */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 10,
           padding: "1.5rem",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -117,7 +118,7 @@ export default function DatabaseSecurityPanel({
             style={{
               fontSize: "0.75rem",
               fontWeight: 700,
-              color: "#34d399",
+              color: "#059669",
               background: "rgba(16, 185, 129, 0.12)",
               padding: "3px 10px",
               borderRadius: 9999,
@@ -134,8 +135,8 @@ export default function DatabaseSecurityPanel({
 
         <div
           style={{
-            background: "var(--bg, #09090b)",
-            border: "1px solid var(--border-color, #27272a)",
+            background: "var(--bg-inset)",
+            border: "1px solid var(--card-border)",
             borderRadius: 6,
             padding: "0.75rem 1rem",
             fontSize: "0.8rem",
@@ -156,15 +157,16 @@ export default function DatabaseSecurityPanel({
       {/* IP Access Control / Whitelist */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 10,
           padding: "1.5rem",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <Globe size={20} style={{ color: "#38bdf8" }} />
+            <Globe size={20} style={{ color: "var(--accent)" }} />
             <h3 style={{ fontSize: "1rem", fontWeight: 700, margin: 0 }}>
               Network Firewall & IP Whitelist
             </h3>
@@ -196,8 +198,8 @@ export default function DatabaseSecurityPanel({
               minWidth: 260,
               padding: "0.55rem 0.85rem",
               borderRadius: 6,
-              background: "var(--bg, #09090b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--bg-inset)",
+              border: "1px solid var(--card-border)",
               color: "var(--foreground)",
               fontSize: "0.85rem",
               fontFamily: "monospace",
@@ -209,9 +211,9 @@ export default function DatabaseSecurityPanel({
             style={{
               padding: "0.55rem 1rem",
               borderRadius: 6,
-              background: "rgba(56, 189, 248, 0.15)",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-              color: "#38bdf8",
+              background: "var(--accent-subtle)",
+              border: "1px solid rgba(79, 70, 229, 0.25)",
+              color: "var(--accent)",
               fontSize: "0.82rem",
               fontWeight: 600,
               cursor: "pointer",
@@ -240,8 +242,8 @@ export default function DatabaseSecurityPanel({
                   gap: "0.4rem",
                   padding: "0.3rem 0.65rem",
                   borderRadius: 6,
-                  background: "rgba(255, 255, 255, 0.05)",
-                  border: "1px solid var(--border-color, #27272a)",
+                  background: "var(--bg-subtle)",
+                  border: "1px solid var(--card-border)",
                   fontFamily: "monospace",
                   fontSize: "0.82rem",
                 }}
@@ -287,7 +289,7 @@ export default function DatabaseSecurityPanel({
             style={{
               padding: "0.55rem 1.3rem",
               borderRadius: 6,
-              background: "linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)",
+              background: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%)",
               border: "none",
               color: "#fff",
               fontWeight: 600,
@@ -308,10 +310,11 @@ export default function DatabaseSecurityPanel({
       {/* Role Separation & Read-Only User */}
       <div
         style={{
-          background: "var(--card-bg, #18181b)",
-          border: "1px solid var(--border-color, #27272a)",
+          background: "var(--card)",
+          border: "1px solid var(--card-border)",
           borderRadius: 10,
           padding: "1.5rem",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
@@ -330,7 +333,7 @@ export default function DatabaseSecurityPanel({
                 fontSize: "0.75rem",
                 color: "var(--muted)",
                 background: "transparent",
-                border: "1px solid var(--border-color, #27272a)",
+                border: "1px solid var(--card-border)",
                 borderRadius: 4,
                 padding: "0.25rem 0.6rem",
                 cursor: "pointer",
@@ -352,8 +355,8 @@ export default function DatabaseSecurityPanel({
         {roUrl ? (
           <div
             style={{
-              background: "var(--bg, #09090b)",
-              border: "1px solid var(--border-color, #27272a)",
+              background: "var(--bg-inset)",
+              border: "1px solid var(--card-border)",
               borderRadius: 8,
               padding: "1.25rem",
               display: "flex",
@@ -374,8 +377,8 @@ export default function DatabaseSecurityPanel({
                   <button
                     onClick={() => setShowRoSecret(!showRoSecret)}
                     style={{
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
                       borderRadius: 4,
                       padding: "0.25rem 0.6rem",
                       color: "var(--muted)",
@@ -392,8 +395,8 @@ export default function DatabaseSecurityPanel({
                   <button
                     onClick={() => copyText(roUrl, "readonly-url")}
                     style={{
-                      background: "rgba(255, 255, 255, 0.05)",
-                      border: "1px solid var(--border-color, #27272a)",
+                      background: "var(--bg-subtle)",
+                      border: "1px solid var(--card-border)",
                       borderRadius: 4,
                       padding: "0.25rem 0.6rem",
                       color: copiedKey === "readonly-url" ? "#10b981" : "var(--foreground)",
@@ -411,8 +414,8 @@ export default function DatabaseSecurityPanel({
               </div>
               <div
                 style={{
-                  background: "rgba(0,0,0,0.3)",
-                  border: "1px solid var(--border-color, #27272a)",
+                  background: "var(--card)",
+                  border: "1px solid var(--card-border)",
                   borderRadius: 6,
                   padding: "0.6rem 0.85rem",
                 }}
@@ -427,8 +430,8 @@ export default function DatabaseSecurityPanel({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
               <div
                 style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--border-color, #27272a)",
+                  background: "var(--card)",
+                  border: "1px solid var(--card-border)",
                   borderRadius: 6,
                   padding: "0.65rem 0.85rem",
                 }}
@@ -447,8 +450,8 @@ export default function DatabaseSecurityPanel({
 
               <div
                 style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--border-color, #27272a)",
+                  background: "var(--card)",
+                  border: "1px solid var(--card-border)",
                   borderRadius: 6,
                   padding: "0.65rem 0.85rem",
                 }}

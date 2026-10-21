@@ -71,7 +71,8 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
     const host =
       process.env.DB_PUBLIC_HOST ||
       process.env.EXTERNAL_DB_HOST ||
-      (BASE_DOMAIN && BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "20.2.136.11");
+      process.env.VM_IP ||
+      "20.2.136.11";
     const internalPort = db.internalPort || (db.type === "REDIS" ? 6379 : 5432);
     const externalPort = db.externalPort;
     const poolerPort = db.poolerPort;
@@ -593,7 +594,8 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       process.env.DB_HOST ||
       process.env.DB_PUBLIC_HOST ||
       process.env.EXTERNAL_DB_HOST ||
-      (BASE_DOMAIN && BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "20.2.136.11");
+      process.env.VM_IP ||
+      "20.2.136.11";
 
     // Potential host candidates to connect to:
     // 1. Host from env / BASE_DOMAIN
@@ -650,7 +652,8 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       process.env.DB_HOST ||
       process.env.DB_PUBLIC_HOST ||
       process.env.EXTERNAL_DB_HOST ||
-      (BASE_DOMAIN !== "localhost" ? BASE_DOMAIN : "localhost");
+      process.env.VM_IP ||
+      "20.2.136.11";
     const port = db.externalPort || 6379;
     return new Redis({
       host,
@@ -999,7 +1002,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
         data: { readonlyPassword: encryptedPass },
       });
 
-      const host = process.env.DB_PUBLIC_HOST || process.env.EXTERNAL_DB_HOST || BASE_DOMAIN;
+      const host = process.env.DB_PUBLIC_HOST || process.env.EXTERNAL_DB_HOST || process.env.VM_IP || "20.2.136.11";
       const readonlyUrl = `postgresql://readonly_user:${readonlyPass}@${host}:${db.externalPort}/${db.databaseName}`;
 
       return {

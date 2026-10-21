@@ -55,6 +55,27 @@ export class BatchTelemetryFlusher {
   }
 
   /**
+   * Rehydrate any un-flushed execution telemetry from Redis fallback buffer on boot.
+   */
+  public async recoverPendingBuffer(): Promise<void> {
+    try {
+      const items = await this.redis.lrange("cron:telemetry:buffer", 0, -1);
+      if (items && items.length > 0) {
+        console.log(`[TelemetryFlusher] Replaying ${items.length} un-flushed executions from Redis buffer...`);
+        for (const item of items) {
+          try {
+            const telemetry = JSON.parse(item);
+            this.queue.push(telemetry);
+          } catch {}
+        }
+        await this.flush();
+      }
+    } catch (err: any) {
+      console.warn("[TelemetryFlusher] Failed to recover pending buffer from Redis:", err.message);
+    }
+  }
+
+  /**
    * Enqueue completed execution record into memory & Redis fallback list.
    */
   public async push(telemetry: ExecutionTelemetry): Promise<void> {

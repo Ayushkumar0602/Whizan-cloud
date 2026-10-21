@@ -354,6 +354,7 @@ export class DatabaseRunner {
           `AUTH_TYPE=scram-sha-256`,
           `SERVER_TLS_SSLMODE=prefer`,
           `ADMIN_USERS=${options.username}`,
+          `IGNORE_STARTUP_PARAMETERS=extra_float_digits,statement_timeout,search_path`,
         ],
         Labels: {
           whizanDatabaseId: options.id,

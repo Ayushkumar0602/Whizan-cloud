@@ -211,7 +211,7 @@ const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {
-        targetType: { type: "string", enum: ["service", "project"], description: "Whether targeting a backend service or frontend project" },
+        targetType: { type: "string", enum: ["service", "project", "function"], description: "Whether targeting a backend service, frontend project, or edge function" },
         targetId: { type: "string", description: "The Whizan ID of the service or project" },
         envVars: { type: "object", description: "Dictionary of key-value environment variables to encrypt and store" },
       },
