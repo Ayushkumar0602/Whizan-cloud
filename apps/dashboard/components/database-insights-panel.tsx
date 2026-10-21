@@ -29,22 +29,24 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
   const [resetting, setResetting] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
-  async function loadInsights() {
-    setLoading(true);
+  async function loadInsights(isBackground = false) {
+    if (!isBackground) setLoading(true);
     setError(null);
     try {
       const data = await databases.getInsights(databaseId);
       setInsights(data);
     } catch (err: any) {
-      setError(err.message || "Failed to load database insights");
+      if (!isBackground) {
+        setError(err.message || "Failed to load database insights");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadInsights();
-    const interval = setInterval(loadInsights, 6000);
+    loadInsights(false);
+    const interval = setInterval(() => loadInsights(true), 6000);
     return () => clearInterval(interval);
   }, [databaseId]);
 
@@ -106,6 +108,31 @@ export default function DatabaseInsightsPanel({ databaseId, db }: DatabaseInsigh
         <AlertTriangle size={20} />
         <div>
           <strong>Unable to load query insights:</strong> {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (insights?.booting) {
+    return (
+      <div
+        style={{
+          background: "rgba(79, 70, 229, 0.08)",
+          border: "1px solid rgba(79, 70, 229, 0.2)",
+          borderRadius: 8,
+          padding: "1.5rem",
+          color: "var(--foreground)",
+          display: "flex",
+          alignItems: "center",
+          gap: "1rem",
+        }}
+      >
+        <RefreshCw size={24} className="animate-spin text-accent" />
+        <div>
+          <strong style={{ display: "block", marginBottom: 4 }}>Database connection initializing</strong>
+          <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+            PostgreSQL is establishing connection. Telemetry and query performance insights will stream in automatically.
+          </span>
         </div>
       </div>
     );

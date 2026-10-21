@@ -626,7 +626,7 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
             password: plainPassword,
             database: db.databaseName,
             statement_timeout: 30000,
-            connectionTimeoutMillis: 5000,
+            connectionTimeoutMillis: 2500,
             ssl: sslOption || undefined,
           });
 
@@ -786,9 +786,10 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Database not found" });
     }
 
-    if (db.status !== "RUNNING" || db.type !== "POSTGRESQL") {
-      const isRunning = await ensureDatabaseRunning(db);
-      if (!isRunning || db.type !== "POSTGRESQL") {
+    let currentDb = db;
+    if (currentDb.status !== "RUNNING" || currentDb.type !== "POSTGRESQL") {
+      const isRunning = await ensureDatabaseRunning(currentDb);
+      if (!isRunning || currentDb.type !== "POSTGRESQL") {
         return {
           slowQueries: [],
           cacheHitRatio: 100,
@@ -796,18 +797,32 @@ export const databaseRoutes: FastifyPluginAsync = async (fastify) => {
           runningQueries: [],
           databaseSize: "0 MB",
           databaseSizeBytes: 0,
-          booting: db.status !== "RUNNING",
+          booting: currentDb.status !== "RUNNING",
+          status: currentDb.status,
         };
       }
+      const refreshed = await prisma.databaseService.findUnique({ where: { id } });
+      if (refreshed) currentDb = refreshed;
     }
 
-    await redisClient.set(`db:access:${db.id}`, Date.now()).catch(() => { });
+    await redisClient.set(`db:access:${currentDb.id}`, Date.now()).catch(() => { });
 
     let client: PgClient | null = null;
     try {
-      client = await getPgClientForDb(db);
+      client = await getPgClientForDb(currentDb);
     } catch (err: any) {
-      return reply.code(502).send({ error: `Connection failed: ${err.message}` });
+      console.warn(`[Database Insights] PostgreSQL connection warning for ${currentDb.id}:`, err?.message);
+      return {
+        slowQueries: [],
+        cacheHitRatio: 100,
+        connectionBreakdown: [],
+        runningQueries: [],
+        databaseSize: "0 MB",
+        databaseSizeBytes: 0,
+        booting: true,
+        error: `Database connection initializing: ${err?.message || "warming up"}`,
+        status: "CONNECTING",
+      };
     }
 
     try {

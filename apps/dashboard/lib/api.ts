@@ -916,6 +916,9 @@ export type DatabaseInsights = {
   runningQueries: DatabaseRunningQuery[];
   databaseSize: string;
   databaseSizeBytes: number;
+  booting?: boolean;
+  status?: string;
+  error?: string;
 };
 
 export type UrlConnectionTestResult = {

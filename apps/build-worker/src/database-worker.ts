@@ -151,6 +151,7 @@ export const databaseWorker = new Worker<DatabaseJobData>(
           databaseName: dbRecord.databaseName,
           username: dbRecord.username,
           password: decryptedPassword,
+          externalPort: dbRecord.externalPort,
           internalPort: dbRecord.internalPort,
           cpuLimit: dbRecord.cpuLimit,
           memoryLimit: dbRecord.memoryLimit,
@@ -160,11 +161,16 @@ export const databaseWorker = new Worker<DatabaseJobData>(
           readonlyPassword: decryptedReadonlyPassword,
         };
 
-        await databaseRunner.start(databaseId, runnerOpts);
+        const startResult = await databaseRunner.start(databaseId, runnerOpts);
 
         await prisma.databaseService.update({
           where: { id: databaseId },
-          data: { status: "RUNNING", errorMessage: null },
+          data: {
+            status: "RUNNING",
+            errorMessage: null,
+            ...(startResult?.externalPort ? { externalPort: startResult.externalPort } : {}),
+            ...(startResult?.poolerPort ? { poolerPort: startResult.poolerPort } : {}),
+          },
         });
 
         await redisPub.set(`db:access:${databaseId}`, Date.now()).catch(() => {});

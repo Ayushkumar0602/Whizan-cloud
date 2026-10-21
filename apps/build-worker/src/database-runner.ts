@@ -16,6 +16,7 @@ export interface ProvisionDatabaseOptions {
   databaseName: string;
   username: string;
   password: string;
+  externalPort?: number | null;
   internalPort: number;
   cpuLimit: number;
   memoryLimit: number;
@@ -224,8 +225,8 @@ export class DatabaseRunner {
       await existing.remove({ force: true }).catch(() => {});
     } catch {}
 
-    // 7. Allocate a free host port for external client connections
-    const externalPort = await this.findFreePort();
+    // 7. Allocate a free host port for external client connections (preserve preferred port if available)
+    const externalPort = await this.findFreePort(options.externalPort || undefined);
     await onLog(`🔌 Mapped public external port: ${externalPort} -> internal ${internalContainerPort}`);
     await onLog(`🛡️ Resource allocations: ${cpuLimit} vCPU, ${memoryLimitMB}MB RAM.`);
 
@@ -544,7 +545,7 @@ export class DatabaseRunner {
   /**
    * Starts an existing stopped database container
    */
-  async start(id: string, options: ProvisionDatabaseOptions): Promise<void> {
+  async start(id: string, options: ProvisionDatabaseOptions): Promise<{ externalPort: number; poolerPort: number }> {
     const containerName = `whizan-db-${id}`;
     const poolerName = `whizan-db-pooler-${id}`;
     const container = docker.getContainer(containerName);
@@ -555,8 +556,8 @@ export class DatabaseRunner {
     } catch (err: any) {
       if (err.statusCode === 404 || err.message?.includes("No such container") || err.message?.includes("not found")) {
         console.log(`[DatabaseRunner] Container ${containerName} not found in Docker. Re-provisioning container over existing persistent volume...`);
-        await this.provision(options, async (line) => console.log(`[Database:${id}] ${line}`));
-        return;
+        const result = await this.provision(options, async (line) => console.log(`[Database:${id}] ${line}`));
+        return { externalPort: result.externalPort, poolerPort: result.poolerPort || 0 };
       }
       if (err.statusCode !== 304 && !err.message?.includes("already started")) {
         throw err;
@@ -566,9 +567,10 @@ export class DatabaseRunner {
     const inspect = await container.inspect().catch(() => null);
     const internalPort = options.internalPort || (options.type === "REDIS" ? 6379 : 5432);
     const hostBindings = inspect?.HostConfig?.PortBindings?.[`${internalPort}/tcp`];
-    const externalPort = hostBindings?.[0]?.HostPort ? parseInt(hostBindings[0].HostPort, 10) : 0;
+    const externalPort = hostBindings?.[0]?.HostPort ? parseInt(hostBindings[0].HostPort, 10) : (options.externalPort || 0);
 
     await this.waitForDatabaseReady(container, options, externalPort, internalPort, 45000);
+    return { externalPort, poolerPort: 0 };
   }
 
   /**
