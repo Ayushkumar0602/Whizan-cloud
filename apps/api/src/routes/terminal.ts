@@ -156,41 +156,52 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // Dynamic slug width to accommodate long service names
+      const maxSlugLen = Math.max(22, ...services.map(s => s.slug.length));
+      const slugColWidth = Math.min(32, maxSlugLen + 2);
+
+      const columns = [
+        { header: "SERVICE SLUG", width: slugColWidth },
+        { header: "STACK", width: 12 },
+        { header: "PORT", width: 8 },
+        { header: "PLAN", width: 8 },
+        { header: "STATUS", width: 12 },
+        { header: "INGRESS / URL", width: 44 },
+      ];
+
       const rows = services.map(s => {
         const lastDeploy = s.deployments[0];
-        let statusText = "\x1b[90mINACTIVE\x1b[0m";
+        let statusText = "○ INACTIVE";
+        let statusColor = "\x1b[90m";
+
         if (lastDeploy) {
-          if (lastDeploy.status === "READY") statusText = "\x1b[32mONLINE\x1b[0m";
-          else if (lastDeploy.status === "BUILDING" || lastDeploy.status === "QUEUED") statusText = "\x1b[33mBUILDING\x1b[0m";
-          else if (lastDeploy.status === "FAILED") statusText = "\x1b[31mFAILED\x1b[0m";
+          if (lastDeploy.status === "READY") {
+            statusText = "● ONLINE";
+            statusColor = "\x1b[1;32m";
+          } else if (lastDeploy.status === "BUILDING" || lastDeploy.status === "QUEUED") {
+            statusText = "◐ BUILDING";
+            statusColor = "\x1b[1;33m";
+          } else if (lastDeploy.status === "FAILED") {
+            statusText = "✖ FAILED";
+            statusColor = "\x1b[1;31m";
+          }
         }
 
         const portStr = s.internalPort ? String(s.internalPort) : "Worker";
         const urlStr = s.isPublic ? `https://${s.slug}.whizan.cloud` : `internal:${s.internalPort || 0}`;
 
-        return {
-          slug: s.slug.padEnd(24).slice(0, 24),
-          lang: (s.language || "NODEJS").padEnd(10).slice(0, 10),
-          port: portStr.padEnd(8).slice(0, 8),
-          plan: (s.instanceType || "free").padEnd(8).slice(0, 8),
-          status: statusText,
-          url: urlStr,
-        };
+        return [
+          { text: s.slug, ansiColor: "\x1b[1;36m" },
+          { text: s.language || "NODEJS", ansiColor: "\x1b[35m" },
+          { text: portStr, ansiColor: "\x1b[37m" },
+          { text: s.instanceType || "free", ansiColor: "\x1b[90m" },
+          { text: statusText, ansiColor: statusColor },
+          { text: urlStr, ansiColor: "\x1b[34m" },
+        ];
       });
 
-      const header = "\r\n\x1b[1m" +
-        "SLUG".padEnd(24) +
-        "LANGUAGE".padEnd(10) +
-        "PORT".padEnd(8) +
-        "PLAN".padEnd(8) +
-        "STATUS".padEnd(14) +
-        "INGRESS / URL" +
-        "\x1b[0m\r\n" +
-        "─".repeat(95);
-
-      const table = rows.map(r => `${r.slug}${r.lang}${r.port}${r.plan}${r.status.padEnd(22)}${r.url}`).join("\r\n");
-
-      const output = `${header}\r\n${table}\r\n\r\n\x1b[90mTotal: ${services.length} service(s) owned. Type 'service <slug>' for full inspection.\x1b[0m\r\n`;
+      const tableOutput = renderTerminalTable(columns, rows);
+      const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mTotal: ${services.length} service(s) owned. Type 'service <slug>' for full inspection.\x1b[0m\r\n`;
 
       return reply.send({ success: true, output, exitCode: 0 });
     }
@@ -218,37 +229,47 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
         });
       }
 
+      const maxSlugLen = Math.max(22, ...projects.map(p => p.slug.length));
+      const slugColWidth = Math.min(32, maxSlugLen + 2);
+
+      const columns = [
+        { header: "PROJECT SLUG", width: slugColWidth },
+        { header: "FRAMEWORK", width: 14 },
+        { header: "BRANCH", width: 10 },
+        { header: "STATUS", width: 12 },
+        { header: "LIVE DOMAIN", width: 44 },
+      ];
+
       const rows = projects.map(p => {
         const lastDeploy = p.deployments[0];
-        let statusText = "\x1b[90mINACTIVE\x1b[0m";
+        let statusText = "○ INACTIVE";
+        let statusColor = "\x1b[90m";
+
         if (lastDeploy) {
-          if (lastDeploy.status === "READY") statusText = "\x1b[32mACTIVE\x1b[0m";
-          else if (lastDeploy.status === "BUILDING" || lastDeploy.status === "QUEUED") statusText = "\x1b[33mBUILDING\x1b[0m";
-          else if (lastDeploy.status === "FAILED") statusText = "\x1b[31mFAILED\x1b[0m";
+          if (lastDeploy.status === "READY") {
+            statusText = "● ACTIVE";
+            statusColor = "\x1b[1;32m";
+          } else if (lastDeploy.status === "BUILDING" || lastDeploy.status === "QUEUED") {
+            statusText = "◐ BUILDING";
+            statusColor = "\x1b[1;33m";
+          } else if (lastDeploy.status === "FAILED") {
+            statusText = "✖ FAILED";
+            statusColor = "\x1b[1;31m";
+          }
         }
 
         const url = `https://${p.slug}.whizan.cloud`;
-        return {
-          slug: p.slug.padEnd(24).slice(0, 24),
-          fw: (p.framework || "STATIC").padEnd(12).slice(0, 12),
-          branch: (p.branch || "main").padEnd(10).slice(0, 10),
-          status: statusText,
-          url,
-        };
+        return [
+          { text: p.slug, ansiColor: "\x1b[1;36m" },
+          { text: p.framework || "STATIC", ansiColor: "\x1b[35m" },
+          { text: p.branch || "main", ansiColor: "\x1b[37m" },
+          { text: statusText, ansiColor: statusColor },
+          { text: url, ansiColor: "\x1b[34m" },
+        ];
       });
 
-      const header = "\r\n\x1b[1m" +
-        "SLUG".padEnd(24) +
-        "FRAMEWORK".padEnd(12) +
-        "BRANCH".padEnd(10) +
-        "STATUS".padEnd(14) +
-        "LIVE DOMAIN" +
-        "\x1b[0m\r\n" +
-        "─".repeat(88);
-
-      const table = rows.map(r => `${r.slug}${r.fw}${r.branch}${r.status.padEnd(22)}${r.url}`).join("\r\n");
-
-      const output = `${header}\r\n${table}\r\n\r\n\x1b[90mTotal: ${projects.length} project(s) owned.\x1b[0m\r\n`;
+      const tableOutput = renderTerminalTable(columns, rows);
+      const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mTotal: ${projects.length} project(s) owned. Type 'project <slug>' for full inspection.\x1b[0m\r\n`;
 
       return reply.send({ success: true, output, exitCode: 0 });
     }
@@ -921,3 +942,30 @@ function parseCommandLine(text: string): string[] {
 
   return result;
 }
+
+/**
+ * Format a rock-solid tabular grid for terminals with exact column gutters and pre-ANSI padding
+ */
+function renderTerminalTable(
+  columns: { header: string; width: number }[],
+  rows: { text: string; ansiColor?: string }[][]
+): string {
+  // Build header row with uppercase styling and bold white text
+  const headerLine = "\x1b[1m" + columns.map(c => `\x1b[37m${c.header.padEnd(c.width)}\x1b[0m`).join("  ") + "\x1b[0m";
+  const dividerLen = columns.reduce((acc, c) => acc + c.width, 0) + (columns.length - 1) * 2;
+  const dividerLine = `\x1b[90m${"─".repeat(dividerLen)}\x1b[0m`;
+
+  const bodyLines = rows.map(row => {
+    return row.map((cell, idx) => {
+      const colWidth = columns[idx]?.width || 12;
+      // Truncate if exceeds column width
+      const cleanText = cell.text || "";
+      const truncated = cleanText.length > colWidth ? cleanText.slice(0, colWidth - 1) + "…" : cleanText;
+      const padded = truncated.padEnd(colWidth);
+      return cell.ansiColor ? `${cell.ansiColor}${padded}\x1b[0m` : padded;
+    }).join("  ");
+  });
+
+  return [headerLine, dividerLine, ...bodyLines].join("\r\n");
+}
+

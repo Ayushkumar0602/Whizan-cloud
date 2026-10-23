@@ -12,12 +12,15 @@ import {
   Trash2,
   Sparkles,
   RefreshCw,
-  CornerDownLeft,
-  ChevronRight,
+  Layers,
+  Globe,
+  Activity,
   ShieldCheck,
   HelpCircle,
   Copy,
-  Check
+  Check,
+  ChevronRight,
+  Zap,
 } from "lucide-react";
 
 interface AccountTerminalProps {
@@ -32,25 +35,20 @@ interface CommandEntry {
   timestamp: string;
 }
 
-const WELCOME_BANNER = `\x1b[1;36m  __          ___     _                  _____ _                 _\x1b[0m
-\x1b[1;36m  \\ \\        / / |   (_)                / ____| |               | |\x1b[0m
-\x1b[1;36m   \\ \\  /\\  / /| |__  _ ______ _ _ __  | |    | | ___  _   _  __| |\x1b[0m
-\x1b[1;36m    \\ \\/  \\/ / | '_ \\| |_  / _\` | '_ \\ | |    | |/ _ \\| | | |/ _\` |\x1b[0m
-\x1b[1;36m     \\  /\\  /  | | | | |/ / (_| | | | || |____| | (_) | |_| | (_| |\x1b[0m
-\x1b[1;36m      \\/  \\/   |_| |_|_/___\\__,_|_| |_(_)_____|_|\\___/ \\__,_|\\__,_|\x1b[0m
-
-\x1b[1;32m✓ Whizan Cloud Account Terminal v2.4 (Scoped User Shell)\x1b[0m
-\x1b[90mTenant isolation active. All operations are strictly scoped to your account.\x1b[0m
-Type \x1b[1;33m'help'\x1b[0m for available commands, or try \x1b[1;32m'services'\x1b[0m, \x1b[1;32m'projects'\x1b[0m, \x1b[1;32m'stats'\x1b[0m.
-`;
+const WELCOME_BANNER = `\x1b[1;36m╭────────────────────────────────────────────────────────────────────────╮\x1b[0m
+\x1b[1;36m│\x1b[0m  \x1b[1;37mWHIZAN CLOUD INTELLIGENT TERMINAL\x1b[0m \x1b[35mv2.4\x1b[0m  \x1b[90m(Scoped Account Shell)\x1b[0m        \x1b[1;36m│\x1b[0m
+\x1b[1;36m│\x1b[0m  \x1b[32m● Status: Connected\x1b[0m  \x1b[90m│  Tenant Isolation: STRICT  │  SSL: Cloudflare Edge\x1b[0m  \x1b[1;36m│\x1b[0m
+\x1b[1;36m╰────────────────────────────────────────────────────────────────────────╯\x1b[0m
+\x1b[90mAll platform operations and diagnostics are strictly scoped to your account.\x1b[0m
+Type \x1b[1;33m'help'\x1b[0m for commands manual, or click any quick action below:`;
 
 const QUICK_COMMANDS = [
-  { label: "help", desc: "Show manual" },
-  { label: "services", desc: "List microservices" },
-  { label: "projects", desc: "List web projects" },
-  { label: "stats", desc: "Compute metrics" },
-  { label: "whoami", desc: "User session" },
-  { label: "clear", desc: "Clear screen" },
+  { label: "services", desc: "List microservices", Icon: Layers },
+  { label: "projects", desc: "List web projects", Icon: Globe },
+  { label: "stats", desc: "Compute metrics & vCPU", Icon: Activity },
+  { label: "whoami", desc: "Session identity & tier", Icon: ShieldCheck },
+  { label: "help", desc: "Full command manual", Icon: HelpCircle },
+  { label: "clear", desc: "Clear terminal screen", Icon: Trash2 },
 ];
 
 export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
@@ -70,7 +68,7 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const userHandle = user?.email?.split("@")[0] || "user";
+  const userHandle = user?.email?.split("@")[0] || "developer";
 
   // Auto-scroll to bottom on history change
   useEffect(() => {
@@ -137,7 +135,7 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
             command: trimmed,
             output: res.output,
             exitCode: res.exitCode,
-            timestamp: new Date().toLocaleTimeString(),
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
           },
         ]);
       }
@@ -148,7 +146,7 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           command: trimmed,
           output: `\x1b[31mExecution Error: ${err.message || "Failed to communicate with Whizan Cloud API"}\x1b[0m\r\n`,
           exitCode: 1,
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
         },
       ]);
     } finally {
@@ -197,73 +195,84 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
 
   return (
     <div
-      className={`account-terminal-drawer ${minimized ? "terminal-minimized" : ""} ${maximized ? "terminal-maximized" : ""}`}
+      className={`whz-term-drawer ${minimized ? "whz-term-minimized" : ""} ${maximized ? "whz-term-maximized" : ""}`}
       onClick={() => inputRef.current?.focus()}
     >
-      {/* Terminal Title Bar */}
-      <div className="terminal-topbar" onClick={e => e.stopPropagation()}>
-        {/* Left: Window Dots & Title */}
-        <div className="terminal-window-controls">
-          <button
-            className="window-dot dot-close"
-            onClick={onClose}
-            title="Close Terminal (Esc)"
-          />
-          <button
-            className="window-dot dot-minimize"
-            onClick={() => setMinimized(!minimized)}
-            title={minimized ? "Restore Terminal" : "Minimize Terminal"}
-          />
-          <button
-            className="window-dot dot-maximize"
-            onClick={() => {
-              setMinimized(false);
-              setMaximized(!maximized);
-            }}
-            title={maximized ? "Restore Height" : "Maximize Fullscreen"}
-          />
+      {/* Top Handle / Grab Bar */}
+      <div className="whz-term-handle-bar" />
 
-          <div className="terminal-title-label">
-            <TerminalIcon size={14} className="terminal-header-icon" />
-            <span className="terminal-title-text">Whizan Cloud Shell</span>
-            <span className="terminal-scope-tag">Account Scope</span>
+      {/* Terminal Title Bar */}
+      <div className="whz-term-header" onClick={e => e.stopPropagation()}>
+        {/* Left: Window Dots & Title */}
+        <div className="whz-term-header-left">
+          <div className="whz-term-traffic-lights">
+            <button
+              className="whz-term-dot dot-close"
+              onClick={onClose}
+              title="Close Terminal (Esc)"
+              aria-label="Close"
+            />
+            <button
+              className="whz-term-dot dot-minimize"
+              onClick={() => setMinimized(!minimized)}
+              title={minimized ? "Restore Terminal" : "Minimize Terminal"}
+              aria-label="Minimize"
+            />
+            <button
+              className="whz-term-dot dot-maximize"
+              onClick={() => {
+                setMinimized(false);
+                setMaximized(!maximized);
+              }}
+              title={maximized ? "Restore Height" : "Maximize Fullscreen"}
+              aria-label="Maximize"
+            />
+          </div>
+
+          <div className="whz-term-title-group">
+            <TerminalIcon size={14} className="whz-term-icon" />
+            <span className="whz-term-title">Whizan Cloud Shell</span>
+            <span className="whz-term-badge">Account Scope</span>
           </div>
         </div>
 
         {/* Center: Session Pill */}
-        <div className="terminal-session-pill">
-          <span className="session-status-dot" />
-          <span className="session-user-text">{userHandle}@whizan.cloud</span>
+        <div className="whz-term-session-badge">
+          <span className="whz-term-pulse-dot" />
+          <span className="whz-term-user-text">{userHandle}@whizan.cloud</span>
+          <span className="whz-term-latency-tag">Active</span>
         </div>
 
         {/* Right: Actions */}
-        <div className="terminal-actions-group">
+        <div className="whz-term-header-right">
           <button
-            className="terminal-tool-btn"
+            className="whz-term-btn"
             onClick={handleCopyAll}
             title="Copy Terminal Output"
           >
             {copied ? <Check size={13} style={{ color: "#10b981" }} /> : <Copy size={13} />}
+            <span className="whz-term-btn-text">{copied ? "Copied" : "Copy"}</span>
           </button>
           <button
-            className="terminal-tool-btn"
+            className="whz-term-btn"
             onClick={() => setHistory([])}
             title="Clear Terminal Screen (clear)"
           >
             <Trash2 size={13} />
+            <span className="whz-term-btn-text">Clear</span>
           </button>
           <button
-            className="terminal-tool-btn"
+            className="whz-term-btn"
             onClick={() => {
               setMinimized(false);
               setMaximized(!maximized);
             }}
-            title={maximized ? "Restore Window" : "Maximize Window"}
+            title={maximized ? "Restore Height" : "Maximize Window"}
           >
             {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
           <button
-            className="terminal-tool-btn terminal-btn-close"
+            className="whz-term-btn whz-term-btn-close"
             onClick={onClose}
             title="Close Terminal"
           >
@@ -275,62 +284,69 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
       {/* When Minimized: only the topbar is visible */}
       {!minimized && (
         <>
-          {/* Quick Command Chips */}
-          <div className="terminal-quick-chips" onClick={e => e.stopPropagation()}>
-            <span className="quick-chips-label">Quick Commands:</span>
-            {QUICK_COMMANDS.map(q => (
-              <button
-                key={q.label}
-                type="button"
-                className="chip-btn"
-                onClick={() => executeCommand(q.label)}
-                title={q.desc}
-              >
-                <code>{q.label}</code>
-              </button>
-            ))}
+          {/* Quick Command Palette Chips */}
+          <div className="whz-term-quick-strip" onClick={e => e.stopPropagation()}>
+            <span className="whz-term-quick-title">
+              <Sparkles size={11} className="whz-term-spark-icon" />
+              <span>QUICK ACTIONS</span>
+            </span>
+            <div className="whz-term-chips-list">
+              {QUICK_COMMANDS.map(q => {
+                const IconComponent = q.Icon;
+                return (
+                  <button
+                    key={q.label}
+                    type="button"
+                    className="whz-term-chip"
+                    onClick={() => executeCommand(q.label)}
+                    title={q.desc}
+                  >
+                    <IconComponent size={11} className="whz-term-chip-icon" />
+                    <span className="whz-term-chip-text">{q.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Terminal Screen / Output Body */}
-          <div className="terminal-scroll-area" ref={scrollContainerRef}>
+          <div className="whz-term-screen" ref={scrollContainerRef}>
             {/* Initial Welcome Banner */}
-            <div className="terminal-output-block">
+            <div className="whz-term-banner">
               <span dangerouslySetInnerHTML={{ __html: ansiToHtml(WELCOME_BANNER) }} />
             </div>
 
             {/* History Output */}
             {history.map((entry, idx) => (
-              <div key={idx} className="terminal-history-item">
-                <div className="terminal-history-command">
-                  <span className="prompt-symbol">
-                    <span className="prompt-user">{userHandle}@whizan</span>
-                    <span className="prompt-sep">:</span>
-                    <span className="prompt-tilde">~</span>
-                    <span className="prompt-dollar">$</span>
-                  </span>
-                  <span className="command-text">{entry.command}</span>
-                  <span className="timestamp-tag">{entry.timestamp}</span>
+              <div key={idx} className="whz-term-entry">
+                <div className="whz-term-entry-header">
+                  <div className="whz-term-prompt-line">
+                    <span className="whz-term-chevron">❯</span>
+                    <span className="whz-term-user">{userHandle}@whizan</span>
+                    <span className="whz-term-path">:~$</span>
+                    <span className="whz-term-cmd">{entry.command}</span>
+                  </div>
+                  <span className="whz-term-time">{entry.timestamp}</span>
                 </div>
-                <div className="terminal-history-output">
+                <div className="whz-term-entry-body">
                   <span dangerouslySetInnerHTML={{ __html: ansiToHtml(entry.output) }} />
                 </div>
               </div>
             ))}
 
             {/* Active Live Input Line */}
-            <div className="terminal-active-line">
-              <span className="prompt-symbol">
-                <span className="prompt-user">{userHandle}@whizan</span>
-                <span className="prompt-sep">:</span>
-                <span className="prompt-tilde">~</span>
-                <span className="prompt-dollar">$</span>
-              </span>
+            <div className="whz-term-input-row">
+              <div className="whz-term-input-prompt">
+                <span className="whz-term-chevron">❯</span>
+                <span className="whz-term-user">{userHandle}@whizan</span>
+                <span className="whz-term-path">:~$</span>
+              </div>
 
-              <div className="terminal-input-wrap">
+              <div className="whz-term-input-wrapper">
                 <input
                   ref={inputRef}
                   type="text"
-                  className="terminal-cli-input"
+                  className="whz-term-cli-input"
                   value={inputVal}
                   onChange={e => setInputVal(e.target.value)}
                   onKeyDown={handleKeyDown}
@@ -339,34 +355,40 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck="false"
-                  placeholder={loading ? "Executing cloud command..." : "Type 'help' or command..."}
+                  placeholder={loading ? "Executing cloud command across account..." : "Type 'help' or command..."}
                 />
-                {loading && <span className="terminal-spinner" />}
+                {loading && <span className="whz-term-loading-spinner" />}
               </div>
             </div>
 
-            <div ref={terminalEndRef} style={{ height: "16px" }} />
+            <div ref={terminalEndRef} style={{ height: "20px" }} />
           </div>
         </>
       )}
 
       <style>{`
-        .account-terminal-drawer {
+        .whz-term-drawer {
           position: fixed;
           bottom: 0;
           left: 0;
           right: 0;
-          height: 440px;
-          background: #0b0f17;
-          border-top: 1px solid rgba(255, 255, 255, 0.12);
-          box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.65), 0 0 1px rgba(255, 255, 255, 0.2);
+          height: 480px;
+          background: rgba(10, 14, 23, 0.96);
+          backdrop-filter: blur(28px);
+          -webkit-backdrop-filter: blur(28px);
+          border-top: 1px solid rgba(255, 255, 255, 0.14);
+          border-left: 1px solid rgba(255, 255, 255, 0.08);
+          border-right: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 16px 16px 0 0;
+          box-shadow: 0 -20px 60px -10px rgba(0, 0, 0, 0.85), 0 -1px 0 0 rgba(99, 102, 241, 0.35);
           display: flex;
           flex-direction: column;
           z-index: 9999;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-          color: #e6edf3;
-          transition: height 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-          animation: slideUpTerminal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+          font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+          color: #e2e8f0;
+          transition: height 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+          animation: slideUpTerminal 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+          overflow: hidden;
         }
 
         @keyframes slideUpTerminal {
@@ -378,19 +400,30 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           }
         }
 
-        .terminal-minimized {
-          height: 42px !important;
-          overflow: hidden;
+        .whz-term-minimized {
+          height: 46px !important;
+          border-radius: 12px 12px 0 0;
         }
 
-        .terminal-maximized {
-          height: 86vh !important;
+        .whz-term-maximized {
+          height: 88vh !important;
         }
 
-        .terminal-topbar {
+        /* Top Center Drag Pill Indicator */
+        .whz-term-handle-bar {
+          width: 36px;
+          height: 3px;
+          background: rgba(255, 255, 255, 0.2);
+          border-radius: 2px;
+          margin: 6px auto 2px;
+          flex-shrink: 0;
+        }
+
+        /* Terminal Header Bar */
+        .whz-term-header {
           height: 40px;
           min-height: 40px;
-          background: #141b26;
+          background: rgba(15, 23, 42, 0.7);
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           display: flex;
           align-items: center;
@@ -399,285 +432,361 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           user-select: none;
         }
 
-        .terminal-window-controls {
+        .whz-term-header-left {
           display: flex;
           align-items: center;
-          gap: 0.65rem;
+          gap: 0.75rem;
         }
 
-        .window-dot {
-          width: 11px;
-          height: 11px;
+        .whz-term-traffic-lights {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .whz-term-dot {
+          width: 12px;
+          height: 12px;
           border-radius: 50%;
           border: none;
           cursor: pointer;
-          transition: opacity 0.15s ease;
+          transition: transform 0.12s ease, opacity 0.15s ease;
           padding: 0;
         }
-
-        .window-dot:hover {
-          opacity: 0.8;
+        .whz-term-dot:hover {
+          transform: scale(1.1);
         }
 
         .dot-close {
           background: #ff5f56;
-          border: 1px solid #e0443e;
+          border: 1px solid rgba(224, 68, 62, 0.6);
         }
-
         .dot-minimize {
           background: #ffbd2e;
-          border: 1px solid #dea123;
+          border: 1px solid rgba(222, 161, 35, 0.6);
         }
-
         .dot-maximize {
           background: #27c93f;
-          border: 1px solid #1aab29;
+          border: 1px solid rgba(26, 171, 41, 0.6);
         }
 
-        .terminal-title-label {
+        .whz-term-title-group {
           display: flex;
           align-items: center;
-          gap: 0.45rem;
-          margin-left: 0.5rem;
+          gap: 0.5rem;
+          margin-left: 0.35rem;
         }
 
-        .terminal-header-icon {
-          color: #10b981;
+        .whz-term-icon {
+          color: #38bdf8;
+          filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
         }
 
-        .terminal-title-text {
-          font-weight: 600;
+        .whz-term-title {
+          font-weight: 650;
           font-size: 0.82rem;
-          color: #f0f6fc;
+          color: #f8fafc;
+          letter-spacing: -0.01em;
         }
 
-        .terminal-scope-tag {
-          font-size: 0.65rem;
-          font-weight: 600;
-          background: rgba(16, 185, 129, 0.14);
-          color: #10b981;
-          padding: 0.1rem 0.45rem;
+        .whz-term-badge {
+          font-size: 0.64rem;
+          font-weight: 650;
+          background: rgba(6, 182, 212, 0.12);
+          color: #22d3ee;
+          padding: 0.15rem 0.5rem;
           border-radius: 9999px;
-          border: 1px solid rgba(16, 185, 129, 0.25);
-          letter-spacing: 0.02em;
+          border: 1px solid rgba(6, 182, 212, 0.3);
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
         }
 
-        .terminal-session-pill {
+        /* Center Session Pill */
+        .whz-term-session-badge {
           display: flex;
           align-items: center;
           gap: 0.45rem;
-          background: rgba(255, 255, 255, 0.05);
-          padding: 0.2rem 0.65rem;
+          background: rgba(255, 255, 255, 0.04);
+          padding: 0.25rem 0.75rem;
           border-radius: 9999px;
-          border: 1px solid rgba(255, 255, 255, 0.07);
+          border: 1px solid rgba(255, 255, 255, 0.08);
           font-size: 0.72rem;
-          color: #8b949e;
+          color: #94a3b8;
         }
 
-        .session-status-dot {
+        .whz-term-pulse-dot {
           width: 7px;
           height: 7px;
           border-radius: 50%;
           background: #10b981;
-          box-shadow: 0 0 6px #10b981;
+          box-shadow: 0 0 8px #10b981;
+          animation: termLivePulse 2s infinite ease-in-out;
+        }
+        @keyframes termLivePulse {
+          0%, 100% { opacity: 0.8; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.15); }
         }
 
-        .session-user-text {
-          font-weight: 500;
-          color: #c9d1d9;
+        .whz-term-user-text {
+          font-weight: 600;
+          color: #e2e8f0;
         }
 
-        .terminal-actions-group {
+        .whz-term-latency-tag {
+          font-size: 0.65rem;
+          color: #10b981;
+          font-weight: 600;
+          padding-left: 0.3rem;
+          border-left: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Right Actions */
+        .whz-term-header-right {
           display: flex;
+          align-items: center;
+          gap: 0.4rem;
+        }
+
+        .whz-term-btn {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #94a3b8;
+          height: 27px;
+          padding: 0 0.55rem;
+          border-radius: 6px;
+          display: inline-flex;
           align-items: center;
           gap: 0.35rem;
-        }
-
-        .terminal-tool-btn {
-          background: transparent;
-          border: none;
-          color: #8b949e;
-          width: 26px;
-          height: 26px;
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .terminal-tool-btn:hover {
-          color: #f0f6fc;
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .terminal-btn-close:hover {
-          color: #ff5f56;
-          background: rgba(255, 95, 86, 0.12);
-        }
-
-        .terminal-quick-chips {
-          background: #0f1520;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-          padding: 0.35rem 1rem;
-          display: flex;
-          align-items: center;
-          gap: 0.45rem;
-          flex-wrap: wrap;
-        }
-
-        .quick-chips-label {
-          font-size: 0.7rem;
-          color: #6e7681;
-          margin-right: 0.2rem;
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-
-        .chip-btn {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #58a6ff;
-          padding: 0.15rem 0.5rem;
-          border-radius: 4px;
           cursor: pointer;
           font-size: 0.72rem;
+          font-family: inherit;
           transition: all 0.15s ease;
-          display: inline-flex;
-          align-items: center;
         }
 
-        .chip-btn:hover {
-          background: rgba(88, 166, 255, 0.15);
-          border-color: rgba(88, 166, 255, 0.35);
-          transform: translateY(-1px);
+        .whz-term-btn:hover {
+          color: #f8fafc;
+          background: rgba(255, 255, 255, 0.1);
+          border-color: rgba(255, 255, 255, 0.2);
         }
 
-        .terminal-scroll-area {
-          flex: 1;
-          overflow-y: auto;
-          overflow-x: hidden;
-          padding: 0.75rem 1.25rem;
-          font-size: 0.83rem;
-          line-height: 1.55;
-          scroll-behavior: smooth;
+        .whz-term-btn-close:hover {
+          color: #ff5f56;
+          background: rgba(255, 95, 86, 0.15);
+          border-color: rgba(255, 95, 86, 0.3);
         }
 
-        .terminal-scroll-area::-webkit-scrollbar {
-          width: 8px;
-        }
-        .terminal-scroll-area::-webkit-scrollbar-thumb {
-          background: rgba(255, 255, 255, 0.15);
-          border-radius: 4px;
-        }
-
-        .terminal-output-block {
-          white-space: pre-wrap;
-          word-break: break-all;
-          margin-bottom: 0.75rem;
-        }
-
-        .terminal-history-item {
-          margin-bottom: 0.75rem;
-        }
-
-        .terminal-history-command {
+        /* Quick Action Strip */
+        .whz-term-quick-strip {
+          background: rgba(2, 6, 23, 0.6);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+          padding: 0.4rem 1.25rem;
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          color: #f0f6fc;
-        }
-
-        .command-text {
-          font-weight: 600;
-          color: #f0f6fc;
-        }
-
-        .timestamp-tag {
-          font-size: 0.68rem;
-          color: #6e7681;
-          margin-left: auto;
-        }
-
-        .terminal-history-output {
-          white-space: pre-wrap;
-          word-break: break-all;
-          color: #c9d1d9;
-          margin-top: 0.2rem;
-        }
-
-        .terminal-active-line {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          margin-top: 0.25rem;
-        }
-
-        .prompt-symbol {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.15rem;
-          font-weight: 600;
-          user-select: none;
+          gap: 0.75rem;
+          overflow-x: auto;
           flex-shrink: 0;
         }
 
-        .prompt-user {
+        .whz-term-quick-title {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          font-size: 0.68rem;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.05em;
+          white-space: nowrap;
+        }
+
+        .whz-term-spark-icon {
+          color: #38bdf8;
+        }
+
+        .whz-term-chips-list {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          flex-wrap: nowrap;
+        }
+
+        .whz-term-chip {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #38bdf8;
+          padding: 0.2rem 0.6rem;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 0.72rem;
+          font-family: inherit;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+
+        .whz-term-chip:hover {
+          background: rgba(56, 189, 248, 0.12);
+          border-color: rgba(56, 189, 248, 0.4);
+          color: #e0f2fe;
+          transform: translateY(-1px);
+        }
+
+        .whz-term-chip-icon {
+          color: #94a3b8;
+          transition: color 0.15s ease;
+        }
+        .whz-term-chip:hover .whz-term-chip-icon {
+          color: #38bdf8;
+        }
+
+        /* Terminal Screen Viewport */
+        .whz-term-screen {
+          flex: 1;
+          overflow-y: auto;
+          overflow-x: auto;
+          padding: 1rem 1.25rem;
+          background: #080c14;
+          font-size: 0.8125rem;
+          line-height: 1.6;
+          color: #cbd5e1;
+        }
+
+        .whz-term-banner {
+          margin-bottom: 1.25rem;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        /* History Entry */
+        .whz-term-entry {
+          margin-bottom: 1.25rem;
+        }
+
+        .whz-term-entry-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 0.35rem;
+        }
+
+        .whz-term-prompt-line {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-weight: 500;
+        }
+
+        .whz-term-chevron {
+          color: #38bdf8;
+          font-weight: 700;
+        }
+
+        .whz-term-user {
           color: #10b981;
+          font-weight: 600;
         }
 
-        .prompt-sep {
-          color: #8b949e;
+        .whz-term-path {
+          color: #60a5fa;
         }
 
-        .prompt-tilde {
-          color: #58a6ff;
+        .whz-term-cmd {
+          color: #f8fafc;
+          font-weight: 650;
+          margin-left: 0.25rem;
         }
 
-        .prompt-dollar {
-          color: #f0f6fc;
-          margin-left: 0.15rem;
+        .whz-term-time {
+          font-size: 0.7rem;
+          color: #475569;
+          font-family: inherit;
         }
 
-        .terminal-input-wrap {
+        .whz-term-entry-body {
+          margin-left: 0.35rem;
+          padding-left: 0.85rem;
+          border-left: 2px solid rgba(255, 255, 255, 0.08);
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        /* Active Input Row */
+        .whz-term-input-row {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          margin-top: 0.5rem;
+        }
+
+        .whz-term-input-prompt {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          flex-shrink: 0;
+          font-weight: 500;
+        }
+
+        .whz-term-input-wrapper {
           flex: 1;
           display: flex;
           align-items: center;
           position: relative;
         }
 
-        .terminal-cli-input {
+        .whz-term-cli-input {
           width: 100%;
           background: transparent;
           border: none;
           outline: none;
-          color: #f0f6fc;
+          color: #f8fafc;
           font-family: inherit;
-          font-size: 0.83rem;
-          line-height: 1.55;
+          font-size: 0.8125rem;
+          caret-color: #38bdf8;
           padding: 0;
-          caret-color: #10b981;
         }
 
-        .terminal-cli-input::placeholder {
-          color: #484f58;
+        .whz-term-cli-input::placeholder {
+          color: #475569;
         }
 
-        .terminal-spinner {
-          width: 12px;
-          height: 12px;
-          border: 2px solid rgba(16, 185, 129, 0.2);
-          border-top-color: #10b981;
+        .whz-term-loading-spinner {
+          width: 14px;
+          height: 14px;
+          border: 2px solid rgba(56, 189, 248, 0.2);
+          border-top-color: #38bdf8;
           border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-          position: absolute;
-          right: 0;
+          animation: termSpin 0.75s linear infinite;
+          margin-left: 0.5rem;
+          flex-shrink: 0;
         }
 
-        @keyframes spin {
-          to {
-            transform: rotate(360deg);
+        @keyframes termSpin {
+          to { transform: rotate(360deg); }
+        }
+
+        /* Custom Scrollbar */
+        .whz-term-screen::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        .whz-term-screen::-webkit-scrollbar-track {
+          background: rgba(0, 0, 0, 0.2);
+        }
+        .whz-term-screen::-webkit-scrollbar-thumb {
+          background: #334155;
+          border-radius: 3px;
+        }
+        .whz-term-screen::-webkit-scrollbar-thumb:hover {
+          background: #475569;
+        }
+
+        @media (max-width: 768px) {
+          .whz-term-session-badge {
+            display: none;
+          }
+          .whz-term-btn-text {
+            display: none;
           }
         }
       `}</style>
@@ -686,74 +795,65 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
 }
 
 /**
- * Strips ANSI color codes for plain-text copying
+ * Strips ANSI escape codes from string for clipboard copying
  */
-function stripAnsi(text: string): string {
-  return text.replace(/\x1b\[[0-9;]*m/g, "");
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
 /**
- * Converts ANSI color sequences to styled HTML spans for high-fidelity rendering
+ * Lightweight ANSI color to HTML converter
  */
 function ansiToHtml(text: string): string {
   if (!text) return "";
 
-  // Escape raw HTML entities first
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // Color lookup map
-  const ansiStyles: Record<string, string> = {
-    "1": "font-weight: 600;",
-    "2": "opacity: 0.7;",
-    "30": "color: #484f58;",
-    "31": "color: #ff7b72;",
-    "32": "color: #3fb950;",
-    "33": "color: #d29922;",
-    "34": "color: #58a6ff;",
-    "35": "color: #bc8cff;",
-    "36": "color: #39c5cf;",
-    "37": "color: #f0f6fc;",
-    "90": "color: #8b949e;",
-    "91": "color: #ffa198;",
-    "92": "color: #56d364;",
-    "93": "color: #e3b341;",
-    "94": "color: #79c0ff;",
-    "95": "color: #d2a8ff;",
-    "96": "color: #56d4dd;",
-    "97": "color: #ffffff;",
+  const colorMap: Record<string, string> = {
+    "30": "#64748b",
+    "31": "#f87171",
+    "32": "#4ade80",
+    "33": "#facc15",
+    "34": "#60a5fa",
+    "35": "#c084fc",
+    "36": "#38bdf8",
+    "37": "#f1f5f9",
+    "90": "#94a3b8",
+    "91": "#fca5a5",
+    "92": "#86efac",
+    "93": "#fde047",
+    "94": "#93c5fd",
+    "95": "#d8b4fe",
+    "96": "#67e8f9",
+    "97": "#ffffff",
   };
 
-  let openSpans = 0;
-  let html = escaped.replace(/\x1b\[([0-9;]*)m/g, (_, codeStr) => {
-    if (!codeStr || codeStr === "0") {
-      let closeTags = "";
-      while (openSpans > 0) {
-        closeTags += "</span>";
-        openSpans--;
-      }
-      return closeTags;
-    }
+  const lines = text.split("\n");
+  const processedLines = lines.map(line => {
+    // Escape standard HTML characters
+    let escaped = line
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
-    const codes = codeStr.split(";");
-    let combinedStyle = "";
-    codes.forEach((c: string) => {
-      if (ansiStyles[c]) combinedStyle += ansiStyles[c];
+    // Replace ANSI patterns
+    // eslint-disable-next-line no-control-regex
+    escaped = escaped.replace(/\x1b\[([0-9;]+)m/g, (_, codes) => {
+      if (codes === "0") return "</span>";
+
+      const parts = codes.split(";");
+      const styles: string[] = [];
+
+      for (const p of parts) {
+        if (p === "1") styles.push("font-weight: 700;");
+        if (p === "4") styles.push("text-decoration: underline;");
+        if (colorMap[p]) styles.push(`color: ${colorMap[p]};`);
+      }
+
+      return styles.length > 0 ? `<span style="${styles.join(" ")}">` : "";
     });
 
-    if (combinedStyle) {
-      openSpans++;
-      return `<span style="${combinedStyle}">`;
-    }
-    return "";
+    return escaped;
   });
 
-  while (openSpans > 0) {
-    html += "</span>";
-    openSpans--;
-  }
-
-  return html;
+  return processedLines.join("\n");
 }

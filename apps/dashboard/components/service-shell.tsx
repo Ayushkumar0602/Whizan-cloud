@@ -2,7 +2,20 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getAccessToken, getApiBase } from "@/lib/api";
-import { Terminal as TerminalIcon, Loader2, RefreshCw, Trash2, ShieldCheck, AlertCircle, Play, CornerDownLeft, Sparkles } from "lucide-react";
+import {
+  Terminal as TerminalIcon,
+  Loader2,
+  RefreshCw,
+  Trash2,
+  ShieldCheck,
+  AlertCircle,
+  Copy,
+  Check,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  Command,
+} from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: string }) {
@@ -14,6 +27,8 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
   const [containerInfo, setContainerInfo] = useState<{ container: string; workingDir: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   const connect = useCallback((cols: number = 100, rows: number = 24) => {
     if (!serviceId) return;
@@ -101,7 +116,6 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
     async function initTerminal() {
       if (!containerRef.current) return;
 
-      // 1. Explicitly clear any existing elements from previous mounts (React StrictMode fix)
       containerRef.current.innerHTML = "";
 
       const { Terminal } = await import("@xterm/xterm");
@@ -112,32 +126,32 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
       term = new Terminal({
         cursorBlink: true,
         cursorStyle: "bar",
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Geist Mono", Consolas, monospace',
+        fontFamily: 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, monospace',
         fontSize: 13,
-        lineHeight: 1.3,
+        lineHeight: 1.4,
         scrollback: 5000,
         convertEol: true,
         theme: {
-          background: "#080b11",
-          foreground: "#e6edf3",
+          background: "#080c14",
+          foreground: "#e2e8f0",
           cursor: "#38bdf8",
-          cursorAccent: "#080b11",
-          selectionBackground: "#334155",
+          cursorAccent: "#080c14",
+          selectionBackground: "rgba(56, 189, 248, 0.25)",
           black: "#0f172a",
-          red: "#ef4444",
-          green: "#22c55e",
-          yellow: "#eab308",
-          blue: "#3b82f6",
-          magenta: "#a855f7",
-          cyan: "#06b6d4",
+          red: "#f87171",
+          green: "#4ade80",
+          yellow: "#facc15",
+          blue: "#60a5fa",
+          magenta: "#c084fc",
+          cyan: "#38bdf8",
           white: "#f8fafc",
           brightBlack: "#475569",
-          brightRed: "#f87171",
-          brightGreen: "#4ade80",
+          brightRed: "#fca5a5",
+          brightGreen: "#86efac",
           brightYellow: "#fde047",
-          brightBlue: "#60a5fa",
-          brightMagenta: "#c084fc",
-          brightCyan: "#22d3ee",
+          brightBlue: "#93c5fd",
+          brightMagenta: "#d8b4fe",
+          brightCyan: "#67e8f9",
           brightWhite: "#ffffff",
         },
       });
@@ -145,7 +159,6 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
       fitAddon = new FitAddon();
       term.loadAddon(fitAddon);
 
-      // Open terminal in clean container
       term.open(containerRef.current);
       fitAddon.fit();
 
@@ -159,7 +172,7 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
         }
       });
 
-      // Handle window/container auto-resizing
+      // Handle container resizing
       resizeObserver = new ResizeObserver(() => {
         try {
           if (fitAddonRef.current && termRef.current) {
@@ -177,7 +190,6 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
 
       resizeObserver.observe(containerRef.current);
 
-      // Connect WebSocket with current dimensions
       connect(term.cols || 100, term.rows || 24);
     }
 
@@ -217,6 +229,17 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
     connect(cols, rows);
   }
 
+  function handleCopyOutput() {
+    if (termRef.current) {
+      termRef.current.selectAll();
+      const selection = termRef.current.getSelection();
+      navigator.clipboard.writeText(selection);
+      termRef.current.clearSelection();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
   function sendQuickCommand(cmd: string) {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "input", data: `${cmd}\n` }));
@@ -225,162 +248,231 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
   }
 
   return (
-    <div className="shell-panel">
-      {/* macOS Style Window Title Bar */}
-      <div className="shell-titlebar">
-        {/* Window controls (traffic lights) */}
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <span className="dot dot-close" />
-          <span className="dot dot-min" />
-          <span className="dot dot-expand" />
-          <span style={{ marginLeft: "6px", fontSize: "0.78rem", fontWeight: 600, color: "var(--foreground)", display: "flex", alignItems: "center", gap: "5px" }}>
-            <TerminalIcon size={13} style={{ color: "#38bdf8" }} />
-            <span>Interactive Web Shell</span>
-          </span>
-        </div>
+    <div className={`svc-shell-container ${isMaximized ? "svc-shell-fullscreen" : ""}`}>
+      {/* Title Bar with macOS Window Controls */}
+      <div className="svc-shell-topbar">
+        {/* Left: Window Controls + Title */}
+        <div className="svc-shell-topbar-left">
+          <div className="svc-shell-traffic-lights">
+            <span className="svc-shell-dot dot-red" />
+            <span className="svc-shell-dot dot-yellow" />
+            <span className="svc-shell-dot dot-green" />
+          </div>
 
-        {/* Center Container & Path Badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <div className="svc-shell-title-box">
+            <TerminalIcon size={14} className="svc-shell-cyan-icon" />
+            <span className="svc-shell-title-text">Interactive Container Shell</span>
+          </div>
+
           {containerInfo && (
-            <div className="container-pill" title={`Working Directory: ${containerInfo.workingDir}`}>
+            <div className="svc-shell-container-tag" title={`Container ID: ${containerInfo.container} | Path: ${containerInfo.workingDir}`}>
               <ShieldCheck size={11} style={{ color: "#38bdf8" }} />
-              <span className="container-name">{containerInfo.container}</span>
-              <span className="container-path">{containerInfo.workingDir}</span>
+              <span className="svc-shell-container-id">{containerInfo.container.slice(0, 12)}</span>
+              <span className="svc-shell-container-dir">{containerInfo.workingDir}</span>
             </div>
           )}
         </div>
 
-        {/* Status Pill & Action Buttons */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+        {/* Right: Status Pill & Actions */}
+        <div className="svc-shell-topbar-right">
           {status === "connecting" && (
-            <span className="status-pill status-connecting">
+            <span className="svc-shell-status-pill status-connecting">
               <Loader2 size={11} className="spin-icon" /> Connecting...
             </span>
           )}
           {status === "connected" && (
-            <span className="status-pill status-connected">
-              <span className="pulse-dot" /> Live Session (Sandbox)
+            <span className="svc-shell-status-pill status-connected">
+              <span className="svc-shell-pulse-led" /> Live Sandbox
             </span>
           )}
           {status === "disconnected" && (
-            <span className="status-pill status-disconnected">
+            <span className="svc-shell-status-pill status-disconnected">
               Offline
             </span>
           )}
           {status === "error" && (
-            <span className="status-pill status-error" title={errorMessage || ""}>
+            <span className="svc-shell-status-pill status-error" title={errorMessage || ""}>
               <AlertCircle size={11} /> Failed
             </span>
           )}
 
           <button
-            onClick={handleClear}
-            className="titlebar-btn"
-            title="Clear terminal output"
+            onClick={handleCopyOutput}
+            className="svc-shell-btn"
+            title="Copy Terminal Selection / Output"
           >
-            <Trash2 size={11} /> Clear
+            {copied ? <Check size={12} style={{ color: "#10b981" }} /> : <Copy size={12} />}
+            <span className="btn-label">{copied ? "Copied" : "Copy"}</span>
+          </button>
+
+          <button
+            onClick={handleClear}
+            className="svc-shell-btn"
+            title="Clear terminal screen"
+          >
+            <Trash2 size={12} />
+            <span className="btn-label">Clear</span>
           </button>
 
           {(status === "disconnected" || status === "error") && (
             <button
               onClick={handleReconnect}
-              className="titlebar-btn titlebar-btn-primary"
-              title="Reconnect to container"
+              className="svc-shell-btn svc-shell-btn-primary"
+              title="Reconnect WebSocket"
             >
-              <RefreshCw size={11} /> Reconnect
+              <RefreshCw size={12} />
+              <span className="btn-label">Reconnect</span>
             </button>
           )}
+
+          <button
+            onClick={() => setIsMaximized(!isMaximized)}
+            className="svc-shell-btn"
+            title={isMaximized ? "Restore Height" : "Maximize Screen"}
+          >
+            {isMaximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
+          </button>
         </div>
       </div>
 
       {/* Quick Helper Shortcuts Bar */}
-      <div className="shell-shortcuts">
-        <span style={{ fontSize: "0.6875rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-          <Sparkles size={11} style={{ color: "var(--accent)" }} /> Quick commands:
+      <div className="svc-shell-shortcuts-bar">
+        <span className="svc-shell-shortcuts-label">
+          <Sparkles size={11} style={{ color: "#38bdf8" }} />
+          <span>HELPERS:</span>
         </span>
-        <button onClick={() => sendQuickCommand("ls -la")} className="shortcut-tag" title="List all files in current directory">ls -la</button>
-        <button onClick={() => sendQuickCommand("pwd")} className="shortcut-tag" title="Print working directory">pwd</button>
-        <button onClick={() => sendQuickCommand("node -v 2>/dev/null || python3 --version 2>/dev/null || echo 'No runtime'")} className="shortcut-tag" title="Check active runtime version">runtime -v</button>
-        <button onClick={() => sendQuickCommand("printenv | grep -E 'PORT|HOST|NODE_ENV|PATH'")} className="shortcut-tag" title="Print filtered environment variables">printenv</button>
-        <button onClick={() => sendQuickCommand("top -b -n 1 | head -n 12")} className="shortcut-tag" title="Process monitor snapshot">top</button>
-        <button onClick={() => sendQuickCommand("df -h /app")} className="shortcut-tag" title="Disk space usage">df -h</button>
+        <button onClick={() => sendQuickCommand("ls -la")} className="svc-shell-chip">ls -la</button>
+        <button onClick={() => sendQuickCommand("pwd")} className="svc-shell-chip">pwd</button>
+        <button onClick={() => sendQuickCommand("ps aux")} className="svc-shell-chip">ps aux</button>
+        <button onClick={() => sendQuickCommand("printenv | grep -E 'PORT|HOST|NODE_ENV|PATH'")} className="svc-shell-chip">printenv</button>
+        <button onClick={() => sendQuickCommand("df -h /app 2>/dev/null || df -h")} className="svc-shell-chip">df -h</button>
+        <button onClick={() => sendQuickCommand("node -v 2>/dev/null || python3 --version 2>/dev/null || dotnet --version 2>/dev/null || php -v 2>/dev/null || echo 'OK'")} className="svc-shell-chip">runtime -v</button>
       </div>
 
       {/* Terminal Viewport */}
-      <div className="shell-viewport-wrapper">
-        <div className="shell-viewport" ref={containerRef} />
+      <div className={`svc-shell-viewport-box ${isMaximized ? "viewport-maximized" : ""}`}>
+        <div className="svc-shell-viewport" ref={containerRef} />
       </div>
 
       <style>{`
-        .shell-panel {
-          background: #080b11;
-          border: 1px solid var(--card-border);
-          border-radius: 8px;
+        .svc-shell-container {
+          background: #080c14;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 12px;
           overflow: hidden;
-          box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+          box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7);
           width: 100%;
+          transition: all 0.2s ease;
         }
 
-        /* macOS Window Title Bar */
-        .shell-titlebar {
+        .svc-shell-fullscreen {
+          position: fixed;
+          inset: 1.5rem;
+          z-index: 9999;
+          border-radius: 14px;
+          border: 1px solid rgba(56, 189, 248, 0.35);
+          box-shadow: 0 25px 70px rgba(0, 0, 0, 0.95);
+        }
+
+        /* Titlebar */
+        .svc-shell-topbar {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0.625rem 1rem;
-          background: #0d121c;
+          padding: 0.6rem 1rem;
+          background: rgba(15, 23, 42, 0.85);
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           user-select: none;
         }
 
-        .dot {
-          width: 10px;
-          height: 10px;
+        .svc-shell-topbar-left {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .svc-shell-traffic-lights {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .svc-shell-dot {
+          width: 11px;
+          height: 11px;
           border-radius: 50%;
           display: inline-block;
         }
-        .dot-close { background: #ff5f56; }
-        .dot-min { background: #ffbd2e; }
-        .dot-expand { background: #27c93f; }
+        .dot-red { background: #ff5f56; border: 1px solid rgba(224, 68, 62, 0.6); }
+        .dot-yellow { background: #ffbd2e; border: 1px solid rgba(222, 161, 35, 0.6); }
+        .dot-green { background: #27c93f; border: 1px solid rgba(26, 171, 41, 0.6); }
 
-        .container-pill {
+        .svc-shell-title-box {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+        }
+
+        .svc-shell-cyan-icon {
+          color: #38bdf8;
+          filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
+        }
+
+        .svc-shell-title-text {
+          font-size: 0.82rem;
+          font-weight: 650;
+          color: #f8fafc;
+          letter-spacing: -0.01em;
+        }
+
+        .svc-shell-container-tag {
           display: inline-flex;
           align-items: center;
           gap: 0.4rem;
           background: rgba(56, 189, 248, 0.08);
           border: 1px solid rgba(56, 189, 248, 0.2);
-          border-radius: 4px;
+          border-radius: 5px;
           padding: 0.2rem 0.55rem;
           font-family: ui-monospace, Menlo, monospace;
           font-size: 0.72rem;
         }
-        .container-name {
+
+        .svc-shell-container-id {
           color: #38bdf8;
           font-weight: 600;
         }
-        .container-path {
+
+        .svc-shell-container-dir {
           color: #94a3b8;
           padding-left: 0.3rem;
           border-left: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        .status-pill {
+        /* Topbar Right Actions */
+        .svc-shell-topbar-right {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+        }
+
+        .svc-shell-status-pill {
           display: inline-flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.4rem;
           font-size: 0.7rem;
-          font-weight: 500;
-          padding: 0.15rem 0.5rem;
-          border-radius: 12px;
+          font-weight: 600;
+          padding: 0.2rem 0.6rem;
+          border-radius: 9999px;
         }
         .status-connected {
-          background: rgba(34, 197, 94, 0.12);
-          color: #4ade80;
-          border: 1px solid rgba(34, 197, 94, 0.25);
+          background: rgba(16, 185, 129, 0.12);
+          color: #10b981;
+          border: 1px solid rgba(16, 185, 129, 0.25);
         }
         .status-connecting {
-          background: rgba(234, 179, 8, 0.12);
-          color: #fde047;
-          border: 1px solid rgba(234, 179, 8, 0.25);
+          background: rgba(245, 158, 11, 0.12);
+          color: #f59e0b;
+          border: 1px solid rgba(245, 158, 11, 0.25);
         }
         .status-disconnected {
           background: rgba(148, 163, 184, 0.12);
@@ -393,92 +485,124 @@ export function ServiceShell({ serviceId, slug }: { serviceId: string; slug: str
           border: 1px solid rgba(239, 68, 68, 0.25);
         }
 
-        .pulse-dot {
+        .svc-shell-pulse-led {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #4ade80;
-          box-shadow: 0 0 6px #22c55e;
-          animation: livePulse 2s ease-in-out infinite;
+          background: #10b981;
+          box-shadow: 0 0 6px #10b981;
+          animation: svcLivePulse 2s ease-in-out infinite;
         }
-        @keyframes livePulse {
+        @keyframes svcLivePulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.4; transform: scale(0.85); }
         }
 
-        .titlebar-btn {
+        .svc-shell-btn {
           display: inline-flex;
           align-items: center;
-          gap: 0.3rem;
-          padding: 0.25rem 0.6rem;
+          gap: 0.35rem;
+          padding: 0.22rem 0.6rem;
           font-size: 0.72rem;
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 4px;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 5px;
           color: #94a3b8;
           cursor: pointer;
+          font-family: inherit;
           transition: all 0.15s ease;
         }
-        .titlebar-btn:hover {
-          background: rgba(255, 255, 255, 0.12);
-          color: #f1f5f9;
+        .svc-shell-btn:hover {
+          background: rgba(255, 255, 255, 0.1);
+          color: #f8fafc;
+          border-color: rgba(255, 255, 255, 0.18);
         }
-        .titlebar-btn-primary {
-          background: rgba(56, 189, 248, 0.15);
+
+        .svc-shell-btn-primary {
+          background: rgba(56, 189, 248, 0.12);
           border-color: rgba(56, 189, 248, 0.3);
           color: #38bdf8;
         }
-        .titlebar-btn-primary:hover {
-          background: rgba(56, 189, 248, 0.25);
+        .svc-shell-btn-primary:hover {
+          background: rgba(56, 189, 248, 0.22);
           color: #e0f2fe;
         }
 
         /* Shortcuts Bar */
-        .shell-shortcuts {
+        .svc-shell-shortcuts-bar {
           display: flex;
           align-items: center;
-          gap: 0.4rem;
+          gap: 0.45rem;
           padding: 0.35rem 1rem;
-          background: #090d14;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+          background: rgba(2, 6, 23, 0.7);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
           overflow-x: auto;
         }
-        .shortcut-tag {
+
+        .svc-shell-shortcuts-label {
+          display: flex;
+          align-items: center;
+          gap: 0.3rem;
+          font-size: 0.68rem;
+          font-weight: 700;
+          color: #64748b;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+        }
+
+        .svc-shell-chip {
           background: rgba(255, 255, 255, 0.04);
           border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 3px;
-          color: #94a3b8;
+          border-radius: 4px;
+          color: #38bdf8;
           font-family: ui-monospace, Menlo, monospace;
-          font-size: 0.6875rem;
-          padding: 0.18rem 0.5rem;
+          font-size: 0.7rem;
+          padding: 0.15rem 0.55rem;
           cursor: pointer;
           white-space: nowrap;
           transition: all 0.12s ease;
         }
-        .shortcut-tag:hover {
-          background: rgba(255, 255, 255, 0.12);
-          color: #f1f5f9;
-          border-color: rgba(255, 255, 255, 0.2);
+        .svc-shell-chip:hover {
+          background: rgba(56, 189, 248, 0.14);
+          color: #f0f9ff;
+          border-color: rgba(56, 189, 248, 0.35);
+          transform: translateY(-1px);
         }
 
-        /* Terminal Viewport Area */
-        .shell-viewport-wrapper {
-          height: 420px;
-          background: #080b11;
+        /* Viewport Area */
+        .svc-shell-viewport-box {
+          height: 440px;
+          background: #080c14;
           position: relative;
           overflow: hidden;
         }
-        .shell-viewport {
+
+        .viewport-maximized {
+          height: calc(100vh - 120px) !important;
+        }
+
+        .svc-shell-viewport {
           width: 100%;
           height: 100%;
         }
-        .shell-viewport .xterm {
+
+        .svc-shell-viewport .xterm {
           height: 100%;
           padding: 12px 14px;
           box-sizing: border-box;
         }
-        .shell-viewport .xterm-viewport {
+
+        .svc-shell-viewport .xterm-viewport {
           background-color: transparent !important;
+        }
+
+        @media (max-width: 768px) {
+          .btn-label {
+            display: none;
+          }
+          .svc-shell-container-tag {
+            display: none;
+          }
         }
       `}</style>
     </div>
