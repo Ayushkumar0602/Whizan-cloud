@@ -480,15 +480,15 @@ export default function NewServicePage() {
                     port = 8080;
                   } else if (lang === "PHP") {
                     install = "composer install";
-                    start = "php artisan serve";
+                    start = "";
                     port = 8000;
                   } else if (lang === "RUBY") {
                     install = "bundle install";
-                    start = "bundle exec rails server";
+                    start = "";
                     port = 8000;
                   } else if (lang === "DOTNET") {
                     install = "dotnet restore";
-                    start = "dotnet run";
+                    start = "";
                     port = 8080;
                   } else if (lang === "DOCKERFILE") {
                     install = "";
@@ -550,7 +550,17 @@ export default function NewServicePage() {
                   className="input mono"
                   value={formData.startCommand}
                   onChange={e => setFormData({ ...formData, startCommand: e.target.value })}
-                  placeholder={formData.language === "DOCKERFILE" ? "Leave blank to use Docker CMD" : "npm start"}
+                  placeholder={
+                    formData.language === "DOCKERFILE"
+                      ? "Leave blank to use Docker CMD"
+                      : formData.language === "PHP"
+                      ? "Auto-detected (artisan or php -S) - Leave blank"
+                      : formData.language === "RUBY"
+                      ? "Auto-detected (Rails, Rackup, Sinatra, Puma) - Leave blank"
+                      : formData.language === "JAVA" || formData.language === "RUST" || formData.language === "DOTNET"
+                      ? "Auto-detected from manifest - Leave blank"
+                      : "npm start"
+                  }
                 />
               </div>
             </div>

@@ -399,12 +399,41 @@ export class ServiceRunner {
     // 5. Construct the container run command
     let cmd: string[] | undefined;
     if (isCustomImage) {
-      // For Dockerfiles, if user specified custom start command and it's not a dummy placeholder, execute it
+      // Check for mismatched start commands that would crash on non-matching project types
+      const isArtisanMissing = Boolean(
+        job.startCommand &&
+        job.startCommand.includes("artisan") &&
+        !filesInWorkDir.includes("artisan")
+      );
+      const isRailsMissing = Boolean(
+        job.startCommand &&
+        job.startCommand.includes("rails") &&
+        !filesInWorkDir.includes("bin") &&
+        !filesInWorkDir.includes("config")
+      );
+      const isMainGoMissing = Boolean(
+        job.startCommand &&
+        job.startCommand.includes("main.go") &&
+        !filesInWorkDir.includes("main.go")
+      );
+
+      if (isArtisanMissing) {
+        await onLog("⚠️ 'artisan' not found in workspace; bypassing 'php artisan serve' and using intelligent PHP entrypoint.");
+      }
+      if (isRailsMissing) {
+        await onLog("⚠️ Rails structure not found in workspace; bypassing Rails start command and using intelligent Ruby entrypoint.");
+      }
+
+      // For Dockerfiles / synthesized images, if user specified a valid custom start command, execute it
       if (
         job.startCommand &&
         job.startCommand.trim() !== "" &&
         job.startCommand !== "npm start" &&
-        job.startCommand !== "python main.py"
+        job.startCommand !== "python main.py" &&
+        job.startCommand !== "dotnet run" &&
+        !isArtisanMissing &&
+        !isRailsMissing &&
+        !isMainGoMissing
       ) {
         cmd = ["sh", "-c", job.startCommand];
       } else {
