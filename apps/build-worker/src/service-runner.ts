@@ -971,8 +971,25 @@ CMD ${cmd}
    * Synthesize multi-stage Rust Dockerfile
    */
   private async writeRustDockerfile(workDir: string, port: number): Promise<void> {
+    let binName = "";
+    try {
+      const cargoToml = await fs.readFile(path.join(workDir, "Cargo.toml"), "utf8");
+      const nameMatch = cargoToml.match(/^\s*name\s*=\s*["']([^"']+)["']/m);
+      if (nameMatch) {
+        binName = nameMatch[1].trim();
+      }
+    } catch {}
+
+    const copyInstruction = binName
+      ? `COPY --from=builder /app/target/release/${binName} /app/server`
+      : `COPY --from=builder /app/target/release/ /app/target/release/`;
+
+    const cmdInstruction = binName
+      ? `CMD ["/app/server"]`
+      : `CMD ["sh", "-c", "BIN=$(find /app/target/release -maxdepth 1 -type f -executable ! -name '*.d' ! -name '*.rlib' ! -name '*.so' | head -n 1); if [ -z \\"$BIN\\" ]; then echo 'ERROR: No executable binary found in /app/target/release'; exit 1; fi; echo 'Starting Rust binary: '$BIN; exec $BIN"]`;
+
     const dockerfile = `
-FROM rust:1.77-slim as builder
+FROM rust:1-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev gcc && rm -rf /var/lib/apt/lists/*
 COPY . .
@@ -981,10 +998,10 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/ /app/target/release/
+${copyInstruction}
 ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "BIN=$(find /app/target/release -maxdepth 1 -type f -executable ! -name '*.d' | head -n 1); echo 'Starting Rust binary: '$BIN; exec $BIN"]
+${cmdInstruction}
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
