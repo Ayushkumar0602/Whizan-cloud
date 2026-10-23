@@ -39,6 +39,116 @@ const INSTANCE_PLANS = [
   { id: "pro_plus", name: "Pro Plus", cpu: 4.0, memory: 4096, desc: "4.0 vCPU • 4 GB" },
 ];
 
+interface StackPreset {
+  label: string;
+  icon: string;
+  install: string;
+  start: string;
+  port: number;
+  isWorker?: boolean;
+  hint: string;
+}
+
+interface StackInfo {
+  name: string;
+  badge: string;
+  description: string;
+  presets: StackPreset[];
+}
+
+const STACK_GUIDANCE: Record<string, StackInfo> = {
+  NODEJS: {
+    name: "Node.js & TypeScript",
+    badge: "Native High-Performance Engine",
+    description: "Automatic TypeScript compilation, pnpm / yarn / npm support, and auto-Prisma client generation.",
+    presets: [
+      { label: "Express / Fastify", icon: "⚡", install: "npm install", start: "npm start", port: 3000, hint: "Auto-detects start script in package.json" },
+      { label: "NestJS (TypeScript)", icon: "🦁", install: "npm install", start: "npm start", port: 3000, hint: "Compiles TypeScript before start" },
+      { label: "BullMQ / Worker", icon: "🐂", install: "npm install", start: "node worker.js", port: 0, isWorker: true, hint: "Continuous background consumer" },
+      { label: "Auto-Detect", icon: "✨", install: "npm install", start: "", port: 3000, hint: "Whizan auto-detects start script or entrypoint" },
+    ],
+  },
+  PYTHON: {
+    name: "Python (FastAPI, Flask, Django)",
+    badge: "Zero-Config Production Container",
+    description: "Multi-stage environment with pre-installed C-extensions (psycopg2, cryptography, gcc) and automatic Uvicorn / Gunicorn provisioning.",
+    presets: [
+      { label: "FastAPI (Uvicorn)", icon: "⚡", install: "pip install -r requirements.txt", start: "uvicorn main:app --host 0.0.0.0 --port 8000", port: 8000, hint: "ASGI with auto-reload disabled in production" },
+      { label: "Flask", icon: "🧪", install: "pip install -r requirements.txt", start: "python app.py", port: 5000, hint: "Binds to 0.0.0.0:5000" },
+      { label: "Django", icon: "🎸", install: "pip install -r requirements.txt", start: "python manage.py runserver 0.0.0.0:8000", port: 8000, hint: "Auto-runs migrations and sets DJANGO_ALLOWED_HOSTS" },
+      { label: "Celery Worker", icon: "🥬", install: "pip install -r requirements.txt", start: "celery -A tasks worker --loglevel=info", port: 0, isWorker: true, hint: "Process liveness monitored worker" },
+      { label: "Auto-Detect", icon: "✨", install: "pip install -r requirements.txt", start: "", port: 8000, hint: "Whizan auto-detects framework and optimal server" },
+    ],
+  },
+  GO: {
+    name: "Go (Golang)",
+    badge: "Multi-Stage Alpine (< 15MB)",
+    description: "Builds a stripped static binary with sub-5ms cold starts. Fully supports both root main.go and standard cmd/ directory architectures.",
+    presets: [
+      { label: "Gin / Fiber / Echo", icon: "🍸", install: "go mod download", start: "go run .", port: 8080, hint: "Compiles Go module at root" },
+      { label: "cmd/ Server Directory", icon: "📁", install: "go mod download", start: "go run ./cmd/server", port: 8080, hint: "For repositories with main in cmd/" },
+      { label: "Auto-Detect Binary", icon: "✨", install: "go mod download", start: "", port: 8080, hint: "Whizan compiles hardened static binary" },
+    ],
+  },
+  RUST: {
+    name: "Rust (Cargo)",
+    badge: "Optimized Release Binary",
+    description: "Synthesizes multi-stage Debian slim container with OpenSSL and CA certificates configured. Cargo build --release optimizations enabled.",
+    presets: [
+      { label: "Axum / Actix-web", icon: "🦀", install: "", start: "", port: 8080, hint: "Auto-detects compiled binary in target/release" },
+    ],
+  },
+  JAVA: {
+    name: "Java / Kotlin (Spring Boot)",
+    badge: "Temurin OpenJDK 17 / 21 / 24",
+    description: "Automatic Maven & Gradle build detection. JVM container support configured with dynamic RAM limits to prevent OOM kill.",
+    presets: [
+      { label: "Spring Boot (Maven)", icon: "☕", install: "", start: "", port: 8080, hint: "Builds via mvn clean package -DskipTests" },
+      { label: "Spring Boot (Gradle)", icon: "🐘", install: "", start: "", port: 8080, hint: "Builds via gradle build --no-daemon -x test" },
+    ],
+  },
+  PHP: {
+    name: "PHP (Composer)",
+    badge: "Composer & Database PDO Ready",
+    description: "Supports Laravel, Slim, Symfony, and vanilla PHP. Pre-loaded with pdo_mysql, pdo_pgsql, mbstring, and bcmath extensions.",
+    presets: [
+      { label: "Laravel (Artisan)", icon: "🐘", install: "composer install", start: "php artisan serve --host=0.0.0.0 --port=8000", port: 8000, hint: "Runs php artisan serve with APP_KEY self-healing" },
+      { label: "Slim Framework", icon: "⚡", install: "composer install", start: "php -S 0.0.0.0:8000 -t public public/index.php", port: 8000, hint: "Direct front-controller routing to public/index.php" },
+      { label: "Symfony", icon: "🎼", install: "composer install", start: "php -S 0.0.0.0:8000 -t public", port: 8000, hint: "Serves public/ directory with modern Symfony routing" },
+      { label: "Vanilla PHP", icon: "📄", install: "", start: "php -S 0.0.0.0:8000 index.php", port: 8000, hint: "Serves root index.php via built-in server" },
+      { label: "Auto-Detect", icon: "✨", install: "composer install", start: "", port: 8000, hint: "Whizan detects Artisan vs public/ vs index.php" },
+    ],
+  },
+  RUBY: {
+    name: "Ruby on Rails & Rack",
+    badge: "Bundler & Rack Server",
+    description: "Supports Rails 7+, Sinatra, Puma, and Rackup. Pre-configured with database clients, SECRET_KEY_BASE fallback, and static asset serving.",
+    presets: [
+      { label: "Ruby on Rails", icon: "💎", install: "bundle install", start: "bundle exec rails server -b 0.0.0.0 -p 8000", port: 8000, hint: "Rails server with auto SECRET_KEY_BASE" },
+      { label: "Sinatra", icon: "🎸", install: "bundle install", start: "ruby app.rb -o 0.0.0.0 -p 8000", port: 8000, hint: "Direct Sinatra script binding to 0.0.0.0:8000" },
+      { label: "Puma / Rack", icon: "🐆", install: "bundle install", start: "bundle exec rackup --host 0.0.0.0 -p 8000", port: 8000, hint: "Runs config.ru via Rackup" },
+      { label: "Auto-Detect", icon: "✨", install: "bundle install", start: "", port: 8000, hint: "Whizan detects Rails vs Sinatra vs Rackup" },
+    ],
+  },
+  DOTNET: {
+    name: "C# / .NET 8",
+    badge: "ASP.NET Core Optimized",
+    description: "Multi-stage publish to Microsoft ASP.NET 8 runtime. Container starts instantly by executing the compiled DLL directly.",
+    presets: [
+      { label: "ASP.NET Core Web API", icon: "🔷", install: "dotnet restore", start: "", port: 8080, hint: "Auto-publishes and runs compiled .dll" },
+      { label: "Minimal API", icon: "⚡", install: "dotnet restore", start: "", port: 8080, hint: "Auto-publishes and binds to 0.0.0.0:8080" },
+    ],
+  },
+  DOCKERFILE: {
+    name: "Custom Dockerfile",
+    badge: "Universal Container Mesh",
+    description: "Whizan will build your Dockerfile directly. Exposes container ports and uses image CMD / ENTRYPOINT.",
+    presets: [
+      { label: "Dockerfile Default", icon: "🐳", install: "", start: "", port: 8000, hint: "Uses Dockerfile's EXPOSE, ENTRYPOINT, and CMD" },
+    ],
+  },
+};
+
 export default function NewServicePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -517,6 +627,61 @@ export default function NewServicePage() {
               <span className="field-hint">
                 Whizan Cloud automatically detects your framework, installs dependencies, and synthesizes a high-performance production container. No Dockerfile required.
               </span>
+
+              {/* Stack Guidance & Interactive Presets Card */}
+              {STACK_GUIDANCE[formData.language] && (
+                <div className="stack-guidance-card">
+                  <div className="stack-guidance-header">
+                    <div>
+                      <span className="stack-guidance-title">
+                        {STACK_GUIDANCE[formData.language].name}
+                      </span>
+                      <span className="stack-guidance-badge">
+                        {STACK_GUIDANCE[formData.language].badge}
+                      </span>
+                    </div>
+                    <span className="stack-guidance-hint">
+                      Click a framework preset to instantly prefill recommended commands
+                    </span>
+                  </div>
+
+                  <p className="stack-guidance-desc">
+                    {STACK_GUIDANCE[formData.language].description}
+                  </p>
+
+                  <div className="stack-presets-list">
+                    {STACK_GUIDANCE[formData.language].presets.map(p => {
+                      const isActive =
+                        formData.installCommand === p.install &&
+                        formData.startCommand === p.start &&
+                        (p.isWorker ? formData.isWorker : formData.internalPort === p.port);
+
+                      return (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className={`preset-chip ${isActive ? "preset-chip-active" : ""}`}
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              installCommand: p.install,
+                              startCommand: p.start,
+                              internalPort: p.isWorker ? 0 : p.port,
+                              isWorker: Boolean(p.isWorker),
+                            }));
+                            toast.success(`Applied ${p.label} configuration!`);
+                          }}
+                          title={p.hint}
+                        >
+                          <span className="preset-icon">{p.icon}</span>
+                          <span className="preset-name">{p.label}</span>
+                          {isActive && <span className="preset-check">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1066,6 +1231,100 @@ export default function NewServicePage() {
           gap: 0.75rem;
           margin-top: 1rem;
           margin-bottom: 3rem;
+        }
+
+        .stack-guidance-card {
+          margin-top: 0.85rem;
+          padding: 0.95rem 1.1rem;
+          border-radius: var(--radius-sm);
+          background: rgba(16, 185, 129, 0.04);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+
+        .stack-guidance-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+        }
+
+        .stack-guidance-title {
+          font-weight: 600;
+          font-size: 0.9rem;
+          color: var(--foreground);
+          margin-right: 0.5rem;
+        }
+
+        .stack-guidance-badge {
+          display: inline-block;
+          font-size: 0.68rem;
+          font-weight: 600;
+          padding: 0.15rem 0.5rem;
+          border-radius: 9999px;
+          background: rgba(16, 185, 129, 0.15);
+          color: #10b981;
+          letter-spacing: 0.02em;
+        }
+
+        .stack-guidance-hint {
+          font-size: 0.72rem;
+          color: var(--muted);
+        }
+
+        .stack-guidance-desc {
+          font-size: 0.76rem;
+          color: var(--muted);
+          line-height: 1.4;
+          margin: 0;
+        }
+
+        .stack-presets-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          margin-top: 0.2rem;
+        }
+
+        .preset-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.35rem 0.7rem;
+          border-radius: 6px;
+          border: 1px solid var(--border);
+          background: var(--card);
+          color: var(--foreground);
+          font-size: 0.76rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.15s ease;
+        }
+
+        .preset-chip:hover {
+          border-color: #10b981;
+          background: rgba(16, 185, 129, 0.06);
+          transform: translateY(-1px);
+        }
+
+        .preset-chip-active {
+          border-color: #10b981 !important;
+          background: rgba(16, 185, 129, 0.12) !important;
+          color: #10b981 !important;
+          font-weight: 600;
+        }
+
+        .preset-icon {
+          font-size: 0.85rem;
+        }
+
+        .preset-check {
+          font-size: 0.72rem;
+          color: #10b981;
+          margin-left: 0.2rem;
         }
       `}</style>
     </div>

@@ -380,23 +380,30 @@ function localHeuristicFallback(input: RepoAnalysisInput): AiAnalysisResult {
   } else if (hasPhp) {
     language = "DOCKERFILE";
     stack = "PHP";
-    framework = files.includes("artisan") ? "Laravel" : "PHP";
+    framework = files.includes("artisan") ? "Laravel" : files.includes("public/index.php") ? "Slim" : "PHP";
+    installCommand = "composer install";
+    startCommand = files.includes("artisan") ? "php artisan serve" : "";
     port = 8000;
   } else if (hasRuby) {
     language = "DOCKERFILE";
     stack = "Ruby";
-    framework = files.includes("bin/rails") ? "Ruby on Rails" : "Ruby";
+    framework = files.includes("bin/rails") ? "Ruby on Rails" : files.includes("config.ru") ? "Rack" : files.includes("app.rb") ? "Sinatra" : "Ruby";
+    installCommand = "bundle install";
+    startCommand = "";
     port = 8000;
   } else if (hasDotnet) {
     language = "DOCKERFILE";
     stack = ".NET";
     framework = "ASP.NET Core";
+    installCommand = "dotnet restore";
+    buildCommand = "dotnet publish -c Release -o /app/out";
+    startCommand = "";
     port = 8080;
   } else if (hasGo) {
     language = "GO";
     stack = "Go";
     installCommand = "go mod download";
-    startCommand = "go run .";
+    startCommand = files.some(f => f.startsWith("cmd/")) ? "go run ./cmd/..." : "go run .";
   } else if (hasPython) {
     language = "PYTHON";
     stack = "Python";

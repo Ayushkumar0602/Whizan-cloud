@@ -230,6 +230,18 @@ export class ServiceRunner {
         await onLog("🐘 PHP project detected. Synthesizing PHP Dockerfile...");
         await this.writePhpDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".rb"))) {
+        await onLog("💎 Ruby project detected. Synthesizing Ruby Dockerfile...");
+        await this.writeRubyDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".rs"))) {
+        await onLog("🦀 Rust project detected. Synthesizing Rust Dockerfile...");
+        await this.writeRustDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
+      } else if (filesInWorkDir.some(f => f.endsWith(".cs"))) {
+        await onLog("🔷 .NET / C# project detected. Synthesizing .NET 8 Dockerfile...");
+        await this.writeDotnetDockerfile(hostWorkDir, job.internalPort);
+        hasDockerfile = true;
       } else {
         await onLog("⚡ Synthesizing universal backend container Dockerfile...");
         await this.writeUniversalDockerfile(hostWorkDir, job.internalPort, job.startCommand);
@@ -350,18 +362,25 @@ export class ServiceRunner {
           const pkg = JSON.parse(pkgRaw);
           const hasBuildScript = Boolean(pkg.scripts?.build);
           
+          const hasPrisma = filesInWorkDir.includes("prisma") || Boolean(pkg.dependencies?.["@prisma/client"]) || Boolean(pkg.devDependencies?.["prisma"]);
+          
           if (filesInWorkDir.includes("pnpm-lock.yaml")) {
             effectiveInstallCommand = "npm install -g pnpm && pnpm install";
+            if (hasPrisma) effectiveInstallCommand += " && npx prisma generate";
             if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
               effectiveInstallCommand += " && pnpm run build";
             }
           } else if (filesInWorkDir.includes("yarn.lock")) {
             effectiveInstallCommand = "yarn install";
+            if (hasPrisma) effectiveInstallCommand += " && npx prisma generate";
             if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
               effectiveInstallCommand += " && yarn build";
             }
           } else {
             if (!effectiveInstallCommand) effectiveInstallCommand = "npm install";
+            if (hasPrisma && !effectiveInstallCommand.includes("prisma generate")) {
+              effectiveInstallCommand += " && npx prisma generate";
+            }
             if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
               effectiveInstallCommand += " && npm run build";
             }
@@ -456,6 +475,12 @@ export class ServiceRunner {
     env.push(`SERVER_ADDRESS=0.0.0.0`);
     env.push(`UVICORN_PORT=${job.internalPort}`);
     env.push(`FLASK_RUN_PORT=${job.internalPort}`);
+    env.push(`ASPNETCORE_URLS=http://0.0.0.0:${job.internalPort}`);
+    env.push(`ASPNETCORE_HTTP_PORTS=${job.internalPort}`);
+    env.push(`DJANGO_ALLOWED_HOSTS=*`);
+    env.push(`PYTHONUNBUFFERED=1`);
+    env.push(`RAILS_SERVE_STATIC_FILES=true`);
+    env.push(`RAILS_LOG_TO_STDOUT=true`);
 
     if (isJavaProject) {
       env.push(`JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0`);
@@ -900,13 +925,20 @@ WORKDIR /app
 RUN apk add --no-cache git ca-certificates gcc musl-dev
 COPY . .
 RUN if [ ! -f go.mod ]; then go mod init app && go mod tidy; else go mod download; fi
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server . || go build -o /app/server .
+RUN if [ -f main.go ]; then \\
+      CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server .; \\
+    elif [ -d cmd ]; then \\
+      MAIN_DIR=$(find cmd -name 'main.go' -exec dirname {} \\; | head -n 1); \\
+      CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server ./\\\${MAIN_DIR:-cmd}; \\
+    else \\
+      CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/server ./... || go build -o /app/server .; \\
+    fi
 
 FROM alpine:3.19
 WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /app/server /app/server
-ENV PORT=${port} HOST=0.0.0.0
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0
 EXPOSE ${port}
 CMD ["/app/server"]
 `;
@@ -1205,13 +1237,21 @@ CMD ["sh", "-c", "JAR=$(find /app -maxdepth 1 -name '*.jar' ! -name '*plain.jar'
     const dockerfile = `
 FROM php:8.2-cli
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends libzip-dev unzip git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    libzip-dev \\
+    libpq-dev \\
+    libpng-dev \\
+    libonig-dev \\
+    unzip \\
+    git && \\
+    docker-php-ext-install pdo pdo_mysql pdo_pgsql mbstring bcmath zip || true && \\
+    rm -rf /var/lib/apt/lists/*
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 COPY . .
 RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader || true; fi
-ENV PORT=${port} HOST=0.0.0.0
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-${port}}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t public public/index.php; elif [ -f index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} index.php; else php -S 0.0.0.0:\${PORT:-${port}}; fi"]
+CMD ["sh", "-c", "if [ -f artisan ]; then if [ -z \\"$APP_KEY\\" ]; then php artisan key:generate --force || true; fi; php artisan serve --host=0.0.0.0 --port=\${PORT:-${port}}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t public public/index.php; elif [ -d web ] && [ -f web/app.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t web web/app.php; elif [ -f index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} index.php; else php -S 0.0.0.0:\${PORT:-${port}}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -1223,12 +1263,12 @@ CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --por
     const dockerfile = `
 FROM ruby:3.2-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git libpq-dev libsqlite3-dev default-libmysqlclient-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN bundle install || true
-ENV PORT=${port} HOST=0.0.0.0
+ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0 SECRET_KEY_BASE_DUMMY=1 RAILS_SERVE_STATIC_FILES=true RAILS_LOG_TO_STDOUT=true
 EXPOSE ${port}
-CMD ["sh", "-c", "if [ -f config.ru ]; then bundle exec rackup --host 0.0.0.0 -p \${PORT:-${port}}; elif [ -f app.rb ]; then ruby app.rb -o 0.0.0.0 -p \${PORT:-${port}}; elif [ -f bin/rails ]; then bundle exec rails server -b 0.0.0.0 -p \${PORT:-${port}}; else bundle exec puma -b tcp://0.0.0.0:\${PORT:-${port}}; fi"]
+CMD ["sh", "-c", "if [ -f config.ru ]; then bundle exec rackup --host 0.0.0.0 -p \${PORT:-${port}}; elif [ -f app.rb ]; then ruby app.rb -o 0.0.0.0 -p \${PORT:-${port}}; elif [ -f bin/rails ]; then if [ -z \\"$SECRET_KEY_BASE\\" ]; then export SECRET_KEY_BASE=$(cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1); fi; bundle exec rails server -b 0.0.0.0 -p \${PORT:-${port}}; else bundle exec puma -b tcp://0.0.0.0:\${PORT:-${port}}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
