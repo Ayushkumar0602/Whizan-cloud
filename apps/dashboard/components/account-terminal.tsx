@@ -6,21 +6,11 @@ import { accountTerminal } from "@/lib/api";
 import {
   Terminal as TerminalIcon,
   X,
-  Minus,
   Maximize2,
   Minimize2,
   Trash2,
-  Sparkles,
-  RefreshCw,
-  Layers,
-  Globe,
-  Activity,
-  ShieldCheck,
-  HelpCircle,
   Copy,
   Check,
-  ChevronRight,
-  Zap,
 } from "lucide-react";
 
 interface AccountTerminalProps {
@@ -35,21 +25,7 @@ interface CommandEntry {
   timestamp: string;
 }
 
-const WELCOME_BANNER = `\x1b[1;36m╭────────────────────────────────────────────────────────────────────────╮\x1b[0m
-\x1b[1;36m│\x1b[0m  \x1b[1;37mWHIZAN CLOUD INTELLIGENT TERMINAL\x1b[0m \x1b[35mv2.4\x1b[0m  \x1b[90m(Scoped Account Shell)\x1b[0m        \x1b[1;36m│\x1b[0m
-\x1b[1;36m│\x1b[0m  \x1b[32m● Status: Connected\x1b[0m  \x1b[90m│  Tenant Isolation: STRICT  │  SSL: Cloudflare Edge\x1b[0m  \x1b[1;36m│\x1b[0m
-\x1b[1;36m╰────────────────────────────────────────────────────────────────────────╯\x1b[0m
-\x1b[90mAll platform operations and diagnostics are strictly scoped to your account.\x1b[0m
-Type \x1b[1;33m'help'\x1b[0m for commands manual, or click any quick action below:`;
-
-const QUICK_COMMANDS = [
-  { label: "services", desc: "List microservices", Icon: Layers },
-  { label: "projects", desc: "List web projects", Icon: Globe },
-  { label: "stats", desc: "Compute metrics & vCPU", Icon: Activity },
-  { label: "whoami", desc: "Session identity & tier", Icon: ShieldCheck },
-  { label: "help", desc: "Full command manual", Icon: HelpCircle },
-  { label: "clear", desc: "Clear terminal screen", Icon: Trash2 },
-];
+const WELCOME_BANNER = `Whizan Cloud Shell v2.4 (account scope)\r\nType 'help' for available commands.\r\n`;
 
 export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
   const { user } = useAuth();
@@ -198,12 +174,9 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
       className={`whz-term-drawer ${minimized ? "whz-term-minimized" : ""} ${maximized ? "whz-term-maximized" : ""}`}
       onClick={() => inputRef.current?.focus()}
     >
-      {/* Top Handle / Grab Bar */}
-      <div className="whz-term-handle-bar" />
-
       {/* Terminal Title Bar */}
       <div className="whz-term-header" onClick={e => e.stopPropagation()}>
-        {/* Left: Window Dots & Title */}
+        {/* Left: Window Controls & Title */}
         <div className="whz-term-header-left">
           <div className="whz-term-traffic-lights">
             <button
@@ -231,16 +204,15 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
 
           <div className="whz-term-title-group">
             <TerminalIcon size={14} className="whz-term-icon" />
-            <span className="whz-term-title">Whizan Cloud Shell</span>
-            <span className="whz-term-badge">Account Scope</span>
+            <span className="whz-term-title">Cloud Shell</span>
+            <span className="whz-term-badge">account</span>
           </div>
         </div>
 
-        {/* Center: Session Pill */}
+        {/* Center: Session Details */}
         <div className="whz-term-session-badge">
           <span className="whz-term-pulse-dot" />
           <span className="whz-term-user-text">{userHandle}@whizan.cloud</span>
-          <span className="whz-term-latency-tag">Active</span>
         </div>
 
         {/* Right: Actions */}
@@ -267,7 +239,7 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
               setMinimized(false);
               setMaximized(!maximized);
             }}
-            title={maximized ? "Restore Height" : "Maximize Window"}
+            title={maximized ? "Restore Height" : "Maximize"}
           >
             {maximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
           </button>
@@ -281,113 +253,79 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         </div>
       </div>
 
-      {/* When Minimized: only the topbar is visible */}
+      {/* Terminal Screen / Output Body */}
       {!minimized && (
-        <>
-          {/* Quick Command Palette Chips */}
-          <div className="whz-term-quick-strip" onClick={e => e.stopPropagation()}>
-            <span className="whz-term-quick-title">
-              <Sparkles size={11} className="whz-term-spark-icon" />
-              <span>QUICK ACTIONS</span>
-            </span>
-            <div className="whz-term-chips-list">
-              {QUICK_COMMANDS.map(q => {
-                const IconComponent = q.Icon;
-                return (
-                  <button
-                    key={q.label}
-                    type="button"
-                    className="whz-term-chip"
-                    onClick={() => executeCommand(q.label)}
-                    title={q.desc}
-                  >
-                    <IconComponent size={11} className="whz-term-chip-icon" />
-                    <span className="whz-term-chip-text">{q.label}</span>
-                  </button>
-                );
-              })}
+        <div className="whz-term-screen" ref={scrollContainerRef}>
+          {/* Welcome Banner */}
+          <div className="whz-term-banner">
+            <span dangerouslySetInnerHTML={{ __html: ansiToHtml(WELCOME_BANNER) }} />
+          </div>
+
+          {/* History Entries */}
+          {history.map((entry, idx) => (
+            <div key={idx} className="whz-term-entry">
+              <div className="whz-term-entry-header">
+                <div className="whz-term-prompt-line">
+                  <span className="whz-term-user">{userHandle}@whizan</span>
+                  <span className="whz-term-path">:~$</span>
+                  <span className="whz-term-cmd">{entry.command}</span>
+                </div>
+                <span className="whz-term-time">{entry.timestamp}</span>
+              </div>
+              <div className="whz-term-entry-body">
+                <span dangerouslySetInnerHTML={{ __html: ansiToHtml(entry.output) }} />
+              </div>
+            </div>
+          ))}
+
+          {/* Active Live Input Line */}
+          <div className="whz-term-input-row">
+            <div className="whz-term-input-prompt">
+              <span className="whz-term-user">{userHandle}@whizan</span>
+              <span className="whz-term-path">:~$</span>
+            </div>
+
+            <div className="whz-term-input-wrapper">
+              <input
+                ref={inputRef}
+                type="text"
+                className="whz-term-cli-input"
+                value={inputVal}
+                onChange={e => setInputVal(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={loading}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+                placeholder={loading ? "Executing..." : "Type command..."}
+              />
+              {loading && <span className="whz-term-loading-spinner" />}
             </div>
           </div>
 
-          {/* Terminal Screen / Output Body */}
-          <div className="whz-term-screen" ref={scrollContainerRef}>
-            {/* Initial Welcome Banner */}
-            <div className="whz-term-banner">
-              <span dangerouslySetInnerHTML={{ __html: ansiToHtml(WELCOME_BANNER) }} />
-            </div>
-
-            {/* History Output */}
-            {history.map((entry, idx) => (
-              <div key={idx} className="whz-term-entry">
-                <div className="whz-term-entry-header">
-                  <div className="whz-term-prompt-line">
-                    <span className="whz-term-chevron">❯</span>
-                    <span className="whz-term-user">{userHandle}@whizan</span>
-                    <span className="whz-term-path">:~$</span>
-                    <span className="whz-term-cmd">{entry.command}</span>
-                  </div>
-                  <span className="whz-term-time">{entry.timestamp}</span>
-                </div>
-                <div className="whz-term-entry-body">
-                  <span dangerouslySetInnerHTML={{ __html: ansiToHtml(entry.output) }} />
-                </div>
-              </div>
-            ))}
-
-            {/* Active Live Input Line */}
-            <div className="whz-term-input-row">
-              <div className="whz-term-input-prompt">
-                <span className="whz-term-chevron">❯</span>
-                <span className="whz-term-user">{userHandle}@whizan</span>
-                <span className="whz-term-path">:~$</span>
-              </div>
-
-              <div className="whz-term-input-wrapper">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  className="whz-term-cli-input"
-                  value={inputVal}
-                  onChange={e => setInputVal(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={loading}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck="false"
-                  placeholder={loading ? "Executing cloud command across account..." : "Type 'help' or command..."}
-                />
-                {loading && <span className="whz-term-loading-spinner" />}
-              </div>
-            </div>
-
-            <div ref={terminalEndRef} style={{ height: "20px" }} />
-          </div>
-        </>
+          <div ref={terminalEndRef} style={{ height: "16px" }} />
+        </div>
       )}
 
       <style>{`
+        /* Desktop: sits in the right container, never covering the sidebar */
         .whz-term-drawer {
           position: fixed;
           bottom: 0;
-          left: 0;
           right: 0;
-          height: 480px;
-          background: rgba(10, 14, 23, 0.96);
-          backdrop-filter: blur(28px);
-          -webkit-backdrop-filter: blur(28px);
-          border-top: 1px solid rgba(255, 255, 255, 0.14);
-          border-left: 1px solid rgba(255, 255, 255, 0.08);
-          border-right: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 16px 16px 0 0;
-          box-shadow: 0 -20px 60px -10px rgba(0, 0, 0, 0.85), 0 -1px 0 0 rgba(99, 102, 241, 0.35);
+          left: 254px;
+          height: 360px;
+          background: #090d16;
+          border-top: 1px solid #1e293b;
+          box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
           display: flex;
           flex-direction: column;
-          z-index: 9999;
+          z-index: 45;
           font-family: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
           color: #e2e8f0;
-          transition: height 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
-          animation: slideUpTerminal 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+          transition: left 0.2s cubic-bezier(0.16, 1, 0.3, 1), height 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+          animation: slideUpTerminal 0.2s cubic-bezier(0.16, 1, 0.3, 1);
           overflow: hidden;
         }
 
@@ -400,35 +338,29 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           }
         }
 
+        /* When sidebar is collapsed */
+        .dash-shell-collapsed .whz-term-drawer {
+          left: 62px;
+        }
+
         .whz-term-minimized {
-          height: 46px !important;
-          border-radius: 12px 12px 0 0;
+          height: 38px !important;
         }
 
         .whz-term-maximized {
-          height: 88vh !important;
-        }
-
-        /* Top Center Drag Pill Indicator */
-        .whz-term-handle-bar {
-          width: 36px;
-          height: 3px;
-          background: rgba(255, 255, 255, 0.2);
-          border-radius: 2px;
-          margin: 6px auto 2px;
-          flex-shrink: 0;
+          height: calc(100vh - 40px) !important;
         }
 
         /* Terminal Header Bar */
         .whz-term-header {
-          height: 40px;
-          min-height: 40px;
-          background: rgba(15, 23, 42, 0.7);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          height: 38px;
+          min-height: 38px;
+          background: #0d131f;
+          border-bottom: 1px solid #1e293b;
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 0 1rem;
+          padding: 0 0.85rem;
           user-select: none;
         }
 
@@ -445,59 +377,55 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         }
 
         .whz-term-dot {
-          width: 12px;
-          height: 12px;
+          width: 11px;
+          height: 11px;
           border-radius: 50%;
           border: none;
           cursor: pointer;
-          transition: transform 0.12s ease, opacity 0.15s ease;
+          transition: transform 0.12s ease;
           padding: 0;
         }
         .whz-term-dot:hover {
-          transform: scale(1.1);
+          transform: scale(1.12);
         }
 
         .dot-close {
-          background: #ff5f56;
-          border: 1px solid rgba(224, 68, 62, 0.6);
+          background: #ef4444;
         }
         .dot-minimize {
-          background: #ffbd2e;
-          border: 1px solid rgba(222, 161, 35, 0.6);
+          background: #f59e0b;
         }
         .dot-maximize {
-          background: #27c93f;
-          border: 1px solid rgba(26, 171, 41, 0.6);
+          background: #10b981;
         }
 
         .whz-term-title-group {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          margin-left: 0.35rem;
+          gap: 0.45rem;
+          margin-left: 0.25rem;
         }
 
         .whz-term-icon {
           color: #38bdf8;
-          filter: drop-shadow(0 0 6px rgba(56, 189, 248, 0.4));
         }
 
         .whz-term-title {
-          font-weight: 650;
-          font-size: 0.82rem;
-          color: #f8fafc;
+          font-weight: 600;
+          font-size: 0.8rem;
+          color: #f1f5f9;
           letter-spacing: -0.01em;
         }
 
         .whz-term-badge {
-          font-size: 0.64rem;
-          font-weight: 650;
-          background: rgba(6, 182, 212, 0.12);
-          color: #22d3ee;
-          padding: 0.15rem 0.5rem;
-          border-radius: 9999px;
-          border: 1px solid rgba(6, 182, 212, 0.3);
-          letter-spacing: 0.04em;
+          font-size: 0.62rem;
+          font-weight: 600;
+          background: rgba(56, 189, 248, 0.12);
+          color: #38bdf8;
+          padding: 0.1rem 0.4rem;
+          border-radius: 4px;
+          border: 1px solid rgba(56, 189, 248, 0.25);
+          letter-spacing: 0.03em;
           text-transform: uppercase;
         }
 
@@ -505,9 +433,9 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         .whz-term-session-badge {
           display: flex;
           align-items: center;
-          gap: 0.45rem;
+          gap: 0.4rem;
           background: rgba(255, 255, 255, 0.04);
-          padding: 0.25rem 0.75rem;
+          padding: 0.2rem 0.65rem;
           border-radius: 9999px;
           border: 1px solid rgba(255, 255, 255, 0.08);
           font-size: 0.72rem;
@@ -515,129 +443,50 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         }
 
         .whz-term-pulse-dot {
-          width: 7px;
-          height: 7px;
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
           background: #10b981;
-          box-shadow: 0 0 8px #10b981;
-          animation: termLivePulse 2s infinite ease-in-out;
-        }
-        @keyframes termLivePulse {
-          0%, 100% { opacity: 0.8; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.15); }
         }
 
         .whz-term-user-text {
-          font-weight: 600;
-          color: #e2e8f0;
-        }
-
-        .whz-term-latency-tag {
-          font-size: 0.65rem;
-          color: #10b981;
-          font-weight: 600;
-          padding-left: 0.3rem;
-          border-left: 1px solid rgba(255, 255, 255, 0.1);
+          font-weight: 500;
+          color: #cbd5e1;
         }
 
         /* Right Actions */
         .whz-term-header-right {
           display: flex;
           align-items: center;
-          gap: 0.4rem;
+          gap: 0.35rem;
         }
 
         .whz-term-btn {
-          background: rgba(255, 255, 255, 0.04);
+          background: transparent;
           border: 1px solid rgba(255, 255, 255, 0.08);
           color: #94a3b8;
-          height: 27px;
-          padding: 0 0.55rem;
-          border-radius: 6px;
+          height: 25px;
+          padding: 0 0.5rem;
+          border-radius: 5px;
           display: inline-flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.3rem;
           cursor: pointer;
           font-size: 0.72rem;
           font-family: inherit;
-          transition: all 0.15s ease;
+          transition: all 0.12s ease;
         }
 
         .whz-term-btn:hover {
           color: #f8fafc;
-          background: rgba(255, 255, 255, 0.1);
-          border-color: rgba(255, 255, 255, 0.2);
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.16);
         }
 
         .whz-term-btn-close:hover {
-          color: #ff5f56;
-          background: rgba(255, 95, 86, 0.15);
-          border-color: rgba(255, 95, 86, 0.3);
-        }
-
-        /* Quick Action Strip */
-        .whz-term-quick-strip {
-          background: rgba(2, 6, 23, 0.6);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-          padding: 0.4rem 1.25rem;
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          overflow-x: auto;
-          flex-shrink: 0;
-        }
-
-        .whz-term-quick-title {
-          display: flex;
-          align-items: center;
-          gap: 0.3rem;
-          font-size: 0.68rem;
-          font-weight: 700;
-          color: #64748b;
-          letter-spacing: 0.05em;
-          white-space: nowrap;
-        }
-
-        .whz-term-spark-icon {
-          color: #38bdf8;
-        }
-
-        .whz-term-chips-list {
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          flex-wrap: nowrap;
-        }
-
-        .whz-term-chip {
-          background: rgba(255, 255, 255, 0.04);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          color: #38bdf8;
-          padding: 0.2rem 0.6rem;
-          border-radius: 5px;
-          cursor: pointer;
-          font-size: 0.72rem;
-          font-family: inherit;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          white-space: nowrap;
-          transition: all 0.15s ease;
-        }
-
-        .whz-term-chip:hover {
-          background: rgba(56, 189, 248, 0.12);
-          border-color: rgba(56, 189, 248, 0.4);
-          color: #e0f2fe;
-          transform: translateY(-1px);
-        }
-
-        .whz-term-chip-icon {
-          color: #94a3b8;
-          transition: color 0.15s ease;
-        }
-        .whz-term-chip:hover .whz-term-chip-icon {
-          color: #38bdf8;
+          color: #ef4444;
+          background: rgba(239, 68, 68, 0.12);
+          border-color: rgba(239, 68, 68, 0.3);
         }
 
         /* Terminal Screen Viewport */
@@ -645,41 +494,38 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           flex: 1;
           overflow-y: auto;
           overflow-x: auto;
-          padding: 1rem 1.25rem;
-          background: #080c14;
+          padding: 0.85rem 1.15rem;
+          background: #090d16;
           font-size: 0.8125rem;
-          line-height: 1.6;
+          line-height: 1.55;
           color: #cbd5e1;
         }
 
         .whz-term-banner {
-          margin-bottom: 1.25rem;
+          margin-bottom: 0.85rem;
+          color: #94a3b8;
+          font-size: 0.8rem;
           white-space: pre-wrap;
           word-break: break-word;
         }
 
         /* History Entry */
         .whz-term-entry {
-          margin-bottom: 1.25rem;
+          margin-bottom: 0.85rem;
         }
 
         .whz-term-entry-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          margin-bottom: 0.35rem;
+          margin-bottom: 0.25rem;
         }
 
         .whz-term-prompt-line {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.2rem;
           font-weight: 500;
-        }
-
-        .whz-term-chevron {
-          color: #38bdf8;
-          font-weight: 700;
         }
 
         .whz-term-user {
@@ -693,20 +539,18 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
 
         .whz-term-cmd {
           color: #f8fafc;
-          font-weight: 650;
-          margin-left: 0.25rem;
+          font-weight: 600;
+          margin-left: 0.35rem;
         }
 
         .whz-term-time {
-          font-size: 0.7rem;
+          font-size: 0.68rem;
           color: #475569;
           font-family: inherit;
         }
 
         .whz-term-entry-body {
-          margin-left: 0.35rem;
-          padding-left: 0.85rem;
-          border-left: 2px solid rgba(255, 255, 255, 0.08);
+          padding-left: 0.25rem;
           white-space: pre-wrap;
           word-break: break-word;
         }
@@ -715,14 +559,14 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         .whz-term-input-row {
           display: flex;
           align-items: center;
-          gap: 0.45rem;
-          margin-top: 0.5rem;
+          gap: 0.35rem;
+          margin-top: 0.35rem;
         }
 
         .whz-term-input-prompt {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.2rem;
           flex-shrink: 0;
           font-weight: 500;
         }
@@ -751,8 +595,8 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
         }
 
         .whz-term-loading-spinner {
-          width: 14px;
-          height: 14px;
+          width: 13px;
+          height: 13px;
           border: 2px solid rgba(56, 189, 248, 0.2);
           border-top-color: #38bdf8;
           border-radius: 50%;
@@ -781,12 +625,29 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           background: #475569;
         }
 
-        @media (max-width: 768px) {
+        /* Media Queries for responsive positioning */
+        @media (max-width: 1023px) {
+          .whz-term-drawer {
+            left: 0;
+            right: 0;
+            height: 50vh;
+          }
+          .dash-shell-collapsed .whz-term-drawer {
+            left: 0;
+          }
           .whz-term-session-badge {
             display: none;
           }
           .whz-term-btn-text {
             display: none;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .whz-term-drawer {
+            left: 0;
+            right: 0;
+            height: 55vh;
           }
         }
       `}</style>

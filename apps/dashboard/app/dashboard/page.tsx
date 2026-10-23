@@ -235,10 +235,16 @@ export default function ConsolePage() {
             <RefreshCw size={14} className={refreshing ? "animate-spin text-indigo-600" : ""} />
             <span>{refreshing ? "Refreshing..." : "Refresh"}</span>
           </button>
-          <Link href="/docs" className="btn btn-secondary btn-header">
-            <BookOpen size={15} />
-            <span>Docs</span>
-          </Link>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent("whizan:toggle-terminal"))}
+            className="btn btn-secondary btn-header"
+            id="topbar-shell-btn"
+            title="Open Cloud Account Shell (⌥T)"
+          >
+            <Terminal size={15} />
+            <span>Shell</span>
+          </button>
           <Link href="/dashboard/projects/new" className="btn btn-secondary btn-header">
             <Globe size={15} />
             <span>Deploy Frontend</span>

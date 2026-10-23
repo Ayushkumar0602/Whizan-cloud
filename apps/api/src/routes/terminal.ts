@@ -44,8 +44,8 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
     // ──────────────────────────────────────────────────────────────────────────
     if (cmd === "help" || cmd === "?") {
       const output = [
-        "\r\n\x1b[1;36mWhizan Cloud Account Terminal — Scoped Shell v2.4\x1b[0m",
-        "\x1b[90mConnected as: " + email + " (Scope: Account Tenant ID: " + userId.slice(0, 8) + "...)\x1b[0m",
+        "\r\n\x1b[1;36mWhizan Cloud Shell v2.4 (account scope)\x1b[0m",
+        "\x1b[90mConnected as: " + email + " (Tenant: " + userId.slice(0, 8) + "...)\x1b[0m",
         "",
         "\x1b[1;33mACCOUNT & SYSTEM OVERVIEW:\x1b[0m",
         "  \x1b[32mwhoami\x1b[0m                     Display authenticated user identity, role & tier",
@@ -79,7 +79,7 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
     // ──────────────────────────────────────────────────────────────────────────
     if (cmd === "whoami") {
       const output = [
-        "\r\n\x1b[1;32m✓ Authenticated Session Info:\x1b[0m",
+        "\r\n\x1b[1mAccount Session Info:\x1b[0m",
         `  \x1b[1mEmail:\x1b[0m           ${email}`,
         `  \x1b[1mUser ID:\x1b[0m         ${userId}`,
         `  \x1b[1mRole:\x1b[0m            ${role || "USER"}`,
@@ -116,7 +116,7 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
       });
 
       const output = [
-        "\r\n\x1b[1;36m📊 Account Compute & Resource Usage Summary:\x1b[0m",
+        "\r\n\x1b[1mAccount Resource Usage Summary:\x1b[0m",
         "  ────────────────────────────────────────────────────────────",
         `  \x1b[1mBackend Services:\x1b[0m       ${serviceCount}`,
         `  \x1b[1mFrontend Projects:\x1b[0m      ${projectCount}`,

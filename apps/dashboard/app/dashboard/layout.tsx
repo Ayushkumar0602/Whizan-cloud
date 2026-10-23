@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
 
-  // Global keyboard shortcut to toggle Cloud Terminal (Alt+T or Ctrl+` or Cmd+`)
+  // Global keyboard shortcut and event listeners to toggle Cloud Terminal
   useEffect(() => {
     function handleShortcut(e: KeyboardEvent) {
       if ((e.altKey && (e.key === "t" || e.key === "T")) || ((e.ctrlKey || e.metaKey) && e.key === "`")) {
@@ -36,8 +36,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setTerminalOpen(prev => !prev);
       }
     }
+    const handleToggle = () => setTerminalOpen(prev => !prev);
+    const handleOpen = () => setTerminalOpen(true);
+    const handleClose = () => setTerminalOpen(false);
+
     window.addEventListener("keydown", handleShortcut);
-    return () => window.removeEventListener("keydown", handleShortcut);
+    window.addEventListener("whizan:toggle-terminal", handleToggle);
+    window.addEventListener("whizan:open-terminal", handleOpen);
+    window.addEventListener("whizan:close-terminal", handleClose);
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+      window.removeEventListener("whizan:toggle-terminal", handleToggle);
+      window.removeEventListener("whizan:open-terminal", handleOpen);
+      window.removeEventListener("whizan:close-terminal", handleClose);
+    };
   }, []);
 
   // Restore sidebar preference from localStorage
@@ -100,7 +112,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     label: string;
     match: (p: string) => boolean;
     badge?: string;
-    onClick?: (e: React.MouseEvent) => void;
   }
 
   interface NavSection {
@@ -128,17 +139,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     {
       heading: "Developer Tools",
       items: [
-        {
-          href: "#terminal",
-          icon: Terminal,
-          label: "Cloud Terminal",
-          match: () => terminalOpen,
-          badge: "Shell",
-          onClick: (e) => {
-            e.preventDefault();
-            setTerminalOpen(true);
-          }
-        },
         { href: "/docs", icon: BookOpen, label: "Documentation", match: (p: string) => p.startsWith("/docs") },
         { href: "/dashboard/cli", icon: Terminal, label: "CLI & SDK", match: (p: string) => p.startsWith("/dashboard/cli") },
         { href: "/dashboard/flows", icon: WorkflowIcon, label: "Whizan Flow", match: (p: string) => p.startsWith("/dashboard/flows") },
@@ -214,42 +214,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {section.items.map(item => {
                 const Icon = item.icon;
                 const active = item.match(pathname);
-                if (item.onClick) {
-                  return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={item.onClick}
-                      className={`nav-link ${active ? "nav-link-active" : ""}`}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        width: "100%",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        font: "inherit",
-                        display: "flex",
-                        alignItems: "center"
-                      }}
-                    >
-                      <Icon size={17} className="nav-icon" />
-                      <span className="nav-label">{item.label}</span>
-                      {item.badge && (
-                        <span
-                          className="nav-badge"
-                          style={{
-                            background: "rgba(16, 185, 129, 0.12)",
-                            color: "#059669",
-                            fontWeight: 600,
-                            fontSize: "0.68rem"
-                          }}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </button>
-                  );
-                }
                 return (
                   <Link
                     key={item.href}
@@ -314,20 +278,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {navSections.flatMap(s => s.items).map(item => {
           const Icon = item.icon;
           const active = item.match(pathname);
-          if (item.onClick) {
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={item.onClick}
-                className={`rail-link ${active ? "rail-link-active" : ""}`}
-                title={item.label}
-                style={{ background: "none", border: "none", cursor: "pointer" }}
-              >
-                <Icon size={18} />
-              </button>
-            );
-          }
           return (
             <Link
               key={item.href}
@@ -368,6 +318,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <BrandMark href="/dashboard" compact />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <button
+            type="button"
+            onClick={() => setTerminalOpen(prev => !prev)}
+            className="icon-btn-rounded"
+            title="Cloud Shell (⌥T)"
+            aria-label="Cloud Shell"
+          >
+            <Terminal size={17} />
+          </button>
           <Link href="/dashboard/settings" className="user-avatar-sm" title={user.email}>
             {initials}
           </Link>
@@ -397,89 +356,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <AccountTerminal isOpen={terminalOpen} onClose={() => setTerminalOpen(false)} />
       </main>
 
-      {/* Floating Account Terminal Trigger (Bottom Dock Pill) */}
-      {!terminalOpen && (
-        <button
-          type="button"
-          onClick={() => setTerminalOpen(true)}
-          className="floating-terminal-btn"
-          aria-label="Open Whizan Cloud Shell"
-          title="Open Cloud Account Terminal (⌥T or Ctrl+`)"
-        >
-          <div className="terminal-btn-led" />
-          <Terminal size={14} className="terminal-btn-icon" />
-          <span className="terminal-btn-label">Terminal</span>
-          <kbd className="terminal-btn-kbd">⌥T</kbd>
-        </button>
-      )}
-
       <style>{`
-        /* Floating Account Terminal Launcher Pill */
-        .floating-terminal-btn {
-          position: fixed;
-          bottom: 22px;
-          right: 175px;
-          z-index: 9980;
-          display: flex;
-          align-items: center;
-          gap: 7px;
-          padding: 8px 14px 8px 12px;
-          border-radius: 9999px;
-          background: #0f172a;
-          color: #f8fafc;
-          font-weight: 600;
-          font-size: 0.8rem;
-          border: 1px solid rgba(255, 255, 255, 0.14);
-          box-shadow: 0 10px 25px -3px rgba(15, 23, 42, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-          font-family: inherit;
-        }
-        .floating-terminal-btn:hover {
-          transform: translateY(-2px);
-          background: #1e293b;
-          border-color: rgba(99, 102, 241, 0.6);
-          box-shadow: 0 14px 30px -3px rgba(99, 102, 241, 0.35);
-        }
-        .terminal-btn-led {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #10b981;
-          box-shadow: 0 0 8px #10b981;
-          animation: terminalLedPulse 2s infinite ease-in-out;
-        }
-        @keyframes terminalLedPulse {
-          0%, 100% { opacity: 0.8; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.2); }
-        }
-        .terminal-btn-icon {
-          color: #38bdf8;
-        }
-        .terminal-btn-label {
-          letter-spacing: -0.01em;
-        }
-        .terminal-btn-kbd {
-          background: rgba(255, 255, 255, 0.12);
-          border: 1px solid rgba(255, 255, 255, 0.16);
-          border-radius: 4px;
-          padding: 1px 5px;
-          font-size: 0.68rem;
-          font-family: ui-monospace, monospace;
-          color: #94a3b8;
-          font-weight: 500;
-        }
-        @media (max-width: 768px) {
-          .floating-terminal-btn {
-            right: 155px;
-            bottom: 18px;
-            padding: 7px 10px;
-          }
-          .terminal-btn-kbd {
-            display: none;
-          }
-        }
-
         .dash-shell {
           display: flex;
           min-height: 100vh;
