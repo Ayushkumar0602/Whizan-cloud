@@ -521,6 +521,22 @@ export const admin = {
     }),
 };
 
+// ─── Account-Scoped Cloud Terminal ──────────────────────────────────────────
+
+export const accountTerminal = {
+  exec: (command: string) =>
+    request<{
+      success: boolean;
+      output: string;
+      exitCode: number;
+      clear?: boolean;
+      exit?: boolean;
+    }>("/api/terminal/exec", {
+      method: "POST",
+      body: JSON.stringify({ command }),
+    }),
+};
+
 // ─── Backend Services ────────────────────────────────────────────────────────
 
 export type BackendService = {
