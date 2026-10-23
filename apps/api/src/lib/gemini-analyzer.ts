@@ -358,9 +358,25 @@ function localHeuristicFallback(input: RepoAnalysisInput): AiAnalysisResult {
   } else if (hasJava) {
     language = "DOCKERFILE";
     stack = "Java";
-    buildCommand = "mvn package";
+    buildCommand = files.some(f => f === "pom.xml") ? "mvn clean package -DskipTests" : "gradle build -x test";
     startCommand = "java -jar target/app.jar";
     port = 8080;
+    if (input.manifestFiles) {
+      for (const [mName, mContent] of Object.entries(input.manifestFiles)) {
+        if (mName.includes("application.properties") || mName.includes("application.yml") || mName.includes("application.yaml")) {
+          const pMatch = mContent.match(/server\.port\s*[:=]\s*(\d{2,5})/i);
+          if (pMatch) {
+            port = parseInt(pMatch[1], 10);
+            break;
+          }
+          const yMatch = mContent.match(/server:\s*\n(?:\s+.*\n)*?\s+port:\s*(\d{2,5})/i);
+          if (yMatch) {
+            port = parseInt(yMatch[1], 10);
+            break;
+          }
+        }
+      }
+    }
   } else if (hasPhp) {
     language = "DOCKERFILE";
     stack = "PHP";

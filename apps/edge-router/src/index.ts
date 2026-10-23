@@ -142,6 +142,7 @@ setInterval(flushAnalytics, 30_000);
 
 const proxy = httpProxy.createProxyServer({
   changeOrigin: true,
+  xfwd: true, // Enable standard X-Forwarded-For, X-Forwarded-Port, X-Forwarded-Proto headers
   proxyTimeout: 30_000,
   timeout: 30_000,
   ws: true, // Enable WebSockets support
@@ -237,7 +238,8 @@ function getStaticServer(staticDir: string) {
 // ─── Main HTTP Server ─────────────────────────────────────────────────────────
 
 const server = http.createServer(async (req, res) => {
-  (req as any).__startTime = Date.now();
+  try {
+    (req as any).__startTime = Date.now();
 
   // ── Baseline Edge Security Headers ──────────────────────────────────────────
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
@@ -571,6 +573,9 @@ const server = http.createServer(async (req, res) => {
 
     // Dynamic request → forward to SSR container
     if (containerPort) {
+      req.headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] || "https";
+      req.headers["x-forwarded-host"] = req.headers["x-forwarded-host"] || req.headers.host || "";
+      req.headers["x-forwarded-port"] = req.headers["x-forwarded-port"] || "443";
       proxy.web(req, res, { target: `http://127.0.0.1:${containerPort}` });
       return;
     } else {
@@ -583,6 +588,9 @@ const server = http.createServer(async (req, res) => {
   // ── SSR & SERVICE: All traffic → container ───────────────────────────────
   if (type === "ssr" || type === "service") {
     if (containerPort) {
+      req.headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] || "https";
+      req.headers["x-forwarded-host"] = req.headers["x-forwarded-host"] || req.headers.host || "";
+      req.headers["x-forwarded-port"] = req.headers["x-forwarded-port"] || "443";
       proxy.web(req, res, { target: `http://127.0.0.1:${containerPort}` });
       // The proxy handles the response, so we track analytics in proxy.on('proxyRes')
       return;
@@ -595,6 +603,17 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(503);
   res.end("Service Unavailable");
+  } catch (err: any) {
+    console.error(`[Router] Uncaught exception processing request ${req.method} ${req.url}:`, err);
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: "BAD_GATEWAY",
+        message: "Whizan Edge Router encountered an error processing your request.",
+        details: err?.message || String(err)
+      }));
+    }
+  }
 });
 
 // ─── Edge Function Handler ───────────────────────────────────────────────────

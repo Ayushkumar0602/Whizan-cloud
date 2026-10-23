@@ -212,7 +212,61 @@ export async function analyzeWorkspace(workspaceDir: string): Promise<AnalysisRe
   if (filesInRoot.includes("pom.xml") || filesInRoot.includes("build.gradle") || filesInRoot.includes("build.gradle.kts")) {
     report.detectedRuntimes.push("Java");
     if (report.projectType === "unknown") report.projectType = "backend";
-    report.framework = filesInRoot.includes("pom.xml") ? "Java (Maven)" : "Java (Gradle)";
+    let javaVer = "17";
+    const isMaven = filesInRoot.includes("pom.xml");
+    try {
+      if (isMaven) {
+        const pom = await fs.readFile(path.join(root, "pom.xml"), "utf8");
+        const jvMatch = pom.match(/<java\.version>\s*([0-9.]+)\s*<\/java\.version>/i) ||
+          pom.match(/<maven\.compiler\.release>\s*([0-9.]+)\s*<\/maven\.compiler\.release>/i) ||
+          pom.match(/<maven\.compiler\.target>\s*([0-9.]+)\s*<\/maven\.compiler\.target>/i) ||
+          pom.match(/<release>\s*([0-9.]+)\s*<\/release>/i);
+        if (jvMatch) javaVer = jvMatch[1];
+        if (pom.includes("spring-boot-starter-actuator")) {
+          report.hasHealthEndpoint = true;
+        }
+      } else {
+        const gFile = filesInRoot.includes("build.gradle") ? "build.gradle" : "build.gradle.kts";
+        const gradleContent = await fs.readFile(path.join(root, gFile), "utf8");
+        const jvMatch = gradleContent.match(/JavaLanguageVersion\.of\(\s*([0-9]+)\s*\)/i) ||
+          gradleContent.match(/jvmToolchain\(\s*([0-9]+)\s*\)/i) ||
+          gradleContent.match(/sourceCompatibility\s*=\s*['"]?([0-9.]+)['"]?/i);
+        if (jvMatch) javaVer = jvMatch[1];
+        if (gradleContent.includes("spring-boot-starter-actuator")) {
+          report.hasHealthEndpoint = true;
+        }
+      }
+    } catch {}
+
+    report.framework = isMaven ? `Java ${javaVer} (Maven)` : `Java ${javaVer} (Gradle)`;
+
+    // Check Spring Boot configuration files for custom server.port
+    const springConfigFiles = [
+      "src/main/resources/application.properties",
+      "src/main/resources/application.yml",
+      "src/main/resources/application.yaml",
+      "application.properties",
+      "application.yml",
+      "application.yaml",
+    ];
+    let detectedSpringPort: number | null = null;
+    for (const scf of springConfigFiles) {
+      try {
+        const scContent = await fs.readFile(path.join(root, scf), "utf8");
+        const portProp = scContent.match(/server\.port\s*[:=]\s*(\d{2,5})/i);
+        if (portProp) {
+          detectedSpringPort = parseInt(portProp[1], 10);
+          break;
+        }
+        const yamlPort = scContent.match(/server:\s*\n(?:\s+.*\n)*?\s+port:\s*(\d{2,5})/i);
+        if (yamlPort) {
+          detectedSpringPort = parseInt(yamlPort[1], 10);
+          break;
+        }
+      } catch {}
+    }
+    // Spring Boot defaults to 8080 unless configured otherwise
+    report.portConfig.detectedHardcodedPort = detectedSpringPort || 8080;
   }
   if (filesInRoot.includes("composer.json") || filesInRoot.some(f => f.endsWith(".php"))) {
     report.detectedRuntimes.push("PHP");

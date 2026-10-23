@@ -149,15 +149,22 @@ export async function analyzeWorkspaceWithAI(workspaceDir: string): Promise<AiAn
     }
   }
 
-  // 3. Other manifests (go.mod, Cargo.toml, pom.xml, build.gradle, composer.json, Gemfile)
+  // 3. Other manifests (go.mod, Cargo.toml, pom.xml, build.gradle, composer.json, Gemfile, Spring Boot properties)
   const manifestFiles: Record<string, string> = {};
-  const manifestNames = ["go.mod", "Cargo.toml", "pom.xml", "build.gradle", "composer.json", "Gemfile", "pyproject.toml", "Pipfile", "Procfile"];
+  const manifestNames = [
+    "go.mod", "Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts",
+    "composer.json", "Gemfile", "pyproject.toml", "Pipfile", "Procfile",
+    "src/main/resources/application.properties", "src/main/resources/application.yml", "src/main/resources/application.yaml",
+    "application.properties", "application.yml", "application.yaml"
+  ];
   for (const m of manifestNames) {
-    if (filesInRoot.includes(m)) {
-      try {
-        manifestFiles[m] = await fs.readFile(path.join(root, m), "utf8");
-      } catch {}
-    }
+    try {
+      const fullPath = path.join(root, m);
+      const content = await fs.readFile(fullPath, "utf8").catch(() => null);
+      if (content !== null) {
+        manifestFiles[m] = content;
+      }
+    } catch {}
   }
 
   // 4. Construct Prompt
@@ -371,11 +378,24 @@ function localFallback(files: string[], readme: string, req: string, pkgStr: str
   let stack = "Node.js";
   let startCommand = "npm start";
   let installCommand = "npm install";
+  let buildCommand = "";
   let port = 8000;
 
-  if (hasDocker || hasCargo || hasJava) {
+  if (hasJava) {
     language = "DOCKERFILE";
-    stack = hasCargo ? "Rust" : hasJava ? "Java" : "Docker";
+    stack = "Java";
+    port = 8080;
+    buildCommand = files.includes("pom.xml") ? "mvn clean package -DskipTests" : "gradle build -x test";
+    startCommand = "java -jar target/app.jar";
+  } else if (hasCargo) {
+    language = "DOCKERFILE";
+    stack = "Rust";
+    port = 8080;
+    buildCommand = "cargo build --release";
+    startCommand = "./target/release/server";
+  } else if (hasDocker) {
+    language = "DOCKERFILE";
+    stack = "Docker";
   } else if (hasGo) {
     language = "GO";
     stack = "Go";
@@ -398,7 +418,7 @@ function localFallback(files: string[], readme: string, req: string, pkgStr: str
     isWorker: false,
     recommendedPort: port,
     installCommand,
-    buildCommand: "",
+    buildCommand,
     startCommand,
     requiredEnvVars: [],
     optionalEnvVars: [],

@@ -273,9 +273,46 @@ export async function analyzeStack(workspaceDir: string): Promise<StackAnalysis>
   }
   if (files.includes("pom.xml") || files.includes("build.gradle") || files.includes("build.gradle.kts")) {
     result.language = "DOCKERFILE";
-    result.framework = files.includes("pom.xml") ? "Java (Maven)" : "Java (Gradle)";
+    let javaVer = "17";
+    const isMaven = files.includes("pom.xml");
+    try {
+      if (isMaven) {
+        const pom = await fs.readFile(path.join(root, "pom.xml"), "utf8");
+        const jvMatch = pom.match(/<java\.version>\s*([0-9.]+)\s*<\/java\.version>/i) ||
+          pom.match(/<maven\.compiler\.release>\s*([0-9.]+)\s*<\/maven\.compiler\.release>/i) ||
+          pom.match(/<maven\.compiler\.target>\s*([0-9.]+)\s*<\/maven\.compiler\.target>/i) ||
+          pom.match(/<release>\s*([0-9.]+)\s*<\/release>/i);
+        if (jvMatch) javaVer = jvMatch[1];
+      }
+    } catch {}
+    result.framework = isMaven ? `Java ${javaVer} (Maven)` : `Java ${javaVer} (Gradle)`;
     if (result.projectType === "unknown") result.projectType = "backend";
     result.internalPort = 8080;
+
+    // Check Spring Boot configuration files for custom server.port
+    const springConfigFiles = [
+      "src/main/resources/application.properties",
+      "src/main/resources/application.yml",
+      "src/main/resources/application.yaml",
+      "application.properties",
+      "application.yml",
+      "application.yaml",
+    ];
+    for (const scf of springConfigFiles) {
+      try {
+        const scContent = await fs.readFile(path.join(root, scf), "utf8");
+        const portProp = scContent.match(/server\.port\s*[:=]\s*(\d{2,5})/i);
+        if (portProp) {
+          result.internalPort = parseInt(portProp[1], 10);
+          break;
+        }
+        const yamlPort = scContent.match(/server:\s*\n(?:\s+.*\n)*?\s+port:\s*(\d{2,5})/i);
+        if (yamlPort) {
+          result.internalPort = parseInt(yamlPort[1], 10);
+          break;
+        }
+      } catch {}
+    }
   }
   if (files.includes("composer.json")) {
     result.language = "DOCKERFILE";

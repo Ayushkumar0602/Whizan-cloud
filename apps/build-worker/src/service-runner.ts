@@ -89,6 +89,7 @@ export class ServiceRunner {
     // 2. Check for Dockerfile or auto-synthesize one for any runtime stack
     const filesInWorkDir = await fs.readdir(hostWorkDir).catch(() => [] as string[]);
     let hasDockerfile = filesInWorkDir.some(f => f.toLowerCase() === "dockerfile");
+    const isJavaProject = job.language === "JAVA" || filesInWorkDir.includes("pom.xml") || filesInWorkDir.includes("build.gradle") || filesInWorkDir.includes("build.gradle.kts");
 
     if (!hasDockerfile) {
       await this.writeDockerignore(hostWorkDir);
@@ -184,12 +185,20 @@ export class ServiceRunner {
         await this.writeRustDockerfile(hostWorkDir, job.internalPort);
         hasDockerfile = true;
       } else if (isJava) {
+        const javaVersion = await this.detectJavaVersion(hostWorkDir);
+        await onLog(`☕ Detected Java version from project manifest: ${javaVersion}`);
+
+        const springPort = await this.detectSpringBootPort(hostWorkDir);
+        if (springPort && springPort !== job.internalPort) {
+          await onLog(`☕ Detected Spring Boot server.port=${springPort} in application configuration.`);
+        }
+
         if (hasGradle) {
-          await onLog("☕ Java / Gradle project detected. Synthesizing OpenJDK Dockerfile...");
-          await this.writeGradleDockerfile(hostWorkDir, job.internalPort);
+          await onLog(`☕ Java / Gradle project detected. Synthesizing OpenJDK ${javaVersion} Dockerfile...`);
+          await this.writeGradleDockerfile(hostWorkDir, job.internalPort, javaVersion);
         } else {
-          await onLog("☕ Java / Maven project detected (pom.xml). Synthesizing OpenJDK Dockerfile...");
-          await this.writeMavenDockerfile(hostWorkDir, job.internalPort);
+          await onLog(`☕ Java / Maven project detected (pom.xml). Synthesizing OpenJDK ${javaVersion} Dockerfile...`);
+          await this.writeMavenDockerfile(hostWorkDir, job.internalPort, javaVersion);
         }
         hasDockerfile = true;
       } else if (isPhp) {
@@ -415,8 +424,42 @@ export class ServiceRunner {
     env.push(`HOSTNAME=0.0.0.0`);
     env.push(`HOST=0.0.0.0`);
     env.push(`SERVER_PORT=${job.internalPort}`);
+    env.push(`SERVER_ADDRESS=0.0.0.0`);
     env.push(`UVICORN_PORT=${job.internalPort}`);
     env.push(`FLASK_RUN_PORT=${job.internalPort}`);
+
+    if (isJavaProject) {
+      env.push(`JAVA_TOOL_OPTIONS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0`);
+
+      // Automatic Spring Boot Datasource Mapping from DATABASE_URL
+      const dbUrl = envVars["DATABASE_URL"] || envVars["POSTGRES_URL"];
+      if (dbUrl && !envVars["SPRING_DATASOURCE_URL"]) {
+        try {
+          const parsed = new URL(dbUrl);
+          const protocol = parsed.protocol.replace(":", "");
+          const host = parsed.hostname;
+          const port = parsed.port || (protocol.includes("postgres") ? "5432" : "3306");
+          const dbName = parsed.pathname.replace(/^\//, "");
+          const username = decodeURIComponent(parsed.username || "");
+          const password = decodeURIComponent(parsed.password || "");
+
+          if (protocol.includes("postgres")) {
+            env.push(`SPRING_DATASOURCE_URL=jdbc:postgresql://${host}:${port}/${dbName}`);
+            env.push(`SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver`);
+          } else if (protocol.includes("mysql")) {
+            env.push(`SPRING_DATASOURCE_URL=jdbc:mysql://${host}:${port}/${dbName}`);
+            env.push(`SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver`);
+          }
+
+          if (username && !envVars["SPRING_DATASOURCE_USERNAME"]) {
+            env.push(`SPRING_DATASOURCE_USERNAME=${username}`);
+          }
+          if (password && !envVars["SPRING_DATASOURCE_PASSWORD"]) {
+            env.push(`SPRING_DATASOURCE_PASSWORD=${password}`);
+          }
+        } catch {}
+      }
+    }
 
     if (job.language === "PYTHON") {
       env.push(`PYTHONUNBUFFERED=1`);
@@ -947,21 +990,121 @@ CMD ["sh", "-c", "BIN=$(find /app/target/release -maxdepth 1 -type f -executable
   }
 
   /**
+   * Detects Java version required by the project from pom.xml or build.gradle
+   */
+  private async detectJavaVersion(workDir: string): Promise<string> {
+    // 1. Check pom.xml
+    try {
+      const pomContent = await fs.readFile(path.join(workDir, "pom.xml"), "utf8");
+      
+      // Match <java.version>24</java.version>
+      const jvMatch = pomContent.match(/<java\.version>\s*([0-9.]+)\s*<\/java\.version>/i);
+      if (jvMatch) return this.normalizeJavaVersion(jvMatch[1]);
+
+      // Match <maven.compiler.release>24</maven.compiler.release>
+      const releaseMatch = pomContent.match(/<maven\.compiler\.release>\s*([0-9.]+)\s*<\/maven\.compiler\.release>/i);
+      if (releaseMatch) return this.normalizeJavaVersion(releaseMatch[1]);
+
+      // Match <maven.compiler.target>24</maven.compiler.target>
+      const targetMatch = pomContent.match(/<maven\.compiler\.target>\s*([0-9.]+)\s*<\/maven\.compiler\.target>/i);
+      if (targetMatch) return this.normalizeJavaVersion(targetMatch[1]);
+
+      // Match <maven.compiler.source>24</maven.compiler.source>
+      const sourceMatch = pomContent.match(/<maven\.compiler\.source>\s*([0-9.]+)\s*<\/maven\.compiler\.source>/i);
+      if (sourceMatch) return this.normalizeJavaVersion(sourceMatch[1]);
+
+      // Generic <release>24</release> or <target>24</target>
+      const genericRel = pomContent.match(/<release>\s*([0-9.]+)\s*<\/release>/i);
+      if (genericRel) return this.normalizeJavaVersion(genericRel[1]);
+    } catch {}
+
+    // 2. Check build.gradle and build.gradle.kts
+    const gradleFiles = ["build.gradle", "build.gradle.kts"];
+    for (const gFile of gradleFiles) {
+      try {
+        const content = await fs.readFile(path.join(workDir, gFile), "utf8");
+        const toolchainMatch = content.match(/JavaLanguageVersion\.of\(\s*([0-9]+)\s*\)/i) ||
+          content.match(/jvmToolchain\(\s*([0-9]+)\s*\)/i);
+        if (toolchainMatch) return this.normalizeJavaVersion(toolchainMatch[1]);
+
+        const compatMatch = content.match(/sourceCompatibility\s*=\s*['"]?([0-9.]+)['"]?/i) ||
+          content.match(/JavaVersion\.VERSION_([0-9_]+)/i);
+        if (compatMatch) return this.normalizeJavaVersion(compatMatch[1].replace(/_/g, "."));
+      } catch {}
+    }
+
+    // Default to LTS Java 17
+    return "17";
+  }
+
+  private normalizeJavaVersion(raw: string): string {
+    const cleaned = (raw || "").trim();
+    if (cleaned === "1.8" || cleaned === "8") return "8";
+    if (cleaned.startsWith("1.")) return cleaned.slice(2);
+    const num = parseInt(cleaned, 10);
+    if (!isNaN(num) && num >= 8 && num <= 25) {
+      return String(num);
+    }
+    return cleaned || "17";
+  }
+
+  /**
+   * Detects configured Spring Boot port from application.properties or application.yml
+   */
+  private async detectSpringBootPort(workDir: string): Promise<number | null> {
+    const candidateFiles = [
+      "src/main/resources/application.properties",
+      "src/main/resources/application.yml",
+      "src/main/resources/application.yaml",
+      "application.properties",
+      "application.yml",
+      "application.yaml",
+    ];
+
+    for (const rel of candidateFiles) {
+      try {
+        const content = await fs.readFile(path.join(workDir, rel), "utf8");
+        // server.port = 8080 or server.port: 8080
+        const propMatch = content.match(/server\.port\s*[:=]\s*(\d{2,5})/i);
+        if (propMatch) {
+          return parseInt(propMatch[1], 10);
+        }
+        // YAML indented: server:\n  port: 8080
+        const yamlMatch = content.match(/server:\s*\n(?:\s+.*\n)*?\s+port:\s*(\d{2,5})/i);
+        if (yamlMatch) {
+          return parseInt(yamlMatch[1], 10);
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  /**
    * Synthesize Maven OpenJDK Dockerfile
    */
-  private async writeMavenDockerfile(workDir: string, port: number): Promise<void> {
+  private async writeMavenDockerfile(workDir: string, port: number, javaVersion: string = "17"): Promise<void> {
+    const builderImage = javaVersion === "24"
+      ? "maven:3-eclipse-temurin-24"
+      : `maven:3.9-eclipse-temurin-${javaVersion}`;
+
+    const runtimeImage = javaVersion === "24"
+      ? "eclipse-temurin:24-jre"
+      : javaVersion === "21" || javaVersion === "17" || javaVersion === "11" || javaVersion === "8"
+      ? `eclipse-temurin:${javaVersion}-jre-jammy`
+      : `eclipse-temurin:${javaVersion}-jre`;
+
     const dockerfile = `
-FROM maven:3.9-eclipse-temurin-17 as builder
+FROM ${builderImage} as builder
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests
+RUN mvn clean package -DskipTests --batch-mode
 
-FROM eclipse-temurin:17-jre-jammy
+FROM ${runtimeImage}
 WORKDIR /app
-COPY --from=builder /app/target/*.jar app.jar
-ENV PORT=${port} HOST=0.0.0.0
+COPY --from=builder /app/target/*.jar /app/
+ENV PORT=${port} SERVER_PORT=${port} HOST=0.0.0.0 SERVER_ADDRESS=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*sources.jar' | head -n 1); java -jar $JAR"]
+CMD ["sh", "-c", "JAR=$(find /app -maxdepth 1 -name '*.jar' ! -name '*sources.jar' ! -name '*.original' ! -name '*plain.jar' | head -n 1); if [ -z \\"$JAR\\" ]; then echo 'ERROR: No executable JAR found in /app. Maven build may have failed.'; exit 1; fi; echo \\"☕ Starting Java application with $JAR on port \${PORT:-${port}}...\\"; exec java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Dserver.port=\${PORT:-${port}} -Dserver.address=0.0.0.0 -jar \\"$JAR\\""]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -969,19 +1112,29 @@ CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*sources.jar' 
   /**
    * Synthesize Gradle OpenJDK Dockerfile
    */
-  private async writeGradleDockerfile(workDir: string, port: number): Promise<void> {
+  private async writeGradleDockerfile(workDir: string, port: number, javaVersion: string = "17"): Promise<void> {
+    const builderImage = javaVersion === "24"
+      ? "gradle:jdk24"
+      : `gradle:8.5-jdk${javaVersion}`;
+
+    const runtimeImage = javaVersion === "24"
+      ? "eclipse-temurin:24-jre"
+      : javaVersion === "21" || javaVersion === "17" || javaVersion === "11" || javaVersion === "8"
+      ? `eclipse-temurin:${javaVersion}-jre-jammy`
+      : `eclipse-temurin:${javaVersion}-jre`;
+
     const dockerfile = `
-FROM gradle:8.5-jdk17 as builder
+FROM ${builderImage} as builder
 WORKDIR /app
 COPY . .
 RUN gradle build --no-daemon -x test
 
-FROM eclipse-temurin:17-jre-jammy
+FROM ${runtimeImage}
 WORKDIR /app
-COPY --from=builder /app/build/libs/*.jar app.jar
-ENV PORT=${port} HOST=0.0.0.0
+COPY --from=builder /app/build/libs/*.jar /app/
+ENV PORT=${port} SERVER_PORT=${port} HOST=0.0.0.0 SERVER_ADDRESS=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "JAR=$(find . -maxdepth 1 -name '*.jar' ! -name '*plain.jar' ! -name '*sources.jar' | head -n 1); java -jar $JAR"]
+CMD ["sh", "-c", "JAR=$(find /app -maxdepth 1 -name '*.jar' ! -name '*plain.jar' ! -name '*sources.jar' ! -name '*.original' | head -n 1); if [ -z \\"$JAR\\" ]; then echo 'ERROR: No executable JAR found in /app/build/libs. Gradle build may have failed.'; exit 1; fi; echo \\"☕ Starting Java application with $JAR on port \${PORT:-${port}}...\\"; exec java -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Dserver.port=\${PORT:-${port}} -Dserver.address=0.0.0.0 -jar \\"$JAR\\""]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }

@@ -580,6 +580,22 @@ class WafEngine {
       return { matched: true, category: "anomaly", rule: "MALFORMED_URI_ENCODING" };
     }
 
+    // Benign Health Check & Status Probes Bypass (Spring Boot Actuator, Kubernetes, Whizan probes)
+    const cleanPath = decodedUrl.split("?")[0].toLowerCase();
+    const isHealthProbe =
+      cleanPath === "/health" ||
+      cleanPath === "/healthz" ||
+      cleanPath === "/livez" ||
+      cleanPath === "/readyz" ||
+      cleanPath === "/ping" ||
+      cleanPath === "/actuator/health" ||
+      cleanPath.startsWith("/actuator/health/") ||
+      cleanPath === "/actuator/info";
+
+    if (isHealthProbe) {
+      return { matched: false };
+    }
+
     // 1. URI Length Check (Buffer Overflow / DoS Protection)
     if (rawUrl.length > 4096) {
       return { matched: true, category: "anomaly", rule: "EXCESSIVE_URI_LENGTH" };
@@ -631,7 +647,7 @@ class WafEngine {
         /\/phpmyadmin/i,
         /\/pma(\/|$)/i,
         /\/adminer/i,
-        /\/actuator\/(health|env|logfile|metrics|sessions)/i,
+        /\/actuator\/(env|logfile|sessions|heapdump|configprops|beans|mappings|threaddump)/i,
         /\/solr\//i,
         /\/telescope\//i,
         /\/server-status/i,
