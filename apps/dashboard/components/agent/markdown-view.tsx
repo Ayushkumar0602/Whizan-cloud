@@ -7,20 +7,20 @@ interface MarkdownViewProps {
   content: string;
 }
 
-// Design tokens matching Whizan Cloud's clean light-mode design standard
+// Design tokens matching Whizan Cloud's clean theme standards
 const M = {
-  text: "#0f172a",
-  textSecondary: "#475569",
-  textBold: "#020617",
-  accent: "#4f46e5",
-  bgCode: "#f8fafc",
-  bgCodeHeader: "#f1f5f9",
-  border: "#e2e8f0",
-  bgTable: "#ffffff",
-  bgTableHeader: "#f8fafc",
-  bgTableStripe: "#fbfcfe",
-  success: "#059669",
-  link: "#2563eb",
+  text: "var(--foreground, #0f172a)",
+  textSecondary: "var(--muted, #475569)",
+  textBold: "var(--foreground, #020617)",
+  accent: "var(--accent, #4f46e5)",
+  bgCode: "var(--bg-inset, #f8fafc)",
+  bgCodeHeader: "var(--card, #f1f5f9)",
+  border: "var(--border, #e2e8f0)",
+  bgTable: "var(--card, #ffffff)",
+  bgTableHeader: "var(--bg-inset, #f8fafc)",
+  bgTableStripe: "var(--bg-inset, #fbfcfe)",
+  success: "var(--success, #059669)",
+  link: "var(--accent, #2563eb)",
 };
 
 export function MarkdownView({ content }: MarkdownViewProps) {

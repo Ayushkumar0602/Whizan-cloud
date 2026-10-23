@@ -1136,7 +1136,7 @@ export default function CronJobDetailPage() {
       {/* ─── EDIT MODAL ──────────────────────────────────────────────────────── */}
       {editModalOpen && (
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.35)", backdropFilter: "blur(8px)", padding: "1rem" }}>
-          <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", width: "100%", maxWidth: 640, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.2)" }}>
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", width: "100%", maxWidth: 640, maxHeight: "90vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 25px 50px -12px rgba(15, 23, 42, 0.2)" }}>
             <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bg-inset)" }}>
               <h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--foreground)" }}>Edit Cron Task Configuration</h3>
               <button onClick={() => setEditModalOpen(false)} style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: "1.25rem", cursor: "pointer" }}>✕</button>

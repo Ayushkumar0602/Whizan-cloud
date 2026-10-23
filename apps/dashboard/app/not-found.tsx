@@ -9,8 +9,8 @@ export default function NotFound() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#fafbfc",
-        color: "#0f172a",
+        background: "var(--background)",
+        color: "var(--foreground)",
         fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif",
         position: "relative",
         overflow: "hidden",
@@ -38,12 +38,12 @@ export default function NotFound() {
           maxWidth: 480,
           width: "100%",
           textAlign: "center",
-          background: "rgba(255, 255, 255, 0.94)",
+          background: "var(--card)",
           backdropFilter: "blur(20px)",
-          border: "1px solid #e2e8f0",
+          border: "1px solid var(--border)",
           borderRadius: 24,
           padding: "3rem 2rem 2.5rem",
-          boxShadow: "0 20px 45px -12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04)",
+          boxShadow: "var(--shadow-lg)",
         }}
       >
         <div
@@ -81,7 +81,7 @@ export default function NotFound() {
             fontSize: "1.75rem",
             fontWeight: 800,
             letterSpacing: "-0.03em",
-            color: "#0f172a",
+            color: "var(--foreground)",
             margin: "0 0 0.75rem 0",
           }}
         >
@@ -91,7 +91,7 @@ export default function NotFound() {
         <p
           style={{
             fontSize: "0.9rem",
-            color: "#64748b",
+            color: "var(--muted)",
             lineHeight: 1.6,
             margin: "0 0 2rem 0",
           }}

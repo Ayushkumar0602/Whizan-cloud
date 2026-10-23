@@ -26,6 +26,7 @@ import {
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { BrandMark } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface DocCard {
   slug: string;
@@ -155,6 +156,7 @@ export default function DocsIndexPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <ThemeToggle variant="icon" />
             <Link href="/dashboard" className="btn btn-secondary btn-sm">
               <ArrowLeft size={14} /> Back to Console
             </Link>

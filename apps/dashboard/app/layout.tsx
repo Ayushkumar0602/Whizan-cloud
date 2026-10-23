@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
+import { ThemeProvider } from "@/lib/theme";
+import { ThemeToaster } from "@/components/theme-toaster";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
 
@@ -32,14 +33,40 @@ export const metadata: Metadata = {
   },
 };
 
+const themeInitScript = `
+(function() {
+  try {
+    var saved = localStorage.getItem('whizan-theme');
+    var resolved = 'light';
+    if (saved === 'dark') {
+      resolved = 'dark';
+    } else if (saved === 'system') {
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      resolved = prefersDark ? 'dark' : 'light';
+    } else {
+      resolved = 'light';
+    }
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.classList.remove(resolved === 'dark' ? 'light' : 'dark');
+    document.documentElement.classList.add(resolved);
+    document.documentElement.style.colorScheme = resolved;
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="light" className="light" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} suppressHydrationWarning>
-        <AuthProvider>
-          {children}
-          <Toaster richColors theme="light" position="top-right" />
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            {children}
+            <ThemeToaster />
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

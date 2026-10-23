@@ -25,6 +25,7 @@ import {
   ArrowRight
 } from "lucide-react";
 import { BrandMark } from "@/components/brand";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 
 interface DocService {
@@ -597,6 +598,7 @@ export default function DocDetailPage({ params }: { params: Promise<{ slug: stri
           </div>
 
           <div className="flex items-center gap-2">
+            <ThemeToggle variant="icon" />
             <Link href="/docs" className="btn btn-secondary btn-sm">
               <BookOpen size={14} />
               <span>All Docs</span>

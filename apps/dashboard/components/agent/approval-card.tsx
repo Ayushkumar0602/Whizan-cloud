@@ -62,8 +62,8 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
       style={{
         margin: "12px 0",
         borderRadius: "10px",
-        background: "#ffffff",
-        border: "1px solid #fde68a",
+        background: "var(--card, #ffffff)",
+        border: "1px solid rgba(245, 158, 11, 0.3)",
         boxShadow: "0 4px 16px rgba(245, 158, 11, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04)",
         overflow: "hidden",
         fontSize: "0.82rem",
@@ -76,8 +76,8 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "10px 14px",
-          background: "linear-gradient(180deg, #fffbeb 0%, #fef3c7 100%)",
-          borderBottom: "1px solid #fde68a",
+          background: "linear-gradient(180deg, rgba(254, 243, 199, 0.15) 0%, rgba(254, 243, 199, 0.05) 100%)",
+          borderBottom: "1px solid rgba(245, 158, 11, 0.2)",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -86,18 +86,18 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
               width: "24px",
               height: "24px",
               borderRadius: "6px",
-              background: "#fef3c7",
-              border: "1px solid #fcd34d",
+              background: "rgba(245, 158, 11, 0.12)",
+              border: "1px solid rgba(245, 158, 11, 0.3)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#b45309",
+              color: "#d97706",
             }}
           >
             <ShieldCheck size={14} />
           </div>
           <div>
-            <span style={{ fontWeight: 700, color: "#92400e", fontSize: "0.82rem" }}>
+            <span style={{ fontWeight: 700, color: "#d97706", fontSize: "0.82rem" }}>
               Human Approval Required
             </span>
           </div>
@@ -108,9 +108,9 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
             fontWeight: 700,
             padding: "2px 8px",
             borderRadius: "12px",
-            background: "#fef3c7",
-            color: "#b45309",
-            border: "1px solid #fcd34d",
+            background: "rgba(245, 158, 11, 0.1)",
+            color: "#d97706",
+            border: "1px solid rgba(245, 158, 11, 0.25)",
           }}
         >
           {pendingAction.riskTier || "TIER_2"}
@@ -119,7 +119,7 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
 
       {/* Body */}
       <div style={{ padding: "12px 14px" }}>
-        <p style={{ margin: "0 0 8px 0", color: "#334155", lineHeight: 1.5 }}>
+        <p style={{ margin: "0 0 8px 0", color: "var(--foreground, #334155)", lineHeight: 1.5 }}>
           {pendingAction.explanation}
         </p>
 
@@ -129,15 +129,15 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
             alignItems: "center",
             gap: "6px",
             fontSize: "0.74rem",
-            color: "#64748b",
+            color: "var(--muted, #64748b)",
             marginBottom: "6px",
           }}
         >
           <span>Target action:</span>
           <code
             style={{
-              background: "#f1f5f9",
-              color: "#4f46e5",
+              background: "var(--bg-inset, #f1f5f9)",
+              color: "var(--accent, #4f46e5)",
               padding: "1px 6px",
               borderRadius: "4px",
               fontFamily: "ui-monospace, monospace",
@@ -276,9 +276,9 @@ export function ApprovalCard({ pendingAction, onResolved }: ApprovalCardProps) {
               gap: "4px",
               padding: "7px 12px",
               borderRadius: "6px",
-              background: "#f1f5f9",
-              color: "#475569",
-              border: "1px solid #cbd5e1",
+              background: "var(--bg-inset, #f1f5f9)",
+              color: "var(--muted, #475569)",
+              border: "1px solid var(--border, #cbd5e1)",
               fontWeight: 600,
               fontSize: "0.78rem",
               cursor: loading ? "not-allowed" : "pointer",

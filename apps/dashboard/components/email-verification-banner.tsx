@@ -288,11 +288,11 @@ export function EmailVerificationBanner() {
               position: "relative",
               width: "100%",
               maxWidth: "420px",
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border, #e5e7eb)",
               borderRadius: "16px",
               padding: "1.75rem",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+              boxShadow: "var(--shadow-lg)",
               color: "var(--foreground, #111827)",
             }}
             onClick={(e) => e.stopPropagation()}

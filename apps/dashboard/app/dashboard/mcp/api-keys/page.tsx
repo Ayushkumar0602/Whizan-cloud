@@ -334,7 +334,7 @@ export default function McpApiKeysPage() {
             If your editor asks you to fill out form fields instead of editing JSON, copy and paste these exact values:
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.6rem" }}>
-            <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Name</div>
                 <code style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 600 }}>whizan</code>
@@ -343,11 +343,11 @@ export default function McpApiKeysPage() {
                 {copiedId === "form-name" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
               </button>
             </div>
-            <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem" }}>
+            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem" }}>
               <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Transport</div>
               <span style={{ fontSize: "0.82rem", color: "#10b981", fontWeight: 600 }}>Local command (stdio)</span>
             </div>
-            <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Command</div>
                 <code style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 600 }}>npx</code>
@@ -356,7 +356,7 @@ export default function McpApiKeysPage() {
                 {copiedId === "form-cmd" ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
               </button>
             </div>
-            <div style={{ background: "#ffffff", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "8px", padding: "0.6rem 0.85rem", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontSize: "0.68rem", color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>Arguments</div>
                 <code style={{ fontSize: "0.82rem", color: "var(--accent)", fontWeight: 600 }}>-y @whizan/mcp-devops</code>

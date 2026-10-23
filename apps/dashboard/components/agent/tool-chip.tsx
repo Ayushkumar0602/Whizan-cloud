@@ -31,9 +31,9 @@ export function ToolChip({ tool }: ToolChipProps) {
       style={{
         margin: "6px 0",
         borderRadius: "8px",
-        background: "#ffffff",
-        border: isError ? "1px solid #fecaca" : "1px solid #e2e8f0",
-        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+        background: "var(--card, #ffffff)",
+        border: isError ? "1px solid #fecaca" : "1px solid var(--border, #e2e8f0)",
+        boxShadow: "var(--shadow-sm)",
         overflow: "hidden",
         fontSize: "0.78rem",
         transition: "all 0.2s ease",
@@ -47,7 +47,7 @@ export function ToolChip({ tool }: ToolChipProps) {
           justifyContent: "space-between",
           padding: "7px 12px",
           cursor: "pointer",
-          background: isError ? "rgba(239, 68, 68, 0.04)" : "#f8fafc",
+          background: isError ? "rgba(239, 68, 68, 0.04)" : "var(--bg-inset, #f8fafc)",
           userSelect: "none",
         }}
       >
@@ -66,7 +66,7 @@ export function ToolChip({ tool }: ToolChipProps) {
           >
             <Terminal size={12} />
           </div>
-          <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, color: "#1e293b" }}>
+          <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, color: "var(--foreground, #1e293b)" }}>
             {tool.name}
           </span>
         </div>

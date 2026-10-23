@@ -27,7 +27,10 @@ import {
   ShieldAlert,
   Clock,
   RefreshCw,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
 import {
   isBiometricEnrolled,
@@ -471,6 +474,23 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* ── 2. Appearance & Visual Theme ──────────────────────────── */}
+        <div className="card">
+          <div style={{ marginBottom: "1.25rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Sun size={18} style={{ color: "var(--accent)" }} />
+              <h2 className="card-title" style={{ fontSize: "1.05rem", margin: 0 }}>
+                Appearance & Theme
+              </h2>
+            </div>
+            <p className="card-sub" style={{ marginTop: "0.25rem", fontSize: "0.84rem", color: "var(--muted)" }}>
+              Select your preferred visual interface style. The application defaults to light mode for all first-time visitors unless explicitly changed.
+            </p>
+          </div>
+
+          <ThemeToggle variant="segmented" />
         </div>
 
         {/* ── 2FA & Hardware Biometrics Card ────────────────────────── */}

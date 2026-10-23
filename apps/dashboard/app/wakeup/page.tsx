@@ -106,8 +106,8 @@ function WakeupContent() {
         width: "100vw",
         minHeight: "100vh",
         overflow: "hidden",
-        background: "#fafbfc",
-        color: "#0f172a",
+        background: "var(--background)",
+        color: "var(--foreground)",
         fontFamily: "var(--font-geist-sans), -apple-system, BlinkMacSystemFont, sans-serif",
         display: "flex",
         alignItems: "center",
@@ -179,16 +179,16 @@ function WakeupContent() {
           zIndex: 10,
           width: "90%",
           maxWidth: 480,
-          background: "rgba(255, 255, 255, 0.94)",
+          background: "var(--card)",
           backdropFilter: "blur(24px) saturate(180%)",
           WebkitBackdropFilter: "blur(24px) saturate(180%)",
-          border: isReady ? "1px solid rgba(99, 102, 241, 0.5)" : "1px solid #e2e8f0",
+          border: isReady ? "1px solid rgba(99, 102, 241, 0.5)" : "1px solid var(--border)",
           borderRadius: 24,
           padding: "2.4rem 2rem 2rem",
           textAlign: "center",
           boxShadow: isReady
             ? "0 25px 50px -12px rgba(99, 102, 241, 0.25), 0 0 0 1px rgba(99, 102, 241, 0.2)"
-            : "0 20px 40px -12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05)",
+            : "var(--shadow-lg)",
           transition: "all 0.35s cubic-bezier(0.16, 1, 0.3, 1)",
           transform: isReady ? "scale(1.02)" : "scale(1)",
         }}
@@ -249,7 +249,7 @@ function WakeupContent() {
             fontWeight: 700,
             letterSpacing: "-0.03em",
             marginBottom: "0.55rem",
-            color: "#0f172a",
+            color: "var(--foreground)",
             lineHeight: 1.25,
           }}
         >
@@ -260,7 +260,7 @@ function WakeupContent() {
         <p
           style={{
             fontSize: "0.88rem",
-            color: "#64748b",
+            color: "var(--muted)",
             lineHeight: 1.55,
             marginBottom: "1.4rem",
             padding: "0 0.4rem",
@@ -277,13 +277,13 @@ function WakeupContent() {
             display: "inline-flex",
             alignItems: "center",
             gap: "0.5rem",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            background: "var(--bg-inset)",
+            border: "1px solid var(--border)",
             borderRadius: 8,
             padding: "0.4rem 0.85rem",
             fontFamily: "var(--font-mono), monospace",
             fontSize: "0.8rem",
-            color: "#334155",
+            color: "var(--foreground)",
             marginBottom: "1.5rem",
           }}
         >
@@ -295,11 +295,11 @@ function WakeupContent() {
         <div
           style={{
             height: 6,
-            background: "#f1f5f9",
+            background: "var(--bg-inset)",
             borderRadius: 9999,
             overflow: "hidden",
             marginBottom: "1.2rem",
-            border: "1px solid #e2e8f0",
+            border: "1px solid var(--border)",
           }}
         >
           <div
@@ -320,17 +320,17 @@ function WakeupContent() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            background: "var(--bg-inset)",
+            border: "1px solid var(--border)",
             borderRadius: 10,
             padding: "0.75rem 1rem",
             fontSize: "0.82rem",
-            color: "#0f172a",
+            color: "var(--foreground)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.55rem", textAlign: "left" }}>
             <span>{stepIcon}</span>
-            <span style={{ fontSize: "0.82rem", color: "#334155", fontWeight: 500 }}>{stepText}</span>
+            <span style={{ fontSize: "0.82rem", color: "var(--foreground)", fontWeight: 500 }}>{stepText}</span>
           </div>
           <span
             style={{

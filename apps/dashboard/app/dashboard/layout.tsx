@@ -17,6 +17,7 @@ import { useSystemStatus } from "@/hooks/useSystemStatus";
 import { SummerDrawer } from "@/components/agent/summer-drawer";
 import { AccountTerminal } from "@/components/account-terminal";
 import { isTwoFactorTrusted } from "@/lib/webauthn";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -241,6 +242,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
+        {/* Theme Mode Toggle Button */}
+        <ThemeToggle variant="button" />
+
         <div className="sidebar-actions-row">
           <Link href="/dashboard/settings" className="action-pill-btn" title="Account Settings">
             <Settings size={14} />
@@ -291,8 +295,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         })}
       </div>
 
-      {/* Bottom expand button */}
+      {/* Bottom expand & theme buttons */}
       <div className="rail-bottom">
+        <ThemeToggle variant="icon" size="sm" />
         <Link href="/dashboard/settings" className="rail-icon-btn" title="Settings">
           <Settings size={16} />
         </Link>
@@ -318,6 +323,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <BrandMark href="/dashboard" compact />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <ThemeToggle variant="icon" />
           <button
             type="button"
             onClick={() => setTerminalOpen(prev => !prev)}

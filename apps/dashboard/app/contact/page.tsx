@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BrandMark } from "@/components/brand";
 import { useAuth } from "@/lib/auth";
 import { ContactContent } from "@/components/contact-content";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { ArrowLeft, LayoutDashboard, LogIn } from "lucide-react";
 
 export default function PublicContactPage() {
@@ -28,7 +29,8 @@ export default function PublicContactPage() {
             </Link>
           </nav>
 
-          <div className="landing-nav-actions">
+          <div className="landing-nav-actions" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <ThemeToggle variant="icon" />
             {!loading && user ? (
               <Link href="/dashboard" className="btn btn-primary btn-sm flex items-center gap-1.5">
                 <LayoutDashboard size={14} /> Console

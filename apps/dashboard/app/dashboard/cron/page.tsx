@@ -1459,7 +1459,7 @@ export default function CronDashboardPage() {
         <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.35)", backdropFilter: "blur(8px)", padding: "1rem" }}>
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               borderRadius: "var(--radius-lg)",
               width: "100%",
@@ -1936,7 +1936,7 @@ export default function CronDashboardPage() {
             style={{
               width: "100%",
               maxWidth: 780,
-              background: "#ffffff",
+              background: "var(--card)",
               borderLeft: "1px solid var(--border)",
               height: "100%",
               display: "flex",

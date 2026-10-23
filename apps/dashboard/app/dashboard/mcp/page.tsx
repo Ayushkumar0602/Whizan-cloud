@@ -387,7 +387,7 @@ export default function McpAndCliDocsPage() {
             gap: "0.5rem",
             marginTop: "1.5rem",
             padding: "0.35rem",
-            background: "#ffffff",
+            background: "var(--card)",
             border: "1px solid var(--border)",
             borderRadius: 12,
             boxShadow: "var(--shadow-sm)",
@@ -576,7 +576,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 1: Installation & Auto-Setup */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -786,7 +786,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 2: Manual Editor Configuration */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -925,7 +925,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 3: Verification & How to Prompt your AI */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1053,7 +1053,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 1: Installation */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1163,7 +1163,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 2: Authentication */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1310,7 +1310,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 3: Deploying Projects */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1428,7 +1428,7 @@ export default function McpAndCliDocsPage() {
           {/* STEP 4: Live Telemetry & Monitoring */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1570,7 +1570,7 @@ export default function McpAndCliDocsPage() {
           {/* Header Card */}
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,
@@ -1707,7 +1707,7 @@ export default function McpAndCliDocsPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
           <div
             style={{
-              background: "#ffffff",
+              background: "var(--card)",
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
               borderRadius: 16,

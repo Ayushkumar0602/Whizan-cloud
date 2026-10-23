@@ -8,6 +8,8 @@ import { Globe, Server, Database, ShieldCheck, Zap } from "lucide-react";
 import { getSafeRedirectUrl } from "@/lib/redirect";
 import { isTwoFactorTrusted } from "@/lib/webauthn";
 
+import { ThemeToggle } from "@/components/theme-toggle";
+
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -83,7 +85,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
       </aside>
 
-      <main className="auth-main aurora-bg">
+      <main className="auth-main aurora-bg" style={{ position: "relative" }}>
+        <div style={{ position: "absolute", top: "1.25rem", right: "1.25rem", zIndex: 10 }}>
+          <ThemeToggle variant="icon" />
+        </div>
         <div className="auth-card">{children}</div>
       </main>
 
@@ -99,11 +104,18 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           background:
             radial-gradient(800px 400px at 0% 0%, rgba(224, 231, 255, 0.7), transparent 70%),
             radial-gradient(600px 300px at 100% 100%, rgba(207, 250, 254, 0.4), transparent 60%),
-            #ffffff;
+            var(--card);
           border-right: 1px solid var(--border);
           display: flex;
           flex-direction: column;
           justify-content: space-between;
+        }
+
+        [data-theme='dark'] .auth-aside {
+          background:
+            radial-gradient(800px 400px at 0% 0%, rgba(79, 70, 229, 0.12), transparent 70%),
+            radial-gradient(600px 300px at 100% 100%, rgba(56, 189, 248, 0.08), transparent 60%),
+            var(--card);
         }
 
         .auth-badge {
@@ -157,12 +169,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           width: 38px;
           height: 38px;
           border-radius: 9px;
-          background: #ffffff;
+          background: var(--bg-inset);
           border: 1px solid var(--border);
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
           display: flex;
           align-items: center;
-          justify-content: center;
+          justifyContent: center;
           flex-shrink: 0;
         }
         .auth-feature-title {
@@ -195,7 +207,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         .auth-card {
           width: 100%;
           max-width: 420px;
-          background: #ffffff;
+          background: var(--card);
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
           padding: 2.5rem;

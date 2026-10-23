@@ -61,48 +61,48 @@ interface Message {
   createdAt: string;
 }
 
-// ─── Design Tokens (Strict Light Mode with Soft Aurora Glow) ─────────────────
+// ─── Design Tokens (Dynamic Theme-Aware Design System) ─────────────────────────
 
 const T = {
-  // Pure white background with soft radiant aura
-  bg: "#ffffff",
-  bgSubtle: "#f8fafc",
-  bgCard: "#ffffff",
-  bgCardHover: "#f8fafc",
-  bgInset: "#f1f5f9",
+  // Dynamic theme-aware surfaces
+  bg: "var(--card)",
+  bgSubtle: "var(--bg-inset)",
+  bgCard: "var(--card)",
+  bgCardHover: "var(--bg-subtle)",
+  bgInset: "var(--bg-subtle)",
 
   // Borders
-  border: "#e2e8f0",
-  borderLight: "#f1f5f9",
-  borderActive: "rgba(79, 70, 229, 0.4)",
+  border: "var(--border)",
+  borderLight: "var(--border-light)",
+  borderActive: "rgba(99, 102, 241, 0.4)",
 
   // Typography
-  text: "#0f172a",
-  textSecondary: "#475569",
-  textMuted: "#94a3b8",
+  text: "var(--foreground)",
+  textSecondary: "var(--muted)",
+  textMuted: "var(--muted-fg)",
 
   // Brand accents & Aurora gradients
-  accent: "#4f46e5",
-  accentHover: "#4338ca",
-  accentCyan: "#06b6d4",
-  accentGradient: "linear-gradient(135deg, #4f46e5 0%, #3b82f6 50%, #06b6d4 100%)",
+  accent: "var(--accent)",
+  accentHover: "var(--accent-hover)",
+  accentCyan: "var(--accent-2)",
+  accentGradient: "var(--accent-gradient)",
   auroraMesh:
-    "radial-gradient(ellipse at 90% 0%, rgba(199, 210, 254, 0.4) 0%, rgba(224, 231, 255, 0.3) 35%, rgba(207, 250, 254, 0.25) 65%, #ffffff 100%)",
+    "radial-gradient(ellipse at 90% 0%, var(--aurora-lavender) 0%, var(--aurora-blue) 35%, transparent 70%)",
 
   // Semantic status
-  success: "#059669",
-  successBg: "rgba(16, 185, 129, 0.08)",
-  successBorder: "rgba(16, 185, 129, 0.25)",
-  error: "#e11d48",
-  errorBg: "rgba(225, 29, 72, 0.06)",
-  errorBorder: "rgba(225, 29, 72, 0.22)",
-  warning: "#d97706",
-  warningBg: "rgba(217, 119, 6, 0.08)",
-  warningBorder: "rgba(217, 119, 6, 0.24)",
+  success: "var(--success)",
+  successBg: "var(--success-bg)",
+  successBorder: "var(--success-border)",
+  error: "var(--danger)",
+  errorBg: "var(--danger-bg)",
+  errorBorder: "var(--danger-border)",
+  warning: "var(--warning)",
+  warningBg: "var(--warning-bg)",
+  warningBorder: "var(--warning-border)",
 
   // Shadows
-  shadow: "-12px 0 35px -5px rgba(15, 23, 42, 0.09), -4px 0 12px -2px rgba(15, 23, 42, 0.04)",
-  cardShadow: "0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)",
+  shadow: "var(--shadow-lg)",
+  cardShadow: "var(--shadow-sm)",
 };
 
 // Helper: Pick icon based on tool name
@@ -800,7 +800,7 @@ export function SummerDrawer() {
             padding: "6px 10px",
             cursor: "pointer",
             userSelect: "none",
-            background: "#ffffff",
+            background: T.bgCard,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
@@ -968,7 +968,7 @@ export function SummerDrawer() {
           gap: "9px",
           padding: "8px 16px 8px 10px",
           borderRadius: "9999px",
-          background: "#ffffff",
+          background: T.bgCard,
           color: T.text,
           fontWeight: 600,
           fontSize: "0.82rem",
@@ -1152,7 +1152,7 @@ export function SummerDrawer() {
                   style={{
                     padding: "4px 10px",
                     borderRadius: "7px",
-                    background: "#ffffff",
+                    background: T.bgCard,
                     border: `1px solid ${T.border}`,
                     color: T.textSecondary,
                     fontSize: "0.72rem",
@@ -1325,7 +1325,7 @@ export function SummerDrawer() {
                           borderRadius: "12px",
                           padding: "14px 16px",
                           fontSize: "0.84rem",
-                          background: "#ffffff",
+                          background: T.bgCard,
                           border: `1px solid ${T.border}`,
                           boxShadow: T.cardShadow,
                           color: T.text,
@@ -1423,7 +1423,7 @@ export function SummerDrawer() {
                                             fontFamily: "monospace",
                                             fontWeight: 600,
                                             color: T.accent,
-                                            background: "#ffffff",
+                                            background: T.bgCard,
                                             padding: "1px 5px",
                                             borderRadius: "4px",
                                             border: `1px solid ${T.border}`,
@@ -1644,7 +1644,7 @@ export function SummerDrawer() {
                 display: "flex",
                 alignItems: "center",
                 gap: "8px",
-                background: "#ffffff",
+                background: T.bgCard,
                 border: `1px solid ${T.border}`,
                 borderRadius: "10px",
                 padding: "6px 8px 6px 14px",
@@ -1876,8 +1876,8 @@ function ApprovalCardInline({
           display: "block",
           padding: "6px 10px",
           borderRadius: "6px",
-          background: "#ffffff",
-          color: "#4f46e5",
+          background: T.bgInset,
+          color: T.accent,
           fontSize: "0.72rem",
           fontFamily: "monospace",
           marginBottom: "10px",
@@ -1931,9 +1931,9 @@ function ApprovalCardInline({
             gap: "5px",
             padding: "8px 14px",
             borderRadius: "6px",
-            background: "#ffffff",
-            color: "#475569",
-            border: "1px solid #cbd5e1",
+            background: T.bgCard,
+            color: T.textSecondary,
+            border: `1px solid ${T.border}`,
             fontWeight: 600,
             fontSize: "0.78rem",
             cursor: loading ? "not-allowed" : "pointer",
