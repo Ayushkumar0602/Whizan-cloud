@@ -888,6 +888,19 @@ CMD ["/app/server"]
    * Synthesize .NET 8 (C# / ASP.NET Core) Dockerfile
    */
   private async writeDotnetDockerfile(workDir: string, port: number): Promise<void> {
+    let dllName = "";
+    try {
+      const files = await fs.readdir(workDir);
+      const csproj = files.find(f => f.endsWith(".csproj"));
+      if (csproj) {
+        dllName = csproj.replace(/\.csproj$/, ".dll");
+      }
+    } catch {}
+
+    const startupCmd = dllName
+      ? `["sh", "-c", "if [ -f '${dllName}' ]; then exec dotnet '${dllName}'; else DLL=$(find . -maxdepth 1 -name '*.dll' ! -name 'Microsoft.*' ! -name 'System.*' ! -name 'Newtonsoft.*' | head -n 1); exec dotnet $DLL; fi"]`
+      : `["sh", "-c", "DLL=$(find . -maxdepth 1 -name '*.dll' ! -name 'Microsoft.*' ! -name 'System.*' ! -name 'Newtonsoft.*' | head -n 1); exec dotnet $DLL"]`;
+
     const dockerfile = `
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS builder
 WORKDIR /app
@@ -899,7 +912,7 @@ WORKDIR /app
 COPY --from=builder /app/out .
 ENV PORT=${port} ASPNETCORE_URLS=http://0.0.0.0:${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "DLL=$(find . -maxdepth 1 -name '*.dll' ! -name 'Microsoft.*' ! -name 'System.*' | head -n 1); dotnet $DLL"]
+CMD ${startupCmd}
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -1169,7 +1182,7 @@ COPY . .
 RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader || true; fi
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-${port}}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t public; else php -S 0.0.0.0:\${PORT:-${port}}; fi"]
+CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-${port}}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t public public/index.php; elif [ -f index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} index.php; else php -S 0.0.0.0:\${PORT:-${port}}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
