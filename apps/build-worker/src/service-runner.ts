@@ -1152,7 +1152,7 @@ COPY . .
 RUN if [ -f composer.json ]; then composer install --no-dev --optimize-autoloader || true; fi
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-8000}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-8000} -t public; else php -S 0.0.0.0:\${PORT:-8000}; fi"]
+CMD ["sh", "-c", "if [ -f artisan ]; then php artisan serve --host=0.0.0.0 --port=\${PORT:-${port}}; elif [ -d public ] && [ -f public/index.php ]; then php -S 0.0.0.0:\${PORT:-${port}} -t public; else php -S 0.0.0.0:\${PORT:-${port}}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
@@ -1169,7 +1169,7 @@ COPY . .
 RUN bundle install || true
 ENV PORT=${port} HOST=0.0.0.0
 EXPOSE ${port}
-CMD ["sh", "-c", "if [ -f config.ru ]; then bundle exec rackup --host 0.0.0.0 -p \${PORT:-8000}; elif [ -f app.rb ]; then ruby app.rb -o 0.0.0.0 -p \${PORT:-8000}; elif [ -f bin/rails ]; then bundle exec rails server -b 0.0.0.0 -p \${PORT:-8000}; else bundle exec puma -b tcp://0.0.0.0:\${PORT:-8000}; fi"]
+CMD ["sh", "-c", "if [ -f config.ru ]; then bundle exec rackup --host 0.0.0.0 -p \${PORT:-${port}}; elif [ -f app.rb ]; then ruby app.rb -o 0.0.0.0 -p \${PORT:-${port}}; elif [ -f bin/rails ]; then bundle exec rails server -b 0.0.0.0 -p \${PORT:-${port}}; else bundle exec puma -b tcp://0.0.0.0:\${PORT:-${port}}; fi"]
 `;
     await fs.writeFile(path.join(workDir, "Dockerfile"), dockerfile.trim());
   }
