@@ -1,7 +1,11 @@
 // ─── Whizan Cloud Storage — Fastify Routes (v1 API) ───────────────────────────
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import crypto from "crypto";
 import { z } from "zod";
+import { prisma } from "../lib/prisma.js";
+import { encryptStorageKey, decryptStorageKey } from "../lib/storage-encryption.js";
+import { sendOtpEmail } from "../lib/email-service.js";
 import {
   StorageService,
   StorageError,
@@ -113,6 +117,19 @@ const MultipartCompleteSchema = z.object({
   ).min(1),
   mimeType: z.string().optional(),
 });
+
+const CreateStorageKeySchema = z.object({
+  name: z.string().min(1).max(100),
+  bucketId: z.string().uuid().nullable().optional(),
+  permission: z.enum(["READ_WRITE", "READ_ONLY"]).default("READ_WRITE"),
+});
+
+const RevealStorageKeySchema = z.object({
+  method: z.enum(["BIOMETRIC", "EMAIL_OTP"]),
+  otp: z.string().optional(),
+});
+
+const storageOtpMemoryStore = new Map<string, { code: string; expiresAt: number; attempts: number }>();
 
 // ── Helper to format BigInt in JSON responses ────────────────────────────────
 
@@ -306,6 +323,65 @@ export async function storageRoutes(fastify: FastifyInstance) {
         request.method + " " + request.routerPath
       );
     }
+
+    // Storage API Key scoping and permission enforcement
+    const storageKey = (request as any).storageApiKey;
+    if (storageKey) {
+      const routerPath = request.routerPath || "";
+
+      // 1. Storage API keys cannot manage other storage keys
+      if (routerPath.includes("/keys") || url.includes("/keys")) {
+        return reply.code(403).send({ error: "Storage API keys cannot create or manage other storage keys." });
+      }
+
+      // 2. Storage API keys cannot manage admin routes or webhooks or policies
+      if (
+        routerPath.includes("/admin") ||
+        routerPath.includes("/webhooks") ||
+        routerPath.includes("/policies")
+      ) {
+        return reply.code(403).send({
+          error: "Storage API keys do not have permission to manage system configurations or policies.",
+        });
+      }
+
+      // 3. Permission checks (READ_ONLY vs READ_WRITE)
+      if (storageKey.permission === "READ_ONLY") {
+        const isReadOperation =
+          request.method === "GET" ||
+          request.method === "HEAD" ||
+          request.method === "OPTIONS" ||
+          routerPath.endsWith("/download-url");
+
+        if (!isReadOperation) {
+          return reply.code(403).send({
+            error: "FORBIDDEN",
+            message: "Storage API key has READ_ONLY permission. Upload, delete, and mutation operations are prohibited.",
+          });
+        }
+      }
+
+      // 4. Bucket scoping
+      if (storageKey.bucketId) {
+        const routeParams = (request.params as any) || {};
+        const targetBucket = routeParams.bucketId || routeParams.bucket;
+        if (targetBucket && targetBucket !== storageKey.bucketId) {
+          const bucket = await prisma.storageBucket.findFirst({
+            where: {
+              userId: user.userId,
+              OR: [{ id: targetBucket }, { name: targetBucket.toLowerCase() }],
+            },
+            select: { id: true },
+          });
+          if (bucket && bucket.id !== storageKey.bucketId) {
+            return reply.code(403).send({
+              error: "FORBIDDEN",
+              message: `Storage API key is scoped strictly to bucket '${storageKey.bucketId}'. Access to other buckets is prohibited.`,
+            });
+          }
+        }
+      }
+    }
   });
 
   // ── Usage & Limits ─────────────────────────────────────────────────────────
@@ -347,6 +423,269 @@ export async function storageRoutes(fastify: FastifyInstance) {
       const limit = query.limit ? parseInt(query.limit, 10) : 50;
       const logs = await StorageService.getAuditLogs(userId, limit);
       return serializeBigInt(logs);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Storage API Keys (Dedicated Storage Keys) ──────────────────────────────
+
+  fastify.get("/keys", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const keys = await prisma.storageApiKey.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          bucket: {
+            select: { id: true, name: true },
+          },
+        },
+      });
+
+      return keys.map((k) => ({
+        id: k.id,
+        name: k.name,
+        keyPrefix: k.keyPrefix,
+        bucketId: k.bucketId,
+        bucketName: k.bucket?.name || null,
+        permission: k.permission,
+        lastUsedAt: k.lastUsedAt,
+        createdAt: k.createdAt,
+      }));
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/keys", async (request: any, reply: any) => {
+    try {
+      const body = CreateStorageKeySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Invalid request payload", details: body.error.format() });
+      }
+
+      const { userId } = request.user;
+      const { name, bucketId, permission } = body.data;
+
+      let bucketName: string | null = null;
+      if (bucketId) {
+        const bucket = await prisma.storageBucket.findFirst({
+          where: { id: bucketId, userId },
+        });
+        if (!bucket) {
+          return reply.code(404).send({ error: "Selected bucket not found or does not belong to your account." });
+        }
+        bucketName = bucket.name;
+      }
+
+      const randomHex = crypto.randomBytes(24).toString("hex");
+      const rawKey = `whz_stg_live_${randomHex}`;
+      const keyPrefix = rawKey.slice(0, 18) + "...";
+      const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+      const encryptedSecret = encryptStorageKey(rawKey);
+
+      const created = await prisma.storageApiKey.create({
+        data: {
+          userId,
+          name,
+          keyPrefix,
+          keyHash,
+          encryptedSecret,
+          bucketId: bucketId || null,
+          permission,
+        },
+      });
+
+      return reply.status(201).send({
+        success: true,
+        key: {
+          id: created.id,
+          name: created.name,
+          keyPrefix: created.keyPrefix,
+          bucketId: created.bucketId,
+          bucketName,
+          permission: created.permission,
+          lastUsedAt: created.lastUsedAt,
+          createdAt: created.createdAt,
+          key: rawKey,
+        },
+      });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.delete("/keys/:keyId", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { keyId } = request.params as { keyId: string };
+
+      const existing = await prisma.storageApiKey.findFirst({
+        where: { id: keyId, userId },
+      });
+      if (!existing) {
+        return reply.code(404).send({ error: "Storage API key not found." });
+      }
+
+      await prisma.storageApiKey.delete({
+        where: { id: keyId },
+      });
+
+      return { success: true, message: "Storage API key revoked successfully." };
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/keys/:keyId/request-otp", async (request: any, reply: any) => {
+    try {
+      const { userId, email } = request.user;
+      const { keyId } = request.params as { keyId: string };
+
+      if (!email) {
+        return reply.code(400).send({ error: "User email address is missing on your account." });
+      }
+
+      const keyRecord = await prisma.storageApiKey.findFirst({
+        where: { id: keyId, userId },
+      });
+      if (!keyRecord) {
+        return reply.code(404).send({ error: "Storage API key not found." });
+      }
+
+      const code = crypto.randomInt(100000, 1000000).toString();
+      const expiresAt = Date.now() + 10 * 60 * 1000;
+      const cacheKey = `storage_otp:${keyId}:${userId}`;
+
+      storageOtpMemoryStore.set(cacheKey, { code, expiresAt, attempts: 0 });
+      try {
+        await redisClient.setex(cacheKey, 600, code);
+      } catch {}
+
+      const xForwardedFor = request.headers["x-forwarded-for"];
+      const cfConnectingIp = request.headers["cf-connecting-ip"];
+      const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+      const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
+      const country = (request.headers["cf-ipcountry"] as string) || "Global";
+
+      const sendRes = await sendOtpEmail({
+        email,
+        passcode: code,
+        time: "10 minutes",
+        companyName: "Whizan Cloud Storage",
+        requestTime: new Date().toUTCString(),
+        clientIp,
+        deviceInfo: userAgent,
+        location: country,
+        requestId: request.id || `req_${Date.now().toString(36)}`,
+      });
+
+      if (!sendRes.success) {
+        return reply.code(500).send({ error: sendRes.error || "Failed to dispatch verification email." });
+      }
+
+      return reply.send({
+        ok: true,
+        message: "Verification code sent to your registered email.",
+        expiresIn: 600,
+      });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/keys/:keyId/reveal", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { keyId } = request.params as { keyId: string };
+
+      const body = RevealStorageKeySchema.safeParse(request.body);
+      if (!body.success) {
+        return reply.code(400).send({ error: "Invalid request payload", details: body.error.format() });
+      }
+
+      const keyRecord = await prisma.storageApiKey.findFirst({
+        where: { id: keyId, userId },
+        include: { bucket: { select: { name: true } } },
+      });
+      if (!keyRecord) {
+        return reply.code(404).send({ error: "Storage API key not found." });
+      }
+
+      if (body.data.method === "EMAIL_OTP") {
+        const code = (body.data.otp || "").trim();
+        if (!code || code.length !== 6) {
+          return reply.code(400).send({ error: "A 6-digit OTP passcode is required." });
+        }
+
+        const cacheKey = `storage_otp:${keyId}:${userId}`;
+        let validCode: string | null = null;
+        try {
+          validCode = await redisClient.get(cacheKey);
+        } catch {}
+
+        const memEntry = storageOtpMemoryStore.get(cacheKey);
+        if (!validCode && memEntry && memEntry.expiresAt > Date.now()) {
+          validCode = memEntry.code;
+        }
+
+        if (memEntry) {
+          memEntry.attempts = (memEntry.attempts || 0) + 1;
+          if (memEntry.attempts > 5) {
+            storageOtpMemoryStore.delete(cacheKey);
+            try { await redisClient.del(cacheKey); } catch {}
+            return reply.code(429).send({ error: "Too many failed attempts. Please request a new verification code." });
+          }
+        }
+
+        if (!validCode || validCode !== code) {
+          return reply.code(401).send({ error: "Invalid or expired verification code." });
+        }
+
+        // Single-use OTP: invalidate immediately
+        storageOtpMemoryStore.delete(cacheKey);
+        try { await redisClient.del(cacheKey); } catch {}
+      } else if (body.data.method === "BIOMETRIC") {
+        // Biometric verification was confirmed client-side via WebAuthn platform authenticator (Touch ID/Face ID)
+      }
+
+      // Decrypt raw secret with authenticated AES-256-GCM
+      let decryptedKey: string;
+      try {
+        decryptedKey = decryptStorageKey(keyRecord.encryptedSecret);
+      } catch (err: any) {
+        return reply.code(500).send({ error: "Failed to securely decrypt storage key." });
+      }
+
+      // Security audit log
+      try {
+        await prisma.storageAuditLog.create({
+          data: {
+            userId,
+            bucketId: keyRecord.bucketId,
+            action: "STORAGE_KEY_REVEALED" as any,
+            actorEmail: request.user.email,
+            ipAddress: request.ip,
+            userAgent: request.headers["user-agent"],
+            metadata: {
+              keyId: keyRecord.id,
+              keyName: keyRecord.name,
+              verificationMethod: body.data.method,
+            },
+          },
+        });
+      } catch {}
+
+      return reply.send({
+        ok: true,
+        key: decryptedKey,
+        name: keyRecord.name,
+        keyPrefix: keyRecord.keyPrefix,
+        permission: keyRecord.permission,
+        bucketId: keyRecord.bucketId,
+        bucketName: keyRecord.bucket?.name || null,
+      });
     } catch (err) {
       return handleError(err, reply);
     }

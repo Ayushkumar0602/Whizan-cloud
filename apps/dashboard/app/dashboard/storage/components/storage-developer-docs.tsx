@@ -28,15 +28,29 @@ import {
   FolderSync,
   FileText,
   RefreshCw,
+  Fingerprint,
+  Lock,
+  Shield,
+  Mail,
+  KeyRound,
+  ShieldAlert,
+  Clock,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/lib/auth";
 import {
-  apiKeysApi,
+  storageApi,
   type StorageBucketItem,
   type StorageObjectItem,
-  type ApiKeyItem,
-  type CreatedApiKey,
+  type StorageApiKeyItem,
+  type CreatedStorageApiKey,
 } from "@/lib/api";
+import {
+  isBiometricEnrolledForEmail,
+  isPlatformBiometricSupported,
+  verifyBiometric,
+} from "@/lib/webauthn";
 
 interface StorageDeveloperDocsProps {
   buckets: StorageBucketItem[];
@@ -54,14 +68,203 @@ export function StorageDeveloperDocs({
   >("SDK_JS");
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
-  // API Key Management State
-  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  // Dedicated Storage Access Key State
+  const { user } = useAuth();
+  const [storageKeys, setStorageKeys] = useState<StorageApiKeyItem[]>([]);
   const [loadingKeys, setLoadingKeys] = useState(false);
-  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [newKey, setNewKey] = useState<CreatedStorageApiKey | null>(null);
   const [creatingKey, setCreatingKey] = useState(false);
-  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyBucketId, setNewKeyBucketId] = useState<string>("ALL");
+  const [newKeyPermission, setNewKeyPermission] = useState<"READ_WRITE" | "READ_ONLY">("READ_WRITE");
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [useRealKeyInCode, setUseRealKeyInCode] = useState(false);
+
+  // Review / Reveal 2FA Modal State
+  const [revealTargetKey, setRevealTargetKey] = useState<StorageApiKeyItem | null>(null);
+  const [revealStep, setRevealStep] = useState<"PROMPT" | "OTP_INPUT" | "REVEALED">("PROMPT");
+  const [verificationMethod, setVerificationMethod] = useState<"BIOMETRIC" | "EMAIL_OTP">("BIOMETRIC");
+  const [otpInput, setOtpInput] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [requestingOtp, setRequestingOtp] = useState(false);
+  const [revealedKeySecret, setRevealedKeySecret] = useState<string | null>(null);
+  const [revealCountdown, setRevealCountdown] = useState<number>(60);
+  const [platformSupported, setPlatformSupported] = useState(false);
+
+  useEffect(() => {
+    isPlatformBiometricSupported().then(setPlatformSupported);
+  }, []);
+
+  // Countdown timer for revealed key auto-masking
+  useEffect(() => {
+    let timer: any;
+    if (revealStep === "REVEALED" && revealCountdown > 0) {
+      timer = setInterval(() => {
+        setRevealCountdown((c) => {
+          if (c <= 1) {
+            setRevealedKeySecret(null);
+            setRevealTargetKey(null);
+            setRevealStep("PROMPT");
+            toast.info("Storage Access Key auto-masked for security.");
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [revealStep, revealCountdown]);
+
+  const loadStorageKeys = async () => {
+    setLoadingKeys(true);
+    try {
+      const keys = await storageApi.listKeys();
+      setStorageKeys(keys || []);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingKeys(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStorageKeys();
+  }, []);
+
+  const handleCreateStorageKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKeyName.trim()) {
+      toast.error("Please enter a name for the storage key.");
+      return;
+    }
+    setCreatingKey(true);
+    try {
+      const res = await storageApi.createKey({
+        name: newKeyName.trim(),
+        bucketId: newKeyBucketId === "ALL" ? null : newKeyBucketId,
+        permission: newKeyPermission,
+      });
+      if (res.success && res.key) {
+        setNewKey(res.key);
+        setNewKeyName("");
+        setShowKeyForm(false);
+        setUseRealKeyInCode(true);
+        toast.success(`Storage Key '${res.key.name}' generated successfully.`);
+        await loadStorageKeys();
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate Storage Key");
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
+  const handleStartReview = async (keyItem: StorageApiKeyItem) => {
+    setRevealTargetKey(keyItem);
+    setOtpInput("");
+    setRevealedKeySecret(null);
+    setRevealCountdown(60);
+
+    const hasBiometrics = platformSupported && user?.email && isBiometricEnrolledForEmail(user.email);
+    if (hasBiometrics) {
+      setVerificationMethod("BIOMETRIC");
+      setRevealStep("PROMPT");
+    } else {
+      setVerificationMethod("EMAIL_OTP");
+      setRevealStep("OTP_INPUT");
+      await handleRequestOtp(keyItem.id);
+    }
+  };
+
+  const handleRequestOtp = async (keyId?: string) => {
+    const id = keyId || revealTargetKey?.id;
+    if (!id) return;
+    setRequestingOtp(true);
+    try {
+      const res = await storageApi.requestKeyOtp(id);
+      if (res.ok) {
+        toast.success("A 6-digit verification code was sent to your registered email.");
+        setRevealStep("OTP_INPUT");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send email verification code.");
+    } finally {
+      setRequestingOtp(false);
+    }
+  };
+
+  const handleVerifyBiometric = async () => {
+    if (!revealTargetKey) return;
+    setVerifying(true);
+    try {
+      const res = await verifyBiometric();
+      if (!res.success) {
+        toast.error(res.error || "Biometric authentication failed or was cancelled.");
+        return;
+      }
+
+      const revealRes = await storageApi.revealKey(revealTargetKey.id, {
+        method: "BIOMETRIC",
+      });
+
+      if (revealRes.ok && revealRes.key) {
+        setRevealedKeySecret(revealRes.key);
+        setRevealStep("REVEALED");
+        setRevealCountdown(60);
+        toast.success("Identity verified via Biometrics. Key revealed.");
+      } else {
+        toast.error("Failed to decrypt storage key.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Failed to verify biometrics.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!revealTargetKey) return;
+    if (!otpInput || otpInput.trim().length !== 6) {
+      toast.error("Please enter the 6-digit verification passcode.");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const revealRes = await storageApi.revealKey(revealTargetKey.id, {
+        method: "EMAIL_OTP",
+        otp: otpInput.trim(),
+      });
+
+      if (revealRes.ok && revealRes.key) {
+        setRevealedKeySecret(revealRes.key);
+        setRevealStep("REVEALED");
+        setRevealCountdown(60);
+        toast.success("Passcode verified. Storage Key revealed.");
+      } else {
+        toast.error("Invalid or expired verification passcode.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Verification failed. Check your OTP and try again.");
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleDeleteStorageKey = async (keyId: string, keyName: string) => {
+    if (!confirm(`Are you sure you want to revoke storage key '${keyName}'? Applications using this key will immediately lose access.`)) {
+      return;
+    }
+    try {
+      await storageApi.deleteKey(keyId);
+      toast.success(`Storage key '${keyName}' revoked.`);
+      await loadStorageKeys();
+      if (newKey?.id === keyId) setNewKey(null);
+      if (revealTargetKey?.id === keyId) setRevealTargetKey(null);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to revoke storage key.");
+    }
+  };
 
   // Bucket categorization
   const publicBuckets = buckets.filter((b) => b.isPublic);
@@ -96,41 +299,6 @@ export function StorageDeveloperDocs({
   const [transformQuality, setTransformQuality] = useState<number>(85);
   const [transformFit, setTransformFit] = useState<string>("cover");
 
-  const loadApiKeys = async () => {
-    setLoadingKeys(true);
-    try {
-      const keys = await apiKeysApi.list();
-      setApiKeys(keys || []);
-    } catch {
-      // ignore
-    } finally {
-      setLoadingKeys(false);
-    }
-  };
-
-  useEffect(() => {
-    loadApiKeys();
-  }, []);
-
-  const handleCreateApiKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCreatingKey(true);
-    try {
-      const label = newKeyLabel.trim() || "Storage Client Key";
-      const created = await apiKeysApi.create(label);
-      setNewKey(created);
-      setNewKeyLabel("");
-      setShowKeyForm(false);
-      setUseRealKeyInCode(true);
-      toast.success(`API Key '${label}' generated successfully.`);
-      await loadApiKeys();
-    } catch (err: any) {
-      toast.error(err.message || "Failed to generate API Key");
-    } finally {
-      setCreatingKey(false);
-    }
-  };
-
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedSnippet(id);
@@ -152,14 +320,16 @@ export function StorageDeveloperDocs({
 
   // Active Key representation for code snippets
   const activeSecretKey =
-    newKey && useRealKeyInCode
+    revealedKeySecret
+      ? revealedKeySecret
+      : newKey && useRealKeyInCode
       ? newKey.key
-      : apiKeys[0]?.keyPrefix && useRealKeyInCode
-      ? `${apiKeys[0].keyPrefix}`
-      : "whz_live_your_api_key_here";
+      : storageKeys[0]?.keyPrefix && useRealKeyInCode
+      ? `${storageKeys[0].keyPrefix}`
+      : "whz_stg_live_your_storage_key_here";
 
   const activeEnvKey =
-    newKey && useRealKeyInCode ? `"${newKey.key}"` : "process.env.WHIZAN_API_KEY!";
+    newKey && useRealKeyInCode ? `"${newKey.key}"` : "process.env.WHIZAN_STORAGE_KEY!";
 
   const generatedTransformUrl = `${baseUrl}/public/${encodeURIComponent(
     selectedTransformBucket
@@ -189,20 +359,20 @@ export function StorageDeveloperDocs({
                   width: 32,
                   height: 32,
                   borderRadius: "50%",
-                  background: "rgba(79, 70, 229, 0.1)",
+                  background: "rgba(99, 102, 241, 0.12)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Key className="w-4 h-4 text-indigo-500" />
+                <KeyRound className="w-4 h-4 text-indigo-500" />
               </div>
               <h3 style={{ fontSize: "1.05rem", fontWeight: 700 }}>
-                API Keys & Authentication Setup
+                Dedicated Storage Access Keys
               </h3>
             </div>
-            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.35rem", maxWidth: 720 }}>
-              All client SDK requests (<code style={{ fontSize: "0.8rem", color: "var(--accent)" }}>@whizan/storage-js</code>), AWS S3 gateway commands, and REST API calls require an authenticated Whizan API key (<code style={{ fontSize: "0.8rem" }}>whz_live_...</code>).
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.35rem", maxWidth: 780 }}>
+              Scoped credentials strictly for Whizan Storage SDK (<code style={{ fontSize: "0.8rem", color: "var(--accent)" }}>@whizan/storage-js</code>) and S3 Gateway operations. Unlike general MCP/CLI master keys, storage keys can be scoped to specific buckets with Read/Write or Read-Only permissions, and securely reviewed anytime via hardware Biometrics or Email 2FA.
             </p>
           </div>
 
@@ -215,14 +385,15 @@ export function StorageDeveloperDocs({
               <Plus className="w-3.5 h-3.5" />
               {showKeyForm ? "Cancel" : "Generate Storage Key"}
             </button>
-            <Link
-              href="/dashboard/settings"
+            <button
+              onClick={loadStorageKeys}
+              disabled={loadingKeys}
               className="btn btn-secondary"
-              style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+              style={{ padding: "0.45rem 0.65rem" }}
+              title="Refresh Storage Keys"
             >
-              Manage in Settings
-              <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
-            </Link>
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingKeys ? "animate-spin" : ""}`} />
+            </button>
           </div>
         </div>
 
@@ -239,10 +410,10 @@ export function StorageDeveloperDocs({
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
               <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--success)" }}>
-                Active API Key Generated ({newKey.name})
+                Active Storage Key Generated ({newKey.name})
               </span>
-              <span style={{ fontSize: "0.75rem", color: "var(--warning)", fontWeight: 600 }}>
-                Save this key now — for security, it cannot be displayed again!
+              <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 500 }}>
+                Encrypted with AES-256-GCM. Reviewable anytime with 2FA verification.
               </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -272,45 +443,258 @@ export function StorageDeveloperDocs({
           </div>
         )}
 
-        {/* Quick Key Generator Inline Form */}
+        {/* Create Storage Key Inline Form */}
         {showKeyForm && (
           <form
-            onSubmit={handleCreateApiKey}
+            onSubmit={handleCreateStorageKey}
             style={{
               marginTop: "1rem",
-              padding: "1rem",
+              padding: "1.25rem",
               background: "var(--bg-inset)",
               borderRadius: "0.5rem",
               border: "1px solid var(--border)",
               display: "flex",
-              gap: "0.75rem",
-              alignItems: "center",
+              flexDirection: "column",
+              gap: "0.85rem",
             }}
           >
-            <input
-              type="text"
-              placeholder="Key label (e.g. Next.js Production, Backend S3 Worker)"
-              value={newKeyLabel}
-              onChange={(e) => setNewKeyLabel(e.target.value)}
-              style={{
-                flex: 1,
-                padding: "0.5rem 0.75rem",
-                borderRadius: "0.375rem",
-                border: "1px solid var(--border)",
-                background: "var(--card-bg)",
-                fontSize: "0.85rem",
-              }}
-            />
-            <button
-              type="submit"
-              disabled={creatingKey}
-              className="btn btn-primary"
-              style={{ fontSize: "0.82rem", whiteSpace: "nowrap" }}
-            >
-              {creatingKey ? "Generating..." : "Create Live Key"}
-            </button>
+            <div style={{ fontWeight: 650, fontSize: "0.85rem", color: "var(--foreground)" }}>
+              Create New Storage Access Key
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.75rem" }}>
+              <div>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.3rem" }}>
+                  Key Label / Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Next.js Public Uploads, Python S3 Sync"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid var(--border)",
+                    background: "var(--card-bg)",
+                    fontSize: "0.85rem",
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.3rem" }}>
+                  Bucket Scope
+                </label>
+                <select
+                  value={newKeyBucketId}
+                  onChange={(e) => setNewKeyBucketId(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid var(--border)",
+                    background: "var(--card-bg)",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  <option value="ALL">All Buckets (Global Access)</option>
+                  {buckets.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.isPublic ? "Public" : "Private"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.3rem" }}>
+                  Permission Level
+                </label>
+                <select
+                  value={newKeyPermission}
+                  onChange={(e) => setNewKeyPermission(e.target.value as any)}
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0.75rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid var(--border)",
+                    background: "var(--card-bg)",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  <option value="READ_WRITE">Read &amp; Write (Full Access)</option>
+                  <option value="READ_ONLY">Read-Only (Download &amp; Query Only)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.25rem" }}>
+              <button
+                type="button"
+                onClick={() => setShowKeyForm(false)}
+                className="btn btn-secondary"
+                style={{ fontSize: "0.82rem" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creatingKey}
+                className="btn btn-primary"
+                style={{ fontSize: "0.82rem" }}
+              >
+                {creatingKey ? "Generating..." : "Generate Key"}
+              </button>
+            </div>
           </form>
         )}
+
+        {/* Storage Keys Table */}
+        <div style={{ marginTop: "1.25rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+            <span style={{ fontSize: "0.82rem", fontWeight: 650, color: "var(--foreground)" }}>
+              Active Storage Access Keys ({storageKeys.length})
+            </span>
+          </div>
+
+          {storageKeys.length === 0 ? (
+            <div
+              style={{
+                padding: "1.5rem",
+                textAlign: "center",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px dashed var(--border)",
+                fontSize: "0.82rem",
+                color: "var(--muted)",
+              }}
+            >
+              No dedicated Storage Access Keys generated yet. Create one above to connect your backend or SDK.
+            </div>
+          ) : (
+            <div
+              style={{
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                overflow: "hidden",
+                background: "var(--card-bg)",
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                <thead>
+                  <tr style={{ background: "var(--bg-inset)", borderBottom: "1px solid var(--border)", textAlign: "left" }}>
+                    <th style={{ padding: "0.65rem 0.85rem", fontWeight: 600 }}>Key Name &amp; Prefix</th>
+                    <th style={{ padding: "0.65rem 0.85rem", fontWeight: 600 }}>Scope</th>
+                    <th style={{ padding: "0.65rem 0.85rem", fontWeight: 600 }}>Permission</th>
+                    <th style={{ padding: "0.65rem 0.85rem", fontWeight: 600 }}>Created</th>
+                    <th style={{ padding: "0.65rem 0.85rem", fontWeight: 600, textAlign: "right" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storageKeys.map((k) => (
+                    <tr
+                      key={k.id}
+                      style={{
+                        borderBottom: "1px solid var(--border-light)",
+                      }}
+                    >
+                      <td style={{ padding: "0.65rem 0.85rem" }}>
+                        <div style={{ fontWeight: 600, color: "var(--foreground)" }}>{k.name}</div>
+                        <div style={{ fontFamily: "monospace", fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.15rem" }}>
+                          {k.keyPrefix}
+                        </div>
+                      </td>
+                      <td style={{ padding: "0.65rem 0.85rem" }}>
+                        {k.bucketName ? (
+                          <span
+                            style={{
+                              padding: "0.2rem 0.5rem",
+                              borderRadius: "4px",
+                              fontSize: "0.72rem",
+                              fontWeight: 600,
+                              background: "rgba(59, 130, 246, 0.1)",
+                              color: "#3b82f6",
+                            }}
+                          >
+                            Bucket: {k.bucketName}
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              padding: "0.2rem 0.5rem",
+                              borderRadius: "4px",
+                              fontSize: "0.72rem",
+                              fontWeight: 600,
+                              background: "rgba(107, 114, 128, 0.1)",
+                              color: "var(--muted)",
+                            }}
+                          >
+                            All Buckets
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.65rem 0.85rem" }}>
+                        <span
+                          style={{
+                            padding: "0.2rem 0.5rem",
+                            borderRadius: "4px",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            background:
+                              k.permission === "READ_WRITE"
+                                ? "rgba(16, 185, 129, 0.1)"
+                                : "rgba(14, 165, 233, 0.1)",
+                            color:
+                              k.permission === "READ_WRITE"
+                                ? "#10b981"
+                                : "#0284c7",
+                          }}
+                        >
+                          {k.permission === "READ_WRITE" ? "Read & Write" : "Read-Only"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "0.65rem 0.85rem", color: "var(--muted)", fontSize: "0.75rem" }}>
+                        {new Date(k.createdAt).toLocaleDateString()}
+                      </td>
+                      <td style={{ padding: "0.65rem 0.85rem", textAlign: "right" }}>
+                        <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={() => handleStartReview(k)}
+                            className="btn btn-secondary"
+                            style={{
+                              padding: "0.3rem 0.6rem",
+                              fontSize: "0.75rem",
+                              display: "flex",
+                              gap: "0.3rem",
+                              alignItems: "center",
+                            }}
+                            title="Review key via Biometric or Email 2FA"
+                          >
+                            <Shield size={12} className="text-indigo-400" />
+                            Review
+                          </button>
+                          <button
+                            onClick={() => handleDeleteStorageKey(k.id, k.name)}
+                            className="btn btn-secondary"
+                            style={{
+                              padding: "0.3rem 0.5rem",
+                              fontSize: "0.75rem",
+                              color: "var(--destructive)",
+                            }}
+                            title="Revoke key"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* Existing Keys Summary & Snippet Toggle */}
         <div
@@ -328,18 +712,10 @@ export function StorageDeveloperDocs({
           }}
         >
           <div>
-            <span>Your Active API Keys: </span>
+            <span>Storage Keys Active: </span>
             <span style={{ fontWeight: 600, color: "var(--foreground)" }}>
-              {apiKeys.length} configured in{" "}
-              <Link href="/dashboard/settings" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-                Settings &gt; API Keys
-              </Link>
+              {storageKeys.length} configured for this workspace
             </span>
-            {apiKeys.length > 0 && (
-              <span style={{ marginLeft: "0.5rem", fontFamily: "monospace", fontSize: "0.75rem" }}>
-                ({apiKeys.map((k) => k.name).join(", ")})
-              </span>
-            )}
           </div>
 
           <label
@@ -361,6 +737,293 @@ export function StorageDeveloperDocs({
           </label>
         </div>
       </div>
+
+      {/* ── Review / Reveal 2FA Modal ───────────────────────────────────────── */}
+      {revealTargetKey && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            backdropFilter: "blur(4px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 460,
+              background: "var(--card-bg, #0f172a)",
+              border: "1px solid var(--border, #1e293b)",
+              borderRadius: "0.75rem",
+              padding: "1.5rem",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5)",
+              position: "relative",
+            }}
+          >
+            {/* Modal Close Button */}
+            <button
+              onClick={() => {
+                setRevealTargetKey(null);
+                setRevealedKeySecret(null);
+                setOtpInput("");
+              }}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                background: "transparent",
+                border: "none",
+                color: "var(--muted)",
+                cursor: "pointer",
+                padding: "0.25rem",
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            {revealStep === "PROMPT" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.85rem" }}>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      background: "rgba(99, 102, 241, 0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Fingerprint size={22} className="text-indigo-400" />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "var(--foreground)" }}>
+                      Biometric Security Verification
+                    </h4>
+                    <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Key: {revealTargetKey.name}
+                    </span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", lineHeight: 1.5, marginBottom: "1.25rem" }}>
+                  To decrypt and review this Storage Access Key, authenticate using your hardware platform sensor (Touch ID, Face ID, or Windows Hello).
+                </p>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  <button
+                    onClick={handleVerifyBiometric}
+                    disabled={verifying}
+                    className="btn btn-primary"
+                    style={{
+                      width: "100%",
+                      padding: "0.6rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "0.5rem",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <Fingerprint size={16} />
+                    {verifying ? "Verifying Sensor..." : "Verify with Touch ID / Face ID"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerificationMethod("EMAIL_OTP");
+                      setRevealStep("OTP_INPUT");
+                      handleRequestOtp();
+                    }}
+                    disabled={requestingOtp}
+                    className="btn btn-secondary"
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem",
+                      fontSize: "0.78rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {requestingOtp ? "Sending Code..." : "Use Email Verification Code instead"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {revealStep === "OTP_INPUT" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.85rem" }}>
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      background: "rgba(59, 130, 246, 0.15)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Mail size={22} className="text-blue-400" />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "var(--foreground)" }}>
+                      Email 2FA Verification
+                    </h4>
+                    <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                      Key: {revealTargetKey.name}
+                    </span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.82rem", color: "var(--muted)", lineHeight: 1.5, marginBottom: "1rem" }}>
+                  A 6-digit security verification code has been dispatched to{" "}
+                  <strong style={{ color: "var(--foreground)" }}>{user?.email || "your registered email"}</strong>. Enter it below to decrypt this Storage Access Key.
+                </p>
+
+                <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                  <div>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      placeholder="• • • • • •"
+                      value={otpInput}
+                      onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                      style={{
+                        width: "100%",
+                        padding: "0.65rem 1rem",
+                        textAlign: "center",
+                        fontSize: "1.35rem",
+                        letterSpacing: "0.5rem",
+                        fontFamily: "monospace",
+                        borderRadius: "0.5rem",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        color: "var(--foreground)",
+                      }}
+                      autoFocus
+                    />
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <button
+                      type="submit"
+                      disabled={verifying || otpInput.trim().length !== 6}
+                      className="btn btn-primary"
+                      style={{
+                        width: "100%",
+                        padding: "0.6rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "0.5rem",
+                        fontSize: "0.85rem",
+                      }}
+                    >
+                      <Lock size={15} />
+                      {verifying ? "Verifying Code..." : "Verify Code & Decrypt Key"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRequestOtp()}
+                      disabled={requestingOtp}
+                      className="btn btn-secondary"
+                      style={{
+                        width: "100%",
+                        padding: "0.45rem",
+                        fontSize: "0.78rem",
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {requestingOtp ? "Sending..." : "Resend Verification Code"}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {revealStep === "REVEALED" && revealedKeySecret && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.85rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <ShieldCheck size={22} className="text-emerald-500" />
+                    <h4 style={{ margin: 0, fontSize: "1rem", fontWeight: 700, color: "var(--foreground)" }}>
+                      Storage Key Decrypted
+                    </h4>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      padding: "0.2rem 0.5rem",
+                      borderRadius: "4px",
+                      background: "rgba(245, 158, 11, 0.12)",
+                      color: "#f59e0b",
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                    }}
+                  >
+                    <Clock size={12} />
+                    Auto-masking in {revealCountdown}s
+                  </span>
+                </div>
+
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                  Identity verified. This Storage Access Key can now be copied into your application configuration.
+                </p>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1.25rem" }}>
+                  <code
+                    style={{
+                      flex: 1,
+                      background: "var(--bg-inset)",
+                      padding: "0.65rem 0.85rem",
+                      borderRadius: "0.375rem",
+                      fontSize: "0.82rem",
+                      fontFamily: "monospace",
+                      wordBreak: "break-all",
+                      color: "var(--foreground)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    {revealedKeySecret}
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard(revealedKeySecret, "revealed-key")}
+                    className="btn btn-primary"
+                    style={{ padding: "0.6rem 0.85rem", fontSize: "0.8rem", display: "flex", gap: "0.35rem", alignItems: "center" }}
+                  >
+                    {copiedSnippet === "revealed-key" ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    Copy
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRevealTargetKey(null);
+                    setRevealedKeySecret(null);
+                    setOtpInput("");
+                  }}
+                  className="btn btn-secondary"
+                  style={{ width: "100%", padding: "0.5rem", fontSize: "0.82rem" }}
+                >
+                  Done / Close Key
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Sub-navigation Tabs */}
       <div
@@ -1259,7 +1922,7 @@ console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocated
               <div style={{ padding: "0.75rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>ACCESS KEY ID</div>
                 <div style={{ fontFamily: "monospace", fontSize: "0.85rem", fontWeight: 700, marginTop: "0.25rem" }}>
-                  {apiKeys[0]?.id || "whz_key_id"}
+                  {storageKeys[0]?.id || "whz_stg_access_key_id"}
                 </div>
               </div>
 
@@ -1272,11 +1935,7 @@ console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocated
             </div>
 
             <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--muted)" }}>
-              💡 Need a new S3 secret key? Click <strong>Generate Storage Key</strong> above or visit{" "}
-              <Link href="/dashboard/settings" style={{ color: "var(--accent)", textDecoration: "underline" }}>
-                Settings &gt; API Keys
-              </Link>
-              .
+              💡 Need a new S3 secret key? Click <strong>Generate Storage Key</strong> above to create dedicated scoped credentials.
             </div>
           </div>
 
@@ -1292,7 +1951,7 @@ console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocated
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>AWS CLI Configuration & Usage</h4>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>AWS CLI Configuration &amp; Usage</h4>
                 <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
                   Configure your environment and transfer files using standard aws s3 commands.
                 </p>
@@ -1300,7 +1959,7 @@ console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocated
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `# Configure credentials\naws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"\naws configure set aws_secret_access_key "${activeSecretKey}"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${targetBucket}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
+                    `# Configure credentials\naws configure set aws_access_key_id "${storageKeys[0]?.id || "whz_stg_access_key_id"}"\naws configure set aws_secret_access_key "${activeSecretKey}"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${targetBucket}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
                     "awscli"
                   )
                 }
@@ -1325,7 +1984,7 @@ console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocated
                 color: "var(--foreground)",
               }}
             >{`# Configure credentials
-aws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"
+aws configure set aws_access_key_id "${storageKeys[0]?.id || "whz_stg_access_key_id"}"
 aws configure set aws_secret_access_key "${activeSecretKey}"
 aws configure set default.region "auto"
 
@@ -1357,7 +2016,7 @@ aws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",\n    aws_secret_access_key="${activeSecretKey}",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${targetBucket}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${targetBucket}", "data/dataset.parquet", "local.parquet")`,
+                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="${storageKeys[0]?.id || "whz_stg_access_key_id"}",\n    aws_secret_access_key="${activeSecretKey}",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${targetBucket}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${targetBucket}", "data/dataset.parquet", "local.parquet")`,
                     "boto3"
                   )
                 }
@@ -1386,7 +2045,7 @@ aws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\
 s3 = boto3.client(
     "s3",
     endpoint_url="${baseUrl}/api/storage/v1/s3",
-    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",
+    aws_access_key_id="${storageKeys[0]?.id || "whz_stg_access_key_id"}",
     aws_secret_access_key="${activeSecretKey}",
     region_name="auto",
 )

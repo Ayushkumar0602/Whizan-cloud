@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { useState, useEffect } from "react";
 import { getApiBase, apiKeysApi, auth, type ApiKeyItem, type CreatedApiKey } from "@/lib/api";
@@ -702,7 +703,7 @@ export default function SettingsPage() {
               </h2>
             </div>
             <p className="card-sub" style={{ marginTop: "0.25rem" }}>
-              Empower AI coding agents inside Cursor, Windsurf, or VS Code to autonomously inspect, adapt, and deploy your codebases to Whizan Cloud.
+              Empower AI coding agents inside Cursor, Windsurf, or VS Code to autonomously inspect, adapt, and deploy your codebases to Whizan Cloud. These master keys are exclusively for IDE MCP &amp; CLI operations. For Cloud Storage bucket access, manage dedicated Storage Keys under <Link href="/dashboard/storage?tab=docs" style={{ color: "var(--accent)", textDecoration: "underline" }}>Cloud Storage &gt; Developer API</Link>.
             </p>
           </div>
 

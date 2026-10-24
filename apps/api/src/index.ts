@@ -120,8 +120,52 @@ import { userMetaCache } from "./lib/user-cache.js";
 app.decorate("authenticate", async (request: any, reply: any) => {
   const authHeader = request.headers.authorization;
   const apiKeyHeader = request.headers["x-api-key"];
-  const rawKey = apiKeyHeader || (authHeader?.startsWith("Bearer whz_live_") ? authHeader.slice(7) : null);
+  const rawKey =
+    (typeof apiKeyHeader === "string" ? apiKeyHeader.trim() : null) ||
+    (typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : null);
 
+  // Dedicated Storage API Keys (whz_stg_live_...)
+  if (rawKey && typeof rawKey === "string" && rawKey.startsWith("whz_stg_live_")) {
+    const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+    const stgKeyRecord = await prisma.storageApiKey.findUnique({
+      where: { keyHash },
+      include: { user: true },
+    });
+
+    if (stgKeyRecord) {
+      // Storage API keys are strictly restricted to Storage routes
+      const url = request.url || "";
+      if (!url.startsWith("/storage/") && !url.startsWith("/api/storage/")) {
+        return reply.code(403).send({ error: "Storage API keys can only access Storage endpoints." });
+      }
+
+      const user = stgKeyRecord.user;
+      const isRoot = isRootAdmin(user);
+      const isAdmin = isUserAdmin(user);
+      request.user = {
+        userId: stgKeyRecord.userId,
+        email: user.email,
+        subscriptionTier: (user as any).subscriptionTier || "HOBBY",
+        role: isRoot ? "ROOT_ADMIN" : (isAdmin ? ((user as any).role || "ADMIN") : ((user as any).role || "USER")),
+        iamPermissions: (user as any).iamPermissions || "all",
+        emailVerified: (user as any).emailVerified === true,
+      };
+      request.storageApiKey = {
+        id: stgKeyRecord.id,
+        name: stgKeyRecord.name,
+        bucketId: stgKeyRecord.bucketId,
+        permission: stgKeyRecord.permission,
+      };
+      // Update lastUsedAt asynchronously
+      prisma.storageApiKey.update({ where: { id: stgKeyRecord.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+      return;
+    }
+    return reply.code(401).send({ error: "Invalid Storage API key" });
+  }
+
+  // General IDE DevOps MCP & CLI API Keys (whz_live_...)
   if (rawKey && typeof rawKey === "string" && rawKey.startsWith("whz_live_")) {
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
     const apiKeyRecord = await prisma.apiKey.findUnique({

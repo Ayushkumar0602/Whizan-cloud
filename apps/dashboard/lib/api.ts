@@ -1940,6 +1940,21 @@ export interface StorageAuditLogItem {
   createdAt: string;
 }
 
+export interface StorageApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  bucketId: string | null;
+  bucketName?: string | null;
+  permission: "READ_WRITE" | "READ_ONLY";
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface CreatedStorageApiKey extends StorageApiKeyItem {
+  key: string;
+}
+
 export const storageApi = {
   getUsage: () =>
     request<StorageUsageResponse>("/api/storage/v1/usage"),
@@ -2205,4 +2220,48 @@ export const storageApi = {
       }
     );
   },
+
+  // Dedicated Storage Access Keys
+  listKeys: () =>
+    request<StorageApiKeyItem[]>("/api/storage/v1/keys"),
+
+  createKey: (data: {
+    name: string;
+    bucketId?: string | null;
+    permission?: "READ_WRITE" | "READ_ONLY";
+  }) =>
+    request<{ success: boolean; key: CreatedStorageApiKey }>("/api/storage/v1/keys", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteKey: (keyId: string) =>
+    request<{ success: boolean; message: string }>(`/api/storage/v1/keys/${keyId}`, {
+      method: "DELETE",
+    }),
+
+  requestKeyOtp: (keyId: string) =>
+    request<{ ok: boolean; message: string; expiresIn: number }>(
+      `/api/storage/v1/keys/${keyId}/request-otp`,
+      {
+        method: "POST",
+      }
+    ),
+
+  revealKey: (
+    keyId: string,
+    data: { method: "BIOMETRIC" | "EMAIL_OTP"; otp?: string }
+  ) =>
+    request<{
+      ok: boolean;
+      key: string;
+      name: string;
+      keyPrefix: string;
+      permission: string;
+      bucketId: string | null;
+      bucketName: string | null;
+    }>(`/api/storage/v1/keys/${keyId}/reveal`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };

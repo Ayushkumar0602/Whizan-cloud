@@ -47,6 +47,7 @@ model User {
   storageQuota     StorageUserQuota?
   storageAuditLogs StorageAuditLog[]
   storageWebhooks  StorageWebhook[]
+  storageApiKeys   StorageApiKey[]
 
   @@map("users")
 }
@@ -964,6 +965,7 @@ model StorageBucket {
   reservations     StorageReservation[]
   policies         StorageBucketPolicy[]
   webhooks         StorageWebhook[]
+  storageApiKeys   StorageApiKey[]
 
   @@index([userId])
   @@map("storage_buckets")
@@ -1114,6 +1116,29 @@ model StorageObjectVersion {
   @@unique([objectId, version])
   @@index([objectId, createdAt(sort: Desc)])
   @@map("storage_object_versions")
+}
+
+// ─────────────────────────────────────────
+//  STORAGE API KEYS (DEDICATED OBJECT STORAGE CREDENTIALS)
+// ─────────────────────────────────────────
+model StorageApiKey {
+  id              String         @id @default(uuid())
+  userId          String         @map("user_id")
+  name            String         @default("Storage Key")
+  keyPrefix       String         @map("key_prefix") // e.g. "whz_stg_live_a1b2..."
+  keyHash         String         @unique @map("key_hash") // SHA-256 for fast auth lookup
+  encryptedSecret String         @map("encrypted_secret") // AES-256-GCM encrypted raw key for 2FA review
+  bucketId        String?        @map("bucket_id") // Optional scope to specific bucket (null = all buckets)
+  permission      String         @default("READ_WRITE") // "READ_WRITE" | "READ_ONLY"
+  lastUsedAt      DateTime?      @map("last_used_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket          StorageBucket? @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([bucketId])
+  @@map("storage_api_keys")
 }
 
 
