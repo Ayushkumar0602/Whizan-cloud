@@ -289,7 +289,7 @@ export default function StorageDashboardPage() {
         const isStorageDomain = typeof window !== "undefined" && window.location.hostname.includes("whizan.cloud");
         const baseOrigin = process.env.NEXT_PUBLIC_STORAGE_URL 
           ? process.env.NEXT_PUBLIC_STORAGE_URL 
-          : (isStorageDomain ? "https://api.whizan.cloud" : window.location.origin);
+          : (isStorageDomain ? "https://storage.whizan.cloud" : window.location.origin);
         const publicUrl = `${baseOrigin}/public/${encodeURIComponent(selectedBucket.name)}/${encodedPath}`;
         await navigator.clipboard.writeText(publicUrl);
         setCopiedKey(obj.id);
