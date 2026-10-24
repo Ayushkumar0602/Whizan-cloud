@@ -1,0 +1,23 @@
+{
+  "name": "@whizan/storage-js",
+  "version": "1.0.0",
+  "description": "Whizan Cloud Storage JavaScript/TypeScript Client SDK — S3-compatible, ultra-fast file storage with Supabase parity",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "typescript": "^5.5.4"
+  }
+}

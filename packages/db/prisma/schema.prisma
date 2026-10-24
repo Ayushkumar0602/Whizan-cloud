@@ -46,6 +46,7 @@ model User {
   storageBuckets   StorageBucket[]
   storageQuota     StorageUserQuota?
   storageAuditLogs StorageAuditLog[]
+  storageWebhooks  StorageWebhook[]
 
   @@map("users")
 }
@@ -950,12 +951,19 @@ model StorageBucket {
   allowedMimeTypes String[]             @default([]) @map("allowed_mime_types") // Empty means all allowed
   fileCount        Int                  @default(0) @map("file_count")
   totalBytes       BigInt               @default(0) @map("total_bytes")
-  createdAt        DateTime             @default(now()) @map("created_at")
-  updatedAt        DateTime             @updatedAt @map("updated_at")
+  corsOrigins        String[]             @default(["*"]) @map("cors_origins")
+  corsMaxAge         Int                  @default(3600)  @map("cors_max_age")
+  versioningEnabled  Boolean              @default(false) @map("versioning_enabled")
+  trashEnabled       Boolean              @default(true)  @map("trash_enabled")
+  trashRetentionDays Int                  @default(30)    @map("trash_retention_days")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
 
   user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   objects          StorageObject[]
   reservations     StorageReservation[]
+  policies         StorageBucketPolicy[]
+  webhooks         StorageWebhook[]
 
   @@index([userId])
   @@map("storage_buckets")
@@ -975,14 +983,18 @@ model StorageObject {
   cacheControl       String?       @map("cache_control")
   contentDisposition String?       @map("content_disposition")
   isPublic           Boolean       @default(false) @map("is_public")
+  deletedAt          DateTime?     @map("deleted_at")
+  deletedBy          String?       @map("deleted_by")
   createdAt          DateTime      @default(now()) @map("created_at")
   updatedAt          DateTime      @updatedAt @map("updated_at")
 
   bucket             StorageBucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+  versions           StorageObjectVersion[]
 
   @@unique([bucketId, name])
   @@index([userId, bucketId])
   @@index([userId, createdAt(sort: Desc)])
+  @@index([bucketId, deletedAt])
   @@map("storage_objects")
 }
 
@@ -1049,6 +1061,59 @@ model StorageAuditLog {
 
   @@index([userId, createdAt(sort: Desc)])
   @@map("storage_audit_logs")
+}
+
+model StorageBucketPolicy {
+  id         String        @id @default(uuid())
+  bucketId   String        @map("bucket_id")
+  name       String
+  operation  String        // "SELECT" | "INSERT" | "UPDATE" | "DELETE"
+  definition Json          // { "role"?: string, "allowedPrefix"?: string, "maxSizeBytes"?: number, "check"?: string }
+  isEnabled  Boolean       @default(true) @map("is_enabled")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  bucket     StorageBucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@index([bucketId, operation])
+  @@map("storage_bucket_policies")
+}
+
+model StorageWebhook {
+  id         String         @id @default(uuid())
+  userId     String         @map("user_id")
+  bucketId   String?        @map("bucket_id") // null = all buckets
+  events     String[]       // ["OBJECT_UPLOAD", "OBJECT_DELETE", "BUCKET_CREATE", "BUCKET_DELETE"]
+  url        String
+  secret     String         // HMAC-SHA256 signing secret
+  isActive   Boolean        @default(true) @map("is_active")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucket     StorageBucket? @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("storage_webhooks")
+}
+
+model StorageObjectVersion {
+  id         String        @id @default(uuid())
+  objectId   String        @map("object_id")
+  version    Int           // 1, 2, 3...
+  r2Key      String        @map("r2_key")
+  size       BigInt
+  mimeType   String        @map("mime_type")
+  etag       String?
+  metadata   Json?         @default("{}")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  createdBy  String?       @map("created_by")
+
+  object     StorageObject @relation(fields: [objectId], references: [id], onDelete: Cascade)
+
+  @@unique([objectId, version])
+  @@index([objectId, createdAt(sort: Desc)])
+  @@map("storage_object_versions")
 }
 
 

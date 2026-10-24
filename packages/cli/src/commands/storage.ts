@@ -275,6 +275,105 @@ export async function storageCommand(args: string[] = []) {
       break;
     }
 
+    // ── Move ────────────────────────────────────────────────────────────────
+    case "mv":
+    case "move": {
+      const src = subArgs[0];
+      const dest = subArgs[1];
+
+      if (!src || !dest) {
+        printError("Usage: whizan storage mv <src-bucket>/<src-path> <dest-bucket>/<dest-path>");
+        process.exit(1);
+      }
+
+      const srcSlash = src.indexOf("/");
+      const destSlash = dest.indexOf("/");
+      if (srcSlash === -1 || destSlash === -1) {
+        printError("Paths must be in format <bucket>/<path>");
+        process.exit(1);
+      }
+
+      const srcBucket = src.slice(0, srcSlash);
+      const srcPath = src.slice(srcSlash + 1);
+      const destBucket = dest.slice(0, destSlash);
+      const destPath = dest.slice(destSlash + 1);
+
+      const spinner = new Spinner(`Moving ${src} -> ${dest}...`).start();
+      await client.moveStorageObject(srcBucket, srcPath, destBucket, destPath).catch((err) => {
+        spinner.stop();
+        printError(err.message);
+        process.exit(1);
+      });
+      spinner.stop();
+
+      console.error(`\n  ${c.emerald}✔ Object moved successfully to ${dest}!${c.reset}\n`);
+      break;
+    }
+
+    // ── Bulk Remove ─────────────────────────────────────────────────────────
+    case "bulk-rm": {
+      const bucket = subArgs[0];
+      const prefix = subArgs[1];
+
+      if (!bucket || !prefix) {
+        printError("Usage: whizan storage bulk-rm <bucket> <prefix>");
+        process.exit(1);
+      }
+
+      const spinner = new Spinner(`Finding objects matching '${prefix}' in '${bucket}'...`).start();
+      const list = await client.listStorageObjects(bucket, prefix, 100).catch((err) => {
+        spinner.stop();
+        printError(err.message);
+        process.exit(1);
+      });
+
+      if (!list.objects || list.objects.length === 0) {
+        spinner.stop();
+        console.error(`  ${c.dim}No objects found with prefix '${prefix}'.${c.reset}\n`);
+        break;
+      }
+
+      const paths = list.objects.map((o: any) => o.name);
+      spinner.update(`Deleting ${paths.length} objects...`);
+      const delRes = await client.bulkDeleteStorageObjects(bucket, paths).catch((err) => {
+        spinner.stop();
+        printError(err.message);
+        process.exit(1);
+      });
+      spinner.stop();
+
+      console.error(`\n  ${c.emerald}✔ Deleted ${delRes.deletedCount} objects successfully!${c.reset}\n`);
+      break;
+    }
+
+    // ── Presign URL ─────────────────────────────────────────────────────────
+    case "presign": {
+      const target = subArgs[0];
+      if (!target || !target.includes("/")) {
+        printError("Usage: whizan storage presign <bucket>/<path> [--ttl <seconds>]");
+        process.exit(1);
+      }
+
+      const slashIdx = target.indexOf("/");
+      const bucket = target.slice(0, slashIdx);
+      const objPath = target.slice(slashIdx + 1);
+
+      const ttlIdx = subArgs.findIndex((a) => a === "--ttl");
+      const ttl = ttlIdx !== -1 ? parseInt(subArgs[ttlIdx + 1], 10) : 3600;
+
+      const spinner = new Spinner(`Generating presigned URL for '${target}'...`).start();
+      const res = await client.getStoragePresignedDownloadUrl(bucket, objPath, ttl).catch((err) => {
+        spinner.stop();
+        printError(err.message);
+        process.exit(1);
+      });
+      spinner.stop();
+
+      console.error(`\n  ${c.emerald}✔ Presigned Download URL (valid for ${res.expiresInSeconds}s):${c.reset}\n`);
+      console.error(`  ${c.bold}${res.downloadUrl}${c.reset}\n`);
+      break;
+    }
+
     // ── Usage ───────────────────────────────────────────────────────────────
     case "usage": {
       const spinner = new Spinner("Fetching storage usage and allocation...").start();
@@ -335,6 +434,9 @@ export async function storageCommand(args: string[] = []) {
     ${c.whizanCyan}whizan storage download <bucket>/<path> <out>${c.reset} Download an object
     ${c.whizanCyan}whizan storage rm <bucket>/<path>${c.reset}              Delete an object
     ${c.whizanCyan}whizan storage cp <src> <dest>${c.reset}                 Copy an object
+    ${c.whizanCyan}whizan storage mv <src> <dest>${c.reset}                 Move an object atomically
+    ${c.whizanCyan}whizan storage bulk-rm <bucket> <prefix>${c.reset}       Bulk delete objects matching prefix
+    ${c.whizanCyan}whizan storage presign <bucket>/<path>${c.reset}         Generate presigned download URL
 `);
       break;
   }

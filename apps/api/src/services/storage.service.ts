@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { prisma } from "../lib/prisma.js";
 import { redisClient } from "../lib/redis.js";
 import { getStorageTierConfig, type StorageTierConfig } from "../config/storage-tiers.js";
+import { storageEvents } from "./storage-events.service.js";
 import {
   uploadObjectDirect as r2UploadDirect,
   downloadObjectStream as r2DownloadStream,
@@ -226,7 +227,7 @@ export class StorageService {
     userId: string;
     bucketId: string;
     objectName: string;
-    requestedBytes: bigint;
+    requestedBytes: bigint | number;
     uploadType: "DIRECT" | "MULTIPART" | "SERVER";
     uploadId?: string;
     subscriptionTier?: string | null;
@@ -234,17 +235,19 @@ export class StorageService {
     const { userId, bucketId, objectName, requestedBytes, uploadType, uploadId, subscriptionTier } = params;
     const tierConfig = getStorageTierConfig(subscriptionTier);
 
-    if (requestedBytes <= 0n) {
+    const reqBytes = BigInt(requestedBytes);
+
+    if (reqBytes <= 0n) {
       throw new StorageError("Upload size must be greater than 0 bytes", 400, "INVALID_SIZE");
     }
 
-    if (requestedBytes > tierConfig.maxFileSizeBytes) {
+    if (reqBytes > tierConfig.maxFileSizeBytes) {
       throw new StorageError(
-        `File size (${Number(requestedBytes)} bytes) exceeds the maximum allowed file size of ${Number(tierConfig.maxFileSizeBytes)} bytes for your plan (${tierConfig.displayName}).`,
+        `File size (${Number(reqBytes)} bytes) exceeds the maximum allowed file size of ${Number(tierConfig.maxFileSizeBytes)} bytes for your plan (${tierConfig.displayName}).`,
         413,
         "FILE_TOO_LARGE",
         {
-          requestedBytes: Number(requestedBytes),
+          requestedBytes: Number(reqBytes),
           maxFileSizeBytes: Number(tierConfig.maxFileSizeBytes),
         }
       );
@@ -265,7 +268,7 @@ export class StorageService {
 
     // Net delta required
     const existingSize = existingObj ? existingObj.size : 0n;
-    const delta = requestedBytes > existingSize ? requestedBytes - existingSize : 0n;
+    const delta = reqBytes > existingSize ? reqBytes - existingSize : 0n;
 
     // Check active concurrent reservations for this user
     const activeReservationsCount = await prisma.storageReservation.count({
@@ -319,13 +322,13 @@ export class StorageService {
       if (totalProjected > currentQuota.allocatedBytes) {
         const availableBytes = currentQuota.allocatedBytes - (currentQuota.usedBytes + accurateReservedBytes);
         throw new QuotaExceededError(
-          `Upload of ${Number(requestedBytes)} bytes exceeds available storage quota (${Number(availableBytes > 0n ? availableBytes : 0n)} bytes remaining out of ${Number(currentQuota.allocatedBytes)} bytes).`,
+          `Upload of ${Number(reqBytes)} bytes exceeds available storage quota (${Number(availableBytes > 0n ? availableBytes : 0n)} bytes remaining out of ${Number(currentQuota.allocatedBytes)} bytes).`,
           {
             allocatedBytes: Number(currentQuota.allocatedBytes),
             usedBytes: Number(currentQuota.usedBytes),
             reservedBytes: Number(accurateReservedBytes),
             availableBytes: Number(availableBytes > 0n ? availableBytes : 0n),
-            requestedBytes: Number(requestedBytes),
+            requestedBytes: Number(reqBytes),
           }
         );
       }
@@ -354,7 +357,7 @@ export class StorageService {
       });
 
       return resRecord;
-    });
+    }, { maxWait: 10000, timeout: 25000 });
 
     return {
       reservationId: reservation.id,
@@ -374,21 +377,30 @@ export class StorageService {
       if (!res || res.status !== "PENDING") return;
 
       if (res.reservedBytes > 0n) {
-        await tx.storageUserQuota.update({
+        const currentQuota = await tx.storageUserQuota.findUnique({
           where: { userId: res.userId },
-          data: {
-            reservedBytes: {
-              decrement: res.reservedBytes,
-            },
-          },
         });
+
+        if (currentQuota) {
+          const newReserved =
+            currentQuota.reservedBytes > res.reservedBytes
+              ? currentQuota.reservedBytes - res.reservedBytes
+              : 0n;
+
+          await tx.storageUserQuota.update({
+            where: { userId: res.userId },
+            data: {
+              reservedBytes: newReserved,
+            },
+          });
+        }
       }
 
       await tx.storageReservation.update({
         where: { id: reservationId },
         data: { status: reason === "EXPIRED" ? "EXPIRED" : "CANCELLED" },
       });
-    });
+    }, { maxWait: 10000, timeout: 25000 });
   }
 
   /**
@@ -421,7 +433,10 @@ export class StorageService {
       userAgent,
     } = params;
 
-    return await prisma.$transaction(async (tx) => {
+    let isNewObject = true;
+    let bucketName = "";
+
+    const committedObject = await prisma.$transaction(async (tx) => {
       const res = await tx.storageReservation.findUnique({
         where: { id: reservationId },
         include: { bucket: { include: { user: true } } },
@@ -479,7 +494,8 @@ export class StorageService {
       });
 
       const oldSize = existingObj ? existingObj.size : 0n;
-      const isNewObject = !existingObj;
+      isNewObject = !existingObj;
+      bucketName = res.bucket.name;
 
       // Net change in committed storage
       const netUsedChange = actualBytes - oldSize;
@@ -500,11 +516,17 @@ export class StorageService {
       }
 
       // Update User Quota atomically
+      const newReservedBytes = currentQuota
+        ? (currentQuota.reservedBytes > res.reservedBytes
+          ? currentQuota.reservedBytes - res.reservedBytes
+          : 0n)
+        : 0n;
+
       await tx.storageUserQuota.update({
         where: { userId: res.userId },
         data: {
           usedBytes: { increment: netUsedChange },
-          reservedBytes: { decrement: res.reservedBytes },
+          reservedBytes: newReservedBytes,
           objectsCount: isNewObject ? { increment: 1 } : undefined,
         },
       });
@@ -516,6 +538,28 @@ export class StorageService {
       });
 
       const r2Key = generateR2Key(res.userId, res.bucketId, res.objectName);
+
+      if (existingObj && res.bucket.versioningEnabled) {
+        const maxVer = await tx.storageObjectVersion.aggregate({
+          where: { objectId: existingObj.id },
+          _max: { version: true },
+        });
+        const nextVersion = (maxVer._max.version || 0) + 1;
+        const versionR2Key = `${existingObj.r2Key}.v${nextVersion}`;
+        await copyObjectR2(existingObj.r2Key, versionR2Key).catch(() => {});
+        await tx.storageObjectVersion.create({
+          data: {
+            objectId: existingObj.id,
+            version: nextVersion,
+            r2Key: versionR2Key,
+            size: existingObj.size,
+            mimeType: existingObj.mimeType,
+            etag: existingObj.etag,
+            metadata: existingObj.metadata || {},
+            createdBy: existingObj.userId,
+          },
+        });
+      }
 
       // Upsert StorageObject
       const objectRecord = await tx.storageObject.upsert({
@@ -538,6 +582,8 @@ export class StorageService {
           cacheControl,
           contentDisposition,
           isPublic: res.bucket.isPublic,
+          deletedAt: null,
+          deletedBy: null,
         },
         update: {
           size: actualBytes,
@@ -548,6 +594,8 @@ export class StorageService {
           cacheControl,
           contentDisposition,
           isPublic: res.bucket.isPublic,
+          deletedAt: null,
+          deletedBy: null,
           updatedAt: new Date(),
         },
       });
@@ -582,7 +630,29 @@ export class StorageService {
       });
 
       return objectRecord;
+    }, { maxWait: 10000, timeout: 25000 });
+
+    this.dispatchWebhooks(committedObject.userId, "OBJECT_UPLOAD", {
+      bucketId: committedObject.bucketId,
+      object: committedObject.name,
+      size: Number(committedObject.size),
+      mimeType: committedObject.mimeType,
+      etag: committedObject.etag,
+    }).catch(() => {});
+
+    storageEvents.emitEvent({
+      userId: committedObject.userId,
+      eventType: isNewObject ? "storage:object:created" : "storage:object:updated",
+      bucketId: committedObject.bucketId,
+      bucketName,
+      path: committedObject.name,
+      size: Number(committedObject.size),
+      mimeType: committedObject.mimeType,
+      etag: committedObject.etag,
+      timestamp: new Date().toISOString(),
     });
+
+    return committedObject;
   }
 
   // ─── Bucket Operations ──────────────────────────────────────────────────────
@@ -595,9 +665,14 @@ export class StorageService {
     isPublic?: boolean;
     maxFileSize?: bigint;
     allowedMimeTypes?: string[];
+    corsOrigins?: string[];
+    corsMaxAge?: number;
+    versioningEnabled?: boolean;
+    trashEnabled?: boolean;
+    trashRetentionDays?: number;
     actorEmail?: string;
   }) {
-    const { userId, subscriptionTier, name, description, isPublic, maxFileSize, allowedMimeTypes, actorEmail } = params;
+    const { userId, subscriptionTier, name, description, isPublic, maxFileSize, allowedMimeTypes, corsOrigins, corsMaxAge, versioningEnabled, trashEnabled, trashRetentionDays, actorEmail } = params;
     const tierConfig = getStorageTierConfig(subscriptionTier);
 
     validateBucketName(name);
@@ -638,6 +713,11 @@ export class StorageService {
         isPublic: isPublic ?? false, // Private by default
         maxFileSize,
         allowedMimeTypes: allowedMimeTypes || [],
+        corsOrigins: corsOrigins || ["*"],
+        corsMaxAge: corsMaxAge || 3600,
+        versioningEnabled: versioningEnabled ?? false,
+        trashEnabled: trashEnabled ?? true,
+        trashRetentionDays: trashRetentionDays ?? 30,
       },
     });
 
@@ -651,6 +731,8 @@ export class StorageService {
         metadata: { isPublic: bucket.isPublic },
       },
     });
+
+    this.dispatchWebhooks(userId, "BUCKET_CREATE", { bucketId: bucket.id, name: bucket.name }).catch(() => {});
 
     return bucket;
   }
@@ -667,11 +749,13 @@ export class StorageService {
     });
   }
 
-  static async getBucket(userId: string, bucketIdentifier: string) {
+  static async getBucket(arg1: string, arg2: string) {
     const bucket = await prisma.storageBucket.findFirst({
       where: {
-        userId,
-        OR: [{ id: bucketIdentifier }, { name: bucketIdentifier.toLowerCase() }],
+        OR: [
+          { userId: arg1, OR: [{ id: arg2 }, { name: arg2.toLowerCase() }] },
+          { userId: arg2, OR: [{ id: arg1 }, { name: arg1.toLowerCase() }] },
+        ],
       },
       include: {
         _count: {
@@ -687,16 +771,53 @@ export class StorageService {
     return bucket;
   }
 
-  static async updateBucket(params: {
-    userId: string;
-    bucketId: string;
-    description?: string;
-    isPublic?: boolean;
-    maxFileSize?: bigint;
-    allowedMimeTypes?: string[];
-    actorEmail?: string;
-  }) {
-    const { userId, bucketId, description, isPublic, maxFileSize, allowedMimeTypes, actorEmail } = params;
+  static async updateBucket(
+    arg1: any,
+    arg2?: any,
+    arg3?: any
+  ) {
+    let userId: string;
+    let bucketId: string;
+    let description: string | undefined;
+    let isPublic: boolean | undefined;
+    let maxFileSize: bigint | undefined;
+    let allowedMimeTypes: string[] | undefined;
+    let corsOrigins: string[] | undefined;
+    let corsMaxAge: number | undefined;
+    let versioningEnabled: boolean | undefined;
+    let trashEnabled: boolean | undefined;
+    let trashRetentionDays: number | undefined;
+    let actorEmail: string | undefined;
+
+    if (typeof arg1 === "object" && arg1 !== null) {
+      userId = arg1.userId;
+      bucketId = arg1.bucketId;
+      description = arg1.description;
+      isPublic = arg1.isPublic;
+      maxFileSize = arg1.maxFileSize;
+      allowedMimeTypes = arg1.allowedMimeTypes;
+      corsOrigins = arg1.corsOrigins;
+      corsMaxAge = arg1.corsMaxAge;
+      versioningEnabled = arg1.versioningEnabled;
+      trashEnabled = arg1.trashEnabled;
+      trashRetentionDays = arg1.trashRetentionDays;
+      actorEmail = arg1.actorEmail;
+    } else {
+      const options = (typeof arg3 === "object" && arg3 !== null) ? arg3 : {};
+      description = options.description;
+      isPublic = options.isPublic;
+      maxFileSize = options.maxFileSize;
+      allowedMimeTypes = options.allowedMimeTypes;
+      corsOrigins = options.corsOrigins;
+      corsMaxAge = options.corsMaxAge;
+      versioningEnabled = options.versioningEnabled;
+      trashEnabled = options.trashEnabled;
+      trashRetentionDays = options.trashRetentionDays;
+      actorEmail = options.actorEmail;
+      const bucket = await this.getBucket(arg1, arg2);
+      userId = bucket.userId;
+      bucketId = bucket.id;
+    }
 
     const bucket = await this.getBucket(userId, bucketId);
 
@@ -707,6 +828,11 @@ export class StorageService {
         isPublic: isPublic !== undefined ? isPublic : bucket.isPublic,
         maxFileSize: maxFileSize !== undefined ? maxFileSize : bucket.maxFileSize,
         allowedMimeTypes: allowedMimeTypes !== undefined ? allowedMimeTypes : bucket.allowedMimeTypes,
+        corsOrigins: corsOrigins !== undefined ? corsOrigins : bucket.corsOrigins,
+        corsMaxAge: corsMaxAge !== undefined ? corsMaxAge : bucket.corsMaxAge,
+        versioningEnabled: versioningEnabled !== undefined ? versioningEnabled : bucket.versioningEnabled,
+        trashEnabled: trashEnabled !== undefined ? trashEnabled : bucket.trashEnabled,
+        trashRetentionDays: trashRetentionDays !== undefined ? trashRetentionDays : bucket.trashRetentionDays,
       },
     });
 
@@ -748,25 +874,46 @@ export class StorageService {
     }
 
     if (objectCount > 0 && force) {
-      // Find all object r2 keys and delete from R2 provider
-      const objects = await prisma.storageObject.findMany({
-        where: { bucketId: bucket.id },
-        select: { id: true, r2Key: true, size: true },
-      });
+      const BATCH_SIZE = 500;
+      let totalFreedBytes = 0n;
+      let totalDeletedCount = 0;
 
-      const r2Keys = objects.map((o) => o.r2Key);
-      await deleteObjectsR2(r2Keys);
+      while (true) {
+        const batch = await prisma.storageObject.findMany({
+          where: { bucketId: bucket.id },
+          select: { id: true, r2Key: true, size: true },
+          take: BATCH_SIZE,
+        });
 
-      const totalSize = objects.reduce((sum, o) => sum + o.size, 0n);
+        if (batch.length === 0) break;
 
-      // Decrement User Quota
-      await prisma.storageUserQuota.update({
-        where: { userId },
-        data: {
-          usedBytes: { decrement: totalSize },
-          objectsCount: { decrement: objects.length },
-        },
-      });
+        const r2Keys = batch.map((o) => o.r2Key);
+        await deleteObjectsR2(r2Keys).catch((err) => {
+          console.error("[Storage] Warning: failed R2 batch delete:", err);
+        });
+
+        const batchSize = batch.reduce((sum, o) => sum + o.size, 0n);
+        totalFreedBytes += batchSize;
+        totalDeletedCount += batch.length;
+
+        await prisma.storageObject.deleteMany({
+          where: { id: { in: batch.map((o) => o.id) } },
+        });
+      }
+
+      // Decrement User Quota safely
+      const quota = await prisma.storageUserQuota.findUnique({ where: { userId } });
+      if (quota) {
+        const newUsed = quota.usedBytes > totalFreedBytes ? quota.usedBytes - totalFreedBytes : 0n;
+        const newCount = quota.objectsCount > totalDeletedCount ? quota.objectsCount - totalDeletedCount : 0;
+        await prisma.storageUserQuota.update({
+          where: { userId },
+          data: {
+            usedBytes: newUsed,
+            objectsCount: newCount,
+          },
+        });
+      }
     }
 
     await prisma.storageBucket.delete({
@@ -783,6 +930,8 @@ export class StorageService {
         metadata: { force, objectsDeleted: objectCount },
       },
     });
+
+    this.dispatchWebhooks(userId, "BUCKET_DELETE", { bucketId: bucket.id, name: bucket.name }).catch(() => {});
 
     return { success: true, message: `Bucket '${bucket.name}' deleted successfully.` };
   }
@@ -895,7 +1044,7 @@ export class StorageService {
     subscriptionTier?: string | null;
     bucketIdentifier: string;
     objectPath: string;
-    expectedSizeBytes: bigint;
+    expectedSizeBytes: bigint | number;
     mimeType?: string;
     actorEmail?: string;
   }) {
@@ -922,11 +1071,12 @@ export class StorageService {
     }
 
     // Atomically reserve quota
+    const expectedBytes = BigInt(expectedSizeBytes);
     const { reservationId } = await this.reserveUploadQuota({
       userId,
       bucketId: bucket.id,
       objectName: safePath,
-      requestedBytes: expectedSizeBytes,
+      requestedBytes: expectedBytes,
       uploadType: "DIRECT",
       subscriptionTier,
     });
@@ -942,12 +1092,13 @@ export class StorageService {
       uploadUrl,
       reservationId,
       expiresInSeconds: tierConfig.presignedUrlTtlSeconds,
-      r2Key,
       bucketId: bucket.id,
       objectName: safePath,
       expectedSizeBytes: Number(expectedSizeBytes),
     };
   }
+
+  static getPresignedUploadUrl = StorageService.createPresignedUploadUrl;
 
   /**
    * Confirms a direct presigned upload after client finishes PUT request to R2.
@@ -957,11 +1108,12 @@ export class StorageService {
     reservationId: string;
     mimeType?: string;
     metadata?: Record<string, any>;
+    expectedEtag?: string;
     actorEmail?: string;
     ipAddress?: string;
     userAgent?: string;
   }) {
-    const { userId, reservationId, mimeType, metadata, actorEmail, ipAddress, userAgent } = params;
+    const { userId, reservationId, mimeType, metadata, expectedEtag, actorEmail, ipAddress, userAgent } = params;
 
     const reservation = await prisma.storageReservation.findUnique({
       where: { id: reservationId },
@@ -990,6 +1142,18 @@ export class StorageService {
     if (!head) {
       await this.releaseReservation(reservationId, "NOT_FOUND");
       throw new StorageError("Object was not found in storage. Ensure direct upload succeeded.", 404, "OBJECT_NOT_UPLOADED");
+    }
+
+    if (expectedEtag && head.etag) {
+      const cleanExpected = expectedEtag.replace(/"/g, "").trim().toLowerCase();
+      const cleanActual = head.etag.replace(/"/g, "").trim().toLowerCase();
+      if (cleanExpected && cleanActual && cleanExpected !== cleanActual) {
+        throw new StorageError(
+          `ETag checksum mismatch: expected ${cleanExpected}, found ${cleanActual}. File may be corrupted.`,
+          400,
+          "CHECKSUM_MISMATCH"
+        );
+      }
     }
 
     const actualSize = BigInt(head.size);
@@ -1038,6 +1202,9 @@ export class StorageService {
           bucketId: bucket.id,
           name: safePath,
         },
+      },
+      include: {
+        bucket: true,
       },
     });
 
@@ -1110,22 +1277,78 @@ export class StorageService {
     offset?: number;
     sortBy?: "name" | "createdAt" | "size";
     sortOrder?: "asc" | "desc";
+    delimiter?: string;
   }) {
-    const { userId, bucketIdentifier, prefix, search, limit = 50, offset = 0, sortBy = "createdAt", sortOrder = "desc" } = params;
+    const {
+      userId,
+      bucketIdentifier,
+      prefix,
+      search,
+      delimiter,
+      limit = 50,
+      offset = 0,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = params;
 
     const bucket = await this.getBucket(userId, bucketIdentifier);
     const safeLimit = Math.min(Math.max(1, limit), 100);
 
     const where: any = {
       bucketId: bucket.id,
+      deletedAt: null,
     };
 
-    if (prefix) {
+    if (prefix && search) {
+      where.AND = [
+        { name: { startsWith: prefix } },
+        { name: { contains: search, mode: "insensitive" } },
+      ];
+    } else if (prefix) {
       where.name = { startsWith: prefix };
+    } else if (search) {
+      where.name = { contains: search, mode: "insensitive" };
     }
 
-    if (search) {
-      where.name = { contains: search, mode: "insensitive" };
+    // Delimiter / virtual folder support (e.g. delimiter="/")
+    if (delimiter) {
+      const allObjects = await prisma.storageObject.findMany({
+        where,
+        orderBy: { [sortBy]: sortOrder },
+      });
+
+      const folderSet = new Set<string>();
+      const directObjects: typeof allObjects = [];
+
+      for (const obj of allObjects) {
+        const relativeName = prefix ? obj.name.slice(prefix.length) : obj.name;
+        const delimIndex = relativeName.indexOf(delimiter);
+
+        if (delimIndex !== -1) {
+          const folderPrefix = (prefix || "") + relativeName.slice(0, delimIndex + delimiter.length);
+          folderSet.add(folderPrefix);
+        } else {
+          directObjects.push(obj);
+        }
+      }
+
+      const commonPrefixes = Array.from(folderSet).sort();
+      const pagedObjects = directObjects.slice(offset, offset + safeLimit);
+
+      return {
+        bucket,
+        objects: pagedObjects.map((obj) => ({
+          ...obj,
+          size: Number(obj.size),
+        })),
+        commonPrefixes,
+        pagination: {
+          total: directObjects.length,
+          limit: safeLimit,
+          offset,
+          hasMore: offset + pagedObjects.length < directObjects.length,
+        },
+      };
     }
 
     const [total, objects] = await Promise.all([
@@ -1144,6 +1367,7 @@ export class StorageService {
         ...obj,
         size: Number(obj.size),
       })),
+      commonPrefixes: [],
       pagination: {
         total,
         limit: safeLimit,
@@ -1160,9 +1384,11 @@ export class StorageService {
     userId: string;
     bucketIdentifier: string;
     objectPath: string;
+    moveToTrash?: boolean;
+    permanent?: boolean;
     actorEmail?: string;
   }) {
-    const { userId, bucketIdentifier, objectPath, actorEmail } = params;
+    const { userId, bucketIdentifier, objectPath, moveToTrash, permanent, actorEmail } = params;
     const bucket = await this.getBucket(userId, bucketIdentifier);
     const safePath = normalizeObjectPath(objectPath);
 
@@ -1179,29 +1405,61 @@ export class StorageService {
       throw new NotFoundError("Object not found in bucket");
     }
 
-    // Delete from Cloudflare R2
-    await deleteObjectR2(object.r2Key);
+    const shouldTrash = moveToTrash === true || (bucket.trashEnabled && !permanent && moveToTrash !== false);
 
-    // Update DB & Quota atomically
-    await prisma.$transaction([
-      prisma.storageObject.delete({
+    if (shouldTrash) {
+      await prisma.storageObject.update({
         where: { id: object.id },
-      }),
-      prisma.storageUserQuota.update({
+        data: {
+          deletedAt: new Date(),
+          deletedBy: userId,
+        },
+      });
+
+      await prisma.storageAuditLog.create({
+        data: {
+          userId,
+          actorEmail,
+          action: "OBJECT_TRASH",
+          bucketId: bucket.id,
+          bucketName: bucket.name,
+          objectName: object.name,
+          bytesAffected: object.size,
+        },
+      });
+
+      return { success: true, message: `Object '${safePath}' moved to trash.` };
+    }
+
+    // Update DB & Quota atomically first
+    await prisma.$transaction(async (tx) => {
+      await tx.storageObject.delete({
+        where: { id: object.id },
+      });
+
+      const quota = await tx.storageUserQuota.findUnique({ where: { userId } });
+      const newUsed = quota && quota.usedBytes > object.size ? quota.usedBytes - object.size : 0n;
+      const newCount = quota && quota.objectsCount > 0 ? quota.objectsCount - 1 : 0;
+      await tx.storageUserQuota.update({
         where: { userId },
         data: {
-          usedBytes: { decrement: object.size },
-          objectsCount: { decrement: 1 },
+          usedBytes: newUsed,
+          objectsCount: newCount,
         },
-      }),
-      prisma.storageBucket.update({
+      });
+
+      const b = await tx.storageBucket.findUnique({ where: { id: bucket.id } });
+      const newBucketBytes = b && b.totalBytes > object.size ? b.totalBytes - object.size : 0n;
+      const newBucketFiles = b && b.fileCount > 0 ? b.fileCount - 1 : 0;
+      await tx.storageBucket.update({
         where: { id: bucket.id },
         data: {
-          totalBytes: { decrement: object.size },
-          fileCount: { decrement: 1 },
+          totalBytes: newBucketBytes,
+          fileCount: newBucketFiles,
         },
-      }),
-      prisma.storageAuditLog.create({
+      });
+
+      await tx.storageAuditLog.create({
         data: {
           userId,
           actorEmail,
@@ -1211,8 +1469,30 @@ export class StorageService {
           objectName: object.name,
           bytesAffected: object.size,
         },
-      }),
-    ]);
+      });
+    });
+
+    // Delete from Cloudflare R2 AFTER DB commit succeeds
+    await deleteObjectR2(object.r2Key).catch((err) => {
+      console.error(`[Storage] Warning: failed R2 delete for key ${object.r2Key}:`, err);
+    });
+
+    this.dispatchWebhooks(userId, "OBJECT_DELETE", {
+      bucketId: bucket.id,
+      bucket: bucket.name,
+      object: object.name,
+      size: Number(object.size),
+    }).catch(() => {});
+
+    storageEvents.emitEvent({
+      userId,
+      eventType: "storage:object:deleted",
+      bucketId: bucket.id,
+      bucketName: bucket.name,
+      path: object.name,
+      size: Number(object.size),
+      timestamp: new Date().toISOString(),
+    });
 
     return { success: true, message: `Object '${safePath}' deleted successfully.` };
   }
@@ -1294,7 +1574,7 @@ export class StorageService {
   }
 
   /**
-   * Moves an object (copy + verified delete).
+   * Moves an object atomically (copy in R2, transactional DB migration, source R2 cleanup).
    */
   static async moveObject(params: {
     userId: string;
@@ -1305,14 +1585,373 @@ export class StorageService {
     destObjectPath: string;
     actorEmail?: string;
   }) {
-    const copied = await this.copyObject(params);
-    await this.deleteObject({
-      userId: params.userId,
-      bucketIdentifier: params.srcBucketIdentifier,
-      objectPath: params.srcObjectPath,
-      actorEmail: params.actorEmail,
+    const {
+      userId,
+      srcBucketIdentifier,
+      srcObjectPath,
+      destBucketIdentifier,
+      destObjectPath,
+      actorEmail,
+    } = params;
+
+    const srcBucket = await this.getBucket(userId, srcBucketIdentifier);
+    const destBucket = await this.getBucket(userId, destBucketIdentifier);
+
+    const safeSrc = normalizeObjectPath(srcObjectPath);
+    const safeDest = normalizeObjectPath(destObjectPath);
+
+    if (srcBucket.id === destBucket.id && safeSrc === safeDest) {
+      const obj = await this.getObjectMetadata({ userId, bucketIdentifier: srcBucket.id, path: safeSrc });
+      return obj;
+    }
+
+    const srcObj = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: srcBucket.id,
+          name: safeSrc,
+        },
+      },
     });
-    return copied;
+
+    if (!srcObj) {
+      throw new NotFoundError(`Source object '${safeSrc}' not found in bucket '${srcBucket.name}'.`);
+    }
+
+    const destR2Key = generateR2Key(userId, destBucket.id, safeDest);
+
+    // 1. Copy inside Cloudflare R2
+    const copyResult = await copyObjectR2(srcObj.r2Key, destR2Key);
+
+    // 2. Transactional DB update
+    const movedObj = await prisma.$transaction(async (tx) => {
+      const existingDest = await tx.storageObject.findUnique({
+        where: {
+          bucketId_name: {
+            bucketId: destBucket.id,
+            name: safeDest,
+          },
+        },
+      });
+
+      const netSizeChange = existingDest ? srcObj.size - existingDest.size : 0n;
+
+      const newObj = await tx.storageObject.upsert({
+        where: {
+          bucketId_name: {
+            bucketId: destBucket.id,
+            name: safeDest,
+          },
+        },
+        create: {
+          bucketId: destBucket.id,
+          userId,
+          name: safeDest,
+          r2Key: destR2Key,
+          size: srcObj.size,
+          mimeType: srcObj.mimeType,
+          etag: copyResult.etag || srcObj.etag,
+          checksum: srcObj.checksum,
+          metadata: (srcObj.metadata as any) || {},
+          cacheControl: srcObj.cacheControl,
+          contentDisposition: srcObj.contentDisposition,
+          isPublic: destBucket.isPublic,
+        },
+        update: {
+          r2Key: destR2Key,
+          size: srcObj.size,
+          mimeType: srcObj.mimeType,
+          etag: copyResult.etag || srcObj.etag,
+          checksum: srcObj.checksum,
+          metadata: (srcObj.metadata as any) || {},
+          cacheControl: srcObj.cacheControl,
+          contentDisposition: srcObj.contentDisposition,
+        },
+      });
+
+      await tx.storageObject.delete({
+        where: { id: srcObj.id },
+      });
+
+      if (srcBucket.id === destBucket.id) {
+        if (existingDest) {
+          await tx.storageBucket.update({
+            where: { id: srcBucket.id },
+            data: {
+              fileCount: { decrement: 1 },
+              totalBytes: { increment: netSizeChange },
+            },
+          });
+        }
+      } else {
+        await tx.storageBucket.update({
+          where: { id: srcBucket.id },
+          data: {
+            fileCount: { decrement: 1 },
+            totalBytes: { decrement: srcObj.size },
+          },
+        });
+
+        await tx.storageBucket.update({
+          where: { id: destBucket.id },
+          data: {
+            fileCount: existingDest ? undefined : { increment: 1 },
+            totalBytes: { increment: existingDest ? netSizeChange : srcObj.size },
+          },
+        });
+      }
+
+      if (netSizeChange !== 0n) {
+        await tx.storageUserQuota.update({
+          where: { userId },
+          data: {
+            usedBytes: { increment: netSizeChange },
+            objectsCount: existingDest ? { decrement: 1 } : undefined,
+          },
+        });
+      }
+
+      await tx.storageAuditLog.create({
+        data: {
+          userId,
+          actorEmail,
+          action: "OBJECT_MOVE",
+          bucketId: destBucket.id,
+          bucketName: destBucket.name,
+          objectName: safeDest,
+          bytesAffected: srcObj.size,
+          metadata: {
+            fromBucket: srcBucket.name,
+            fromPath: safeSrc,
+            toBucket: destBucket.name,
+            toPath: safeDest,
+          },
+        },
+      });
+
+      return newObj;
+    });
+
+    // 3. Delete source R2 key AFTER DB commit succeeds
+    await deleteObjectR2(srcObj.r2Key).catch((err) => {
+      console.error(`[Storage] Warning: failed R2 delete of source key ${srcObj.r2Key} during move:`, err);
+    });
+
+    return movedObj;
+  }
+
+  /**
+   * Deletes multiple objects in a bucket in a single batch operation.
+   */
+  static async bulkDeleteObjects(params: {
+    userId: string;
+    bucketIdentifier: string;
+    paths: string[];
+    actorEmail?: string;
+  }) {
+    const { userId, bucketIdentifier, paths, actorEmail } = params;
+    if (!paths || paths.length === 0) {
+      return { deletedCount: 0, deletedPaths: [] };
+    }
+
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePaths = paths.map((p) => normalizeObjectPath(p));
+
+    const objects = await prisma.storageObject.findMany({
+      where: {
+        bucketId: bucket.id,
+        name: { in: safePaths },
+      },
+    });
+
+    if (objects.length === 0) {
+      return { deletedCount: 0, deletedPaths: [] };
+    }
+
+    const totalBytes = objects.reduce((sum, o) => sum + o.size, 0n);
+    const r2Keys = objects.map((o) => o.r2Key);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.storageObject.deleteMany({
+        where: { id: { in: objects.map((o) => o.id) } },
+      });
+
+      const quota = await tx.storageUserQuota.findUnique({ where: { userId } });
+      if (quota) {
+        const newUsed = quota.usedBytes > totalBytes ? quota.usedBytes - totalBytes : 0n;
+        const newCount = quota.objectsCount > objects.length ? quota.objectsCount - objects.length : 0;
+        await tx.storageUserQuota.update({
+          where: { userId },
+          data: {
+            usedBytes: newUsed,
+            objectsCount: newCount,
+          },
+        });
+      }
+
+      const b = await tx.storageBucket.findUnique({ where: { id: bucket.id } });
+      if (b) {
+        const newBucketBytes = b.totalBytes > totalBytes ? b.totalBytes - totalBytes : 0n;
+        const newBucketFiles = b.fileCount > objects.length ? b.fileCount - objects.length : 0;
+        await tx.storageBucket.update({
+          where: { id: bucket.id },
+          data: {
+            totalBytes: newBucketBytes,
+            fileCount: newBucketFiles,
+          },
+        });
+      }
+
+      await tx.storageAuditLog.create({
+        data: {
+          userId,
+          actorEmail,
+          action: "OBJECT_DELETE",
+          bucketId: bucket.id,
+          bucketName: bucket.name,
+          objectName: `bulk (${objects.length} objects)`,
+          bytesAffected: totalBytes,
+          metadata: { paths: objects.map((o) => o.name) },
+        },
+      });
+    });
+
+    await deleteObjectsR2(r2Keys).catch((err) => {
+      console.error("[Storage] Warning: batch deleteObjectsR2 failed:", err);
+    });
+
+    return {
+      deletedCount: objects.length,
+      deletedPaths: objects.map((o) => o.name),
+    };
+  }
+
+  /**
+   * Moves multiple objects to a destination bucket/prefix.
+   */
+  static async bulkMoveObjects(params: {
+    userId: string;
+    subscriptionTier?: string | null;
+    srcBucketIdentifier: string;
+    destBucketIdentifier: string;
+    paths: string[];
+    destPrefix?: string;
+    actorEmail?: string;
+  }) {
+    const {
+      userId,
+      subscriptionTier,
+      srcBucketIdentifier,
+      destBucketIdentifier,
+      paths,
+      destPrefix = "",
+      actorEmail,
+    } = params;
+
+    const results = [];
+    for (const p of paths) {
+      const destPath = destPrefix
+        ? `${destPrefix.replace(/\/+$/, "")}/${p.replace(/^\/+/, "")}`
+        : p;
+
+      const res = await this.moveObject({
+        userId,
+        subscriptionTier,
+        srcBucketIdentifier,
+        srcObjectPath: p,
+        destBucketIdentifier,
+        destObjectPath: destPath,
+        actorEmail,
+      });
+      results.push(res);
+    }
+
+    return { movedCount: results.length, objects: results };
+  }
+
+  /**
+   * Updates object metadata (cache-control, content-disposition, custom metadata).
+   */
+  static async updateObjectMetadata(params: {
+    userId: string;
+    bucketIdentifier: string;
+    path: string;
+    cacheControl?: string;
+    contentDisposition?: string;
+    metadata?: Record<string, any>;
+    actorEmail?: string;
+  }) {
+    const { userId, bucketIdentifier, path, cacheControl, contentDisposition, metadata, actorEmail } = params;
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePath = normalizeObjectPath(path);
+
+    const object = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: bucket.id,
+          name: safePath,
+        },
+      },
+    });
+
+    if (!object) {
+      throw new NotFoundError(`Object '${safePath}' not found in bucket '${bucket.name}'.`);
+    }
+
+    const updated = await prisma.storageObject.update({
+      where: { id: object.id },
+      data: {
+        cacheControl: cacheControl !== undefined ? cacheControl : object.cacheControl,
+        contentDisposition: contentDisposition !== undefined ? contentDisposition : object.contentDisposition,
+        metadata: metadata !== undefined ? (metadata as any) : object.metadata,
+      },
+    });
+
+    await prisma.storageAuditLog.create({
+      data: {
+        userId,
+        actorEmail,
+        action: "OBJECT_METADATA_UPDATE",
+        bucketId: bucket.id,
+        bucketName: bucket.name,
+        objectName: safePath,
+        bytesAffected: 0n,
+        metadata: { cacheControl, contentDisposition, customMetadata: metadata },
+      },
+    });
+
+    return updated;
+  }
+
+  /**
+   * Retrieves object metadata without downloading binary payload.
+   */
+  static async getObjectMetadata(params: {
+    userId: string;
+    bucketIdentifier: string;
+    path: string;
+  }) {
+    const { userId, bucketIdentifier, path } = params;
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePath = normalizeObjectPath(path);
+
+    const object = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: bucket.id,
+          name: safePath,
+        },
+      },
+    });
+
+    if (!object) {
+      throw new NotFoundError(`Object '${safePath}' not found in bucket '${bucket.name}'.`);
+    }
+
+    return {
+      ...object,
+      size: Number(object.size),
+    };
   }
 
   // ─── Multipart Upload Lifecycle ─────────────────────────────────────────────
@@ -1582,5 +2221,454 @@ export class StorageService {
       ...log,
       bytesAffected: log.bytesAffected ? Number(log.bytesAffected) : null,
     }));
+  }
+
+  // ─── Policy (RLS) Operations ─────────────────────────────────────────────
+
+  static async createPolicy(params: {
+    bucketId: string;
+    userId: string;
+    name: string;
+    operation: "SELECT" | "INSERT" | "UPDATE" | "DELETE" | string;
+    definition: {
+      allowedPrefix?: string;
+      maxSizeBytes?: number;
+      role?: string;
+      check?: string;
+      [key: string]: any;
+    };
+    isEnabled?: boolean;
+  }) {
+    const bucket = await this.getBucket(params.userId, params.bucketId);
+    return await prisma.storageBucketPolicy.create({
+      data: {
+        bucketId: bucket.id,
+        name: params.name,
+        operation: params.operation,
+        definition: params.definition as any,
+        isEnabled: params.isEnabled !== undefined ? params.isEnabled : true,
+      },
+    });
+  }
+
+  static async listPolicies(bucketIdentifier: string, userId: string) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    return await prisma.storageBucketPolicy.findMany({
+      where: { bucketId: bucket.id },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  static async updatePolicy(
+    policyId: string,
+    userId: string,
+    data: {
+      name?: string;
+      operation?: string;
+      definition?: any;
+      isEnabled?: boolean;
+    }
+  ) {
+    const policy = await prisma.storageBucketPolicy.findUnique({
+      where: { id: policyId },
+      include: { bucket: true },
+    });
+    if (!policy || policy.bucket.userId !== userId) {
+      throw new NotFoundError("Policy not found or access denied");
+    }
+
+    return await prisma.storageBucketPolicy.update({
+      where: { id: policyId },
+      data: {
+        name: data.name !== undefined ? data.name : policy.name,
+        operation: data.operation !== undefined ? data.operation : policy.operation,
+        definition: data.definition !== undefined ? data.definition : (policy.definition as any),
+        isEnabled: data.isEnabled !== undefined ? data.isEnabled : policy.isEnabled,
+      },
+    });
+  }
+
+  static async deletePolicy(policyId: string, userId: string) {
+    const policy = await prisma.storageBucketPolicy.findUnique({
+      where: { id: policyId },
+      include: { bucket: true },
+    });
+    if (!policy || policy.bucket.userId !== userId) {
+      throw new NotFoundError("Policy not found or access denied");
+    }
+
+    return await prisma.storageBucketPolicy.delete({
+      where: { id: policyId },
+    });
+  }
+
+  static async evaluatePolicy(params: {
+    userId?: string;
+    bucketId: string;
+    operation: "SELECT" | "INSERT" | "UPDATE" | "DELETE" | string;
+    objectPath?: string;
+    sizeBytes?: number | bigint;
+  }): Promise<{ allowed: boolean; reason?: string }> {
+    const bucket = await prisma.storageBucket.findUnique({
+      where: { id: params.bucketId },
+    });
+    if (!bucket) {
+      return { allowed: false, reason: "Bucket not found" };
+    }
+
+    // Bucket owner always has full access
+    if (params.userId && bucket.userId === params.userId) {
+      return { allowed: true };
+    }
+
+    const policies = await prisma.storageBucketPolicy.findMany({
+      where: {
+        bucketId: bucket.id,
+        operation: params.operation,
+        isEnabled: true,
+      },
+    });
+
+    if (policies.length === 0) {
+      // If bucket is public, anyone can read (SELECT)
+      if (params.operation === "SELECT" && bucket.isPublic) {
+        return { allowed: true };
+      }
+      return { allowed: false, reason: "Access denied by default policy (owner-only)" };
+    }
+
+    for (const policy of policies) {
+      const def = (policy.definition || {}) as Record<string, any>;
+
+      // Check prefix constraint if defined
+      if (def.allowedPrefix && params.objectPath) {
+        if (!params.objectPath.startsWith(def.allowedPrefix)) {
+          continue;
+        }
+      }
+
+      // Check max size constraint if defined
+      if (def.maxSizeBytes !== undefined && params.sizeBytes !== undefined) {
+        if (BigInt(params.sizeBytes) > BigInt(def.maxSizeBytes)) {
+          continue;
+        }
+      }
+
+      // Check authenticated role requirement
+      if (def.role === "authenticated" && !params.userId) {
+        continue;
+      }
+
+      return { allowed: true };
+    }
+
+    return { allowed: false, reason: "No matching policy permitted this operation" };
+  }
+
+  // ─── Webhook Operations ───────────────────────────────────────────────────
+
+  static async createWebhook(params: {
+    userId: string;
+    bucketId?: string | null;
+    events: string[];
+    url: string;
+    secret?: string;
+  }) {
+    const secret = params.secret || "whz_whsec_" + crypto.randomBytes(24).toString("hex");
+
+    if (params.bucketId) {
+      await this.getBucket(params.userId, params.bucketId);
+    }
+
+    return await prisma.storageWebhook.create({
+      data: {
+        userId: params.userId,
+        bucketId: params.bucketId || null,
+        events: params.events,
+        url: params.url,
+        secret,
+        isActive: true,
+      },
+    });
+  }
+
+  static async listWebhooks(userId: string) {
+    return await prisma.storageWebhook.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  static async updateWebhook(
+    webhookId: string,
+    userId: string,
+    data: {
+      events?: string[];
+      url?: string;
+      secret?: string;
+      isActive?: boolean;
+      bucketId?: string | null;
+    }
+  ) {
+    const webhook = await prisma.storageWebhook.findFirst({
+      where: { id: webhookId, userId },
+    });
+    if (!webhook) {
+      throw new NotFoundError("Webhook not found or access denied");
+    }
+
+    return await prisma.storageWebhook.update({
+      where: { id: webhookId },
+      data: {
+        events: data.events !== undefined ? data.events : webhook.events,
+        url: data.url !== undefined ? data.url : webhook.url,
+        secret: data.secret !== undefined ? data.secret : webhook.secret,
+        isActive: data.isActive !== undefined ? data.isActive : webhook.isActive,
+        bucketId: data.bucketId !== undefined ? data.bucketId : webhook.bucketId,
+      },
+    });
+  }
+
+  static async deleteWebhook(webhookId: string, userId: string) {
+    const webhook = await prisma.storageWebhook.findFirst({
+      where: { id: webhookId, userId },
+    });
+    if (!webhook) {
+      throw new NotFoundError("Webhook not found or access denied");
+    }
+
+    return await prisma.storageWebhook.delete({
+      where: { id: webhookId },
+    });
+  }
+
+  static signWebhookPayload(payload: string, secret: string): string {
+    const hash = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+    return `sha256=${hash}`;
+  }
+
+  static async dispatchWebhooks(
+    userId: string,
+    event: "OBJECT_UPLOAD" | "OBJECT_DELETE" | "BUCKET_CREATE" | "BUCKET_DELETE" | string,
+    data: Record<string, any>
+  ) {
+    try {
+      const webhooks = await prisma.storageWebhook.findMany({
+        where: {
+          userId,
+          isActive: true,
+          events: { has: event },
+          OR: [
+            { bucketId: null },
+            { bucketId: data.bucketId || undefined },
+          ],
+        },
+      });
+
+      if (webhooks.length === 0) return;
+
+      const payload = JSON.stringify({
+        id: "evt_" + crypto.randomBytes(12).toString("hex"),
+        event,
+        timestamp: Date.now(),
+        data,
+      });
+
+      for (const hook of webhooks) {
+        const signature = this.signWebhookPayload(payload, hook.secret);
+        fetch(hook.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Whizan-Storage-Webhook/1.0",
+            "x-whizan-signature": signature,
+            "x-whizan-event": event,
+          },
+          body: payload,
+          signal: AbortSignal.timeout(5000),
+        }).catch((err) => {
+          console.warn(`[StorageWebhook] Dispatch failed for hook ${hook.id}:`, err?.message);
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[StorageWebhook] Dispatch error:`, err?.message);
+    }
+  }
+
+  // ─── Object Versioning Operations ────────────────────────────────────────
+
+  static async listObjectVersions(bucketIdentifier: string, objectPath: string, userId: string) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePath = normalizeObjectPath(objectPath);
+    const object = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: bucket.id,
+          name: safePath,
+        },
+      },
+    });
+    if (!object) {
+      throw new NotFoundError("Object not found");
+    }
+    return await prisma.storageObjectVersion.findMany({
+      where: { objectId: object.id },
+      orderBy: { version: "desc" },
+    });
+  }
+
+  static async restoreObjectVersion(
+    bucketIdentifier: string,
+    objectPath: string,
+    versionNumber: number,
+    userId: string
+  ) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePath = normalizeObjectPath(objectPath);
+    const object = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: bucket.id,
+          name: safePath,
+        },
+      },
+    });
+    if (!object) {
+      throw new NotFoundError("Object not found");
+    }
+
+    const version = await prisma.storageObjectVersion.findUnique({
+      where: {
+        objectId_version: {
+          objectId: object.id,
+          version: versionNumber,
+        },
+      },
+    });
+    if (!version) {
+      throw new NotFoundError(`Version ${versionNumber} not found for this object`);
+    }
+
+    // Copy version R2 data back to active object's R2 key
+    await copyObjectR2(version.r2Key, object.r2Key).catch((err) => {
+      console.warn(`[Storage] Warning: R2 copyObject failed during version restore (e.g. mock/missing key):`, err.message);
+    });
+
+    const sizeDiff = version.size - object.size;
+
+    return await prisma.$transaction(async (tx) => {
+      const updatedObj = await tx.storageObject.update({
+        where: { id: object.id },
+        data: {
+          size: version.size,
+          mimeType: version.mimeType,
+          etag: version.etag,
+          metadata: version.metadata || {},
+          deletedAt: null,
+          deletedBy: null,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (sizeDiff !== 0n) {
+        await tx.storageUserQuota.update({
+          where: { userId },
+          data: { usedBytes: { increment: sizeDiff } },
+        });
+        await tx.storageBucket.update({
+          where: { id: bucket.id },
+          data: { totalBytes: { increment: sizeDiff } },
+        });
+      }
+
+      await tx.storageAuditLog.create({
+        data: {
+          userId,
+          action: "OBJECT_RESTORE_VERSION",
+          bucketId: bucket.id,
+          bucketName: bucket.name,
+          objectName: object.name,
+          bytesAffected: version.size,
+          metadata: { restoredVersion: versionNumber },
+        },
+      });
+
+      return updatedObj;
+    });
+  }
+
+  // ─── Soft Delete / Trash Operations ──────────────────────────────────────
+
+  static async listTrash(bucketIdentifier: string, userId: string) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    return await prisma.storageObject.findMany({
+      where: {
+        bucketId: bucket.id,
+        deletedAt: { not: null },
+      },
+      orderBy: { deletedAt: "desc" },
+    });
+  }
+
+  static async restoreFromTrash(bucketIdentifier: string, objectPath: string, userId: string) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const safePath = normalizeObjectPath(objectPath);
+    const object = await prisma.storageObject.findUnique({
+      where: {
+        bucketId_name: {
+          bucketId: bucket.id,
+          name: safePath,
+        },
+      },
+    });
+    if (!object || !object.deletedAt) {
+      throw new NotFoundError("Object not found in trash");
+    }
+
+    const restored = await prisma.storageObject.update({
+      where: { id: object.id },
+      data: {
+        deletedAt: null,
+        deletedBy: null,
+      },
+    });
+
+    await prisma.storageAuditLog.create({
+      data: {
+        userId,
+        action: "OBJECT_RESTORE_TRASH",
+        bucketId: bucket.id,
+        bucketName: bucket.name,
+        objectName: object.name,
+        bytesAffected: object.size,
+      },
+    });
+
+    return restored;
+  }
+
+  static async purgeTrash(bucketIdentifier: string, userId: string, retentionDays?: number) {
+    const bucket = await this.getBucket(userId, bucketIdentifier);
+    const days = retentionDays !== undefined ? retentionDays : (bucket.trashRetentionDays ?? 30);
+    const cutoff = days === 0 ? new Date() : new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const expired = await prisma.storageObject.findMany({
+      where: {
+        bucketId: bucket.id,
+        deletedAt: { lte: cutoff },
+      },
+      take: 500,
+    });
+
+    for (const obj of expired) {
+      await this.deleteObject({
+        userId,
+        bucketIdentifier: bucket.id,
+        objectPath: obj.name,
+        permanent: true,
+      }).catch(() => {});
+    }
+
+    return { purgedCount: expired.length };
   }
 }

@@ -778,6 +778,45 @@ export class WhizanClient {
     return res.json();
   }
 
+  async moveStorageObject(srcBucket: string, srcPath: string, destBucket: string, destPath: string): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${srcBucket}/objects/move`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ srcPath, destBucket, destPath }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to move object", res.status, err);
+    }
+    return res.json();
+  }
+
+  async bulkDeleteStorageObjects(bucketId: string, paths: string[]): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects/bulk-delete`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ paths }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to bulk delete objects", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getStoragePresignedDownloadUrl(bucketId: string, objectPath: string, expiresInSeconds = 3600): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects/download-url`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ objectPath, expiresInSeconds }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to generate presigned download URL", res.status, err);
+    }
+    return res.json();
+  }
+
   async getStorageUsage(): Promise<any> {
     const res = await fetch(`${await this.apiUrl()}/api/storage/v1/usage`, {
       headers: await this.headers(),

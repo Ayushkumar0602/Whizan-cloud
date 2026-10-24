@@ -12,6 +12,11 @@ import {
   ConflictError,
 } from "../services/storage.service.js";
 import { getStorageTierConfig } from "../config/storage-tiers.js";
+import { redisClient } from "../lib/redis.js";
+import { ImageTransformService } from "../services/image-transform.service.js";
+import { StorageS3Service } from "../services/storage-s3.service.js";
+import { storageEvents } from "../services/storage-events.service.js";
+import { StorageCleanupEngine } from "../cron/storage-cleanup.js";
 
 // ── Validation Schemas ────────────────────────────────────────────────────────
 
@@ -21,6 +26,8 @@ const CreateBucketSchema = z.object({
   isPublic: z.boolean().default(false),
   maxFileSize: z.union([z.number(), z.string()]).optional(),
   allowedMimeTypes: z.array(z.string()).optional(),
+  corsOrigins: z.array(z.string()).optional(),
+  corsMaxAge: z.number().int().positive().optional(),
 });
 
 const UpdateBucketSchema = z.object({
@@ -28,6 +35,37 @@ const UpdateBucketSchema = z.object({
   isPublic: z.boolean().optional(),
   maxFileSize: z.union([z.number(), z.string()]).optional(),
   allowedMimeTypes: z.array(z.string()).optional(),
+  corsOrigins: z.array(z.string()).optional(),
+  corsMaxAge: z.number().int().positive().optional(),
+});
+
+const CreatePolicySchema = z.object({
+  name: z.string().min(1).max(100),
+  operation: z.enum(["SELECT", "INSERT", "UPDATE", "DELETE"]),
+  definition: z.record(z.any()),
+  isEnabled: z.boolean().optional(),
+});
+
+const UpdatePolicySchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  operation: z.enum(["SELECT", "INSERT", "UPDATE", "DELETE"]).optional(),
+  definition: z.record(z.any()).optional(),
+  isEnabled: z.boolean().optional(),
+});
+
+const CreateWebhookSchema = z.object({
+  bucketId: z.string().uuid().nullable().optional(),
+  events: z.array(z.enum(["OBJECT_UPLOAD", "OBJECT_DELETE", "BUCKET_CREATE", "BUCKET_DELETE"])).min(1),
+  url: z.string().url(),
+  secret: z.string().min(8).optional(),
+});
+
+const UpdateWebhookSchema = z.object({
+  bucketId: z.string().uuid().nullable().optional(),
+  events: z.array(z.enum(["OBJECT_UPLOAD", "OBJECT_DELETE", "BUCKET_CREATE", "BUCKET_DELETE"])).optional(),
+  url: z.string().url().optional(),
+  secret: z.string().min(8).optional(),
+  isActive: z.boolean().optional(),
 });
 
 const PresignedUploadUrlSchema = z.object({
@@ -40,6 +78,7 @@ const ConfirmUploadSchema = z.object({
   reservationId: z.string().uuid(),
   mimeType: z.string().optional(),
   metadata: z.record(z.any()).optional(),
+  expectedEtag: z.string().optional(),
 });
 
 const PresignedDownloadUrlSchema = z.object({
@@ -137,8 +176,16 @@ export async function storageRoutes(fastify: FastifyInstance) {
 
       // Security headers against Stored XSS and MIME confusion attacks
       reply.header("X-Content-Type-Options", "nosniff");
-      reply.header("Access-Control-Allow-Origin", "*");
+      const reqOrigin = request.headers.origin as string;
+      const bucketOrigins = (object as any).bucket?.corsOrigins || ["*"];
+      const allowOrigin = bucketOrigins.includes("*")
+        ? "*"
+        : (reqOrigin && bucketOrigins.includes(reqOrigin))
+        ? reqOrigin
+        : bucketOrigins[0] || "*";
+      reply.header("Access-Control-Allow-Origin", allowOrigin);
       reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      reply.header("Access-Control-Max-Age", String((object as any).bucket?.corsMaxAge || 3600));
 
       // Sandbox active browser execution for HTML, SVG, and XML files in public storage
       const lowerMime = (contentType || "").toLowerCase();
@@ -172,14 +219,80 @@ export async function storageRoutes(fastify: FastifyInstance) {
     }
   };
 
-  fastify.get("/public/:bucketName/*", handlePublicDownload);
-  fastify.get("/b/:bucketId/*", handlePublicDownload);
+  const publicRateLimit = async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const ip = request.ip || (request.headers["x-forwarded-for"] as string) || "unknown";
+      const key = `storage:rate:public:${ip}`;
+      const count = await redisClient.incr(key);
+      if (count === 1) {
+        await redisClient.expire(key, 60);
+      }
+      if (count > 200) {
+        reply.header("Retry-After", "60");
+        return reply.code(429).send({
+          error: "TOO_MANY_REQUESTS",
+          message: "Rate limit exceeded for public asset downloads. Please retry in a minute.",
+        });
+      }
+    } catch {
+      // Allow through if Redis is temporarily unreachable
+    }
+  };
+
+  fastify.get("/public/:bucketName/*", { preHandler: publicRateLimit }, handlePublicDownload);
+  fastify.get("/b/:bucketId/*", { preHandler: publicRateLimit }, handlePublicDownload);
+  fastify.head("/public/:bucketName/*", { preHandler: publicRateLimit }, handlePublicDownload);
+  fastify.head("/b/:bucketId/*", { preHandler: publicRateLimit }, handlePublicDownload);
+
+  // ── On-the-Fly Image Transform Endpoint ──────────────────────────────────
+  fastify.get(
+    "/render/image/public/:bucketName/*",
+    { preHandler: publicRateLimit },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const params = request.params as any;
+        const bucketName = params.bucketName;
+        const rawWildcard = params["*"] as string;
+        const query = request.query as any;
+
+        const width = query.width ? parseInt(query.width, 10) : undefined;
+        const height = query.height ? parseInt(query.height, 10) : undefined;
+        const quality = query.quality ? parseInt(query.quality, 10) : undefined;
+        const format = query.format as any;
+        const resize = query.resize as any;
+
+        const result = await ImageTransformService.transformStorageImage(bucketName, rawWildcard, {
+          width,
+          height,
+          quality,
+          format,
+          resize,
+        });
+
+        reply.header("Content-Type", result.mimeType);
+        reply.header("Content-Length", result.buffer.length);
+        reply.header("Cache-Control", "public, max-age=86400, s-maxage=604800, immutable");
+        reply.header("X-Image-Cached", result.isCached ? "HIT" : "MISS");
+        reply.header("Access-Control-Allow-Origin", "*");
+
+        return reply.send(result.buffer);
+      } catch (err) {
+        return handleError(err, reply);
+      }
+    }
+  );
 
   // ── Authenticated Route Guard ──────────────────────────────────────────────
   fastify.addHook("preHandler", async (request: FastifyRequest, reply: FastifyReply) => {
-    // Skip auth for public asset streams
+    // Skip auth for public asset streams and transformed images
     const url = request.url;
-    if (url.includes("/public/") || url.startsWith("/b/") || url.includes("/storage/v1/b/")) return;
+    if (
+      url.includes("/public/") ||
+      url.startsWith("/b/") ||
+      url.includes("/storage/v1/b/") ||
+      url.includes("/render/image/")
+    )
+      return;
 
     await (fastify as any).authenticate(request, reply);
     if (reply.sent) return;
@@ -254,6 +367,8 @@ export async function storageRoutes(fastify: FastifyInstance) {
         isPublic: parsed.isPublic,
         maxFileSize: parsed.maxFileSize ? BigInt(parsed.maxFileSize) : undefined,
         allowedMimeTypes: parsed.allowedMimeTypes,
+        corsOrigins: parsed.corsOrigins,
+        corsMaxAge: parsed.corsMaxAge,
         actorEmail: email,
       });
 
@@ -297,6 +412,8 @@ export async function storageRoutes(fastify: FastifyInstance) {
         isPublic: parsed.isPublic,
         maxFileSize: parsed.maxFileSize ? BigInt(parsed.maxFileSize) : undefined,
         allowedMimeTypes: parsed.allowedMimeTypes,
+        corsOrigins: parsed.corsOrigins,
+        corsMaxAge: parsed.corsMaxAge,
         actorEmail: email,
       });
 
@@ -320,6 +437,121 @@ export async function storageRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // ── Bucket RLS Policy Endpoints ──────────────────────────────────────────
+
+  fastify.get("/buckets/:bucketId/policies", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const policies = await StorageService.listPolicies(bucketId, userId);
+      return serializeBigInt(policies);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/buckets/:bucketId/policies", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const parsed = CreatePolicySchema.parse(request.body);
+
+      const policy = await StorageService.createPolicy({
+        bucketId,
+        userId,
+        name: parsed.name,
+        operation: parsed.operation,
+        definition: parsed.definition,
+        isEnabled: parsed.isEnabled,
+      });
+
+      return serializeBigInt({ success: true, policy });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.patch("/buckets/:bucketId/policies/:policyId", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { policyId } = request.params as { policyId: string };
+      const parsed = UpdatePolicySchema.parse(request.body);
+
+      const policy = await StorageService.updatePolicy(policyId, userId, parsed);
+      return serializeBigInt({ success: true, policy });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.delete("/buckets/:bucketId/policies/:policyId", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { policyId } = request.params as { policyId: string };
+
+      await StorageService.deletePolicy(policyId, userId);
+      return { success: true, message: "Policy deleted successfully." };
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Storage Webhook Endpoints ─────────────────────────────────────────────
+
+  fastify.get("/webhooks", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const webhooks = await StorageService.listWebhooks(userId);
+      return serializeBigInt(webhooks);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/webhooks", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const parsed = CreateWebhookSchema.parse(request.body);
+
+      const webhook = await StorageService.createWebhook({
+        userId,
+        bucketId: parsed.bucketId,
+        events: parsed.events,
+        url: parsed.url,
+        secret: parsed.secret,
+      });
+
+      return serializeBigInt({ success: true, webhook });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.patch("/webhooks/:webhookId", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { webhookId } = request.params as { webhookId: string };
+      const parsed = UpdateWebhookSchema.parse(request.body);
+
+      const webhook = await StorageService.updateWebhook(webhookId, userId, parsed);
+      return serializeBigInt({ success: true, webhook });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.delete("/webhooks/:webhookId", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { webhookId } = request.params as { webhookId: string };
+
+      await StorageService.deleteWebhook(webhookId, userId);
+      return { success: true, message: "Webhook deleted successfully." };
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
   // ── Object Endpoints ───────────────────────────────────────────────────────
 
   // Server-mediated file upload
@@ -327,6 +559,18 @@ export async function storageRoutes(fastify: FastifyInstance) {
     try {
       const { userId, email, subscriptionTier } = request.user;
       const { bucketId } = request.params as { bucketId: string };
+
+      const tierConfig = getStorageTierConfig(subscriptionTier);
+      const contentLengthHeader = request.headers["content-length"];
+      if (contentLengthHeader) {
+        const contentLength = parseInt(contentLengthHeader, 10);
+        if (!isNaN(contentLength) && BigInt(contentLength) > BigInt(tierConfig.maxFileSizeBytes)) {
+          return reply.code(413).send({
+            error: "FILE_TOO_LARGE",
+            message: `Uploaded file size (${contentLength} bytes) exceeds the maximum allowed file size of ${Number(tierConfig.maxFileSizeBytes / 1000000n)} MB for ${tierConfig.displayName}.`,
+          });
+        }
+      }
 
       let fileBuffer: Buffer | null = null;
       let objectPath = "";
@@ -429,6 +673,7 @@ export async function storageRoutes(fastify: FastifyInstance) {
         reservationId: parsed.reservationId,
         mimeType: parsed.mimeType,
         metadata: parsed.metadata,
+        expectedEtag: parsed.expectedEtag,
         actorEmail: email,
         ipAddress: request.ip,
         userAgent: request.headers["user-agent"],
@@ -452,6 +697,7 @@ export async function storageRoutes(fastify: FastifyInstance) {
         bucketIdentifier: bucketId,
         prefix: query.prefix,
         search: query.search,
+        delimiter: query.delimiter,
         limit: query.limit ? parseInt(query.limit, 10) : 50,
         offset: query.offset ? parseInt(query.offset, 10) : 0,
         sortBy: query.sortBy || "createdAt",
@@ -607,6 +853,192 @@ export async function storageRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // Bulk delete objects
+  fastify.post("/buckets/:bucketId/objects/bulk-delete", async (request: any, reply: any) => {
+    try {
+      const { userId, email } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const body = request.body as { paths: string[] };
+
+      if (!body.paths || !Array.isArray(body.paths)) {
+        return reply.code(400).send({ error: "INVALID_REQUEST", message: "paths must be an array of strings." });
+      }
+
+      const res = await StorageService.bulkDeleteObjects({
+        userId,
+        bucketIdentifier: bucketId,
+        paths: body.paths,
+        actorEmail: email,
+      });
+
+      return serializeBigInt(res);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // Bulk move objects
+  fastify.post("/buckets/:bucketId/objects/bulk-move", async (request: any, reply: any) => {
+    try {
+      const { userId, email, subscriptionTier } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const body = request.body as { paths: string[]; destBucket?: string; destPrefix?: string };
+
+      if (!body.paths || !Array.isArray(body.paths)) {
+        return reply.code(400).send({ error: "INVALID_REQUEST", message: "paths must be an array of strings." });
+      }
+
+      const res = await StorageService.bulkMoveObjects({
+        userId,
+        subscriptionTier,
+        srcBucketIdentifier: bucketId,
+        destBucketIdentifier: body.destBucket || bucketId,
+        paths: body.paths,
+        destPrefix: body.destPrefix,
+        actorEmail: email,
+      });
+
+      return serializeBigInt(res);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // Update object metadata
+  fastify.post("/buckets/:bucketId/objects/metadata", async (request: any, reply: any) => {
+    try {
+      const { userId, email } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const body = request.body as {
+        path: string;
+        cacheControl?: string;
+        contentDisposition?: string;
+        metadata?: Record<string, any>;
+      };
+
+      if (!body.path) {
+        return reply.code(400).send({ error: "MISSING_PATH", message: "path is required." });
+      }
+
+      const res = await StorageService.updateObjectMetadata({
+        userId,
+        bucketIdentifier: bucketId,
+        path: body.path,
+        cacheControl: body.cacheControl,
+        contentDisposition: body.contentDisposition,
+        metadata: body.metadata,
+        actorEmail: email,
+      });
+
+      return serializeBigInt({ success: true, object: res });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // Get object metadata without download
+  fastify.get("/buckets/:bucketId/objects/metadata", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const query = request.query as { path: string };
+
+      if (!query.path) {
+        return reply.code(400).send({ error: "MISSING_PATH", message: "query parameter 'path' is required." });
+      }
+
+      const res = await StorageService.getObjectMetadata({
+        userId,
+        bucketIdentifier: bucketId,
+        path: query.path,
+      });
+
+      return serializeBigInt({ success: true, object: res });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Object Versioning Endpoints ──────────────────────────────────────────
+
+  fastify.get("/buckets/:bucketId/objects/versions", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const query = request.query as { path: string };
+
+      if (!query.path) {
+        return reply.code(400).send({ error: "MISSING_PATH", message: "Query parameter 'path' is required." });
+      }
+
+      const versions = await StorageService.listObjectVersions(bucketId, query.path, userId);
+      return serializeBigInt(versions);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/buckets/:bucketId/objects/versions/restore", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const body = request.body as { path: string; version: number };
+
+      if (!body.path || body.version === undefined) {
+        return reply.code(400).send({ error: "MISSING_FIELDS", message: "path and version are required." });
+      }
+
+      const restored = await StorageService.restoreObjectVersion(bucketId, body.path, body.version, userId);
+      return serializeBigInt({ success: true, object: restored });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Trash / Soft-Delete Endpoints ─────────────────────────────────────────
+
+  fastify.get("/buckets/:bucketId/trash", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const trash = await StorageService.listTrash(bucketId, userId);
+      return serializeBigInt(trash);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.post("/buckets/:bucketId/trash/restore", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const body = request.body as { path: string };
+
+      if (!body.path) {
+        return reply.code(400).send({ error: "MISSING_PATH", message: "path is required." });
+      }
+
+      const restored = await StorageService.restoreFromTrash(bucketId, body.path, userId);
+      return serializeBigInt({ success: true, object: restored });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  fastify.delete("/buckets/:bucketId/trash", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucketId } = request.params as { bucketId: string };
+      const query = request.query as { retentionDays?: string };
+      const retentionDays = query.retentionDays ? parseInt(query.retentionDays, 10) : undefined;
+
+      const res = await StorageService.purgeTrash(bucketId, userId, retentionDays);
+      return serializeBigInt({ success: true, ...res });
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
   // ── Multipart Upload Lifecycle ──────────────────────────────────────────────
 
   fastify.post("/buckets/:bucketId/multipart/init", async (request: any, reply: any) => {
@@ -677,6 +1109,185 @@ export async function storageRoutes(fastify: FastifyInstance) {
 
       const res = await StorageService.abortMultipartUpload(userId, body.reservationId);
       return res;
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── S3-Compatible API Gateway ──────────────────────────────────────────────
+
+  // S3 ListObjectsV2: GET /s3/:bucket
+  fastify.get("/s3/:bucket", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucket } = request.params;
+      const query = request.query as any;
+
+      const res = await StorageS3Service.listObjectsV2({
+        userId,
+        bucketName: bucket,
+        prefix: query.prefix,
+        delimiter: query.delimiter,
+        maxKeys: query["max-keys"] ? parseInt(query["max-keys"], 10) : undefined,
+      });
+
+      reply.type("application/xml");
+      return reply.send(res.xml);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // S3 PutObject: PUT /s3/:bucket/*
+  fastify.put("/s3/:bucket/*", async (request: any, reply: any) => {
+    try {
+      const { userId, subscriptionTier } = request.user;
+      const { bucket } = request.params;
+      const key = request.params["*"];
+      const contentType = request.headers["content-type"];
+
+      const tierConfig = getStorageTierConfig(subscriptionTier || "HOBBY");
+      const contentLengthHeader = request.headers["content-length"];
+      if (contentLengthHeader) {
+        const contentLength = parseInt(contentLengthHeader, 10);
+        if (!isNaN(contentLength) && BigInt(contentLength) > BigInt(tierConfig.maxFileSizeBytes)) {
+          return reply.code(413).send({
+            error: "FILE_TOO_LARGE",
+            message: `Uploaded file size (${contentLength} bytes) exceeds maximum allowed file size of ${Number(tierConfig.maxFileSizeBytes / 1000000n)} MB for ${tierConfig.displayName}.`,
+          });
+        }
+      }
+
+      let bodyData: Buffer;
+      if (Buffer.isBuffer(request.body)) {
+        bodyData = request.body;
+      } else if (typeof request.body === "string") {
+        bodyData = Buffer.from(request.body);
+      } else {
+        bodyData = Buffer.from(JSON.stringify(request.body || {}));
+      }
+
+      const res = await StorageS3Service.putObject({
+        userId,
+        bucketName: bucket,
+        key,
+        data: bodyData,
+        contentType,
+      });
+
+      if (res.etag) {
+        reply.header("ETag", `"${res.etag.replace(/"/g, "")}"`);
+      }
+      return reply.code(200).send();
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // S3 HeadObject: HEAD /s3/:bucket/*
+  fastify.head("/s3/:bucket/*", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucket } = request.params;
+      const key = request.params["*"];
+
+      const res = await StorageS3Service.headObject({
+        userId,
+        bucketName: bucket,
+        key,
+      });
+
+      if (res.etag) reply.header("ETag", res.etag);
+      if (res.contentType) reply.header("Content-Type", res.contentType);
+      if (res.contentLength !== undefined) reply.header("Content-Length", res.contentLength.toString());
+      if (res.lastModified) reply.header("Last-Modified", res.lastModified.toUTCString());
+      if (res.cacheControl) reply.header("Cache-Control", res.cacheControl);
+      if (res.contentDisposition) reply.header("Content-Disposition", res.contentDisposition);
+
+      return reply.code(200).send();
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // S3 GetObject: GET /s3/:bucket/*
+  fastify.get("/s3/:bucket/*", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucket } = request.params;
+      const key = request.params["*"];
+
+      const res = await StorageS3Service.getObject({
+        userId,
+        bucketName: bucket,
+        key,
+      });
+
+      if (res.etag) reply.header("ETag", res.etag);
+      if (res.contentType) reply.header("Content-Type", res.contentType);
+      if (res.contentLength !== undefined) reply.header("Content-Length", res.contentLength.toString());
+      if (res.cacheControl) reply.header("Cache-Control", res.cacheControl);
+      if (res.contentDisposition) reply.header("Content-Disposition", res.contentDisposition);
+
+      return reply.send(res.stream);
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // S3 DeleteObject: DELETE /s3/:bucket/*
+  fastify.delete("/s3/:bucket/*", async (request: any, reply: any) => {
+    try {
+      const { userId } = request.user;
+      const { bucket } = request.params;
+      const key = request.params["*"];
+
+      await StorageS3Service.deleteObject({
+        userId,
+        bucketName: bucket,
+        key,
+      });
+
+      return reply.code(204).send();
+    } catch (err) {
+      return handleError(err, reply);
+    }
+  });
+
+  // ── Real-Time Storage Events WebSocket ──────────────────────────────────────
+  fastify.get("/events", { websocket: true }, (connection: any, request: any) => {
+    const userId = request.user?.userId || request.query?.userId;
+    if (!userId) {
+      connection.socket.close(1008, "Unauthorized");
+      return;
+    }
+
+    const unsubscribe = storageEvents.onUserEvent(userId, (event) => {
+      try {
+        connection.socket.send(JSON.stringify(event));
+      } catch {}
+    });
+
+    connection.socket.on("close", () => {
+      unsubscribe();
+    });
+  });
+
+  // ── Storage Background Cleanup Trigger ──────────────────────────────────────
+  fastify.post("/admin/cleanup", async (request: any, reply: any) => {
+    try {
+      const [reservations, trash, quotas] = await Promise.all([
+        StorageCleanupEngine.expireStaleReservations(),
+        StorageCleanupEngine.purgeExpiredTrash(),
+        StorageCleanupEngine.reconcileAllUserQuotas(),
+      ]);
+
+      return {
+        success: true,
+        expiredReservations: reservations.expiredCount,
+        purgedTrashObjects: trash.purgedCount,
+        reconciledQuotas: quotas.reconciledCount,
+      };
     } catch (err) {
       return handleError(err, reply);
     }

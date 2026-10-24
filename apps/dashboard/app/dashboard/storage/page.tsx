@@ -29,6 +29,15 @@ import {
   Move,
   Clock,
   Zap,
+  ChevronRight,
+  X,
+  Eye,
+  Edit3,
+  Sliders,
+  FolderPlus,
+  UploadCloud,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -75,8 +84,22 @@ export default function StorageDashboardPage() {
   const [selectedBucket, setSelectedBucket] = useState<StorageBucketItem | null>(null);
 
   const [objects, setObjects] = useState<StorageObjectItem[]>([]);
+  const [commonPrefixes, setCommonPrefixes] = useState<string[]>([]);
+  const [currentFolder, setCurrentFolder] = useState<string>("");
   const [loadingObjects, setLoadingObjects] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Inspector & Metadata
+  const [inspectingObject, setInspectingObject] = useState<StorageObjectItem | null>(null);
+  const [editingMetadata, setEditingMetadata] = useState<{
+    cacheControl: string;
+    contentDisposition: string;
+    customJson: string;
+  }>({ cacheControl: "", contentDisposition: "", customJson: "{}" });
+  const [savingMetadata, setSavingMetadata] = useState(false);
+  const [multiUploadStatus, setMultiUploadStatus] = useState<{ current: number; total: number; filename: string } | null>(null);
 
   const [auditLogs, setAuditLogs] = useState<StorageAuditLogItem[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -89,10 +112,27 @@ export default function StorageDashboardPage() {
   const [creatingBucket, setCreatingBucket] = useState(false);
 
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Load objects with virtual folder delimiter support
+  const loadObjects = async (bucketId: string, folder = "") => {
+    setLoadingObjects(true);
+    try {
+      const res = await storageApi.listObjects(bucketId, {
+        prefix: folder || undefined,
+        delimiter: "/",
+        limit: 100,
+      });
+      setObjects(res.objects || []);
+      setCommonPrefixes(res.commonPrefixes || []);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to load bucket objects");
+    } finally {
+      setLoadingObjects(false);
+    }
+  };
 
   // Load initial data
   const fetchData = async () => {
@@ -118,32 +158,19 @@ export default function StorageDashboardPage() {
     fetchData();
   }, []);
 
-  // Fetch objects when selected bucket changes
+  // Fetch objects when selected bucket or folder changes
   useEffect(() => {
     if (!selectedBucket) {
       setObjects([]);
+      setCommonPrefixes([]);
+      setSelectedPaths(new Set());
+      setCurrentFolder("");
       return;
     }
 
-    let isMounted = true;
-    setLoadingObjects(true);
-
-    storageApi
-      .listObjects(selectedBucket.id, { limit: 100 })
-      .then((res) => {
-        if (isMounted) setObjects(res.objects || []);
-      })
-      .catch((err) => {
-        if (isMounted) toast.error(err.message || "Failed to load bucket objects");
-      })
-      .finally(() => {
-        if (isMounted) setLoadingObjects(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedBucket?.id]);
+    setSelectedPaths(new Set());
+    loadObjects(selectedBucket.id, currentFolder);
+  }, [selectedBucket?.id, currentFolder]);
 
   // Fetch audit logs when tab selected
   useEffect(() => {
@@ -226,30 +253,140 @@ export default function StorageDashboardPage() {
     }
   };
 
-  const handleFileUpload = async (files: FileList | null) => {
+  const handleMultiFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !selectedBucket) return;
-    const file = files[0];
+    const fileArray = Array.from(files);
 
-    // Check size against remaining quota
-    if (usage && file.size > usage.quota.availableBytes) {
-      toast.error(`File size (${formatBytes(file.size)}) exceeds remaining quota (${formatBytes(usage.quota.availableBytes)}).`);
+    const totalBytes = fileArray.reduce((acc, f) => acc + f.size, 0);
+    if (usage && totalBytes > usage.quota.availableBytes) {
+      toast.error(`Total file size (${formatBytes(totalBytes)}) exceeds remaining quota (${formatBytes(usage.quota.availableBytes)}).`);
       return;
     }
 
     setUploading(true);
+    let successCount = 0;
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i];
+      const objectPath = currentFolder ? `${currentFolder}${file.name}` : file.name;
+      setMultiUploadStatus({ current: i + 1, total: fileArray.length, filename: file.name });
+      try {
+        await storageApi.uploadObject(selectedBucket.id, objectPath, file);
+        successCount++;
+      } catch (err: any) {
+        toast.error(`Failed to upload '${file.name}': ${err.message}`);
+      }
+    }
+
+    toast.success(`Successfully uploaded ${successCount} of ${fileArray.length} file(s).`);
+    setUploading(false);
+    setMultiUploadStatus(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    await loadObjects(selectedBucket.id, currentFolder);
+    const updatedUsage = await storageApi.getUsage().catch(() => null);
+    if (updatedUsage) setUsage(updatedUsage);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await handleMultiFileUpload(e.dataTransfer.files);
+    }
+  };
+
+  const toggleSelectObject = (path: string) => {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedPaths.size === filteredObjects.length) {
+      setSelectedPaths(new Set());
+    } else {
+      setSelectedPaths(new Set(filteredObjects.map((o) => o.name)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedBucket || selectedPaths.size === 0) return;
+    const paths = Array.from(selectedPaths);
+    if (!confirm(`Delete ${paths.length} selected object(s) permanently?`)) return;
+
     try {
-      await storageApi.uploadObject(selectedBucket.id, file.name, file);
-      toast.success(`File '${file.name}' uploaded successfully to ${selectedBucket.name}.`);
-      // Reload objects and usage
-      const res = await storageApi.listObjects(selectedBucket.id);
-      setObjects(res.objects || []);
+      const res = await storageApi.bulkDeleteObjects(selectedBucket.id, paths);
+      toast.success(`Deleted ${res.deletedCount} object(s).`);
+      setSelectedPaths(new Set());
+      await loadObjects(selectedBucket.id, currentFolder);
       const updatedUsage = await storageApi.getUsage().catch(() => null);
       if (updatedUsage) setUsage(updatedUsage);
     } catch (err: any) {
-      toast.error(err.message || "Upload failed");
+      toast.error(err.message || "Bulk delete failed");
+    }
+  };
+
+  const openInspector = (obj: StorageObjectItem) => {
+    setInspectingObject(obj);
+    setEditingMetadata({
+      cacheControl: obj.cacheControl || "public, max-age=3600",
+      contentDisposition: obj.contentDisposition || "inline",
+      customJson: obj.metadata ? JSON.stringify(obj.metadata, null, 2) : "{}",
+    });
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!selectedBucket || !inspectingObject) return;
+    setSavingMetadata(true);
+    try {
+      let parsedCustom = {};
+      try {
+        parsedCustom = JSON.parse(editingMetadata.customJson);
+      } catch {
+        toast.error("Invalid JSON format for custom metadata");
+        setSavingMetadata(false);
+        return;
+      }
+
+      await storageApi.updateObjectMetadata(selectedBucket.id, {
+        path: inspectingObject.name,
+        cacheControl: editingMetadata.cacheControl,
+        contentDisposition: editingMetadata.contentDisposition,
+        metadata: parsedCustom,
+      });
+
+      toast.success("Object metadata saved successfully.");
+      setInspectingObject((prev) =>
+        prev
+          ? {
+              ...prev,
+              cacheControl: editingMetadata.cacheControl,
+              contentDisposition: editingMetadata.contentDisposition,
+              metadata: parsedCustom,
+            }
+          : null
+      );
+      await loadObjects(selectedBucket.id, currentFolder);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update metadata");
     } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setSavingMetadata(false);
     }
   };
 
@@ -754,14 +891,46 @@ export default function StorageDashboardPage() {
           {/* Right Column: Object Explorer */}
           <div
             className="card"
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
             style={{
               padding: "1.25rem",
               background: "var(--card-bg)",
-              border: "1px solid var(--card-border)",
+              border: isDragging ? "2px dashed var(--accent)" : "1px solid var(--card-border)",
               borderRadius: "0.75rem",
               minHeight: 450,
+              position: "relative",
+              transition: "border 0.2s ease, background 0.2s ease",
             }}
           >
+            {/* Drag Overlay */}
+            {isDragging && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "rgba(99, 102, 241, 0.08)",
+                  backdropFilter: "blur(2px)",
+                  borderRadius: "0.75rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 20,
+                  pointerEvents: "none",
+                }}
+              >
+                <UploadCloud className="w-12 h-12 text-indigo-500 animate-bounce mb-2" />
+                <p style={{ fontWeight: 700, fontSize: "1.1rem", color: "var(--accent)" }}>
+                  Drop files to upload to {currentFolder ? `/${currentFolder}` : selectedBucket?.name}
+                </p>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+                  Multi-file upload directly to Cloudflare R2
+                </p>
+              </div>
+            )}
+
             {selectedBucket ? (
               <div>
                 {/* Bucket Controls Header */}
@@ -801,9 +970,24 @@ export default function StorageDashboardPage() {
                     <input
                       type="file"
                       ref={fileInputRef}
-                      onChange={(e) => handleFileUpload(e.target.files)}
+                      multiple
+                      onChange={(e) => handleMultiFileUpload(e.target.files)}
                       style={{ display: "none" }}
                     />
+                    <button
+                      onClick={() => {
+                        const folderName = prompt("Enter folder name (e.g. 'images' or 'docs'):");
+                        if (folderName && folderName.trim()) {
+                          const clean = folderName.trim().replace(/\/+$/, "") + "/";
+                          setCurrentFolder((prev) => `${prev}${clean}`);
+                        }
+                      }}
+                      className="btn btn-secondary"
+                      style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}
+                    >
+                      <FolderPlus className="w-3.5 h-3.5 text-indigo-400" />
+                      New Folder
+                    </button>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
@@ -811,10 +995,123 @@ export default function StorageDashboardPage() {
                       style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.85rem" }}
                     >
                       <Upload className={`w-3.5 h-3.5 ${uploading ? "animate-bounce" : ""}`} />
-                      {uploading ? "Uploading..." : "Upload File"}
+                      {uploading
+                        ? multiUploadStatus
+                          ? `Uploading (${multiUploadStatus.current}/${multiUploadStatus.total})...`
+                          : "Uploading..."
+                        : "Upload Files"}
                     </button>
                   </div>
                 </div>
+
+                {/* Breadcrumbs Navigation */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    marginBottom: "1rem",
+                    padding: "0.4rem 0.75rem",
+                    background: "var(--bg-inset)",
+                    borderRadius: "0.5rem",
+                    fontSize: "0.85rem",
+                    overflowX: "auto",
+                  }}
+                >
+                  <button
+                    onClick={() => setCurrentFolder("")}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: !currentFolder ? "var(--foreground)" : "var(--accent)",
+                      fontWeight: !currentFolder ? 600 : 500,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                    }}
+                  >
+                    <Folder className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>root</span>
+                  </button>
+
+                  {currentFolder &&
+                    currentFolder
+                      .split("/")
+                      .filter(Boolean)
+                      .map((segment, idx, arr) => {
+                        const segmentPath = arr.slice(0, idx + 1).join("/") + "/";
+                        const isLast = idx === arr.length - 1;
+                        return (
+                          <div key={segmentPath} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                            <button
+                              onClick={() => setCurrentFolder(segmentPath)}
+                              style={{
+                                background: "none",
+                                border: "none",
+                                color: isLast ? "var(--foreground)" : "var(--accent)",
+                                fontWeight: isLast ? 600 : 500,
+                                cursor: "pointer",
+                              }}
+                            >
+                              {segment}
+                            </button>
+                          </div>
+                        );
+                      })}
+                </div>
+
+                {/* Bulk Actions Toolbar (when items selected) */}
+                {selectedPaths.size > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "0.5rem 0.75rem",
+                      marginBottom: "1rem",
+                      background: "rgba(99, 102, 241, 0.12)",
+                      border: "1px solid var(--accent)",
+                      borderRadius: "0.5rem",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600 }}>
+                      <CheckSquare className="w-4 h-4 text-indigo-500" />
+                      <span>{selectedPaths.size} object(s) selected</span>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <button
+                        onClick={handleBulkDelete}
+                        className="btn btn-secondary"
+                        style={{
+                          fontSize: "0.75rem",
+                          padding: "0.25rem 0.6rem",
+                          color: "var(--danger)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.3rem",
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Selected
+                      </button>
+                      <button
+                        onClick={() => setSelectedPaths(new Set())}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontSize: "0.75rem",
+                          color: "var(--muted)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Search Filter */}
                 <div style={{ position: "relative", marginBottom: "1rem" }}>
@@ -823,7 +1120,7 @@ export default function StorageDashboardPage() {
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search objects by name or MIME type..."
+                    placeholder="Search objects in current folder..."
                     style={{
                       width: "100%",
                       padding: "0.5rem 0.75rem 0.5rem 2.25rem",
@@ -841,7 +1138,7 @@ export default function StorageDashboardPage() {
                     <div className="spinner" style={{ margin: "0 auto 0.75rem" }} />
                     Loading objects...
                   </div>
-                ) : filteredObjects.length === 0 ? (
+                ) : filteredObjects.length === 0 && commonPrefixes.length === 0 ? (
                   <div
                     style={{
                       padding: "4rem 2rem",
@@ -851,17 +1148,17 @@ export default function StorageDashboardPage() {
                       background: "var(--bg-inset)",
                     }}
                   >
-                    <Upload className="w-8 h-8 text-slate-400" style={{ margin: "0 auto 0.5rem" }} />
-                    <p style={{ fontWeight: 600, fontSize: "0.95rem" }}>No objects in this bucket</p>
+                    <UploadCloud className="w-8 h-8 text-slate-400" style={{ margin: "0 auto 0.5rem" }} />
+                    <p style={{ fontWeight: 600, fontSize: "0.95rem" }}>No objects in this folder</p>
                     <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                      Upload images, documents, or data files to store them globally on Cloudflare R2.
+                      Drag and drop files here, or click upload to add files to this bucket.
                     </p>
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="btn btn-secondary"
                       style={{ marginTop: "1rem", fontSize: "0.8rem" }}
                     >
-                      Select File to Upload
+                      Select Files to Upload
                     </button>
                   </div>
                 ) : (
@@ -869,6 +1166,13 @@ export default function StorageDashboardPage() {
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--border)", textAlign: "left", color: "var(--muted)" }}>
+                          <th style={{ padding: "0.6rem 0.5rem", width: 32 }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedPaths.size > 0 && selectedPaths.size === filteredObjects.length}
+                              onChange={toggleSelectAll}
+                            />
+                          </th>
                           <th style={{ padding: "0.6rem 0.5rem", fontWeight: 600 }}>Name</th>
                           <th style={{ padding: "0.6rem 0.5rem", fontWeight: 600 }}>Size</th>
                           <th style={{ padding: "0.6rem 0.5rem", fontWeight: 600 }}>Type</th>
@@ -877,57 +1181,117 @@ export default function StorageDashboardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredObjects.map((obj) => (
-                          <tr
-                            key={obj.id}
-                            style={{
-                              borderBottom: "1px solid var(--border-light)",
-                              transition: "background 0.1s ease",
-                            }}
-                          >
-                            <td style={{ padding: "0.6rem 0.5rem" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                                {getFileIcon(obj.name, obj.mimeType)}
-                                <span style={{ fontWeight: 500 }}>{obj.name}</span>
-                              </div>
-                            </td>
-                            <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)" }}>{formatBytes(obj.size)}</td>
-                            <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {obj.mimeType}
-                            </td>
-                            <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)" }}>
-                              {new Date(obj.updatedAt).toLocaleDateString()}
-                            </td>
-                            <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
-                              <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end", alignItems: "center" }}>
-                                <button
-                                  onClick={() => handleCopyUrl(obj)}
-                                  className="btn-secondary"
-                                  style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
-                                  title={selectedBucket.isPublic ? "Copy Public CDN URL" : "Copy Temporary Signed URL"}
+                        {/* Virtual Subfolders */}
+                        {commonPrefixes.map((prefix) => {
+                          const folderDisplay = prefix.slice(currentFolder.length).replace(/\/$/, "");
+                          return (
+                            <tr
+                              key={prefix}
+                              onClick={() => setCurrentFolder(prefix)}
+                              style={{
+                                borderBottom: "1px solid var(--border-light)",
+                                cursor: "pointer",
+                                transition: "background 0.1s ease",
+                              }}
+                              className="hover:bg-slate-500/5"
+                            >
+                              <td style={{ padding: "0.6rem 0.5rem" }} />
+                              <td style={{ padding: "0.6rem 0.5rem" }} colSpan={4}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                  <Folder className="w-4 h-4 text-amber-500 fill-amber-500/20" />
+                                  <span style={{ fontWeight: 600, color: "var(--foreground)" }}>{folderDisplay}/</span>
+                                </div>
+                              </td>
+                              <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
+                                <ChevronRight className="w-4 h-4 text-slate-400 inline" />
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                        {/* Files */}
+                        {filteredObjects.map((obj) => {
+                          const displayName = currentFolder ? obj.name.slice(currentFolder.length) : obj.name;
+                          const isSelected = selectedPaths.has(obj.name);
+                          return (
+                            <tr
+                              key={obj.id}
+                              style={{
+                                borderBottom: "1px solid var(--border-light)",
+                                background: isSelected ? "rgba(99, 102, 241, 0.05)" : "transparent",
+                                transition: "background 0.1s ease",
+                              }}
+                            >
+                              <td style={{ padding: "0.6rem 0.5rem" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelectObject(obj.name)}
+                                />
+                              </td>
+                              <td style={{ padding: "0.6rem 0.5rem" }}>
+                                <div
+                                  onClick={() => openInspector(obj)}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "0.5rem",
+                                    cursor: "pointer",
+                                  }}
+                                  title="Click to inspect metadata"
                                 >
-                                  {copiedKey === obj.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                                <button
-                                  onClick={() => handleDownloadObject(obj)}
-                                  className="btn-secondary"
-                                  style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
-                                  title="Download File"
-                                >
-                                  <Download className="w-3.5 h-3.5 text-sky-500" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteObject(obj)}
-                                  className="btn-secondary"
-                                  style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
-                                  title="Delete File"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  {getFileIcon(obj.name, obj.mimeType)}
+                                  <span style={{ fontWeight: 500, color: "var(--foreground)" }} className="hover:underline">
+                                    {displayName}
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)" }}>{formatBytes(obj.size)}</td>
+                              <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {obj.mimeType}
+                              </td>
+                              <td style={{ padding: "0.6rem 0.5rem", color: "var(--muted)" }}>
+                                {new Date(obj.updatedAt).toLocaleDateString()}
+                              </td>
+                              <td style={{ padding: "0.6rem 0.5rem", textAlign: "right" }}>
+                                <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end", alignItems: "center" }}>
+                                  <button
+                                    onClick={() => openInspector(obj)}
+                                    className="btn-secondary"
+                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
+                                    title="Inspect & Edit Metadata"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleCopyUrl(obj)}
+                                    className="btn-secondary"
+                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
+                                    title={selectedBucket.isPublic ? "Copy Public CDN URL" : "Copy Temporary Signed URL"}
+                                  >
+                                    {copiedKey === obj.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDownloadObject(obj)}
+                                    className="btn-secondary"
+                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
+                                    title="Download File"
+                                  >
+                                    <Download className="w-3.5 h-3.5 text-sky-500" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteObject(obj)}
+                                    className="btn-secondary"
+                                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", borderRadius: 4 }}
+                                    title="Delete File"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -940,6 +1304,166 @@ export default function StorageDashboardPage() {
                 <p style={{ fontSize: "0.85rem", marginTop: "0.25rem" }}>
                   Create or select a bucket from the left menu to view its files.
                 </p>
+              </div>
+            )}
+
+            {/* Object Detail & Metadata Inspector Slide-Out */}
+            {inspectingObject && selectedBucket && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: 420,
+                  background: "var(--card-bg)",
+                  borderLeft: "1px solid var(--border)",
+                  boxShadow: "-4px 0 24px rgba(0,0,0,0.3)",
+                  zIndex: 50,
+                  padding: "1.5rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflowY: "auto",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                  <h3 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <Sliders className="w-4 h-4 text-indigo-500" />
+                    Object Inspector
+                  </h3>
+                  <button
+                    onClick={() => setInspectingObject(null)}
+                    style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Image Preview Thumbnail if image */}
+                {inspectingObject.mimeType.startsWith("image/") && (
+                  <div
+                    style={{
+                      background: "var(--bg-inset)",
+                      borderRadius: "0.5rem",
+                      padding: "0.75rem",
+                      marginBottom: "1rem",
+                      textAlign: "center",
+                    }}
+                  >
+                    <img
+                      src={
+                        selectedBucket.isPublic
+                          ? `${process.env.NEXT_PUBLIC_STORAGE_URL || "https://storage.whizan.cloud"}/public/${encodeURIComponent(selectedBucket.name)}/${inspectingObject.name.split("/").map(encodeURIComponent).join("/")}`
+                          : "/placeholder-image.png"
+                      }
+                      alt={inspectingObject.name}
+                      style={{ maxHeight: 180, maxWidth: "100%", margin: "0 auto", borderRadius: "0.25rem", objectFit: "contain" }}
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* File Details */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Path</span>
+                    <span style={{ fontWeight: 600, wordBreak: "break-all", maxWidth: "65%", textAlign: "right" }}>{inspectingObject.name}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Size</span>
+                    <span style={{ fontWeight: 600 }}>{formatBytes(inspectingObject.size)}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Content-Type</span>
+                    <span style={{ fontWeight: 600 }}>{inspectingObject.mimeType}</span>
+                  </div>
+                  {inspectingObject.etag && (
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: "var(--muted)" }}>ETag</span>
+                      <span style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>{inspectingObject.etag}</span>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Updated</span>
+                    <span>{new Date(inspectingObject.updatedAt).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Metadata Editor Form */}
+                <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <h4 style={{ fontSize: "0.9rem", fontWeight: 700 }}>HTTP Headers & Metadata</h4>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.25rem" }}>
+                      Cache-Control
+                    </label>
+                    <input
+                      type="text"
+                      value={editingMetadata.cacheControl}
+                      onChange={(e) => setEditingMetadata((prev) => ({ ...prev, cacheControl: e.target.value }))}
+                      placeholder="e.g. public, max-age=86400"
+                      style={{
+                        width: "100%",
+                        padding: "0.4rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        fontSize: "0.85rem",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.25rem" }}>
+                      Content-Disposition
+                    </label>
+                    <input
+                      type="text"
+                      value={editingMetadata.contentDisposition}
+                      onChange={(e) => setEditingMetadata((prev) => ({ ...prev, contentDisposition: e.target.value }))}
+                      placeholder="e.g. inline or attachment; filename=..."
+                      style={{
+                        width: "100%",
+                        padding: "0.4rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        fontSize: "0.85rem",
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: "0.25rem" }}>
+                      Custom Metadata (JSON)
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={editingMetadata.customJson}
+                      onChange={(e) => setEditingMetadata((prev) => ({ ...prev, customJson: e.target.value }))}
+                      style={{
+                        width: "100%",
+                        padding: "0.4rem 0.6rem",
+                        borderRadius: "0.375rem",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-inset)",
+                        fontSize: "0.8rem",
+                        fontFamily: "monospace",
+                      }}
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSaveMetadata}
+                    disabled={savingMetadata}
+                    className="btn btn-primary"
+                    style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}
+                  >
+                    {savingMetadata ? "Saving..." : "Save Metadata"}
+                  </button>
+                </div>
               </div>
             )}
           </div>

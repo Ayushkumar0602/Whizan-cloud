@@ -1846,11 +1846,36 @@ export interface StorageBucketItem {
   isPublic: boolean;
   maxFileSize?: number | null;
   allowedMimeTypes: string[];
+  corsOrigins?: string[];
+  corsMaxAge?: number;
   fileCount: number;
   totalBytes: number;
   createdAt: string;
   updatedAt: string;
   _count?: { objects: number };
+}
+
+export interface StorageBucketPolicyItem {
+  id: string;
+  bucketId: string;
+  name: string;
+  operation: "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+  definition: Record<string, any>;
+  isEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StorageWebhookItem {
+  id: string;
+  userId: string;
+  bucketId?: string | null;
+  events: string[];
+  url: string;
+  secret: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface StorageObjectItem {
@@ -1862,6 +1887,9 @@ export interface StorageObjectItem {
   mimeType: string;
   etag?: string | null;
   isPublic: boolean;
+  cacheControl?: string | null;
+  contentDisposition?: string | null;
+  metadata?: any;
   createdAt: string;
   updatedAt: string;
 }
@@ -1936,15 +1964,20 @@ export const storageApi = {
       method: "DELETE",
     }),
 
-  listObjects: (bucketId: string, options?: { prefix?: string; search?: string; limit?: number; offset?: number }) => {
+  listObjects: (
+    bucketId: string,
+    options?: { prefix?: string; search?: string; delimiter?: string; limit?: number; offset?: number }
+  ) => {
     const params = new URLSearchParams();
     if (options?.prefix) params.set("prefix", options.prefix);
     if (options?.search) params.set("search", options.search);
+    if (options?.delimiter) params.set("delimiter", options.delimiter);
     if (options?.limit) params.set("limit", String(options.limit));
     if (options?.offset) params.set("offset", String(options.offset));
     return request<{
       bucket: StorageBucketItem;
       objects: StorageObjectItem[];
+      commonPrefixes?: string[];
       pagination: { total: number; limit: number; offset: number; hasMore: boolean };
     }>(`/api/storage/v1/buckets/${bucketId}/objects?${params}`);
   },
@@ -1988,11 +2021,60 @@ export const storageApi = {
       { method: "DELETE" }
     ),
 
+  bulkDeleteObjects: (bucketId: string, paths: string[]) =>
+    request<{ deletedCount: number; deletedPaths: string[] }>(
+      `/api/storage/v1/buckets/${bucketId}/objects/bulk-delete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ paths }),
+      }
+    ),
+
   copyObject: (bucketId: string, srcPath: string, destPath: string, destBucket?: string) =>
     request<{ success: boolean; object: StorageObjectItem }>(`/api/storage/v1/buckets/${bucketId}/objects/copy`, {
       method: "POST",
       body: JSON.stringify({ srcPath, destPath, destBucket: destBucket || bucketId }),
     }),
+
+  moveObject: (bucketId: string, srcPath: string, destPath: string, destBucket?: string) =>
+    request<{ success: boolean; object: StorageObjectItem }>(`/api/storage/v1/buckets/${bucketId}/objects/move`, {
+      method: "POST",
+      body: JSON.stringify({ srcPath, destPath, destBucket: destBucket || bucketId }),
+    }),
+
+  bulkMoveObjects: (
+    bucketId: string,
+    data: { paths: string[]; destBucket?: string; destPrefix?: string }
+  ) =>
+    request<{ movedCount: number; objects: StorageObjectItem[] }>(
+      `/api/storage/v1/buckets/${bucketId}/objects/bulk-move`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  updateObjectMetadata: (
+    bucketId: string,
+    data: {
+      path: string;
+      cacheControl?: string;
+      contentDisposition?: string;
+      metadata?: Record<string, any>;
+    }
+  ) =>
+    request<{ success: boolean; object: StorageObjectItem }>(
+      `/api/storage/v1/buckets/${bucketId}/objects/metadata`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  getObjectMetadata: (bucketId: string, path: string) =>
+    request<{ success: boolean; object: StorageObjectItem }>(
+      `/api/storage/v1/buckets/${bucketId}/objects/metadata?path=${encodeURIComponent(path)}`
+    ),
 
   reconcile: () =>
     request<{ success: boolean; reconciled: any }>("/api/storage/v1/reconcile", {
@@ -2001,4 +2083,86 @@ export const storageApi = {
 
   getAuditLogs: (limit = 50) =>
     request<StorageAuditLogItem[]>(`/api/storage/v1/audit-logs?limit=${limit}`),
+
+  // Policies (RLS)
+  listPolicies: (bucketId: string) =>
+    request<StorageBucketPolicyItem[]>(`/api/storage/v1/buckets/${bucketId}/policies`),
+
+  createPolicy: (
+    bucketId: string,
+    data: {
+      name: string;
+      operation: "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+      definition: Record<string, any>;
+      isEnabled?: boolean;
+    }
+  ) =>
+    request<{ success: boolean; policy: StorageBucketPolicyItem }>(
+      `/api/storage/v1/buckets/${bucketId}/policies`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  updatePolicy: (
+    bucketId: string,
+    policyId: string,
+    data: {
+      name?: string;
+      operation?: "SELECT" | "INSERT" | "UPDATE" | "DELETE";
+      definition?: Record<string, any>;
+      isEnabled?: boolean;
+    }
+  ) =>
+    request<{ success: boolean; policy: StorageBucketPolicyItem }>(
+      `/api/storage/v1/buckets/${bucketId}/policies/${policyId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }
+    ),
+
+  deletePolicy: (bucketId: string, policyId: string) =>
+    request<{ success: boolean; message: string }>(
+      `/api/storage/v1/buckets/${bucketId}/policies/${policyId}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  // Webhooks
+  listWebhooks: () =>
+    request<StorageWebhookItem[]>("/api/storage/v1/webhooks"),
+
+  createWebhook: (data: {
+    bucketId?: string | null;
+    events: string[];
+    url: string;
+    secret?: string;
+  }) =>
+    request<{ success: boolean; webhook: StorageWebhookItem }>("/api/storage/v1/webhooks", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateWebhook: (
+    webhookId: string,
+    data: {
+      bucketId?: string | null;
+      events?: string[];
+      url?: string;
+      secret?: string;
+      isActive?: boolean;
+    }
+  ) =>
+    request<{ success: boolean; webhook: StorageWebhookItem }>(`/api/storage/v1/webhooks/${webhookId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteWebhook: (webhookId: string) =>
+    request<{ success: boolean; message: string }>(`/api/storage/v1/webhooks/${webhookId}`, {
+      method: "DELETE",
+    }),
 };
