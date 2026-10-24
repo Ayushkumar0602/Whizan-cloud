@@ -25,7 +25,7 @@ interface CommandEntry {
   timestamp: string;
 }
 
-const WELCOME_BANNER = `Whizan Cloud Shell v2.4 (account scope)\r\nType 'help' for available commands.\r\n`;
+const WELCOME_BANNER = `Whizan Cloud Shell v2.5 (compute + storage scope)\r\nType 'help' for available commands, or try 'storage', 'services', 'stats'.\r\n`;
 
 export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
   const { user } = useAuth();
@@ -154,7 +154,24 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
     } else if (e.key === "Tab") {
       e.preventDefault();
       // Auto-complete basic commands
-      const cmds = ["help", "services", "projects", "service", "project", "redeploy", "restart", "logs", "status", "stats", "whoami", "clear"];
+      const cmds = [
+        "help",
+        "storage",
+        "buckets",
+        "bucket",
+        "services",
+        "projects",
+        "service",
+        "project",
+        "redeploy",
+        "restart",
+        "logs",
+        "status",
+        "stats",
+        "whoami",
+        "clear",
+        "exit",
+      ];
       const match = cmds.find(c => c.startsWith(inputVal.toLowerCase()));
       if (match) setInputVal(match);
     }
@@ -277,6 +294,31 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
               </div>
             </div>
           ))}
+
+          {/* Quick Action Suggestion Chips */}
+          <div className="whz-term-chips">
+            {[
+              { label: "help", cmd: "help" },
+              { label: "storage", cmd: "storage" },
+              { label: "storage usage", cmd: "storage usage" },
+              { label: "storage keys", cmd: "storage keys" },
+              { label: "services", cmd: "services" },
+              { label: "projects", cmd: "projects" },
+              { label: "stats", cmd: "stats" },
+            ].map(chip => (
+              <button
+                key={chip.cmd}
+                type="button"
+                className="whz-term-chip"
+                onClick={() => {
+                  setInputVal(chip.cmd);
+                  executeCommand(chip.cmd);
+                }}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
 
           {/* Active Live Input Line */}
           <div className="whz-term-input-row">
@@ -553,6 +595,33 @@ export function AccountTerminal({ isOpen, onClose }: AccountTerminalProps) {
           padding-left: 0.25rem;
           white-space: pre-wrap;
           word-break: break-word;
+        }
+
+        /* Quick Suggestion Chips */
+        .whz-term-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          margin-top: 0.65rem;
+          margin-bottom: 0.25rem;
+        }
+
+        .whz-term-chip {
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          color: #94a3b8;
+          font-family: inherit;
+          font-size: 0.6875rem;
+          padding: 0.15rem 0.5rem;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.12s ease;
+        }
+
+        .whz-term-chip:hover {
+          background: rgba(56, 189, 248, 0.12);
+          border-color: rgba(56, 189, 248, 0.3);
+          color: #38bdf8;
         }
 
         /* Active Input Row */

@@ -9,6 +9,7 @@ import { getDeploymentUrl } from "../lib/domain.js";
 import { getAuthenticatedGitUrl } from "../lib/github-utils.js";
 import { serviceQueue } from "./services.js";
 import { buildQueue } from "./deployments.js";
+import { StorageService } from "../services/storage.service.js";
 
 const TerminalExecSchema = z.object({
   command: z.string().min(1).max(1000),
@@ -44,12 +45,12 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
     // ──────────────────────────────────────────────────────────────────────────
     if (cmd === "help" || cmd === "?") {
       const output = [
-        "\r\n\x1b[1;36mWhizan Cloud Shell v2.4 (account scope)\x1b[0m",
+        "\r\n\x1b[1;36mWhizan Cloud Shell v2.5 (compute + storage scope)\x1b[0m",
         "\x1b[90mConnected as: " + email + " (Tenant: " + userId.slice(0, 8) + "...)\x1b[0m",
         "",
         "\x1b[1;33mACCOUNT & SYSTEM OVERVIEW:\x1b[0m",
         "  \x1b[32mwhoami\x1b[0m                     Display authenticated user identity, role & tier",
-        "  \x1b[32mstats, top\x1b[0m                 Display aggregate account compute metrics & capacity",
+        "  \x1b[32mstats, top\x1b[0m                 Display aggregate account compute & storage metrics",
         "  \x1b[32mclear\x1b[0m                      Clear the terminal window output",
         "  \x1b[32mexit\x1b[0m                       Close the terminal drawer",
         "",
@@ -59,6 +60,15 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
         "  \x1b[32mservice <slug|id>\x1b[0m          Inspect comprehensive metadata, port & host mapping",
         "  \x1b[32mproject <slug|id>\x1b[0m          Inspect frontend deployment configuration & domain",
         "  \x1b[32menv <slug|id>\x1b[0m              Safely list environment variable keys (masked values)",
+        "",
+        "\x1b[1;33mCLOUD OBJECT STORAGE:\x1b[0m",
+        "  \x1b[32mstorage, buckets\x1b[0m           List all cloud object storage buckets and sizes",
+        "  \x1b[32mstorage info <bucket>\x1b[0m      Inspect bucket metadata, CORS & edge CDN endpoints",
+        "  \x1b[32mstorage ls <bucket>\x1b[0m        List files and objects stored inside a bucket",
+        "  \x1b[32mstorage usage\x1b[0m              Display storage capacity, operations & bandwidth usage",
+        "  \x1b[32mstorage keys\x1b[0m               List active Storage API keys & permissions",
+        "  \x1b[32mstorage create <name>\x1b[0m      Create a new bucket (append --public for CDN)",
+        "  \x1b[32mstorage rm <name>\x1b[0m          Delete an empty storage bucket",
         "",
         "\x1b[1;33mOPERATIONS & DIAGNOSTICS:\x1b[0m",
         "  \x1b[32mstatus <slug|id>\x1b[0m           Probe real-time HTTP reachability & edge router health",
@@ -95,12 +105,14 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
     // 3. STATS / METRICS / TOP
     // ──────────────────────────────────────────────────────────────────────────
     if (cmd === "stats" || cmd === "metrics" || cmd === "top") {
-      const [serviceCount, projectCount, dbCount, cronCount, functionCount] = await Promise.all([
+      const [serviceCount, projectCount, dbCount, cronCount, functionCount, bucketCount, storageQuota] = await Promise.all([
         prisma.backendService.count({ where: { userId } }),
         prisma.project.count({ where: { userId } }),
         prisma.databaseService.count({ where: { userId } }).catch(() => 0),
         prisma.cronJob.count({ where: { userId } }).catch(() => 0),
         prisma.functionService.count({ where: { userId } }).catch(() => 0),
+        prisma.storageBucket.count({ where: { userId } }).catch(() => 0),
+        prisma.storageUserQuota.findUnique({ where: { userId } }).catch(() => null),
       ]);
 
       const userServices = await prisma.backendService.findMany({
@@ -123,9 +135,11 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
         `  \x1b[1mDatabases (PG/MySQL):\x1b[0m   ${dbCount}`,
         `  \x1b[1mEdge Functions:\x1b[0m         ${functionCount}`,
         `  \x1b[1mCron Schedules:\x1b[0m         ${cronCount}`,
+        `  \x1b[1mStorage Buckets:\x1b[0m        ${bucketCount}`,
         "  ────────────────────────────────────────────────────────────",
         `  \x1b[1mAllocated vCPUs:\x1b[0m        ${totalCpu.toFixed(1)} vCPU`,
         `  \x1b[1mAllocated RAM:\x1b[0m          ${totalMem >= 1024 ? (totalMem / 1024).toFixed(1) + " GB" : totalMem + " MB"}`,
+        `  \x1b[1mStorage Stored:\x1b[0m         ${formatBytes(storageQuota?.usedBytes || 0)} / ${formatBytes(storageQuota?.allocatedBytes || 1073741824)}`,
         `  \x1b[1mScale-to-Zero Policy:\x1b[0m   Enabled (Auto-Sleep on Idle)`,
         `  \x1b[1mNetwork Ingress:\x1b[0m        Cloudflare Edge Router (Zero-Maintenance SSL)\r\n`,
       ].join("\r\n");
@@ -272,6 +286,357 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
       const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mTotal: ${projects.length} project(s) owned. Type 'project <slug>' for full inspection.\x1b[0m\r\n`;
 
       return reply.send({ success: true, output, exitCode: 0 });
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 5. CLOUD OBJECT STORAGE (storage, buckets, bucket)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (cmd === "storage" || cmd === "buckets" || cmd === "bucket") {
+      let sub = args[0]?.toLowerCase() || "ls";
+      let subTarget: string | undefined = args[1];
+
+      if (cmd === "buckets") {
+        sub = "ls";
+        subTarget = undefined;
+      } else if (cmd === "bucket") {
+        if (!args[0] || args[0] === "ls") {
+          sub = "ls";
+          subTarget = undefined;
+        } else if (args[0] === "info" || args[0] === "get") {
+          sub = "info";
+          subTarget = args[1];
+        } else {
+          // "bucket <name>" -> inspect
+          sub = "info";
+          subTarget = args[0];
+        }
+      }
+
+      // ── Subcommand: HELP ──
+      if (sub === "help" || sub === "?") {
+        const output = [
+          "\r\n\x1b[1;36mWhizan Cloud Object Storage — Shell Reference\x1b[0m",
+          "  ────────────────────────────────────────────────────────────",
+          "  \x1b[32mstorage [ls]\x1b[0m                       List all storage buckets & sizes",
+          "  \x1b[32mstorage ls <bucket> [prefix]\x1b[0m       List stored objects & files in a bucket",
+          "  \x1b[32mstorage info <bucket>\x1b[0m              Inspect bucket metadata, CORS & CDN endpoints",
+          "  \x1b[32mstorage usage\x1b[0m                      Display quota utilization & bandwidth metrics",
+          "  \x1b[32mstorage keys\x1b[0m                       List active Storage API keys & scopes",
+          "  \x1b[32mstorage create <name> [--public]\x1b[0m   Provision a new bucket (public CDN or private)",
+          "  \x1b[32mstorage rm <name> [--force]\x1b[0m        Delete a storage bucket\r\n",
+        ].join("\r\n");
+        return reply.send({ success: true, output, exitCode: 0 });
+      }
+
+      // ── Subcommand: USAGE / QUOTA ──
+      if (sub === "usage" || sub === "quota") {
+        try {
+          const usage = await StorageService.getUsage(userId, subscriptionTier);
+          const usedB = usage.quota.usedBytes;
+          const allocB = usage.quota.allocatedBytes;
+          const reservedB = usage.quota.reservedBytes;
+          const availB = usage.quota.availableBytes;
+          const pct = usage.quota.usagePercent;
+
+          const bucketCount = await prisma.storageBucket.count({ where: { userId } });
+
+          const output = [
+            "\r\n\x1b[1;36mCloud Object Storage — Quota & Capacity Usage\x1b[0m",
+            "  ────────────────────────────────────────────────────────────",
+            `  \x1b[1mSubscription Tier:\x1b[0m     \x1b[35m${usage.tierDisplayName} (${usage.tier})\x1b[0m`,
+            `  \x1b[1mStored Capacity:\x1b[0m       ${formatBytes(usedB)} / ${formatBytes(allocB)}`,
+            `  \x1b[1mStorage Bar:\x1b[0m           ${renderProgressBar(pct, 24)}`,
+            `  \x1b[1mReserved (In-Flight):\x1b[0m  ${formatBytes(reservedB)}`,
+            `  \x1b[1mAvailable Remaining:\x1b[0m   ${formatBytes(availB)}`,
+            `  \x1b[1mTotal Objects:\x1b[0m         ${usage.quota.objectsCount.toLocaleString()} object(s)`,
+            `  \x1b[1mBuckets Count:\x1b[0m         ${bucketCount} / ${usage.commandLimits.maxBuckets} bucket(s)`,
+            "  ────────────────────────────────────────────────────────────",
+            `  \x1b[1mRate Limit (RPM):\x1b[0m      ${usage.commandLimits.currentRpm} / ${usage.commandLimits.rateLimitRpm} req/min`,
+            `  \x1b[1mDaily Operations:\x1b[0m      ${usage.commandLimits.currentDailyCommands} / ${usage.commandLimits.dailyCommandsQuota} ops/day`,
+            `  \x1b[1mMax Single File:\x1b[0m       ${usage.commandLimits.maxFileSizeMb} MB`,
+            `  \x1b[1mConcurrent Uploads:\x1b[0m    ${usage.commandLimits.maxConcurrentUploads} parallel parts\r\n`,
+          ].join("\r\n");
+
+          return reply.send({ success: true, output, exitCode: 0 });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mError fetching storage quota: ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: KEYS ──
+      if (sub === "keys" || sub === "api-keys") {
+        try {
+          const keys = await prisma.storageApiKey.findMany({
+            where: { userId },
+            include: { bucket: { select: { name: true } } },
+            orderBy: { createdAt: "desc" },
+          });
+
+          if (keys.length === 0) {
+            return reply.send({
+              success: true,
+              output: "\r\n\x1b[90mNo Storage API keys found. Generate keys from Dashboard > Storage > API Keys or Whizan CLI.\x1b[0m\r\n",
+              exitCode: 0,
+            });
+          }
+
+          const columns = [
+            { header: "KEY ID", width: 14 },
+            { header: "NAME", width: 20 },
+            { header: "KEY PREFIX", width: 22 },
+            { header: "PERMISSION", width: 14 },
+            { header: "SCOPE", width: 16 },
+            { header: "LAST USED", width: 14 },
+          ];
+
+          const rows = keys.map(k => [
+            { text: k.id.slice(0, 12), ansiColor: "\x1b[90m" },
+            { text: k.name, ansiColor: "\x1b[1;37m" },
+            { text: k.keyPrefix, ansiColor: "\x1b[33m" },
+            { text: k.permission, ansiColor: k.permission === "READ_WRITE" ? "\x1b[32m" : "\x1b[36m" },
+            { text: k.bucket ? k.bucket.name : "ALL BUCKETS", ansiColor: k.bucket ? "\x1b[34m" : "\x1b[35m" },
+            { text: k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : "Never", ansiColor: "\x1b[90m" },
+          ]);
+
+          const tableOutput = renderTerminalTable(columns, rows);
+          const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mTotal: ${keys.length} active key(s). Authentication: Bearer <key> with Whizan Storage API & S3 gateway.\x1b[0m\r\n`;
+          return reply.send({ success: true, output, exitCode: 0 });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mError fetching storage keys: ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: CREATE / NEW ──
+      if (sub === "create" || sub === "new") {
+        const bucketName = args[1];
+        if (!bucketName) {
+          return reply.send({
+            success: false,
+            output: "\x1b[31mError: Bucket name required. Usage: storage create <name> [--public]\x1b[0m\r\n",
+            exitCode: 1,
+          });
+        }
+
+        const isPublic = args.includes("--public");
+        try {
+          const bucket = await StorageService.createBucket({
+            userId,
+            subscriptionTier,
+            name: bucketName,
+            isPublic,
+            actorEmail: email,
+          });
+
+          const output = [
+            "\r\n\x1b[1;32m✔ Bucket successfully created!\x1b[0m",
+            `  \x1b[1mBucket Name:\x1b[0m    \x1b[1;36m${bucket.name}\x1b[0m`,
+            `  \x1b[1mBucket ID:\x1b[0m      ${bucket.id}`,
+            `  \x1b[1mVisibility:\x1b[0m     ${bucket.isPublic ? "\x1b[32mPublic CDN (Edge-Cached)\x1b[0m" : "\x1b[33mPrivate (Protected S3/IAM)\x1b[0m"}`,
+            bucket.isPublic ? `  \x1b[1mEdge CDN URL:\x1b[0m   https://storage.whizan.cloud/${bucket.name}` : "",
+            "\x1b[90mUpload files using the web dashboard, S3 API, or Whizan MCP tooling.\x1b[0m\r\n",
+          ].filter(Boolean).join("\r\n");
+
+          return reply.send({ success: true, output, exitCode: 0 });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mFailed to create bucket: ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: RM / DELETE ──
+      if (sub === "rm" || sub === "delete") {
+        const bucketName = args[1];
+        if (!bucketName) {
+          return reply.send({
+            success: false,
+            output: "\x1b[31mError: Bucket name required. Usage: storage rm <name> [--force]\x1b[0m\r\n",
+            exitCode: 1,
+          });
+        }
+
+        const force = args.includes("--force") || args.includes("-f");
+        try {
+          await StorageService.deleteBucket(userId, bucketName, force, email);
+          return reply.send({
+            success: true,
+            output: `\r\n\x1b[32m✔ Bucket '${bucketName}' successfully deleted.\x1b[0m\r\n`,
+            exitCode: 0,
+          });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mFailed to delete bucket: ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: INFO / GET / BUCKET ──
+      if (sub === "info" || sub === "get" || (sub !== "ls" && sub !== "objects" && subTarget === undefined && sub !== "storage")) {
+        const target = sub === "info" || sub === "get" ? subTarget : sub;
+        if (!target) {
+          return reply.send({
+            success: false,
+            output: "\x1b[31mError: Bucket name or ID required. Usage: storage info <bucket>\x1b[0m\r\n",
+            exitCode: 1,
+          });
+        }
+
+        try {
+          const bucket = await StorageService.getBucket(userId, target);
+          const sizeAgg = await prisma.storageObject.aggregate({
+            where: { bucketId: bucket.id, deletedAt: null },
+            _sum: { size: true },
+          });
+          const totalStoredBytes = sizeAgg._sum.size || 0n;
+
+          const output = [
+            `\r\n\x1b[1;36mStorage Bucket: ${bucket.name}\x1b[0m`,
+            "  ────────────────────────────────────────────────────────────",
+            `  \x1b[1mBucket ID:\x1b[0m         ${bucket.id}`,
+            `  \x1b[1mVisibility:\x1b[0m        ${bucket.isPublic ? "\x1b[32mPublic CDN (Global Edge Cached)\x1b[0m" : "\x1b[33mPrivate (Protected S3/IAM)\x1b[0m"}`,
+            `  \x1b[1mObjects Stored:\x1b[0m    ${bucket._count?.objects ?? 0} object(s)`,
+            `  \x1b[1mTotal Size:\x1b[0m        ${formatBytes(totalStoredBytes)}`,
+            `  \x1b[1mCreated At:\x1b[0m        ${new Date(bucket.createdAt).toLocaleString()}`,
+            `  \x1b[1mVersioning:\x1b[0m        ${bucket.versioningEnabled ? "\x1b[32mEnabled\x1b[0m" : "\x1b[90mDisabled\x1b[0m"}`,
+            `  \x1b[1mTrash / Soft Del:\x1b[0m  ${bucket.trashEnabled ? `\x1b[32mEnabled (${bucket.trashRetentionDays} days)\x1b[0m` : "\x1b[90mDisabled\x1b[0m"}`,
+            "  ────────────────────────────────────────────────────────────",
+            `  \x1b[1mPublic CDN URL:\x1b[0m    ${bucket.isPublic ? `https://storage.whizan.cloud/${bucket.name}` : "\x1b[90mNone (Private Bucket)\x1b[0m"}`,
+            `  \x1b[1mS3 Gateway:\x1b[0m        https://api.whizan.cloud/api/storage/s3`,
+            `  \x1b[1mCORS Origins:\x1b[0m      ${bucket.corsOrigins && bucket.corsOrigins.length > 0 ? bucket.corsOrigins.join(", ") : "*"}\r\n`,
+            `\x1b[90mHint: Run 'storage ls ${bucket.name}' to browse stored files.\x1b[0m\r\n`,
+          ].join("\r\n");
+
+          return reply.send({ success: true, output, exitCode: 0 });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mBucket '${target}' not found: ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: LS / OBJECTS (with target bucket) ──
+      if ((sub === "ls" || sub === "objects") && subTarget) {
+        try {
+          const prefix = args[2] || undefined;
+          const result = await StorageService.listObjects({
+            userId,
+            bucketIdentifier: subTarget,
+            prefix,
+            limit: 50,
+          });
+
+          if (result.objects.length === 0) {
+            return reply.send({
+              success: true,
+              output: `\r\n\x1b[90mBucket '${result.bucket.name}' is empty (0 objects found${prefix ? ` matching prefix '${prefix}'` : ""}).\x1b[0m\r\n`,
+              exitCode: 0,
+            });
+          }
+
+          const columns = [
+            { header: "OBJECT NAME / PATH", width: 34 },
+            { header: "SIZE", width: 12 },
+            { header: "CONTENT TYPE", width: 18 },
+            { header: "ETAG", width: 14 },
+            { header: "MODIFIED", width: 16 },
+          ];
+
+          const rows = result.objects.map(obj => [
+            { text: obj.name, ansiColor: "\x1b[1;37m" },
+            { text: formatBytes(obj.size), ansiColor: "\x1b[36m" },
+            { text: obj.mimeType || "application/octet-stream", ansiColor: "\x1b[90m" },
+            { text: obj.etag ? obj.etag.slice(0, 12) : "-", ansiColor: "\x1b[90m" },
+            { text: new Date(obj.updatedAt).toLocaleDateString(), ansiColor: "\x1b[33m" },
+          ]);
+
+          const tableOutput = renderTerminalTable(columns, rows);
+          const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mShowing ${result.objects.length} of ${result.pagination.total} object(s) in bucket '${result.bucket.name}'.\x1b[0m\r\n`;
+
+          return reply.send({ success: true, output, exitCode: 0 });
+        } catch (err: any) {
+          return reply.send({
+            success: false,
+            output: `\x1b[31mFailed to list objects in '${subTarget}': ${err.message}\x1b[0m\r\n`,
+            exitCode: 1,
+          });
+        }
+      }
+
+      // ── Subcommand: LS / LIST (Default: List all user buckets) ──
+      try {
+        const buckets = await StorageService.listBuckets(userId);
+
+        if (buckets.length === 0) {
+          const emptyOutput = [
+            "\r\n\x1b[90mNo cloud storage buckets found.\x1b[0m",
+            "Create your first bucket using: \x1b[32mstorage create <name> [--public]\x1b[0m",
+            "Or browse to \x1b[34mhttps://whizan.cloud/dashboard/storage\x1b[0m\r\n",
+          ].join("\r\n");
+          return reply.send({ success: true, output: emptyOutput, exitCode: 0 });
+        }
+
+        // Aggregate sizes for each bucket
+        const bucketSizes = await prisma.storageObject.groupBy({
+          by: ["bucketId"],
+          where: { bucketId: { in: buckets.map(b => b.id) }, deletedAt: null },
+          _sum: { size: true },
+        });
+
+        const sizeMap = new Map<string, bigint>();
+        bucketSizes.forEach(s => sizeMap.set(s.bucketId, s._sum.size || 0n));
+
+        const columns = [
+          { header: "BUCKET NAME", width: 22 },
+          { header: "VISIBILITY", width: 14 },
+          { header: "OBJECTS", width: 10 },
+          { header: "STORED SIZE", width: 14 },
+          { header: "CREATED", width: 14 },
+          { header: "CDN / ENDPOINT", width: 34 },
+        ];
+
+        const rows = buckets.map(b => {
+          const storedBytes = sizeMap.get(b.id) || 0n;
+          const visText = b.isPublic ? "PUBLIC CDN" : "PRIVATE";
+          const visColor = b.isPublic ? "\x1b[32m" : "\x1b[33m";
+          const endpoint = b.isPublic
+            ? `https://storage.whizan.cloud/${b.name}`
+            : "s3://whizan-storage/" + b.name;
+
+          return [
+            { text: b.name, ansiColor: "\x1b[1;36m" },
+            { text: visText, ansiColor: visColor },
+            { text: String(b._count?.objects ?? 0), ansiColor: "\x1b[37m" },
+            { text: formatBytes(storedBytes), ansiColor: "\x1b[35m" },
+            { text: new Date(b.createdAt).toLocaleDateString(), ansiColor: "\x1b[90m" },
+            { text: endpoint, ansiColor: "\x1b[34m" },
+          ];
+        });
+
+        const tableOutput = renderTerminalTable(columns, rows);
+        const output = `\r\n${tableOutput}\r\n\r\n\x1b[90mTotal: ${buckets.length} bucket(s). Type 'storage info <bucket>' or 'storage ls <bucket>' for files.\x1b[0m\r\n`;
+
+        return reply.send({ success: true, output, exitCode: 0 });
+      } catch (err: any) {
+        return reply.send({
+          success: false,
+          output: `\x1b[31mError listing storage buckets: ${err.message}\x1b[0m\r\n`,
+          exitCode: 1,
+        });
+      }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -894,11 +1259,15 @@ export async function accountTerminalRoutes(fastify: FastifyInstance) {
       "  \x1b[32mhelp\x1b[0m                     Show full command manual",
       "  \x1b[32mservices, ls\x1b[0m             List your backend services",
       "  \x1b[32mprojects\x1b[0m                 List your frontend projects",
+      "  \x1b[32mstorage, buckets\x1b[0m         List cloud object storage buckets",
+      "  \x1b[32mstorage ls <bkt>\x1b[0m         List objects in a storage bucket",
+      "  \x1b[32mstorage info <bkt>\x1b[0m       Inspect bucket details & CDN URL",
+      "  \x1b[32mstorage usage\x1b[0m            Show storage capacity & quota bar",
       "  \x1b[32mservice <slug>\x1b[0m           Inspect service configuration",
       "  \x1b[32mstatus <slug>\x1b[0m            Check health & latency",
       "  \x1b[32mredeploy <slug>\x1b[0m          Trigger redeployment",
       "  \x1b[32mlogs <slug>\x1b[0m              Read recent logs",
-      "  \x1b[32mstats\x1b[0m                    Show compute summary",
+      "  \x1b[32mstats\x1b[0m                    Show compute & storage summary",
       "  \x1b[32mwhoami\x1b[0m                   Show user profile & tier",
       "  \x1b[32mexec <slug> <cmd>\x1b[0m        Run diagnostic command inside container\r\n",
     ].join("\r\n");
@@ -968,4 +1337,28 @@ function renderTerminalTable(
 
   return [headerLine, dividerLine, ...bodyLines].join("\r\n");
 }
+
+/**
+ * Format raw bytes into human-readable unit string (B, KB, MB, GB, TB)
+ */
+function formatBytes(bytes: number | bigint | string | null | undefined): string {
+  const b = Number(bytes || 0);
+  if (b === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const i = Math.floor(Math.log(b) / Math.log(1024));
+  return `${(b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${units[i] || "B"}`;
+}
+
+/**
+ * Render visual ANSI progress bar
+ */
+function renderProgressBar(percent: number, width = 20): string {
+  const p = Math.max(0, Math.min(100, percent || 0));
+  const filled = Math.round((p / 100) * width);
+  const empty = width - filled;
+  const bar = "█".repeat(filled) + "░".repeat(empty);
+  const color = p > 90 ? "\x1b[1;31m" : p > 75 ? "\x1b[1;33m" : "\x1b[1;32m";
+  return `${color}[${bar}]\x1b[0m ${p.toFixed(1)}%`;
+}
+
 
