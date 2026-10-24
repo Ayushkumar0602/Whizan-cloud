@@ -130,6 +130,16 @@ const SERVICES_DIRECTORY: DocCard[] = [
     colorClass: "indigo",
     tags: ["REST Endpoints", "Bearer Token", "JSON"],
     whenToUseSummary: "Custom internal portals, automated deployment webhooks, and programmatic infrastructure management scripts."
+  },
+  {
+    slug: "security",
+    title: "Security & Edge Protection",
+    category: "Architecture & Security",
+    tagline: "Comprehensive security architecture, Cloudflare WAF hardening, advanced browser headers, and anti-abuse guardrails.",
+    icon: ShieldCheck,
+    colorClass: "emerald",
+    tags: ["Cloudflare WAF", "HSTS & COOP", "OTP Lockout", "XSS Mitigation"],
+    whenToUseSummary: "Hardening production deployments, configuring Cloudflare WAF & rate limits, and implementing defense-in-depth policies."
   }
 ];
 

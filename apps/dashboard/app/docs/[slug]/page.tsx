@@ -23,7 +23,8 @@ import {
   Bot,
   Layers,
   ArrowRight,
-  HardDrive
+  HardDrive,
+  ShieldCheck
 } from "lucide-react";
 import { BrandMark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -945,6 +946,173 @@ whz_stg_live_a83bca0e838eb59f43bca3b142d0035ee914ddb3be6e03eb
       "Use 'storage.getS3Config()' to connect the official AWS S3 SDK (@aws-sdk/client-s3) with zero boilerplate.",
       "Leverage URL image optimization (?width=400&format=webp) to serve next-gen image formats automatically to mobile devices."
     ]
+  },
+  security: {
+    slug: "security",
+    title: "Security & Edge Protection",
+    category: "Architecture & Security",
+    tagline: "Comprehensive defense-in-depth architecture: Cloudflare Edge WAF, HSTS & Permissions-Policy, OTP Flood & Brute-Force lockout, and Object Storage Stored XSS mitigation.",
+    icon: ShieldCheck,
+    accentColor: "#10b981",
+    whenToUse: [
+      "Hardening production deployments against DDoS, volumetric brute-force, and scraping",
+      "Configuring Cloudflare Edge WAF rules without breaking developer tools or MCP agents",
+      "Enforcing browser isolation via HSTS, COOP, CORP, and restrictive Permissions-Policy",
+      "Securing user authentication endpoints from email flooding and passcode brute-force",
+      "Protecting Cloud Object Storage from Stored Cross-Site Scripting (XSS) and phishing uploads"
+    ],
+    whenNotToUse: [
+      "Local offline debugging where custom TLS certificates or strict origin headers are bypassed",
+      "Public unauthenticated webhook receptors that require open, unauthenticated cross-origin access"
+    ],
+    supportedTech: [
+      "Cloudflare WAF & Edge Rate Limiting",
+      "HTTP Strict Transport Security (HSTS)",
+      "Cross-Origin Opener Policy (COOP)",
+      "Cross-Origin Resource Policy (CORP)",
+      "Permissions-Policy Sensor Lockdown",
+      "RFC 9116 security.txt Vulnerability Disclosure",
+      "Redis Sliding-Window Rate Limiting",
+      "CSP Sandboxing & Anti-MIME Sniffing"
+    ],
+    howToUse: {
+      dashboardSteps: [
+        "In Cloudflare Dashboard -> SSL/TLS -> Overview, verify encryption mode is set to 'Full (Strict)' to prevent redirect loops.",
+        "In Cloudflare Dashboard -> SSL/TLS -> Edge Certificates, toggle Enable HSTS (1 year max-age, include subdomains, preload).",
+        "In Cloudflare Dashboard -> DNS -> Records, toggle 'api', 'dashboard', 'whizan.cloud', and 'www' from Grey Cloud to Proxied (Orange Cloud).",
+        "In Cloudflare Dashboard -> Security -> WAF -> Custom Rules, create a Managed Challenge rule for web traffic with an exception for 'api.whizan.cloud/*' and '/api/*'.",
+        "In Cloudflare Dashboard -> Security -> WAF -> Rate Limiting, add a 10 req/min rule on '/api/auth/login' and '/api/auth/send-otp'."
+      ],
+      cliCommand: "whizan auth status --verify-2fa",
+      mcpPrompt: "Inspect workspace security headers, verify database connection strings, and audit exposed environment variables."
+    },
+    sampleCode: {
+      filename: "cloudflare-waf-rules.txt",
+      language: "text",
+      code: `# 1. Selective Bot Protection WAF Expression (Protects Web, Preserves API & MCP)
+(http.host eq "whizan.cloud" or http.host eq "dashboard.whizan.cloud") and
+not (http.request.uri.path starts_with "/api/") and
+not (http.request.uri.path starts_with "/storage/")
+
+Action: Managed Challenge
+
+# 2. Edge Rate Limiting Expression (Auth Brute-Force Defense)
+(http.request.uri.path eq "/api/auth/login" or http.request.uri.path eq "/api/auth/send-otp")
+
+Characteristics: IP
+Threshold: 10 requests per 1 minute
+Action: Block (429 Too Many Requests)`
+    },
+    detailedGuides: [
+      {
+        id: "cloudflare-edge-hardening",
+        title: "1. Cloudflare Edge WAF & Origin Shield",
+        badge: "Edge Defense",
+        description: "How to configure Cloudflare edge proxying and WAF rules to protect your servers while keeping APIs and AI devops tools running without friction.",
+        table: {
+          headers: ["Layer", "Recommended Setting", "Risk / Benefit"],
+          rows: [
+            ["SSL/TLS Encryption Mode", "Full (Strict)", "MANDATORY: Prevents 301/308 redirect loops between Cloudflare and Vercel/Render."],
+            ["DNS Proxy (Orange Cloud)", "Enabled for api, dashboard, root, and www", "Hides origin IP addresses and absorbs Layer 3/4/7 DDoS attacks."],
+            ["HSTS (Edge Certificates)", "1 Year + Include Subdomains", "Prevents SSL stripping and forces browsers to use encrypted HTTPS exclusively."],
+            ["Bot Fight Mode", "Use Custom WAF Rules (DO NOT enable globally)", "Global Bot Fight Mode blocks CLI tools, curl, and MCP agents with 403 challenges."],
+            ["Edge Rate Limiting", "10 requests / min on auth endpoints", "Mitigates credential stuffing before packets reach the Azure VM."]
+          ]
+        },
+        notes: [
+          "Origin Shielding: In Azure Network Security Group (NSG), restrict inbound HTTP/HTTPS ports (80, 443, 8080) to only Cloudflare's published IP ranges (https://www.cloudflare.com/ips/).",
+          "Universal SSL Wildcard: '*.whizan.cloud' and '*.fn.whizan.cloud' are managed automatically by Cloudflare with sub-millisecond edge TLS termination."
+        ]
+      },
+      {
+        id: "browser-security-headers",
+        title: "2. Advanced Browser Security Headers",
+        badge: "HTTP Headers",
+        description: "Whizan's Edge Router and Next.js console automatically inject a standardized suite of HTTP response headers to isolate web contexts and prevent data exfiltration.",
+        table: {
+          headers: ["Header", "Directive / Value", "Security Purpose"],
+          rows: [
+            ["Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload", "Enforces HTTPS encryption for 1 full year."],
+            ["X-Content-Type-Options", "nosniff", "Prevents MIME-type confusion attacks in browsers."],
+            ["X-Frame-Options", "DENY", "Blocks clickjacking by forbidding iframe embedding."],
+            ["Referrer-Policy", "strict-origin-when-cross-origin", "Prevents sensitive URL paths and tokens from leaking in Referer headers."],
+            ["Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()", "Disables browser sensors and ad-tracking APIs entirely."],
+            ["Cross-Origin-Opener-Policy", "same-origin-allow-popups", "Isolates the dashboard window from cross-origin popups (Spectre defense)."],
+            ["Cross-Origin-Resource-Policy", "same-origin (dashboard) / cross-origin (API)", "Restricts asset embedding while allowing API data consumption."]
+          ]
+        },
+        notes: [
+          "RFC 9116 Vulnerability Disclosure: Whizan publishes a standardized security contact file at '/.well-known/security.txt' for white-hat researchers."
+        ]
+      },
+      {
+        id: "otp-abuse-defense",
+        title: "3. OTP Flooding & Brute-Force Lockout Engine",
+        badge: "Authentication",
+        description: "To eradicate email flooding, SMS bombing, and 6-digit passcode guessing, Whizan deploys a resilient two-tier rate-limiting and lockout engine.",
+        codeSnippet: {
+          filename: "auth-lockout-spec.ts",
+          language: "typescript",
+          code: `// 1. Send OTP Rate Limits (Flooding Defense)
+const OTP_SEND_COOLDOWN_SEC = 60; // 1 OTP per 60s per email & IP
+const OTP_SEND_HOURLY_LIMIT = 5;  // Max 5 OTPs per hour per email
+
+// 2. Brute-Force Lockout Policy
+const MAX_OTP_ATTEMPTS = 5;       // Code is burned permanently after 5 failed tries
+
+// Result on failure 1-4:
+{ "error": "Invalid verification code. You have 3 attempt(s) remaining." }
+
+// Result on failure 5 (Burn & Incinerate):
+{
+  "error": "Too many incorrect attempts. This verification code has been invalidated for security. Please request a new code.",
+  "code": "OTP_MAX_ATTEMPTS_EXCEEDED"
+}`
+        },
+        notes: [
+          "Redis Sliding Window: Backed by Upstash Redis with zero-latency in-memory fallback maps.",
+          "Atomic Attempt Invalidation: Once 5 invalid attempts are registered, the OTP is deleted from Redis and memory simultaneously."
+        ]
+      },
+      {
+        id: "storage-xss-mitigation",
+        title: "4. Cloud Object Storage Stored XSS Mitigation",
+        badge: "Object Storage",
+        description: "When hosting user-uploaded assets under storage.whizan.cloud, malicious actors may attempt to upload SVG or HTML files with embedded JavaScript.",
+        codeSnippet: {
+          filename: "storage-security-headers.ts",
+          language: "typescript",
+          code: `// Applied automatically to all HTML, SVG, XML, and JavaScript objects:
+
+1. Content-Security-Policy:
+   default-src 'none'; style-src 'unsafe-inline'; sandbox
+
+2. Content-Disposition:
+   attachment; filename="safe_filename.ext"
+
+3. X-Content-Type-Options:
+   nosniff`
+        },
+        notes: [
+          "Sandbox Directive: Restricts scripts from accessing cookies, localStorage, or originating window objects.",
+          "Forced Download: HTML, SVG, and script payloads download to the user's filesystem rather than rendering in the browser context."
+        ]
+      }
+    ],
+    configOptions: [
+      { key: "HSTS Max Age", desc: "Duration browsers remember strict HTTPS enforcement", defaultVal: "31536000 (1 Year)" },
+      { key: "COOP Policy", desc: "Cross-Origin Opener isolation mode for Dashboard tabs", defaultVal: "same-origin-allow-popups" },
+      { key: "OTP Cooldown", desc: "Minimum seconds between verification code dispatches", defaultVal: "60 Seconds" },
+      { key: "OTP Hourly Limit", desc: "Maximum verification emails allowed per address per hour", defaultVal: "5 Codes" },
+      { key: "OTP Max Attempts", desc: "Maximum wrong verification attempts before code is incinerated", defaultVal: "5 Attempts" },
+      { key: "Storage CSP Sandbox", desc: "Active script neutralization for SVG and HTML object previews", defaultVal: "sandbox (Enabled)" }
+    ],
+    proTips: [
+      "Always set Cloudflare SSL/TLS encryption mode to 'Full (Strict)' before turning on proxying (Orange Cloud) to prevent infinite 301/308 redirect loops.",
+      "Never turn on global Bot Fight Mode without an exception for 'api.whizan.cloud/*' — otherwise automated CLI deployments and AI MCP agents will be blocked with 403 challenge pages.",
+      "Any SVG or HTML file uploaded to Whizan Cloud Storage is automatically served with 'Content-Security-Policy: sandbox' and forced attachment download to prevent malicious cookie theft.",
+      "Check your Cloudflare Security Center audit monthly to verify no unproxied A records expose origin server IPs."
+    ]
   }
 };
 
@@ -957,7 +1125,8 @@ const ALL_SLUGS = [
   { slug: "cron", title: "Cron Jobs", icon: Clock },
   { slug: "flow", title: "Whizan Flow", icon: Workflow },
   { slug: "cli", title: "CLI & DevOps MCP", icon: Terminal },
-  { slug: "api", title: "REST API Reference", icon: Code2 }
+  { slug: "api", title: "REST API Reference", icon: Code2 },
+  { slug: "security", title: "Security & Protection", icon: ShieldCheck }
 ];
 
 export default function DocDetailPage({ params }: { params: Promise<{ slug: string }> }) {
