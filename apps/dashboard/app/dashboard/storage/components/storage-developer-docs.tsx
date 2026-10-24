@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   Code2,
   Copy,
@@ -15,9 +16,22 @@ import {
   HardDrive,
   FileCode,
   Image as ImageIcon,
+  Key,
+  ShieldCheck,
+  Plus,
+  AlertTriangle,
+  ArrowRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { StorageBucketItem, StorageObjectItem } from "@/lib/api";
+import {
+  apiKeysApi,
+  type StorageBucketItem,
+  type StorageObjectItem,
+  type ApiKeyItem,
+  type CreatedApiKey,
+} from "@/lib/api";
 
 interface StorageDeveloperDocsProps {
   buckets: StorageBucketItem[];
@@ -35,6 +49,15 @@ export function StorageDeveloperDocs({
   >("SDK_JS");
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
 
+  // API Key Management State
+  const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState(false);
+  const [newKey, setNewKey] = useState<CreatedApiKey | null>(null);
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [newKeyLabel, setNewKeyLabel] = useState("");
+  const [showKeyForm, setShowKeyForm] = useState(false);
+  const [useRealKeyInCode, setUseRealKeyInCode] = useState(false);
+
   // Image Transform Playground State
   const publicBuckets = buckets.filter((b) => b.isPublic);
   const [selectedTransformBucket, setSelectedTransformBucket] = useState<string>(
@@ -49,10 +72,45 @@ export function StorageDeveloperDocs({
   const [transformQuality, setTransformQuality] = useState<number>(85);
   const [transformFit, setTransformFit] = useState<string>("cover");
 
+  const loadApiKeys = async () => {
+    setLoadingKeys(true);
+    try {
+      const keys = await apiKeysApi.list();
+      setApiKeys(keys || []);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingKeys(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApiKeys();
+  }, []);
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingKey(true);
+    try {
+      const label = newKeyLabel.trim() || "Storage Client Key";
+      const created = await apiKeysApi.create(label);
+      setNewKey(created);
+      setNewKeyLabel("");
+      setShowKeyForm(false);
+      setUseRealKeyInCode(true);
+      toast.success(`API Key '${label}' generated successfully.`);
+      await loadApiKeys();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to generate API Key");
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedSnippet(id);
-    toast.success("Snippet copied to clipboard");
+    toast.success("Copied to clipboard");
     setTimeout(() => setCopiedSnippet(null), 2000);
   };
 
@@ -68,6 +126,17 @@ export function StorageDeveloperDocs({
 
   const baseUrl = getStorageBaseUrl();
 
+  // Active Key representation for code snippets
+  const activeSecretKey =
+    newKey && useRealKeyInCode
+      ? newKey.key
+      : apiKeys[0]?.keyPrefix && useRealKeyInCode
+      ? `${apiKeys[0].keyPrefix}`
+      : "whz_live_your_api_key_here";
+
+  const activeEnvKey =
+    newKey && useRealKeyInCode ? `"${newKey.key}"` : "process.env.WHIZAN_API_KEY!";
+
   const generatedTransformUrl = `${baseUrl}/public/${encodeURIComponent(
     selectedTransformBucket
   )}/${transformPath
@@ -77,6 +146,198 @@ export function StorageDeveloperDocs({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+      {/* ── Prominent API Key Origin & Management Assistant ──────────────────── */}
+      <div
+        className="card"
+        style={{
+          padding: "1.25rem",
+          background: "var(--card-bg)",
+          border: "1px solid var(--card-border)",
+          borderRadius: "0.75rem",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  background: "rgba(79, 70, 229, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Key className="w-4 h-4 text-indigo-500" />
+              </div>
+              <h3 style={{ fontSize: "1.05rem", fontWeight: 700 }}>
+                API Keys & Authentication Setup
+              </h3>
+            </div>
+            <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.35rem", maxWidth: 720 }}>
+              All client SDK requests (<code style={{ fontSize: "0.8rem", color: "var(--accent)" }}>@whizan/storage-js</code>), AWS S3 gateway commands, and REST API calls require an authenticated Whizan API key (<code style={{ fontSize: "0.8rem" }}>whz_live_...</code>).
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <button
+              onClick={() => setShowKeyForm((prev) => !prev)}
+              className="btn btn-primary"
+              style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {showKeyForm ? "Cancel" : "Generate Storage Key"}
+            </button>
+            <Link
+              href="/dashboard/settings"
+              className="btn btn-secondary"
+              style={{ fontSize: "0.82rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              Manage in Settings
+              <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+            </Link>
+          </div>
+        </div>
+
+        {/* New Key Alert Banner */}
+        {newKey && (
+          <div
+            style={{
+              marginTop: "1rem",
+              background: "rgba(16, 185, 129, 0.08)",
+              border: "1px solid rgba(16, 185, 129, 0.3)",
+              borderRadius: "0.5rem",
+              padding: "1rem",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--success)" }}>
+                Active API Key Generated ({newKey.name})
+              </span>
+              <span style={{ fontSize: "0.75rem", color: "var(--warning)", fontWeight: 600 }}>
+                Save this key now — for security, it cannot be displayed again!
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <code
+                style={{
+                  flex: 1,
+                  background: "var(--bg-inset)",
+                  padding: "0.5rem 0.75rem",
+                  borderRadius: "0.375rem",
+                  fontSize: "0.85rem",
+                  fontFamily: "monospace",
+                  wordBreak: "break-all",
+                  color: "var(--foreground)",
+                }}
+              >
+                {newKey.key}
+              </code>
+              <button
+                onClick={() => copyToClipboard(newKey.key, "new-key")}
+                className="btn btn-secondary"
+                style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", display: "flex", gap: "0.35rem", alignItems: "center" }}
+              >
+                {copiedSnippet === "new-key" ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                Copy Key
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quick Key Generator Inline Form */}
+        {showKeyForm && (
+          <form
+            onSubmit={handleCreateApiKey}
+            style={{
+              marginTop: "1rem",
+              padding: "1rem",
+              background: "var(--bg-inset)",
+              borderRadius: "0.5rem",
+              border: "1px solid var(--border)",
+              display: "flex",
+              gap: "0.75rem",
+              alignItems: "center",
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Key label (e.g. Next.js Production, Backend S3 Worker)"
+              value={newKeyLabel}
+              onChange={(e) => setNewKeyLabel(e.target.value)}
+              style={{
+                flex: 1,
+                padding: "0.5rem 0.75rem",
+                borderRadius: "0.375rem",
+                border: "1px solid var(--border)",
+                background: "var(--card-bg)",
+                fontSize: "0.85rem",
+              }}
+            />
+            <button
+              type="submit"
+              disabled={creatingKey}
+              className="btn btn-primary"
+              style={{ fontSize: "0.82rem", whiteSpace: "nowrap" }}
+            >
+              {creatingKey ? "Generating..." : "Create Live Key"}
+            </button>
+          </form>
+        )}
+
+        {/* Existing Keys Summary & Snippet Toggle */}
+        <div
+          style={{
+            marginTop: "1rem",
+            paddingTop: "0.75rem",
+            borderTop: "1px solid var(--border-light)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            fontSize: "0.8rem",
+            color: "var(--muted)",
+          }}
+        >
+          <div>
+            <span>Your Active API Keys: </span>
+            <span style={{ fontWeight: 600, color: "var(--foreground)" }}>
+              {apiKeys.length} configured in{" "}
+              <Link href="/dashboard/settings" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                Settings &gt; API Keys
+              </Link>
+            </span>
+            {apiKeys.length > 0 && (
+              <span style={{ marginLeft: "0.5rem", fontFamily: "monospace", fontSize: "0.75rem" }}>
+                ({apiKeys.map((k) => k.name).join(", ")})
+              </span>
+            )}
+          </div>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              cursor: "pointer",
+              userSelect: "none",
+              fontWeight: 500,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={useRealKeyInCode}
+              onChange={(e) => setUseRealKeyInCode(e.target.checked)}
+            />
+            <span>Insert my active key in code snippets below</span>
+          </label>
+        </div>
+      </div>
+
       {/* Sub-navigation Tabs */}
       <div
         style={{
@@ -215,7 +476,7 @@ export function StorageDeveloperDocs({
               Install Client SDK
             </h3>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "0.75rem" }}>
-              Official TypeScript/JavaScript client library for Whizan Cloud Storage with browser and Node.js support.
+              Official TypeScript/JavaScript client library for Whizan Cloud Storage with Node.js and modern browser support.
             </p>
             <div
               style={{
@@ -263,13 +524,13 @@ export function StorageDeveloperDocs({
               <div>
                 <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>Client Initialization</h4>
                 <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Initialize the client using your project URL and Live API Key.
+                  Pass your Whizan Cloud API URL and API Key from your environment.
                 </p>
               </div>
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `import { createStorageClient } from "@whizan/storage-js";\n\nexport const storage = createStorageClient({\n  projectUrl: "${baseUrl}",\n  apiKey: process.env.WHIZAN_API_KEY!,\n});`,
+                    `import { createStorageClient } from "@whizan/storage-js";\n\nexport const storage = createStorageClient({\n  projectUrl: "${baseUrl}",\n  apiKey: ${activeEnvKey},\n});`,
                     "init"
                   )
                 }
@@ -297,7 +558,7 @@ export function StorageDeveloperDocs({
 
 export const storage = createStorageClient({
   projectUrl: "${baseUrl}",
-  apiKey: process.env.WHIZAN_API_KEY!,
+  apiKey: ${activeEnvKey},
 });`}</pre>
           </div>
 
@@ -520,16 +781,24 @@ if (data?.signedUrl) {
               <div style={{ padding: "0.75rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>ACCESS KEY ID</div>
                 <div style={{ fontFamily: "monospace", fontSize: "0.85rem", fontWeight: 700, marginTop: "0.25rem" }}>
-                  whz_live_your_key_id
+                  {apiKeys[0]?.id || "whz_key_id"}
                 </div>
               </div>
 
               <div style={{ padding: "0.75rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>SECRET ACCESS KEY</div>
-                <div style={{ fontFamily: "monospace", fontSize: "0.85rem", fontWeight: 700, marginTop: "0.25rem" }}>
-                  whz_live_your_secret_key
+                <div style={{ fontFamily: "monospace", fontSize: "0.85rem", fontWeight: 700, marginTop: "0.25rem", wordBreak: "break-all" }}>
+                  {activeSecretKey}
                 </div>
               </div>
+            </div>
+
+            <div style={{ marginTop: "1rem", fontSize: "0.75rem", color: "var(--muted)" }}>
+              💡 Need a new S3 secret key? Click <strong>Generate Storage Key</strong> above or visit{" "}
+              <Link href="/dashboard/settings" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+                Settings &gt; API Keys
+              </Link>
+              .
             </div>
           </div>
 
@@ -553,7 +822,7 @@ if (data?.signedUrl) {
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `# Configure credentials\naws configure set aws_access_key_id "whz_live_your_key_id"\naws configure set aws_secret_access_key "whz_live_your_secret_key"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${selectedBucket?.name || "my-bucket"}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
+                    `# Configure credentials\naws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"\naws configure set aws_secret_access_key "${activeSecretKey}"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${selectedBucket?.name || "my-bucket"}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
                     "awscli"
                   )
                 }
@@ -578,8 +847,8 @@ if (data?.signedUrl) {
                 color: "var(--foreground)",
               }}
             >{`# Configure credentials
-aws configure set aws_access_key_id "whz_live_your_key_id"
-aws configure set aws_secret_access_key "whz_live_your_secret_key"
+aws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"
+aws configure set aws_secret_access_key "${activeSecretKey}"
 aws configure set default.region "auto"
 
 # List objects in bucket
@@ -610,7 +879,7 @@ aws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="whz_live_your_key_id",\n    aws_secret_access_key="whz_live_your_secret_key",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${selectedBucket?.name || "analytics"}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet", "local.parquet")`,
+                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",\n    aws_secret_access_key="${activeSecretKey}",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${selectedBucket?.name || "analytics"}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet", "local.parquet")`,
                     "boto3"
                   )
                 }
@@ -639,8 +908,8 @@ aws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png
 s3 = boto3.client(
     "s3",
     endpoint_url="${baseUrl}/api/storage/v1/s3",
-    aws_access_key_id="whz_live_your_key_id",
-    aws_secret_access_key="whz_live_your_secret_key",
+    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",
+    aws_secret_access_key="${activeSecretKey}",
     region_name="auto",
 )
 
@@ -934,7 +1203,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/upload" \\\n  -H "Authorization: Bearer $WHIZAN_API_KEY" \\\n  -F "objectPath=documents/notes.txt" \\\n  -F "file=@notes.txt"`,
+                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/upload" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -F "objectPath=documents/notes.txt" \\\n  -F "file=@notes.txt"`,
                         "curlUpload"
                       )
                     }
@@ -956,7 +1225,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                     margin: 0,
                   }}
                 >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/upload" \\
-  -H "Authorization: Bearer $WHIZAN_API_KEY" \\
+  -H "Authorization: Bearer ${activeSecretKey}" \\
   -F "objectPath=documents/notes.txt" \\
   -F "file=@notes.txt"`}</pre>
               </div>
@@ -968,7 +1237,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/download-url" \\\n  -H "Authorization: Bearer $WHIZAN_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"objectPath": "documents/notes.txt", "expiresInSeconds": 3600}'`,
+                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/download-url" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"objectPath": "documents/notes.txt", "expiresInSeconds": 3600}'`,
                         "curlDownload"
                       )
                     }
@@ -990,7 +1259,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                     margin: 0,
                   }}
                 >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/download-url" \\
-  -H "Authorization: Bearer $WHIZAN_API_KEY" \\
+  -H "Authorization: Bearer ${activeSecretKey}" \\
   -H "Content-Type: application/json" \\
   -d '{"objectPath": "documents/notes.txt", "expiresInSeconds": 3600}'`}</pre>
               </div>
