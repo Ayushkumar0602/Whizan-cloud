@@ -21,7 +21,8 @@ import {
   Layers,
   ChevronRight,
   ShieldCheck,
-  Cpu
+  Cpu,
+  HardDrive
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
@@ -79,6 +80,16 @@ const SERVICES_DIRECTORY: DocCard[] = [
     colorClass: "emerald",
     tags: ["PostgreSQL 16", "Redis 7", "PgBouncer", "TLS"],
     whenToUseSummary: "Relational business databases, transaction storage, Redis session caches, rate-limiting, and job queue brokers."
+  },
+  {
+    slug: "storage",
+    title: "Cloud Object Storage",
+    category: "Storage & Persistence",
+    tagline: "High-throughput, S3-compatible object storage with global edge CDN delivery, dynamic image resizing, and Supabase client parity.",
+    icon: HardDrive,
+    colorClass: "amber",
+    tags: ["@whizan/storage-js", "S3 Gateway", "Edge CDN", "Presigned URLs"],
+    whenToUseSummary: "Media asset hosting, PDF invoices, user uploads, public downloads, and edge image transformations with sub-10ms delivery."
   },
   {
     slug: "cron",
@@ -200,6 +211,18 @@ export default function DocsIndexPage() {
                 aria-label="Copy MCP command"
               >
                 {copiedCmd === "mcp" ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+              </button>
+            </div>
+
+            <div className="hero-snippet-card">
+              <span className="snippet-type-tag" style={{ background: "#fef3c7", color: "#92400e" }}>SDK</span>
+              <code className="snippet-code">npm install @whizan/storage-js</code>
+              <button
+                onClick={() => copyCode("npm install @whizan/storage-js", "sdk")}
+                className="snippet-copy-btn"
+                aria-label="Copy SDK command"
+              >
+                {copiedCmd === "sdk" ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
               </button>
             </div>
           </div>
@@ -358,6 +381,22 @@ export default function DocsIndexPage() {
                     <td>PgBouncer pooled connections</td>
                     <td>
                       <Link href="/docs/databases" className="table-doc-link">
+                        View Docs →
+                      </Link>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="font-semibold text-slate-900">
+                      <div className="flex items-center gap-2">
+                        <HardDrive size={15} className="text-amber-600" />
+                        <span>Cloud Object Storage</span>
+                      </div>
+                    </td>
+                    <td>User uploads, PDF invoices, media assets, CDN downloads, image resizing</td>
+                    <td>Cloudflare R2 Object Storage & Global Edge CDN</td>
+                    <td>S3-compatible, sub-10ms global delivery, zero egress fees</td>
+                    <td>
+                      <Link href="/docs/storage" className="table-doc-link">
                         View Docs →
                       </Link>
                     </td>

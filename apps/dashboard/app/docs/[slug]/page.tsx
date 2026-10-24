@@ -22,11 +22,29 @@ import {
   Sparkles,
   Bot,
   Layers,
-  ArrowRight
+  ArrowRight,
+  HardDrive
 } from "lucide-react";
 import { BrandMark } from "@/components/brand";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { toast } from "sonner";
+
+interface DetailedGuide {
+  id: string;
+  title: string;
+  badge?: string;
+  description: string;
+  codeSnippet?: {
+    filename: string;
+    language: string;
+    code: string;
+  };
+  table?: {
+    headers: string[];
+    rows: string[][];
+  };
+  notes?: string[];
+}
 
 interface DocService {
   slug: string;
@@ -48,6 +66,7 @@ interface DocService {
     code: string;
     language: string;
   };
+  detailedGuides?: DetailedGuide[];
   configOptions: {
     key: string;
     desc: string;
@@ -546,6 +565,380 @@ listCloudServices();`
       "All requests require the 'Authorization: Bearer <API_KEY>' header.",
       "Rate limits are enforced per API key; keep keys secret and rotate them if compromised."
     ]
+  },
+  storage: {
+    slug: "storage",
+    title: "Cloud Object Storage",
+    category: "Storage & Persistence",
+    tagline: "High-throughput, S3-compatible object storage powered by global edge CDN distribution with Supabase client parity and on-the-fly image transformations.",
+    icon: HardDrive,
+    accentColor: "amber",
+    whenToUse: [
+      "Media asset hosting: product images, banners, logos, audio tracks, and videos",
+      "User-generated content: avatars, profile pictures, identity verification documents, and attachments",
+      "Transactional documents: PDF invoices, payroll receipts, tax statements, and export reports",
+      "Public assets requiring ultra-low latency (<10ms) edge CDN caching with zero egress bandwidth charges",
+      "Private assets requiring time-limited signed URLs (e.g., 5-minute temporary download tokens)",
+      "Dynamic image optimization: resizing, WebP/AVIF format transcoding, quality adjustments, and cropping directly from URL parameters",
+      "Direct AWS S3 SDK, MinIO, or Cyberduck integrations via the built-in S3 Gateway protocol"
+    ],
+    whenNotToUse: [
+      "High-throughput in-memory caching or pub/sub message brokers (use Managed Redis instead)",
+      "Relational structured business tables with foreign keys and ACID transactions (use Managed PostgreSQL instead)",
+      "Temporary ephemeral build scratch files inside running backend containers (use local container disk)"
+    ],
+    supportedTech: [
+      "@whizan/storage-js",
+      "Whizan CLI (whizan storage)",
+      "@whizan/mcp-devops",
+      "@aws-sdk/client-s3",
+      "REST Presigned URLs",
+      "Cloudflare R2 Gateway"
+    ],
+    howToUse: {
+      dashboardSteps: [
+        "Open your Whizan Cloud Console and navigate to 'Cloud Storage' in the sidebar.",
+        "Click '+ Create Bucket', enter a unique bucket name (e.g. 'user-assets'), and choose Public (direct CDN access) or Private (signed download links).",
+        "Navigate to the 'Developer API' tab and click '+ Create Storage Key' to generate a dedicated scoped key (whz_stg_live_...).",
+        "Pass hardware biometric verification (Touch ID / Face ID) or Email OTP to securely reveal and copy your key.",
+        "Install @whizan/storage-js in your project and initialize the client to start uploading and downloading files."
+      ],
+      cliCommand: "whizan storage bucket create user-assets && whizan storage upload ./avatar.png user-assets/avatars/user-1.png",
+      mcpPrompt: "Check my Whizan storage quota, create a bucket named 'user-assets', and upload avatar.png"
+    },
+    sampleCode: {
+      filename: "whizan-storage-quickstart.ts",
+      language: "typescript",
+      code: `import { createClient } from "@whizan/storage-js";
+
+// Initialize Whizan Storage Client
+const storage = createClient(
+  "https://api.whizan.cloud",
+  process.env.WHIZAN_STORAGE_KEY! // whz_stg_live_...
+);
+
+// 1. Upload a file buffer or stream
+const fileBuffer = Buffer.from("Hello Whizan Cloud Storage!");
+const { data: uploadData, error: uploadErr } = await storage
+  .from("user-assets")
+  .upload("documents/welcome.txt", fileBuffer, {
+    contentType: "text/plain",
+    cacheControl: "public, max-age=86400, immutable",
+    metadata: { author: "Whizan Dev", version: "1.0" },
+  });
+
+if (uploadErr) {
+  console.error("Upload error:", uploadErr.message);
+} else {
+  console.log("Uploaded successfully:", uploadData.path, \`(\${uploadData.size} bytes)\`);
+}
+
+// 2. Download a file as a Blob or Buffer
+const { data: blob, error: dlErr } = await storage
+  .from("user-assets")
+  .download("documents/welcome.txt");
+
+if (blob) {
+  const content = await blob.text();
+  console.log("File content:", content);
+}
+
+// 3. Generate a time-limited Presigned URL for private downloads
+const { data: presign } = await storage
+  .from("user-assets")
+  .createSignedUrl("documents/welcome.txt", 3600); // 1 hour TTL
+
+console.log("Signed Download URL:", presign?.signedUrl);
+
+// 4. Generate optimized public CDN URL with edge image resizing
+const { data: cdnUrl } = storage.from("public-media").getPublicUrl("banner.png", {
+  width: 800,
+  height: 600,
+  format: "webp",
+  quality: 85,
+  resize: "cover",
+});
+
+console.log("Optimized WebP CDN URL:", cdnUrl.publicUrl);
+
+// 5. Inspect quota allocation and committed usage
+const { data: usage } = await storage.getUsage();
+console.log(\`Quota: \${usage.quota.usedMb} MB / \${usage.quota.allocatedMb} MB (\${usage.quota.usagePercent}% used)\`);`
+    },
+    detailedGuides: [
+      {
+        id: "sdk-guide",
+        title: "JavaScript / TypeScript SDK",
+        badge: "@whizan/storage-js",
+        description: "The official zero-dependency client with Supabase API parity. Works seamlessly across Node.js, Next.js, Cloudflare Workers, Deno, Bun, and browser environments.",
+        codeSnippet: {
+          filename: "sdk-operations.ts",
+          language: "typescript",
+          code: `import { createClient } from "@whizan/storage-js";
+
+const storage = createClient("https://api.whizan.cloud", process.env.WHIZAN_STORAGE_KEY!);
+
+// ── File Operations ──
+// Upload with upsert & metadata
+await storage.from("invoices").upload("2026/january.pdf", pdfBuffer, {
+  contentType: "application/pdf",
+  cacheControl: "public, max-age=31536000, immutable",
+  upsert: true,
+  metadata: { invoiceId: "INV-2026-001", customerId: "cust_9812" }
+});
+
+// List files with pagination & sorting
+const { data: files } = await storage.from("invoices").list("2026/", {
+  limit: 20,
+  sortBy: "createdAt",
+  sortOrder: "desc"
+});
+
+// Atomic Move / Rename
+await storage.from("invoices").move("2026/january.pdf", "archive/2026/january.pdf");
+
+// Copy file
+await storage.from("invoices").copy("archive/2026/january.pdf", "backup/january.pdf");
+
+// Bulk Delete
+await storage.from("invoices").remove(["backup/january.pdf", "temp/test.txt"]);
+
+// Update metadata without re-uploading bytes
+await storage.from("invoices").updateMetadata("archive/2026/january.pdf", {
+  cacheControl: "public, max-age=31536000, immutable",
+  metadata: { archivedAt: new Date().toISOString() }
+});
+
+// ── Bucket Operations ──
+// List all buckets
+const { data: buckets } = await storage.listBuckets();
+
+// Create new bucket (Public or Private)
+await storage.createBucket("avatars", {
+  public: true,
+  fileSizeLimit: 10 * 1024 * 1024, // 10 MB max
+  allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"]
+});`
+        },
+        table: {
+          headers: ["Method", "Signature", "Description"],
+          rows: [
+            ["upload()", "upload(path, file, options?)", "Uploads Buffer/Blob/Stream with atomic quota reservation"],
+            ["download()", "download(path)", "Downloads file and returns a standard Web Blob"],
+            ["list()", "list(prefix?, options?)", "Lists and paginates objects with sorting by size, name, or date"],
+            ["move()", "move(fromPath, toPath, destBucket?)", "Atomically moves or renames an object"],
+            ["copy()", "copy(srcPath, destPath, destBucket?)", "Duplicates an object within or across buckets"],
+            ["remove()", "remove(paths[])", "Deletes one or multiple objects in a single batch call"],
+            ["getMetadata()", "getMetadata(path)", "Fetches object headers, MIME, and custom JSON metadata"],
+            ["updateMetadata()", "updateMetadata(path, meta)", "Updates Cache-Control and custom metadata in-place"],
+            ["createSignedUrl()", "createSignedUrl(path, ttl, opts?)", "Generates time-limited presigned URL for private downloads"],
+            ["getPublicUrl()", "getPublicUrl(path, transform?)", "Generates instant CDN URL with optional image resizing"]
+          ]
+        },
+        notes: [
+          "Zero dependencies: Runs anywhere fetch and FormData are supported.",
+          "Atomic Quota Lock: Upload URLs reserve bytes for 15 minutes; if an upload fails or aborts, quota is automatically released."
+        ]
+      },
+      {
+        id: "cli-guide",
+        title: "Terminal CLI Operations",
+        badge: "whizan storage",
+        description: "Manage buckets, upload datasets, inspect committed storage, and generate presigned URLs directly from your terminal or CI/CD pipelines.",
+        codeSnippet: {
+          filename: "terminal-commands.sh",
+          language: "bash",
+          code: `# Inspect storage quota, committed bytes & object counts
+whizan storage usage
+
+# View plan limits, rate limits & max upload size
+whizan storage limits
+
+# List all buckets
+whizan storage bucket ls
+
+# Create a new public or private bucket
+whizan storage bucket create user-uploads --public --desc "User avatars and media"
+
+# Delete a bucket (add --force to remove non-empty buckets)
+whizan storage bucket rm user-uploads --force
+
+# List objects inside a bucket or folder prefix
+whizan storage ls user-uploads avatars/
+
+# Upload a local file to storage
+whizan storage upload ./banner.jpg user-uploads/banners/hero.jpg
+
+# Download an object to local disk
+whizan storage download user-uploads/banners/hero.jpg ./downloaded_hero.jpg
+
+# Copy or move objects between paths
+whizan storage cp user-uploads/banners/hero.jpg user-uploads/backup/hero.jpg
+whizan storage mv user-uploads/banners/hero.jpg user-uploads/published/hero.jpg
+
+# Bulk delete objects by prefix
+whizan storage bulk-rm user-uploads temp/
+
+# Generate time-limited presigned download URL
+whizan storage presign user-uploads/published/hero.jpg --ttl 7200`
+        },
+        table: {
+          headers: ["CLI Command", "Arguments", "Action Performed"],
+          rows: [
+            ["whizan storage usage", "None", "Displays total 250 MB quota, used bytes, in-flight reservations, and object count"],
+            ["whizan storage limits", "None", "Displays tier rate limits, daily command quota, and max file upload size"],
+            ["whizan storage bucket ls", "None", "Lists all buckets, file counts, and total byte footprint"],
+            ["whizan storage bucket create", "<name> [--public]", "Provisions a new bucket in Cloudflare R2 infrastructure"],
+            ["whizan storage bucket rm", "<name> [--force]", "Deletes bucket (requires empty bucket unless --force is supplied)"],
+            ["whizan storage ls", "<bucket> [prefix]", "Lists objects matching folder prefix"],
+            ["whizan storage upload", "<local-path> <bkt>/<path>", "Streams local file to storage with progress spinner"],
+            ["whizan storage download", "<bkt>/<path> <out-path>", "Downloads object and writes to local disk"],
+            ["whizan storage cp", "<src> <dest>", "Duplicates object across paths or buckets"],
+            ["whizan storage mv", "<src> <dest>", "Atomically renames or moves object"],
+            ["whizan storage presign", "<bkt>/<path> [--ttl sec]", "Generates HTTPS presigned download link"]
+          ]
+        }
+      },
+      {
+        id: "s3-gateway",
+        title: "S3 Gateway & Multi-Language SDKs",
+        badge: "S3 Protocol Compatible",
+        description: "Connect standard S3 tools including AWS SDK (JavaScript, Python Boto3, Go, Java), MinIO Client, or Cyberduck using your Whizan Storage API keys.",
+        codeSnippet: {
+          filename: "s3-client-integration.ts",
+          language: "typescript",
+          code: `// ── TypeScript / JavaScript (AWS SDK v3) ──
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+
+const s3 = new S3Client({
+  endpoint: "https://api.whizan.cloud/storage/v1/s3",
+  region: "auto",
+  credentials: {
+    accessKeyId: process.env.WHIZAN_STORAGE_KEY!,     // whz_stg_live_...
+    secretAccessKey: process.env.WHIZAN_STORAGE_KEY!, // Same key used for secret
+  },
+});
+
+// Upload via S3 SDK
+await s3.send(new PutObjectCommand({
+  Bucket: "my-bucket",
+  Key: "reports/q1.pdf",
+  Body: fileBuffer,
+  ContentType: "application/pdf"
+}));
+
+// ── Python (Boto3) ──
+# import boto3
+# s3 = boto3.client(
+#     's3',
+#     endpoint_url='https://api.whizan.cloud/storage/v1/s3',
+#     aws_access_key_id=os.environ['WHIZAN_STORAGE_KEY'],
+#     aws_secret_access_key=os.environ['WHIZAN_STORAGE_KEY'],
+#     region_name='auto'
+# )
+# s3.upload_file('report.pdf', 'my-bucket', 'reports/q1.pdf')`
+        },
+        table: {
+          headers: ["Configuration Field", "Setting Value", "Notes"],
+          rows: [
+            ["Endpoint", "https://api.whizan.cloud/storage/v1/s3", "S3-compatible routing gateway"],
+            ["Region", "auto (or us-east-1)", "Global edge routed automatically"],
+            ["Access Key ID", "whz_stg_live_...", "Your dedicated Storage API key"],
+            ["Secret Access Key", "whz_stg_live_...", "Use the same Storage API key"],
+            ["Signature Version", "AWS4-HMAC-SHA256 (v4)", "Standard AWS signing protocol"]
+          ]
+        },
+        notes: [
+          "Seamless migration: No need to rewrite existing S3 upload pipelines — just update the endpoint and credentials."
+        ]
+      },
+      {
+        id: "image-transforms",
+        title: "Edge Dynamic Image Optimization",
+        badge: "Built-in CDN Optimization",
+        description: "Transform and optimize images on the fly at Cloudflare edge nodes without installing Sharp or ImageMagick on your servers.",
+        codeSnippet: {
+          filename: "image-transform-urls.txt",
+          language: "bash",
+          code: `# Standard Public CDN URL
+https://api.whizan.cloud/public/media/avatars/user-123.jpg
+
+# Dynamic WebP Transcoding with Resize & Quality
+https://api.whizan.cloud/api/storage/v1/render/image/public/media/avatars/user-123.jpg?width=400&height=400&format=webp&quality=85&resize=cover
+
+# Generating optimized URLs via the SDK:
+const { data } = storage.from("media").getPublicUrl("avatars/user-123.jpg", {
+  width: 400,
+  height: 400,
+  format: "webp",
+  quality: 85,
+  resize: "cover", // 'cover' | 'contain' | 'fill' | 'inside' | 'outside'
+});
+
+console.log(data.publicUrl);`
+        },
+        table: {
+          headers: ["Query Parameter", "Allowed Values", "Example", "Description"],
+          rows: [
+            ["width", "1 to 4096 (integer)", "width=800", "Target width in pixels"],
+            ["height", "1 to 4096 (integer)", "height=600", "Target height in pixels"],
+            ["format", "webp, avif, png, jpeg", "format=webp", "Converts source image format at edge"],
+            ["quality", "1 to 100 (integer)", "quality=85", "Compression quality (80-85 recommended)"],
+            ["resize", "cover, contain, fill, inside, outside", "resize=cover", "Aspect ratio fit and crop strategy"]
+          ]
+        },
+        notes: [
+          "Edge Cached: Transformed images are automatically cached across Cloudflare edge CDN nodes with sub-10ms subsequent delivery."
+        ]
+      },
+      {
+        id: "security-2fa",
+        title: "Dedicated Storage Keys & 2FA Biometric Protection",
+        badge: "Zero-Trust Architecture",
+        description: "Enterprise security protocol separating storage credentials from master account administrative tokens.",
+        codeSnippet: {
+          filename: "security-protocol.txt",
+          language: "bash",
+          code: `# Storage API Key Format
+whz_stg_live_a83bca0e838eb59f43bca3b142d0035ee914ddb3be6e03eb
+
+# Security Enforcement:
+# 1. Scoped strictly to storage bucket routes (/api/storage/v1/* and /storage/v1/s3).
+# 2. Blocked from modifying compute services, databases, or project deployments.
+# 3. Encrypted at rest in PostgreSQL using AES-256-GCM.
+# 4. In the Web Console, key retrieval requires Hardware WebAuthn Biometrics
+#    (Apple Touch ID / Face ID / Windows Hello) or Email OTP verification.
+# 5. Revealed keys automatically mask after a 60-second countdown.`
+        },
+        table: {
+          headers: ["Key Type", "Prefix", "Allowed Operations", "Review Protocol"],
+          rows: [
+            ["Dedicated Storage Key", "whz_stg_live_...", "Bucket CRUD, object upload/download/delete, presigning, S3 gateway", "Biometrics (WebAuthn) or Email OTP"],
+            ["Master API Key", "whz_live_...", "Full control plane: deployments, services, databases, crons, flows", "Password / Session Auth"]
+          ]
+        },
+        notes: [
+          "Rotate Keys Instantly: Delete compromised keys from the Console in one click without affecting your Whizan Cloud master account."
+        ]
+      }
+    ],
+    configOptions: [
+      { key: "Base Quota Allocation", desc: "Committed storage capacity allocated to account tier", defaultVal: "250 MB (Hobby Starter)" },
+      { key: "Max Single File Size", desc: "Maximum byte length allowed per single file upload", defaultVal: "50 MB" },
+      { key: "Bucket Visibility", desc: "PUBLIC (direct edge CDN URLs) or PRIVATE (signed download URLs required)", defaultVal: "PRIVATE (default)" },
+      { key: "Dynamic Image Transforms", desc: "On-the-fly edge Sharp image transcoding and resizing", defaultVal: "Enabled (Sub-10ms CDN cached)" },
+      { key: "Presigned URL TTL", desc: "Default and maximum expiration lifetime for signed download URLs", defaultVal: "3600s (configurable up to 86400s)" },
+      { key: "Soft-Delete Trash Retention", desc: "Soft-deleted objects remain recoverable before permanent purge", defaultVal: "30 Days" },
+      { key: "S3 API Gateway", desc: "S3 protocol endpoint for AWS SDK, MinIO, and Cyberduck", defaultVal: "https://api.whizan.cloud/storage/v1/s3" },
+      { key: "Atomic Quota Reservation", desc: "In-flight byte reservation expiration window for unconfirmed uploads", defaultVal: "15 Minutes" }
+    ],
+    proTips: [
+      "Always use dedicated 'whz_stg_live_...' API keys for client and server storage integrations. They are scoped strictly to storage and protected by 2FA / Biometric review in the Console.",
+      "For static media like banners and logos, always set 'Cache-Control: public, max-age=31536000, immutable' to enable 100% edge CDN cache hit ratios.",
+      "Atomic Quota Lock: In-flight upload URLs reserve quota immediately. If a network drops or client disconnects, quota automatically unlocks after 15 minutes.",
+      "Use 'storage.getS3Config()' to connect the official AWS S3 SDK (@aws-sdk/client-s3) with zero boilerplate.",
+      "Leverage URL image optimization (?width=400&format=webp) to serve next-gen image formats automatically to mobile devices."
+    ]
   }
 };
 
@@ -554,6 +947,7 @@ const ALL_SLUGS = [
   { slug: "backend", title: "Backend Services", icon: Server },
   { slug: "functions", title: "Edge Functions", icon: Zap },
   { slug: "databases", title: "Managed Databases", icon: Database },
+  { slug: "storage", title: "Cloud Object Storage", icon: HardDrive },
   { slug: "cron", title: "Cron Jobs", icon: Clock },
   { slug: "flow", title: "Whizan Flow", icon: Workflow },
   { slug: "cli", title: "CLI & DevOps MCP", icon: Terminal },
@@ -570,6 +964,7 @@ export default function DocDetailPage({ params }: { params: Promise<{ slug: stri
   else if (rawSlug === "services" || rawSlug === "microservices" || rawSlug === "backend") targetSlug = "backend";
   else if (rawSlug === "edge-functions" || rawSlug === "serverless" || rawSlug === "functions") targetSlug = "functions";
   else if (rawSlug === "persistence" || rawSlug === "postgres" || rawSlug === "redis" || rawSlug === "databases") targetSlug = "databases";
+  else if (rawSlug === "storage" || rawSlug === "buckets" || rawSlug === "object-storage" || rawSlug === "s3" || rawSlug === "cloud-storage") targetSlug = "storage";
   else if (rawSlug === "schedules" || rawSlug === "cron-jobs" || rawSlug === "cron") targetSlug = "cron";
   else if (rawSlug === "flows" || rawSlug === "pipelines" || rawSlug === "flow") targetSlug = "flow";
   else if (rawSlug === "mcp" || rawSlug === "tooling" || rawSlug === "cli") targetSlug = "cli";
@@ -577,6 +972,7 @@ export default function DocDetailPage({ params }: { params: Promise<{ slug: stri
 
   const doc = DOCS_DATA[targetSlug] || DOCS_DATA.frontend;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [activeGuideTab, setActiveGuideTab] = useState(0);
 
   function copyCode(text: string, id: string) {
     navigator.clipboard.writeText(text);
@@ -801,7 +1197,111 @@ export default function DocDetailPage({ params }: { params: Promise<{ slug: stri
             </section>
           )}
 
-          {/* ── 4. Configuration Reference Table ──────────────────────── */}
+          {/* ── 4. Detailed Operational Guides & Integration Patterns ──── */}
+          {doc.detailedGuides && doc.detailedGuides.length > 0 && (
+            <section className="article-section">
+              <h2 className="section-title">In-Depth Integration Guides & API Methods</h2>
+              <div className="guides-wrapper">
+                {/* Guide Tabs Header */}
+                <div className="guides-tab-bar">
+                  {doc.detailedGuides.map((guide, idx) => (
+                    <button
+                      key={guide.id}
+                      onClick={() => setActiveGuideTab(idx)}
+                      className={`guide-tab-btn ${activeGuideTab === idx ? "guide-tab-btn-active" : ""}`}
+                    >
+                      <span>{guide.title}</span>
+                      {guide.badge && <span className="guide-tab-badge">{guide.badge}</span>}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Selected Guide Body */}
+                {(() => {
+                  const currentGuide = doc.detailedGuides[activeGuideTab] || doc.detailedGuides[0];
+                  return (
+                    <div className="guide-body-card">
+                      <p className="guide-desc-text">{currentGuide.description}</p>
+
+                      {currentGuide.codeSnippet && (
+                        <div className="example-code-wrapper mb-4">
+                          <div className="example-code-header">
+                            <span className="filename-text font-mono">{currentGuide.codeSnippet.filename}</span>
+                            <button
+                              onClick={() => copyCode(currentGuide.codeSnippet!.code, `guide-code-${activeGuideTab}`)}
+                              className="copy-snippet-btn"
+                            >
+                              {copiedKey === `guide-code-${activeGuideTab}` ? (
+                                <>
+                                  <Check size={12} className="text-emerald-600" />
+                                  <span>Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={12} />
+                                  <span>Copy Code</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <pre className="example-pre font-mono">
+                            <code>{currentGuide.codeSnippet.code}</code>
+                          </pre>
+                        </div>
+                      )}
+
+                      {currentGuide.table && (
+                        <div className="config-table-card mb-4">
+                          <table className="config-table">
+                            <thead>
+                              <tr>
+                                {currentGuide.table.headers.map((h, i) => (
+                                  <th key={i}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {currentGuide.table.rows.map((row, rIdx) => (
+                                <tr key={rIdx}>
+                                  {row.map((cell, cIdx) => (
+                                    <td
+                                      key={cIdx}
+                                      className={
+                                        cIdx === 0
+                                          ? "font-semibold text-slate-900 font-mono text-xs"
+                                          : cIdx === 1 && currentGuide.id === "sdk-guide"
+                                          ? "font-mono text-xs text-indigo-700 bg-indigo-50/40"
+                                          : "text-slate-600 text-xs"
+                                      }
+                                    >
+                                      {cell}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+
+                      {currentGuide.notes && currentGuide.notes.length > 0 && (
+                        <div className="guide-notes-box">
+                          {currentGuide.notes.map((note, nIdx) => (
+                            <div key={nIdx} className="guide-note-line">
+                              <span className="bullet-dot bg-amber-500" />
+                              <span>{note}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </section>
+          )}
+
+          {/* ── 5. Configuration Reference Table ──────────────────────── */}
           <section className="article-section">
             <h2 className="section-title">Configuration Reference</h2>
             <div className="config-table-card">
@@ -1341,6 +1841,81 @@ export default function DocDetailPage({ params }: { params: Promise<{ slug: stri
         }
         .bottom-nav-btn.primary:hover {
           background: #1e293b;
+        }
+
+        /* Guides Tabs & Content */
+        .guides-wrapper {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          overflow: hidden;
+          background: #ffffff;
+        }
+        .guides-tab-bar {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          background: #f8fafc;
+          border-bottom: 1px solid var(--border);
+          padding: 0.35rem 0.5rem;
+          overflow-x: auto;
+        }
+        .guide-tab-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 0.85rem;
+          font-size: 0.8rem;
+          font-weight: 600;
+          color: #475569;
+          border-radius: 6px;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 0.12s ease;
+        }
+        .guide-tab-btn:hover {
+          color: #0f172a;
+          background: #edf2f7;
+        }
+        .guide-tab-btn-active {
+          color: #4f46e5;
+          background: #ffffff;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        .guide-tab-badge {
+          font-size: 0.68rem;
+          font-weight: 700;
+          padding: 0.1rem 0.35rem;
+          border-radius: 4px;
+          background: #eef2ff;
+          color: #4f46e5;
+        }
+        .guide-body-card {
+          padding: 1.25rem 1.35rem;
+        }
+        .guide-desc-text {
+          font-size: 0.85rem;
+          color: #475569;
+          line-height: 1.55;
+          margin-bottom: 1rem;
+        }
+        .guide-notes-box {
+          background: #fffbeb;
+          border: 1px solid #fef3c7;
+          border-radius: 6px;
+          padding: 0.75rem 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+        }
+        .guide-note-line {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
+          font-size: 0.8rem;
+          color: #92400e;
+          line-height: 1.45;
         }
 
         /* Responsive */
