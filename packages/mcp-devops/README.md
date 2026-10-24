@@ -130,6 +130,8 @@ Once configured, just talk to your AI assistant in plain English:
   > *"Deploy my API endpoint as an edge function on Whizan."*
 * **Fix port and network issues**:
   > *"Analyze this workspace with Whizan. Check for any localhost port binding traps before deploying."*
+* **Manage Cloud Object Storage**:
+  > *"Check my Whizan storage usage quota, create a bucket named 'assets', and upload this image."*
 * **Check build logs**:
   > *"Check the latest Whizan build logs and make sure the server is healthy."*
 

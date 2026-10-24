@@ -5,6 +5,13 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist",
     "README.md"
@@ -14,7 +21,25 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build",
     "dev": "tsc -p tsconfig.json --watch"
+  },
+  "keywords": [
+    "whizan",
+    "storage",
+    "s3",
+    "object-storage",
+    "cloud-storage",
+    "supabase-parity",
+    "sdk",
+    "cloudflare-r2"
+  ],
+  "author": "Whizan Cloud Services",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ayushkumar0602/Whizan-cloud.git",
+    "directory": "packages/storage-js"
   },
   "devDependencies": {
     "@types/node": "^20.16.5",

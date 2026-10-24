@@ -1,6 +1,6 @@
 # @whizan/cli — Whizan Cloud Command Line Interface
 
-> Deploy fullstack apps, backend services, managed databases, edge functions, and scheduled cron jobs directly from your terminal.
+> Deploy fullstack apps, backend services, managed databases, edge functions, cloud storage, and scheduled cron jobs directly from your terminal.
 
 ---
 
@@ -134,6 +134,23 @@ Whizan CLI supports zero-config deployment for:
 | `whizan db create <name>` | Provision PostgreSQL database |
 | `whizan db create <name> --type REDIS` | Provision Redis database |
 | `whizan db create <name> --bind <service-id>` | Auto-bind connection string to a service |
+
+### Cloud Object Storage
+| Command | Description |
+|---|---|
+| `whizan storage usage` | Inspect storage quota allocation, used bytes, and object count |
+| `whizan storage limits` | View plan limits, max file upload size, and rate limits |
+| `whizan storage bucket ls` | List all cloud storage buckets |
+| `whizan storage bucket create <name>` | Create a new bucket (`--public`, `--desc "Description"`) |
+| `whizan storage bucket rm <name>` | Delete a bucket (`--force` to remove non-empty buckets) |
+| `whizan storage ls <bucket> [prefix]` | List objects within a bucket or prefix |
+| `whizan storage upload <file> <dest>` | Upload local file to `<bucket>/<destination-path>` |
+| `whizan storage download <src> <out>` | Download object from `<bucket>/<path>` to local file |
+| `whizan storage rm <bucket>/<path>` | Delete an object |
+| `whizan storage cp <src> <dest>` | Copy object from `<src-bucket>/<path>` to `<dest-bucket>/<path>` |
+| `whizan storage mv <src> <dest>` | Atomically move / rename object |
+| `whizan storage bulk-rm <bucket> <pre>` | Bulk delete all objects matching a folder prefix |
+| `whizan storage presign <bucket>/<path>` | Generate temporary presigned download URL (`--ttl <seconds>`) |
 
 ### Serverless Edge Functions
 | Command | Description |
