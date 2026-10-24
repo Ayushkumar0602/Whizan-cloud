@@ -670,6 +670,129 @@ export class WhizanClient {
     }
     return res.json();
   }
+
+  // ─── Storage (Cloudflare R2) ─────────────────────────────────────────────
+
+  async listStorageBuckets(): Promise<any[]> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets`, {
+      headers: await this.headers(),
+    });
+    if (!res.ok) throw new ApiError(`Failed to list buckets: HTTP ${res.status}`, res.status);
+    return (await res.json()) as any[];
+  }
+
+  async createStorageBucket(params: { name: string; description?: string; isPublic?: boolean }): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || err.error || "Failed to create bucket", res.status, err);
+    }
+    return res.json();
+  }
+
+  async deleteStorageBucket(bucketId: string, force = false): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}?force=${force}`, {
+      method: "DELETE",
+      headers: await this.headers(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || err.error || "Failed to delete bucket", res.status, err);
+    }
+    return res.json();
+  }
+
+  async listStorageObjects(bucketId: string, prefix?: string, limit = 50): Promise<any> {
+    const params = new URLSearchParams();
+    if (prefix) params.set("prefix", prefix);
+    params.set("limit", String(limit));
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects?${params}`, {
+      headers: await this.headers(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to list objects", res.status, err);
+    }
+    return res.json();
+  }
+
+  async uploadStorageObject(bucketId: string, objectPath: string, buffer: Buffer, mimeType?: string): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects/upload`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        objectPath,
+        mimeType: mimeType || "application/octet-stream",
+        data: buffer.toString("base64"),
+      }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || err.error || "Failed to upload file", res.status, err);
+    }
+    return res.json();
+  }
+
+  async downloadStorageObject(bucketId: string, objectPath: string): Promise<Buffer> {
+    const res = await fetch(
+      `${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects/download?path=${encodeURIComponent(objectPath)}`,
+      { headers: await this.headers() }
+    );
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to download object", res.status, err);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  async deleteStorageObject(bucketId: string, objectPath: string): Promise<any> {
+    const res = await fetch(
+      `${await this.apiUrl()}/api/storage/v1/buckets/${bucketId}/objects?path=${encodeURIComponent(objectPath)}`,
+      {
+        method: "DELETE",
+        headers: await this.headers(),
+      }
+    );
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to delete object", res.status, err);
+    }
+    return res.json();
+  }
+
+  async copyStorageObject(srcBucket: string, srcPath: string, destBucket: string, destPath: string): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/buckets/${srcBucket}/objects/copy`, {
+      method: "POST",
+      headers: await this.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ srcPath, destBucket, destPath }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new ApiError(err.message || "Failed to copy object", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getStorageUsage(): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/usage`, {
+      headers: await this.headers(),
+    });
+    if (!res.ok) throw new ApiError(`Failed to fetch storage usage: HTTP ${res.status}`, res.status);
+    return res.json();
+  }
+
+  async getStorageLimits(): Promise<any> {
+    const res = await fetch(`${await this.apiUrl()}/api/storage/v1/limits`, {
+      headers: await this.headers(),
+    });
+    if (!res.ok) throw new ApiError(`Failed to fetch storage limits: HTTP ${res.status}`, res.status);
+    return res.json();
+  }
 }
 
 /** Singleton instance */

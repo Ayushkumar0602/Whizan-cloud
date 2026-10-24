@@ -63,7 +63,7 @@ async function saveLocalWhizanConfig(workspaceDir: string, data: Record<string, 
 const server = new Server(
   {
     name: "whizan-devops",
-    version: "1.1.0",
+    version: "1.3.0",
   },
   {
     capabilities: {
@@ -600,6 +600,99 @@ const TOOLS: Tool[] = [
         comments: { type: "string", description: "Optional reviewer comment or reason" },
       },
       required: ["approvalToken", "approved"],
+    },
+  },
+  {
+    name: "whizan_storage_get_usage",
+    description: "Fetches Whizan Cloud Storage quota allocation (250 MB default limit), committed bytes, reserved in-flight bytes, object count, and plan tier limits.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "whizan_storage_list_buckets",
+    description: "Lists all Cloudflare R2 storage buckets owned by the authenticated user.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "whizan_storage_create_bucket",
+    description: "Creates a new Cloudflare R2 object storage bucket. Private by default.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Bucket name (3-63 chars, lowercase alphanumeric with hyphens)" },
+        description: { type: "string", description: "Optional description of bucket contents" },
+        isPublic: { type: "boolean", description: "Set true to make bucket publicly readable without auth tokens", default: false },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "whizan_storage_delete_bucket",
+    description: "Deletes a storage bucket. Requires the bucket to be empty unless force is true.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucket: { type: "string", description: "The bucket name or bucket ID to delete" },
+        force: { type: "boolean", description: "Set true to forcefully delete all objects in the bucket before deletion", default: false },
+      },
+      required: ["bucket"],
+    },
+  },
+  {
+    name: "whizan_storage_list_objects",
+    description: "Lists and paginates objects in a Cloudflare R2 storage bucket.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucket: { type: "string", description: "Bucket name or ID" },
+        prefix: { type: "string", description: "Optional path prefix to filter objects (e.g. 'images/')" },
+        limit: { type: "number", description: "Maximum number of objects to return (default: 50, max: 100)", default: 50 },
+      },
+      required: ["bucket"],
+    },
+  },
+  {
+    name: "whizan_storage_upload_object",
+    description: "Uploads a local file from the developer workspace to Cloudflare R2 storage with atomic quota reservation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucket: { type: "string", description: "Target bucket name or ID" },
+        localFilePath: { type: "string", description: "Local filesystem path to the file to upload" },
+        destinationPath: { type: "string", description: "Destination logical path in bucket (e.g. 'assets/logo.png')" },
+        mimeType: { type: "string", description: "Optional content MIME type" },
+      },
+      required: ["bucket", "localFilePath", "destinationPath"],
+    },
+  },
+  {
+    name: "whizan_storage_download_object",
+    description: "Downloads an object from Cloudflare R2 storage to a local file in the workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucket: { type: "string", description: "Source bucket name or ID" },
+        objectPath: { type: "string", description: "Logical object path within the bucket" },
+        localDestinationPath: { type: "string", description: "Local path to save the downloaded file" },
+      },
+      required: ["bucket", "objectPath", "localDestinationPath"],
+    },
+  },
+  {
+    name: "whizan_storage_delete_object",
+    description: "Deletes an object from Cloudflare R2 storage and releases user quota.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucket: { type: "string", description: "Bucket name or ID" },
+        objectPath: { type: "string", description: "Logical object path to delete" },
+      },
+      required: ["bucket", "objectPath"],
     },
   },
 ];
@@ -1770,6 +1863,125 @@ Please gently inform the user of this situation:
           {
             type: "text",
             text: `Approval response registered: ${res.message || "Success"} (Approved: ${approved})`,
+          },
+        ],
+      };
+    }
+
+    // ─── Whizan Cloud Storage Tools ──────────────────────────────────────────
+
+    case "whizan_storage_get_usage": {
+      const usage = await client.getStorageUsage();
+      const q = usage.quota;
+      return {
+        content: [
+          {
+            type: "text",
+            text: [
+              `Whizan Cloud Storage — Quota & Usage`,
+              `Subscription Tier: ${usage.tierDisplayName} (${usage.tier})`,
+              `Allocated Quota: ${q.allocatedMb} MB (${q.allocatedBytes} bytes)`,
+              `Committed Usage: ${q.usedMb} MB (${q.usedBytes} bytes) [${q.usagePercent}%]`,
+              `In-Flight Reserved: ${q.reservedMb} MB (${q.reservedBytes} bytes)`,
+              `Available: ${q.availableMb} MB (${q.availableBytes} bytes)`,
+              `Active Objects: ${q.objectsCount}`,
+              `Provider: Cloudflare R2 (Global Edge CDN)`,
+            ].join("\n"),
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_list_buckets": {
+      const buckets = await client.listStorageBuckets();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(buckets, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_create_bucket": {
+      const { name, description, isPublic } = (args || {}) as any;
+      const res = await client.createStorageBucket({ name, description, isPublic });
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Storage bucket '${name}' created successfully (ID: ${res.bucket.id}, Access: ${res.bucket.isPublic ? "Public" : "Private"}).`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_delete_bucket": {
+      const { bucket, force } = (args || {}) as any;
+      const res = await client.deleteStorageBucket(bucket, force);
+      return {
+        content: [
+          {
+            type: "text",
+            text: res.message || `Bucket '${bucket}' deleted successfully.`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_list_objects": {
+      const { bucket, prefix, limit } = (args || {}) as any;
+      const res = await client.listStorageObjects(bucket, prefix, limit);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_upload_object": {
+      const { bucket, localFilePath, destinationPath, mimeType } = (args || {}) as any;
+      const resolvedLocal = path.resolve(localFilePath);
+      const fileBuffer = await fs.readFile(resolvedLocal);
+      const res = await client.uploadStorageObject(bucket, destinationPath, fileBuffer, mimeType);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `File '${localFilePath}' successfully uploaded to '${bucket}/${res.object.name}' (${res.object.size} bytes, ETag: ${res.object.etag || "—"}).`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_download_object": {
+      const { bucket, objectPath, localDestinationPath } = (args || {}) as any;
+      const buffer = await client.downloadStorageObject(bucket, objectPath);
+      const resolvedDest = path.resolve(localDestinationPath);
+      await fs.mkdir(path.dirname(resolvedDest), { recursive: true });
+      await fs.writeFile(resolvedDest, buffer);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Object '${bucket}/${objectPath}' downloaded successfully to '${resolvedDest}' (${buffer.length} bytes).`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_delete_object": {
+      const { bucket, objectPath } = (args || {}) as any;
+      const res = await client.deleteStorageObject(bucket, objectPath);
+      return {
+        content: [
+          {
+            type: "text",
+            text: res.message || `Object '${bucket}/${objectPath}' deleted successfully.`,
           },
         ],
       };

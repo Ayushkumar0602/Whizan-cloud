@@ -1833,3 +1833,172 @@ export const agentApi = {
       body: JSON.stringify({ text }),
     }),
 };
+
+// ─────────────────────────────────────────
+//  STORAGE (CLOUDFLARE R2) API CLIENT
+// ─────────────────────────────────────────
+
+export interface StorageBucketItem {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string | null;
+  isPublic: boolean;
+  maxFileSize?: number | null;
+  allowedMimeTypes: string[];
+  fileCount: number;
+  totalBytes: number;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { objects: number };
+}
+
+export interface StorageObjectItem {
+  id: string;
+  bucketId: string;
+  userId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  etag?: string | null;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StorageUsageResponse {
+  tier: "HOBBY" | "PROFESSIONAL";
+  tierDisplayName: string;
+  quota: {
+    allocatedBytes: number;
+    allocatedMb: number;
+    usedBytes: number;
+    usedMb: number;
+    reservedBytes: number;
+    reservedMb: number;
+    availableBytes: number;
+    availableMb: number;
+    usagePercent: number;
+    objectsCount: number;
+    lastReconciledAt?: string | null;
+  };
+  commandLimits: {
+    currentRpm: number;
+    rateLimitRpm: number;
+    currentDailyCommands: number;
+    dailyCommandsQuota: number;
+    maxFileSizeBytes: number;
+    maxFileSizeMb: number;
+    maxBuckets: number;
+    maxConcurrentUploads: number;
+  };
+}
+
+export interface StorageAuditLogItem {
+  id: string;
+  userId: string;
+  actorEmail?: string | null;
+  action: string;
+  bucketId?: string | null;
+  bucketName?: string | null;
+  objectName?: string | null;
+  bytesAffected?: number | null;
+  createdAt: string;
+}
+
+export const storageApi = {
+  getUsage: () =>
+    request<StorageUsageResponse>("/api/storage/v1/usage"),
+
+  getLimits: () =>
+    request<any>("/api/storage/v1/limits"),
+
+  listBuckets: () =>
+    request<StorageBucketItem[]>("/api/storage/v1/buckets"),
+
+  getBucket: (bucketId: string) =>
+    request<StorageBucketItem>(`/api/storage/v1/buckets/${bucketId}`),
+
+  createBucket: (data: { name: string; description?: string; isPublic?: boolean }) =>
+    request<{ success: boolean; bucket: StorageBucketItem }>("/api/storage/v1/buckets", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateBucket: (bucketId: string, data: { description?: string; isPublic?: boolean; allowedMimeTypes?: string[] }) =>
+    request<{ success: boolean; bucket: StorageBucketItem }>(`/api/storage/v1/buckets/${bucketId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteBucket: (bucketId: string, force = false) =>
+    request<{ success: boolean; message: string }>(`/api/storage/v1/buckets/${bucketId}?force=${force}`, {
+      method: "DELETE",
+    }),
+
+  listObjects: (bucketId: string, options?: { prefix?: string; search?: string; limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (options?.prefix) params.set("prefix", options.prefix);
+    if (options?.search) params.set("search", options.search);
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.offset) params.set("offset", String(options.offset));
+    return request<{
+      bucket: StorageBucketItem;
+      objects: StorageObjectItem[];
+      pagination: { total: number; limit: number; offset: number; hasMore: boolean };
+    }>(`/api/storage/v1/buckets/${bucketId}/objects?${params}`);
+  },
+
+  uploadObject: async (bucketId: string, objectPath: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("objectPath", objectPath);
+
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const res = await fetch(`${getApiBase()}/api/storage/v1/buckets/${bucketId}/objects/upload`, {
+      method: "POST",
+      headers,
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      throw new Error(err.message || err.error || "Failed to upload file");
+    }
+
+    return res.json() as Promise<{ success: boolean; object: StorageObjectItem }>;
+  },
+
+  getDownloadUrl: (bucketId: string, objectPath: string, expiresInSeconds?: number, downloadFilename?: string) =>
+    request<{ success: boolean; downloadUrl: string; expiresInSeconds: number }>(
+      `/api/storage/v1/buckets/${bucketId}/objects/download-url`,
+      {
+        method: "POST",
+        body: JSON.stringify({ objectPath, expiresInSeconds, downloadFilename }),
+      }
+    ),
+
+  deleteObject: (bucketId: string, objectPath: string) =>
+    request<{ success: boolean; message: string }>(
+      `/api/storage/v1/buckets/${bucketId}/objects?path=${encodeURIComponent(objectPath)}`,
+      { method: "DELETE" }
+    ),
+
+  copyObject: (bucketId: string, srcPath: string, destPath: string, destBucket?: string) =>
+    request<{ success: boolean; object: StorageObjectItem }>(`/api/storage/v1/buckets/${bucketId}/objects/copy`, {
+      method: "POST",
+      body: JSON.stringify({ srcPath, destPath, destBucket: destBucket || bucketId }),
+    }),
+
+  reconcile: () =>
+    request<{ success: boolean; reconciled: any }>("/api/storage/v1/reconcile", {
+      method: "POST",
+    }),
+
+  getAuditLogs: (limit = 50) =>
+    request<StorageAuditLogItem[]>(`/api/storage/v1/audit-logs?limit=${limit}`),
+};

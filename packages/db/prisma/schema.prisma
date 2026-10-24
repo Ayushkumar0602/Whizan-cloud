@@ -7,8 +7,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────
@@ -42,6 +43,9 @@ model User {
   cronJobs         CronJob[]
   workflows        Workflow[]
   agentSessions    AgentSession[]
+  storageBuckets   StorageBucket[]
+  storageQuota     StorageUserQuota?
+  storageAuditLogs StorageAuditLog[]
 
   @@map("users")
 }
@@ -931,6 +935,121 @@ model AgentAction {
   session         AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("agent_actions")
+}
+
+// ─────────────────────────────────────────
+//  WHIZAN CLOUD STORAGE (R2-POWERED)
+// ─────────────────────────────────────────
+model StorageBucket {
+  id               String               @id @default(uuid())
+  userId           String               @map("user_id")
+  name             String
+  description      String?              @db.Text
+  isPublic         Boolean              @default(false) @map("is_public")
+  maxFileSize      BigInt?              @map("max_file_size") // Optional per-bucket file size limit in bytes
+  allowedMimeTypes String[]             @default([]) @map("allowed_mime_types") // Empty means all allowed
+  fileCount        Int                  @default(0) @map("file_count")
+  totalBytes       BigInt               @default(0) @map("total_bytes")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objects          StorageObject[]
+  reservations     StorageReservation[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@map("storage_buckets")
+}
+
+model StorageObject {
+  id                 String        @id @default(uuid())
+  bucketId           String        @map("bucket_id")
+  userId             String        @map("user_id")
+  name               String        // Logical file path within bucket, e.g. "photos/avatar.png"
+  r2Key              String        @map("r2_key") // Server-controlled internal key: "users/{userId}/{bucketId}/{name}"
+  size               BigInt        // File size in bytes
+  mimeType           String        @default("application/octet-stream") @map("mime_type")
+  etag               String?
+  checksum           String?
+  metadata           Json?         @default("{}")
+  cacheControl       String?       @map("cache_control")
+  contentDisposition String?       @map("content_disposition")
+  isPublic           Boolean       @default(false) @map("is_public")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  bucket             StorageBucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@unique([bucketId, name])
+  @@index([userId, bucketId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("storage_objects")
+}
+
+model StorageReservation {
+  id            String                   @id @default(uuid())
+  userId        String                   @map("user_id")
+  bucketId      String                   @map("bucket_id")
+  objectName    String                   @map("object_name")
+  reservedBytes BigInt                   @map("reserved_bytes")
+  uploadType    String                   @default("DIRECT") @map("upload_type") // "DIRECT" | "MULTIPART" | "SERVER"
+  uploadId      String?                  @map("upload_id") // S3/R2 multipart upload ID if applicable
+  status        StorageReservationStatus @default(PENDING)
+  expiresAt     DateTime                 @map("expires_at")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+
+  bucket        StorageBucket            @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("storage_reservations")
+}
+
+enum StorageReservationStatus {
+  PENDING
+  COMMITTED
+  CANCELLED
+  EXPIRED
+
+  @@map("storage_reservation_status")
+}
+
+model StorageUserQuota {
+  id               String    @id @default(uuid())
+  userId           String    @unique @map("user_id")
+  allocatedBytes   BigInt    @default(250000000) @map("allocated_bytes") // Default 250 MB = 250,000,000 bytes
+  usedBytes        BigInt    @default(0) @map("used_bytes")             // Committed stored bytes
+  reservedBytes    BigInt    @default(0) @map("reserved_bytes")         // Active in-flight upload reservations
+  objectsCount     Int       @default(0) @map("objects_count")          // Total active objects
+  lastReconciledAt DateTime? @map("last_reconciled_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("storage_user_quotas")
+}
+
+model StorageAuditLog {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  actorEmail    String?  @map("actor_email")
+  action        String   // BUCKET_CREATE, BUCKET_DELETE, BUCKET_UPDATE, OBJECT_UPLOAD, OBJECT_DELETE, OBJECT_COPY, OBJECT_MOVE, PUBLIC_ACCESS_TOGGLE, QUOTA_OVERRIDE
+  bucketId      String?  @map("bucket_id")
+  bucketName    String?  @map("bucket_name")
+  objectName    String?  @map("object_name")
+  bytesAffected BigInt?  @map("bytes_affected")
+  ipAddress     String?  @map("ip_address")
+  userAgent     String?  @map("user_agent")
+  metadata      Json?    @default("{}")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("storage_audit_logs")
 }
 
 

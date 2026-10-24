@@ -1012,5 +1012,133 @@ export class WhizanClient {
     }
     return res.json();
   }
+
+  // ─── Storage (Cloudflare R2) ─────────────────────────────────────────────
+
+  async listStorageBuckets(): Promise<any[]> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/buckets`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to list buckets", res.status, err);
+    }
+    return (await res.json()) as any[];
+  }
+
+  async createStorageBucket(params: { name: string; description?: string; isPublic?: boolean }): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/buckets`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || err.error || "Failed to create bucket", res.status, err);
+    }
+    return res.json();
+  }
+
+  async deleteStorageBucket(bucketId: string, force = false): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/buckets/${bucketId}?force=${force}`, {
+      method: "DELETE",
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || err.error || "Failed to delete bucket", res.status, err);
+    }
+    return res.json();
+  }
+
+  async listStorageObjects(bucketId: string, prefix?: string, limit = 50): Promise<any> {
+    await this.loadConfig();
+    const params = new URLSearchParams();
+    if (prefix) params.set("prefix", prefix);
+    params.set("limit", String(limit));
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/buckets/${bucketId}/objects?${params}`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || "Failed to list objects", res.status, err);
+    }
+    return res.json();
+  }
+
+  async uploadStorageObject(bucketId: string, objectPath: string, buffer: Buffer, mimeType?: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/buckets/${bucketId}/objects/upload`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        objectPath,
+        mimeType: mimeType || "application/octet-stream",
+        data: buffer.toString("base64"),
+      }),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || err.error || "Failed to upload file", res.status, err);
+    }
+    return res.json();
+  }
+
+  async downloadStorageObject(bucketId: string, objectPath: string): Promise<Buffer> {
+    await this.loadConfig();
+    const res = await fetch(
+      `${this.config.apiUrl}/api/storage/v1/buckets/${bucketId}/objects/download?path=${encodeURIComponent(objectPath)}`,
+      { headers: this.getHeaders() }
+    );
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || "Failed to download object", res.status, err);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  }
+
+  async deleteStorageObject(bucketId: string, objectPath: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(
+      `${this.config.apiUrl}/api/storage/v1/buckets/${bucketId}/objects?path=${encodeURIComponent(objectPath)}`,
+      {
+        method: "DELETE",
+        headers: this.getHeaders(),
+      }
+    );
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.message || "Failed to delete object", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getStorageUsage(): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/usage`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to get storage usage", res.status, err);
+    }
+    return res.json();
+  }
+
+  async getStorageLimits(): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/limits`, {
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+      throw new WhizanApiError(err.error || "Failed to get storage limits", res.status, err);
+    }
+    return res.json();
+  }
 }
 

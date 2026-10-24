@@ -17,10 +17,11 @@ import { deleteCommand } from "./commands/delete.js";
 import { openCommand } from "./commands/open.js";
 import { topCommand } from "./commands/top.js";
 import { mcpCommand } from "./commands/mcp.js";
+import { storageCommand } from "./commands/storage.js";
 import { printBanner, colors, printError } from "./utils/terminal-ui.js";
 
 const c = colors;
-const VERSION = "1.1.0";
+const VERSION = "1.3.0";
 
 function printHelp() {
   printBanner(VERSION);
@@ -62,6 +63,14 @@ function printHelp() {
     ${c.whizanCyan}cron create${c.reset}        Create a scheduled cron job
     ${c.whizanCyan}cron ls${c.reset}            List cron jobs
     ${c.whizanCyan}cron trigger ID${c.reset}    Manually trigger a cron job
+
+  ${c.bold}${c.brightWhite}CLOUD STORAGE (R2)${c.reset}
+    ${c.whizanCyan}storage usage${c.reset}          Show 250 MB quota & committed storage
+    ${c.whizanCyan}storage limits${c.reset}         Show tier command and rate limits
+    ${c.whizanCyan}storage bucket ls${c.reset}      List accessible storage buckets
+    ${c.whizanCyan}storage ls <bkt>${c.reset}       List objects in a bucket
+    ${c.whizanCyan}storage upload <f> <b/p>${c.reset} Upload file to storage
+    ${c.whizanCyan}storage download <b/p> <f>${c.reset} Download object to local file
 
   ${c.bold}${c.brightWhite}OPERATIONS${c.reset}
     ${c.whizanCyan}exec -- CMD${c.reset}        Run a command inside a live container
@@ -170,6 +179,11 @@ async function main() {
     // Cron
     case "cron":
       await cronCommand(subArgs);
+      break;
+
+    // Storage (Cloudflare R2)
+    case "storage":
+      await storageCommand(subArgs);
       break;
 
     // Operations

@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Globe, Settings, LogOut, ShieldAlert,
   Layers, Server, Menu, X, Plus,
   PanelLeftClose, PanelLeftOpen, Database, Zap, Clock, Workflow as WorkflowIcon,
-  Bot, BookOpen, Terminal, Mail
+  Bot, BookOpen, Terminal, Mail, HardDrive
 } from "lucide-react";
 import { MaintenanceBanner } from "@/components/maintenance-banner";
 import { EmailVerificationBanner } from "@/components/email-verification-banner";
@@ -135,6 +135,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         { href: "/dashboard/backend", icon: Server, label: "Backend Services", match: (p: string) => p.startsWith("/dashboard/backend") },
         { href: "/dashboard/functions", icon: Zap, label: "Edge Functions", match: (p: string) => p.startsWith("/dashboard/functions") },
         { href: "/dashboard/databases", icon: Database, label: "Databases", match: (p: string) => p.startsWith("/dashboard/databases") },
+        { href: "/dashboard/storage", icon: HardDrive, label: "Cloud Storage", match: (p: string) => p.startsWith("/dashboard/storage") },
       ]
     },
     {

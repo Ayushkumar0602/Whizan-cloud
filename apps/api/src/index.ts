@@ -25,6 +25,7 @@ import { agentRoutes } from "./routes/agent.js";
 import { accountTerminalRoutes } from "./routes/terminal.js";
 import { liveGatewayRoutes } from "./routes/live-gateway.js";
 import { wafRoutes } from "./routes/waf.js";
+import { storageRoutes } from "./routes/storage.js";
 import { redisClient } from "./lib/redis.js";
 import { prisma } from "./lib/prisma.js";
 import { startAnalyticsProcessor } from "./lib/analytics-processor.js";
@@ -280,6 +281,8 @@ await app.register(flowRoutes, { prefix: "/api/flows" });
 await app.register(agentRoutes, { prefix: "/api/agent" });
 await app.register(accountTerminalRoutes, { prefix: "/api/terminal" });
 await app.register(wafRoutes, { prefix: "/api/waf" });
+await app.register(storageRoutes, { prefix: "/api/storage/v1" });
+await app.register(storageRoutes, { prefix: "/storage/v1" });
 await app.register(liveGatewayRoutes);
 
 import { checkVmOnline } from "./lib/vm-status.js";

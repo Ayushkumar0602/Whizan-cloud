@@ -44,4 +44,10 @@ export type {
   WorkflowNodeType,
   WorkflowRunStatus,
   ApprovalStatus,
+  StorageBucket,
+  StorageObject,
+  StorageReservation,
+  StorageReservationStatus,
+  StorageUserQuota,
+  StorageAuditLog,
 } from "@prisma/client";

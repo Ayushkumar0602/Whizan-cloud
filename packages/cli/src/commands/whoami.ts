@@ -19,17 +19,19 @@ export async function whoamiCommand() {
     printKV("Config", getConfigPath());
 
     // Count resources
-    const [services, projects, functions, crons] = await Promise.all([
+    const [services, projects, functions, crons, buckets] = await Promise.all([
       client.listServices().catch(() => []),
       client.listProjects().catch(() => []),
       client.listFunctions().catch(() => []),
       client.listCronJobs().catch(() => []),
+      client.listStorageBuckets().catch(() => []),
     ]);
     console.error("");
     printKV("Services", String(services.length));
     printKV("Projects", String(projects.length));
     printKV("Functions", String(functions.length));
     printKV("Cron Jobs", String(crons.length));
+    printKV("Storage Buckets", String(buckets.length));
     console.error("");
   } else {
     console.error(`\n  ${c.amber}○ Not authenticated${c.reset}`);
