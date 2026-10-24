@@ -639,7 +639,7 @@ export async function storageRoutes(fastify: FastifyInstance) {
   });
 
   // Presigned Direct Upload URL creation (Client -> R2)
-  fastify.post("/buckets/:bucketId/objects/upload-url", async (request: any, reply: any) => {
+  const handlePresignedUpload = async (request: any, reply: any) => {
     try {
       const { userId, email, subscriptionTier } = request.user;
       const { bucketId } = request.params as { bucketId: string };
@@ -660,7 +660,10 @@ export async function storageRoutes(fastify: FastifyInstance) {
     } catch (err) {
       return handleError(err, reply);
     }
-  });
+  };
+
+  fastify.post("/buckets/:bucketId/objects/upload-url", handlePresignedUpload);
+  fastify.post("/buckets/:bucketId/objects/presigned-upload", handlePresignedUpload);
 
   // Confirm direct upload after client PUT to R2
   fastify.post("/buckets/:bucketId/objects/confirm-upload", async (request: any, reply: any) => {

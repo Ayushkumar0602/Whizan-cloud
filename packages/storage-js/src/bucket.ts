@@ -50,7 +50,7 @@ export class StorageBucketApi {
       // Step 1: Request presigned upload URL
       const presignUrl = `${this.baseUrl}/api/storage/v1/buckets/${encodeURIComponent(
         this.bucketIdOrName
-      )}/objects/presigned-upload`;
+      )}/objects/upload-url`;
 
       const presignRes = await fetch(presignUrl, {
         method: "POST",
@@ -297,16 +297,26 @@ export class StorageBucketApi {
    */
   async createSignedUrl(
     path: string,
-    expiresIn = 3600
+    expiresIn = 3600,
+    options?: { download?: string }
   ): Promise<StorageResponse<{ signedUrl: string }>> {
     try {
       const cleanPath = path.replace(/^\/+/, "");
       const url = `${this.baseUrl}/api/storage/v1/buckets/${encodeURIComponent(
         this.bucketIdOrName
-      )}/objects/presigned-download?path=${encodeURIComponent(cleanPath)}&expiresIn=${expiresIn}`;
+      )}/objects/download-url`;
 
       const res = await fetch(url, {
-        headers: this.headers,
+        method: "POST",
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          objectPath: cleanPath,
+          expiresInSeconds: expiresIn,
+          downloadFilename: options?.download,
+        }),
       });
 
       if (!res.ok) {
