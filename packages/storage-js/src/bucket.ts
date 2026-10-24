@@ -358,10 +358,79 @@ export class StorageBucketApi {
 
     return {
       data: {
-        publicUrl: `${this.baseUrl}/api/storage/v1/public/${encodeURIComponent(
+        publicUrl: `${this.baseUrl}/public/${encodeURIComponent(
           this.bucketIdOrName
         )}/${cleanPath}`,
       },
     };
+  }
+
+  /**
+   * Update object metadata, Cache-Control, or Content-Disposition.
+   */
+  async updateMetadata(
+    path: string,
+    metadata: {
+      cacheControl?: string;
+      contentDisposition?: string;
+      metadata?: Record<string, any>;
+    }
+  ): Promise<StorageResponse<StorageObject>> {
+    try {
+      const cleanPath = path.replace(/^\/+/, "");
+      const url = `${this.baseUrl}/api/storage/v1/buckets/${encodeURIComponent(
+        this.bucketIdOrName
+      )}/objects/metadata`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          ...this.headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          path: cleanPath,
+          cacheControl: metadata.cacheControl,
+          contentDisposition: metadata.contentDisposition,
+          metadata: metadata.metadata,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Failed to update metadata: HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      return { data: json.object, error: null };
+    } catch (err: any) {
+      return { data: null, error: err };
+    }
+  }
+
+  /**
+   * Retrieve object metadata without downloading object contents.
+   */
+  async getMetadata(path: string): Promise<StorageResponse<StorageObject>> {
+    try {
+      const cleanPath = path.replace(/^\/+/, "");
+      const url = `${this.baseUrl}/api/storage/v1/buckets/${encodeURIComponent(
+        this.bucketIdOrName
+      )}/objects/metadata?path=${encodeURIComponent(cleanPath)}`;
+
+      const res = await fetch(url, {
+        headers: this.headers,
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Failed to get metadata: HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      return { data: json.object, error: null };
+    } catch (err: any) {
+      return { data: null, error: err };
+    }
   }
 }
