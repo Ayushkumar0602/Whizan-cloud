@@ -506,7 +506,7 @@ export function StorageExplorer({
               Drop files to upload to {currentFolder ? `/${currentFolder}` : selectedBucket?.name}
             </p>
             <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-              Multi-file direct transfer to Cloudflare R2
+              Multi-file direct-to-storage high-speed transfer
             </p>
           </div>
         )}

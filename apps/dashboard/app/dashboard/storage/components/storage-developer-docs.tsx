@@ -23,6 +23,11 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
+  Download,
+  Trash2,
+  FolderSync,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -58,8 +63,27 @@ export function StorageDeveloperDocs({
   const [showKeyForm, setShowKeyForm] = useState(false);
   const [useRealKeyInCode, setUseRealKeyInCode] = useState(false);
 
-  // Image Transform Playground State
+  // Bucket categorization
   const publicBuckets = buckets.filter((b) => b.isPublic);
+
+  // Snippet Template Customizer State
+  const [sampleBucketMode, setSampleBucketMode] = useState<"standard" | "custom">("standard");
+  const [customBucketName, setCustomBucketName] = useState<string>(
+    buckets[0]?.name || "my-bucket"
+  );
+
+  const targetBucket =
+    sampleBucketMode === "standard" ? "my-bucket" : (customBucketName || "my-bucket");
+  const targetPublicBucket =
+    sampleBucketMode === "standard"
+      ? "my-public-bucket"
+      : (publicBuckets[0]?.name || targetBucket);
+  const targetBucketId =
+    sampleBucketMode === "standard"
+      ? ":bucketId"
+      : (buckets.find((b) => b.name === customBucketName)?.id || ":bucketId");
+
+  // Image Transform Playground State
   const [selectedTransformBucket, setSelectedTransformBucket] = useState<string>(
     publicBuckets[0]?.name || selectedBucket?.name || "public-assets"
   );
@@ -510,6 +534,112 @@ export function StorageDeveloperDocs({
             </div>
           </div>
 
+          {/* Snippet Context Customizer Bar */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0.75rem 1rem",
+              background: "var(--bg-inset)",
+              borderRadius: "0.5rem",
+              border: "1px solid var(--border)",
+              flexWrap: "wrap",
+              gap: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--muted)" }}>
+                Code Template Mode:
+              </span>
+              <div
+                style={{
+                  display: "inline-flex",
+                  background: "var(--card-bg)",
+                  padding: 2,
+                  borderRadius: "0.375rem",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSampleBucketMode("standard")}
+                  style={{
+                    padding: "0.25rem 0.6rem",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    borderRadius: 4,
+                    border: "none",
+                    cursor: "pointer",
+                    background: sampleBucketMode === "standard" ? "var(--accent)" : "transparent",
+                    color: sampleBucketMode === "standard" ? "#fff" : "var(--muted)",
+                  }}
+                >
+                  Standard Template (&quot;my-bucket&quot;)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSampleBucketMode("custom")}
+                  style={{
+                    padding: "0.25rem 0.6rem",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    borderRadius: 4,
+                    border: "none",
+                    cursor: "pointer",
+                    background: sampleBucketMode === "custom" ? "var(--accent)" : "transparent",
+                    color: sampleBucketMode === "custom" ? "#fff" : "var(--muted)",
+                  }}
+                >
+                  Workspace Buckets ({buckets.length})
+                </button>
+              </div>
+            </div>
+
+            {sampleBucketMode === "custom" && buckets.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Target Bucket:</span>
+                <select
+                  value={customBucketName}
+                  onChange={(e) => setCustomBucketName(e.target.value)}
+                  style={{
+                    padding: "0.25rem 0.6rem",
+                    fontSize: "0.8rem",
+                    borderRadius: "0.375rem",
+                    border: "1px solid var(--border)",
+                    background: "var(--card-bg)",
+                    color: "var(--foreground)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {buckets.map((b) => (
+                    <option key={b.id} value={b.name}>
+                      {b.name} ({b.isPublic ? "Public" : "Private"})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Active bucket in snippets:</span>
+              <code
+                style={{
+                  fontSize: "0.75rem",
+                  padding: "0.15rem 0.45rem",
+                  borderRadius: 4,
+                  background: "var(--card-bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--accent)",
+                  fontFamily: "monospace",
+                  fontWeight: 600,
+                }}
+              >
+                &quot;{targetBucket}&quot;
+              </code>
+            </div>
+          </div>
+
           {/* Client Initialization */}
           <div
             className="card"
@@ -562,7 +692,7 @@ export const storage = createStorageClient({
 });`}</pre>
           </div>
 
-          {/* File Upload Snippet */}
+          {/* 1. File Upload Snippet */}
           <div
             className="card"
             style={{
@@ -574,15 +704,15 @@ export const storage = createStorageClient({
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>1. Upload Object</h4>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>1. Direct Presigned Upload</h4>
                 <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Upload a buffer, file, or blob directly to a bucket with optional cache headers.
+                  High-speed upload directly to edge storage with optional MIME type, caching headers, and upsert.
                 </p>
               </div>
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `const { data, error } = await storage\n  .from("${selectedBucket?.name || "documents"}")\n  .upload("invoices/2026/january.pdf", fileBuffer, {\n    contentType: "application/pdf",\n    cacheControl: "public, max-age=86400",\n    upsert: true,\n  });\n\nif (error) {\n  console.error("Upload error:", error.message);\n} else {\n  console.log("Uploaded successfully:", data.path, data.size);\n}`,
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .upload("documents/report.pdf", fileBuffer, {\n    contentType: "application/pdf",\n    cacheControl: "public, max-age=86400",\n    upsert: true,\n  });\n\nif (error) {\n  console.error("Upload error:", error.message);\n} else {\n  console.log("Uploaded successfully:", data.path, data.size);\n}`,
                     "upload"
                   )
                 }
@@ -607,8 +737,8 @@ export const storage = createStorageClient({
                 color: "var(--foreground)",
               }}
             >{`const { data, error } = await storage
-  .from("${selectedBucket?.name || "documents"}")
-  .upload("invoices/2026/january.pdf", fileBuffer, {
+  .from("${targetBucket}")
+  .upload("documents/report.pdf", fileBuffer, {
     contentType: "application/pdf",
     cacheControl: "public, max-age=86400",
     upsert: true,
@@ -621,7 +751,7 @@ if (error) {
 }`}</pre>
           </div>
 
-          {/* Public CDN URL & Transformations Snippet */}
+          {/* 2. Download Snippet */}
           <div
             className="card"
             style={{
@@ -633,22 +763,22 @@ if (error) {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>2. Public CDN URL & Transformations</h4>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>2. Download Object</h4>
                 <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Retrieve an Edge CDN URL with on-the-fly Sharp image optimizations.
+                  Download file contents directly as a Blob (browser) or stream/buffer (Node.js).
                 </p>
               </div>
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `const { data } = storage\n  .from("${publicBuckets[0]?.name || "public-assets"}")\n  .getPublicUrl("avatars/user.png", {\n    transform: {\n      width: 400,\n      height: 400,\n      format: "webp",\n      quality: 80,\n      fit: "cover",\n    },\n  });\n\nconsole.log("Public URL:", data.publicUrl);`,
-                    "publicUrl"
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .download("documents/report.pdf");\n\nif (error) {\n  console.error("Download failed:", error.message);\n} else {\n  // In browser: const text = await data.text(); or URL.createObjectURL(data);\n  // In Node.js: Buffer.from(await data.arrayBuffer());\n  console.log("Downloaded bytes:", data.size);\n}`,
+                    "download"
                   )
                 }
                 className="btn-secondary"
                 style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
               >
-                {copiedSnippet === "publicUrl" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedSnippet === "download" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 Copy Code
               </button>
             </div>
@@ -665,22 +795,20 @@ if (error) {
                 margin: 0,
                 color: "var(--foreground)",
               }}
-            >{`const { data } = storage
-  .from("${publicBuckets[0]?.name || "public-assets"}")
-  .getPublicUrl("avatars/user.png", {
-    transform: {
-      width: 400,
-      height: 400,
-      format: "webp",
-      quality: 80,
-      fit: "cover",
-    },
-  });
+            >{`const { data, error } = await storage
+  .from("${targetBucket}")
+  .download("documents/report.pdf");
 
-console.log("Public URL:", data.publicUrl);`}</pre>
+if (error) {
+  console.error("Download failed:", error.message);
+} else {
+  // In browser: const text = await data.text(); or URL.createObjectURL(data);
+  // In Node.js: Buffer.from(await data.arrayBuffer());
+  console.log("Downloaded bytes:", data.size);
+}`}</pre>
           </div>
 
-          {/* Signed URL Snippet */}
+          {/* 3. Update Metadata Snippet */}
           <div
             className="card"
             style={{
@@ -692,15 +820,135 @@ console.log("Public URL:", data.publicUrl);`}</pre>
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
               <div>
-                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>3. Temporary Presigned Download URL</h4>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>3. Update Object Metadata</h4>
                 <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Generate an authenticated, time-limited URL for secure private downloads.
+                  Update Cache-Control, Content-Disposition, and custom JSON metadata without re-uploading file body.
                 </p>
               </div>
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `const { data, error } = await storage\n  .from("${selectedBucket?.name || "private-docs"}")\n  .createSignedUrl("contracts/nda.pdf", 3600, {\n    download: "signed-nda.pdf",\n  });\n\nif (data?.signedUrl) {\n  console.log("Temporary download URL:", data.signedUrl);\n}`,
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .updateMetadata("documents/report.pdf", {\n    cacheControl: "public, max-age=31536000, immutable",\n    contentDisposition: 'attachment; filename="annual-report-2026.pdf"',\n    metadata: {\n      department: "finance",\n      audited: true,\n      retentionYears: 7,\n    },\n  });\n\nif (error) {\n  console.error("Metadata update error:", error.message);\n} else {\n  console.log("Updated metadata successfully:", data);\n}`,
+                    "updateMetadata"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "updateMetadata" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`const { data, error } = await storage
+  .from("${targetBucket}")
+  .updateMetadata("documents/report.pdf", {
+    cacheControl: "public, max-age=31536000, immutable",
+    contentDisposition: 'attachment; filename="annual-report-2026.pdf"',
+    metadata: {
+      department: "finance",
+      audited: true,
+      retentionYears: 7,
+    },
+  });
+
+if (error) {
+  console.error("Metadata update error:", error.message);
+} else {
+  console.log("Updated metadata successfully:", data);
+}`}</pre>
+          </div>
+
+          {/* 4. Get Metadata Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>4. Retrieve Object Metadata</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Inspect file size, MIME type, and custom key-value tags without downloading object payload.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .getMetadata("documents/report.pdf");\n\nif (error) {\n  console.error("Metadata lookup error:", error.message);\n} else {\n  console.log("Content-Type:", data.mimeType);\n  console.log("File Size:", data.size, "bytes");\n  console.log("Custom Tags:", data.metadata);\n}`,
+                    "getMetadata"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "getMetadata" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`const { data, error } = await storage
+  .from("${targetBucket}")
+  .getMetadata("documents/report.pdf");
+
+if (error) {
+  console.error("Metadata lookup error:", error.message);
+} else {
+  console.log("Content-Type:", data.mimeType);
+  console.log("File Size:", data.size, "bytes");
+  console.log("Custom Tags:", data.metadata);
+}`}</pre>
+          </div>
+
+          {/* 5. Signed URL Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>5. Temporary Presigned Download URL</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Generate an authenticated, time-limited URL for secure private downloads with custom attachment headers.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .createSignedUrl("documents/report.pdf", 900, {\n    download: "annual-report-2026.pdf",\n  });\n\nif (data?.signedUrl) {\n  console.log("Temporary download URL (expires in 15m):", data.signedUrl);\n}`,
                     "signedUrl"
                   )
                 }
@@ -725,14 +973,244 @@ console.log("Public URL:", data.publicUrl);`}</pre>
                 color: "var(--foreground)",
               }}
             >{`const { data, error } = await storage
-  .from("${selectedBucket?.name || "private-docs"}")
-  .createSignedUrl("contracts/nda.pdf", 3600, {
-    download: "signed-nda.pdf",
+  .from("${targetBucket}")
+  .createSignedUrl("documents/report.pdf", 900, {
+    download: "annual-report-2026.pdf",
   });
 
 if (data?.signedUrl) {
-  console.log("Temporary download URL:", data.signedUrl);
+  console.log("Temporary download URL (expires in 15m):", data.signedUrl);
 }`}</pre>
+          </div>
+
+          {/* 6. Public CDN URL & Transformations Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>6. Public CDN URL & Real-Time Transformations</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Retrieve an Edge CDN URL with on-the-fly Sharp image optimization (resize, format, quality, crop).
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `const { data } = storage\n  .from("${targetPublicBucket}")\n  .getPublicUrl("avatars/user.png", {\n    transform: {\n      width: 400,\n      height: 400,\n      format: "webp",\n      quality: 80,\n      fit: "cover",\n    },\n  });\n\nconsole.log("Public CDN URL:", data.publicUrl);`,
+                    "publicUrl"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "publicUrl" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`const { data } = storage
+  .from("${targetPublicBucket}")
+  .getPublicUrl("avatars/user.png", {
+    transform: {
+      width: 400,
+      height: 400,
+      format: "webp",
+      quality: 80,
+      fit: "cover",
+    },
+  });
+
+console.log("Public CDN URL:", data.publicUrl);`}</pre>
+          </div>
+
+          {/* 7. Copy & Move Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>7. Copy & Move Objects</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Duplicate an object across folder paths or perform an atomic rename/move operation.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `// 1. Copy object\nconst copyResult = await storage\n  .from("${targetBucket}")\n  .copy("documents/report.pdf", "archive/2026-report.pdf");\n\n// 2. Move or rename object (source is purged after transfer)\nconst moveResult = await storage\n  .from("${targetBucket}")\n  .move("archive/2026-report.pdf", "vault/2026-final.pdf");`,
+                    "copyMove"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "copyMove" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`// 1. Copy object
+const copyResult = await storage
+  .from("${targetBucket}")
+  .copy("documents/report.pdf", "archive/2026-report.pdf");
+
+// 2. Move or rename object (source is purged after transfer)
+const moveResult = await storage
+  .from("${targetBucket}")
+  .move("archive/2026-report.pdf", "vault/2026-final.pdf");`}</pre>
+          </div>
+
+          {/* 8. Remove Objects Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>8. Bulk Remove Objects</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Safely delete one or multiple files in a single batch request (moved to soft-delete bin).
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `const { data, error } = await storage\n  .from("${targetBucket}")\n  .remove([\n    "documents/draft-report.pdf",\n    "temp/scratch-upload.tmp",\n  ]);\n\nif (error) {\n  console.error("Deletion error:", error.message);\n} else {\n  console.log("Successfully removed objects:", data.length);\n}`,
+                    "remove"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "remove" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`const { data, error } = await storage
+  .from("${targetBucket}")
+  .remove([
+    "documents/draft-report.pdf",
+    "temp/scratch-upload.tmp",
+  ]);
+
+if (error) {
+  console.error("Deletion error:", error.message);
+} else {
+  console.log("Successfully removed objects:", data.length);
+}`}</pre>
+          </div>
+
+          {/* 9. Bucket Lifecycle & Quota Snippet */}
+          <div
+            className="card"
+            style={{
+              padding: "1.25rem",
+              background: "var(--card-bg)",
+              border: "1px solid var(--card-border)",
+              borderRadius: "0.75rem",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div>
+                <h4 style={{ fontSize: "0.95rem", fontWeight: 700 }}>9. Bucket Lifecycle & Quota Inspection</h4>
+                <p style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  Programmatically provision buckets, configure MIME whitelists, and monitor quota metrics.
+                </p>
+              </div>
+              <button
+                onClick={() =>
+                  copyToClipboard(
+                    `// 1. List accessible buckets\nconst { data: buckets } = await storage.listBuckets();\n\n// 2. Provision new bucket with strict MIME-type isolation\nconst { data: newBucket } = await storage.createBucket("backups", {\n  public: false,\n  allowedMimeTypes: ["application/gzip", "application/zip"],\n});\n\n// 3. Inspect real-time storage quota\nconst { data: usage } = await storage.getUsage();\nconsole.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocatedMb} MB\`);`,
+                    "bucketOps"
+                  )
+                }
+                className="btn-secondary"
+                style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }}
+              >
+                {copiedSnippet === "bucketOps" ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                Copy Code
+              </button>
+            </div>
+
+            <pre
+              style={{
+                padding: "1rem",
+                background: "var(--bg-inset)",
+                borderRadius: "0.5rem",
+                border: "1px solid var(--border)",
+                fontSize: "0.8rem",
+                fontFamily: "monospace",
+                overflowX: "auto",
+                margin: 0,
+                color: "var(--foreground)",
+              }}
+            >{`// 1. List accessible buckets
+const { data: buckets } = await storage.listBuckets();
+
+// 2. Provision new bucket with strict MIME-type isolation
+const { data: newBucket } = await storage.createBucket("backups", {
+  public: false,
+  allowedMimeTypes: ["application/gzip", "application/zip"],
+});
+
+// 3. Inspect real-time storage quota
+const { data: usage } = await storage.getUsage();
+console.log(\`Storage used: \${usage.quota.usedMb} MB / \${usage.quota.allocatedMb} MB\`);`}</pre>
           </div>
         </div>
       )}
@@ -822,7 +1300,7 @@ if (data?.signedUrl) {
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `# Configure credentials\naws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"\naws configure set aws_secret_access_key "${activeSecretKey}"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${selectedBucket?.name || "my-bucket"}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
+                    `# Configure credentials\naws configure set aws_access_key_id "${apiKeys[0]?.id || "whz_key_id"}"\naws configure set aws_secret_access_key "${activeSecretKey}"\naws configure set default.region "auto"\n\n# List objects in bucket\naws s3 ls s3://${targetBucket}/ --endpoint-url ${baseUrl}/api/storage/v1/s3\n\n# Upload file to bucket\naws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\\n  --endpoint-url ${baseUrl}/api/storage/v1/s3`,
                     "awscli"
                   )
                 }
@@ -852,10 +1330,10 @@ aws configure set aws_secret_access_key "${activeSecretKey}"
 aws configure set default.region "auto"
 
 # List objects in bucket
-aws s3 ls s3://${selectedBucket?.name || "my-bucket"}/ --endpoint-url ${baseUrl}/api/storage/v1/s3
+aws s3 ls s3://${targetBucket}/ --endpoint-url ${baseUrl}/api/storage/v1/s3
 
 # Upload file to bucket
-aws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png \\
+aws s3 cp ./report.pdf s3://${targetBucket}/documents/report.pdf \\
   --endpoint-url ${baseUrl}/api/storage/v1/s3`}</pre>
           </div>
 
@@ -879,7 +1357,7 @@ aws s3 cp ./file.png s3://${selectedBucket?.name || "my-bucket"}/assets/file.png
               <button
                 onClick={() =>
                   copyToClipboard(
-                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",\n    aws_secret_access_key="${activeSecretKey}",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${selectedBucket?.name || "analytics"}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet", "local.parquet")`,
+                    `import boto3\n\ns3 = boto3.client(\n    "s3",\n    endpoint_url="${baseUrl}/api/storage/v1/s3",\n    aws_access_key_id="${apiKeys[0]?.id || "whz_key_id"}",\n    aws_secret_access_key="${activeSecretKey}",\n    region_name="auto",\n)\n\n# Upload dataset file\ns3.upload_file("dataset.parquet", "${targetBucket}", "data/dataset.parquet")\n\n# Download file\ns3.download_file("${targetBucket}", "data/dataset.parquet", "local.parquet")`,
                     "boto3"
                   )
                 }
@@ -914,10 +1392,10 @@ s3 = boto3.client(
 )
 
 # Upload dataset file
-s3.upload_file("dataset.parquet", "${selectedBucket?.name || "analytics"}", "data/dataset.parquet")
+s3.upload_file("dataset.parquet", "${targetBucket}", "data/dataset.parquet")
 
 # Download file
-s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet", "local.parquet")`}</pre>
+s3.download_file("${targetBucket}", "data/dataset.parquet", "local.parquet")`}</pre>
           </div>
         </div>
       )}
@@ -1203,7 +1681,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/upload" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -F "objectPath=documents/notes.txt" \\\n  -F "file=@notes.txt"`,
+                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${targetBucketId}/objects/upload" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -F "objectPath=documents/report.pdf" \\\n  -F "file=@report.pdf"`,
                         "curlUpload"
                       )
                     }
@@ -1224,10 +1702,10 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                     fontFamily: "monospace",
                     margin: 0,
                   }}
-                >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/upload" \\
+                >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${targetBucketId}/objects/upload" \\
   -H "Authorization: Bearer ${activeSecretKey}" \\
-  -F "objectPath=documents/notes.txt" \\
-  -F "file=@notes.txt"`}</pre>
+  -F "objectPath=documents/report.pdf" \\
+  -F "file=@report.pdf"`}</pre>
               </div>
 
               {/* cURL Download URL */}
@@ -1237,7 +1715,7 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/download-url" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"objectPath": "documents/notes.txt", "expiresInSeconds": 3600}'`,
+                        `curl -X POST "${baseUrl}/api/storage/v1/buckets/${targetBucketId}/objects/download-url" \\\n  -H "Authorization: Bearer ${activeSecretKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"objectPath": "documents/report.pdf", "expiresInSeconds": 900}'`,
                         "curlDownload"
                       )
                     }
@@ -1258,10 +1736,10 @@ s3.download_file("${selectedBucket?.name || "analytics"}", "data/dataset.parquet
                     fontFamily: "monospace",
                     margin: 0,
                   }}
-                >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${selectedBucket?.id || ":bucketId"}/objects/download-url" \\
+                >{`curl -X POST "${baseUrl}/api/storage/v1/buckets/${targetBucketId}/objects/download-url" \\
   -H "Authorization: Bearer ${activeSecretKey}" \\
   -H "Content-Type: application/json" \\
-  -d '{"objectPath": "documents/notes.txt", "expiresInSeconds": 3600}'`}</pre>
+  -d '{"objectPath": "documents/report.pdf", "expiresInSeconds": 900}'`}</pre>
               </div>
             </div>
           </div>

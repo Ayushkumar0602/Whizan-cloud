@@ -93,7 +93,7 @@ export function StorageUsageHealth({
             Storage Engine & Quota Reconciliation
           </h3>
           <p style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.2rem" }}>
-            Synchronizes stored byte counts across PostgreSQL and Cloudflare R2, releases stale in-flight reservations (&gt;15 min old), and refreshes Redis rate counters.
+            Synchronizes stored byte counts across database records and edge storage, releases stale in-flight reservations (&gt;15 min old), and refreshes rate counters.
           </p>
         </div>
 
@@ -108,7 +108,7 @@ export function StorageUsageHealth({
         </button>
       </div>
 
-      {/* Plan Limits & Tier Matrix */}
+      {/* Active Storage Limits & Configuration */}
       <div
         className="card"
         style={{
@@ -118,60 +118,90 @@ export function StorageUsageHealth({
           borderRadius: "0.75rem",
         }}
       >
-        <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.4rem" }}>
-          Whizan Storage Tier Matrix
-        </h3>
-        <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "1.25rem" }}>
-          Current subscription tier: <span style={{ fontWeight: 700, color: "var(--accent)" }}>{usage?.tierDisplayName || "Hobby Tier"}</span>. Limits are enforced automatically by the API gateway.
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.75rem" }}>
+          <div>
+            <h3 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              Active Storage Limits & Configuration
+            </h3>
+            <p style={{ fontSize: "0.82rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+              Operational limits enforced directly at the API gateway and Edge CDN layer.
+            </p>
+          </div>
+          <span
+            style={{
+              fontSize: "0.75rem",
+              padding: "0.25rem 0.6rem",
+              borderRadius: "0.375rem",
+              background: "rgba(16, 185, 129, 0.1)",
+              color: "var(--success)",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "0.35rem",
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
+            System Healthy & Enforced
+          </span>
+        </div>
 
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid var(--border)", textAlign: "left" }}>
-                <th style={{ padding: "0.75rem", fontWeight: 700 }}>Feature / Parameter</th>
-                <th style={{ padding: "0.75rem", fontWeight: 700, color: "var(--accent)" }}>Hobby (Tier A)</th>
-                <th style={{ padding: "0.75rem", fontWeight: 700, color: "var(--success)" }}>Professional (Tier B)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Default Quota Isolation</td>
-                <td style={{ padding: "0.75rem" }}>250 MB (Strict)</td>
-                <td style={{ padding: "0.75rem" }}>250 MB (Expandable)</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Max File Size Per Upload</td>
-                <td style={{ padding: "0.75rem" }}>25 MB</td>
-                <td style={{ padding: "0.75rem" }}>100 MB</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Rate Limit (Requests / Min)</td>
-                <td style={{ padding: "0.75rem" }}>60 RPM</td>
-                <td style={{ padding: "0.75rem" }}>300 RPM</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Daily Command Allowance</td>
-                <td style={{ padding: "0.75rem" }}>2,000 commands / day</td>
-                <td style={{ padding: "0.75rem" }}>50,000 commands / day</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Max Concurrent In-Flight Transfers</td>
-                <td style={{ padding: "0.75rem" }}>3 Transfers</td>
-                <td style={{ padding: "0.75rem" }}>10 Transfers</td>
-              </tr>
-              <tr style={{ borderBottom: "1px solid var(--border-light)" }}>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Presigned URL Max Expiry</td>
-                <td style={{ padding: "0.75rem" }}>15 Minutes</td>
-                <td style={{ padding: "0.75rem" }}>30 Minutes</td>
-              </tr>
-              <tr>
-                <td style={{ padding: "0.75rem", fontWeight: 500 }}>Cloudflare Edge CDN Egress</td>
-                <td style={{ padding: "0.75rem", color: "var(--success)" }}>$0.00 / Free</td>
-                <td style={{ padding: "0.75rem", color: "var(--success)" }}>$0.00 / Free</td>
-              </tr>
-            </tbody>
-          </table>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "0.85rem",
+          }}
+        >
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>MAX SINGLE FILE SIZE</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem" }}>
+              {usage ? `${usage.commandLimits.maxFileSizeMb} MB` : "25 MB"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>Direct presigned upload limit</div>
+          </div>
+
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>API RATE LIMIT</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem" }}>
+              {usage ? `${usage.commandLimits.rateLimitRpm} RPM` : "60 RPM"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>Requests per minute per key</div>
+          </div>
+
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>DAILY COMMAND ALLOWANCE</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem" }}>
+              {usage ? `${usage.commandLimits.dailyCommandsQuota.toLocaleString()} / day` : "2,000 / day"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+              {usage ? `${usage.commandLimits.currentDailyCommands} used today` : "0 used today"}
+            </div>
+          </div>
+
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>CONCURRENT IN-FLIGHT</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem" }}>
+              {usage ? `${usage.commandLimits.maxConcurrentUploads} Slots` : "3 Slots"}
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>Simultaneous active uploads</div>
+          </div>
+
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>SIGNED URL EXPIRY</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem" }}>
+              15 Minutes
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>Maximum temporary token TTL</div>
+          </div>
+
+          <div style={{ padding: "0.85rem 1rem", background: "var(--bg-inset)", borderRadius: "0.5rem", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", fontWeight: 600 }}>GLOBAL EDGE CDN</div>
+            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.3rem", color: "var(--success)" }}>
+              Zero Egress Fee
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.2rem" }}>Included with public buckets</div>
+          </div>
         </div>
       </div>
 

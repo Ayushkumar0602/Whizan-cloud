@@ -169,7 +169,7 @@ export default function StorageDashboardPage() {
     <div className="page" style={{ maxWidth: 1280, margin: "0 auto", padding: "2rem 1.5rem" }}>
       <PageHeader
         title="Cloud Storage"
-        subtitle="Global S3-compatible object storage powered by Cloudflare R2 Edge CDN with strict 250 MB quota isolation and low-latency asset delivery."
+        subtitle="High-performance, S3-compatible global object storage with edge caching, automated security policies, and granular quota isolation."
         actions={
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
             <button
@@ -433,7 +433,7 @@ export default function StorageDashboardPage() {
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "0.25rem" }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#10b981", display: "inline-block" }} />
-                <span style={{ fontSize: "1.2rem", fontWeight: 700 }}>Cloudflare R2</span>
+                <span style={{ fontSize: "1.2rem", fontWeight: 700 }}>Global Edge CDN</span>
               </div>
             </div>
             <div
@@ -441,20 +441,20 @@ export default function StorageDashboardPage() {
                 width: 36,
                 height: 36,
                 borderRadius: "50%",
-                background: "rgba(217, 119, 6, 0.1)",
+                background: "rgba(16, 185, 129, 0.1)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Globe className="w-5 h-5 text-amber-500" />
+              <Globe className="w-5 h-5 text-emerald-500" />
             </div>
           </div>
 
           <div style={{ marginTop: "1rem", fontSize: "0.8rem", color: "var(--muted)", lineHeight: 1.6 }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Egress Fees:</span>
-              <span style={{ fontWeight: 600, color: "var(--success)" }}>$0.00 / Free</span>
+              <span style={{ fontWeight: 600, color: "var(--success)" }}>Zero Egress Fees</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Encryption:</span>

@@ -81,7 +81,7 @@ export function CreateBucketModal({
           </button>
         </div>
         <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "1.25rem" }}>
-          Buckets are top-level containers in Cloudflare R2 for storing and organizing files.
+          Buckets are top-level isolated containers for storing and organizing files.
         </p>
 
         <form onSubmit={handleSubmit}>
@@ -331,7 +331,7 @@ export function BucketSettingsModal({
             <div>
               <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>Public Read Access</div>
               <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                When enabled, assets are readable anonymously via Cloudflare Edge CDN.
+                When enabled, assets are readable anonymously via global Edge CDN.
               </div>
             </div>
             <input
