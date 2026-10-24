@@ -310,6 +310,35 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "whizan_get_application_logs",
+    description: "Retrieves live runtime standard output (stdout) and standard error (stderr) logs directly from the active or recently exited container. Use this for diagnosing runtime crashes, server startup errors, uncaught exceptions, and unhandled rejections that happen after the build finishes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        targetType: {
+          type: "string",
+          enum: ["project", "service"],
+          description: "Type of deployment: 'project' (frontend/SSR/web container) or 'service' (backend API/worker)",
+        },
+        targetId: {
+          type: "string",
+          description: "The unique UUID or slug of the project or service",
+        },
+        tail: {
+          type: "number",
+          default: 200,
+          description: "Number of most recent log lines to retrieve (default: 200, max: 1000)",
+        },
+        timestamps: {
+          type: "boolean",
+          default: false,
+          description: "Whether to include ISO timestamps for each log line",
+        },
+      },
+      required: ["targetType", "targetId"],
+    },
+  },
+  {
     name: "whizan_exec_vm_command",
     description: "Executes an administrative or operational command on the host compute node (e.g. 'pm2 status', 'pm2 restart all', 'git pull origin main', 'free -m', 'df -h', 'docker ps'). Allows developers and agents to maintain the compute infrastructure directly.",
     inputSchema: {
@@ -693,6 +722,38 @@ const TOOLS: Tool[] = [
         objectPath: { type: "string", description: "Logical object path to delete" },
       },
       required: ["bucket", "objectPath"],
+    },
+  },
+  {
+    name: "whizan_storage_create_api_key",
+    description: "Generates a dedicated Storage API Key ('whz_stg_live_...') with explicit scope and permissions. Use this key in application environment variables (WHIZAN_STORAGE_KEY) or MCP/CLI storage client operations. Returns the live key secret, key ID, and scoping metadata.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Human-readable label for the key (e.g. 'Production App Key', 'MCP DevOps Probe Key')",
+        },
+        permission: {
+          type: "string",
+          enum: ["READ_WRITE", "READ_ONLY"],
+          default: "READ_WRITE",
+          description: "Access level: 'READ_WRITE' for uploading and modifying objects, or 'READ_ONLY' for downloads only",
+        },
+        bucketId: {
+          type: "string",
+          description: "Optional bucket ID or name to strictly scope this key to. Leave empty for all buckets in the account.",
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "whizan_storage_list_api_keys",
+    description: "Lists all storage API keys configured in the account, including key ID, name, keyPrefix, permission (READ_WRITE/READ_ONLY), and bucket scoping.",
+    inputSchema: {
+      type: "object",
+      properties: {},
     },
   },
 ];
@@ -1577,6 +1638,19 @@ Please gently inform the user of this situation:
       };
     }
 
+    case "whizan_get_application_logs": {
+      const { targetType, targetId, tail, timestamps } = (args || {}) as any;
+      const result = await client.getApplicationLogs({ targetType, targetId, tail, timestamps });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    }
+
     // ─── Edge Functions Tool Handlers ──────────────────────────────────────────
 
     case "whizan_create_function_service": {
@@ -1947,15 +2021,27 @@ Please gently inform the user of this situation:
       const { bucket, localFilePath, destinationPath, mimeType } = (args || {}) as any;
       const resolvedLocal = path.resolve(localFilePath);
       const fileBuffer = await fs.readFile(resolvedLocal);
-      const res = await client.uploadStorageObject(bucket, destinationPath, fileBuffer, mimeType);
-      return {
-        content: [
-          {
-            type: "text",
-            text: `File '${localFilePath}' successfully uploaded to '${bucket}/${res.object.name}' (${res.object.size} bytes, ETag: ${res.object.etag || "—"}).`,
-          },
-        ],
-      };
+      try {
+        const res = await client.uploadStorageObject(bucket, destinationPath, fileBuffer, mimeType);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `File '${localFilePath}' successfully uploaded to '${bucket}/${res.object.name}' (${res.object.size} bytes, ETag: ${res.object.etag || "—"}).`,
+            },
+          ],
+        };
+      } catch (uploadErr: any) {
+        let diagnostic = `✗ Storage upload failed: ${uploadErr.message}`;
+        if (uploadErr.status === 403) {
+          diagnostic += `\n\n[Diagnosis]: 403 Forbidden indicates a permission or bucket scope mismatch.\n- Verify if your configured Storage Key is scoped to bucket '${bucket}' or if it has READ_ONLY permission.\n- Use 'whizan_storage_create_api_key' to create a key with permission: 'READ_WRITE' scoped to '${bucket}' or unscoped.`;
+        } else if (uploadErr.status === 401) {
+          diagnostic += `\n\n[Diagnosis]: 401 Unauthorized indicates invalid or missing storage credentials.\n- Bucket '${bucket}' is private and requires a valid 'whz_stg_live_...' key.`;
+        } else if (uploadErr.status === 404) {
+          diagnostic += `\n\n[Diagnosis]: Bucket '${bucket}' not found. Call 'whizan_storage_list_buckets' to see existing buckets, or 'whizan_storage_create_bucket' to create it.`;
+        }
+        throw new Error(diagnostic);
+      }
     }
 
     case "whizan_storage_download_object": {
@@ -1982,6 +2068,44 @@ Please gently inform the user of this situation:
           {
             type: "text",
             text: res.message || `Object '${bucket}/${objectPath}' deleted successfully.`,
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_create_api_key": {
+      const { name, permission, bucketId } = (args || {}) as any;
+      const res = await client.createStorageApiKey({ name, permission, bucketId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                message: `Storage API Key '${res.key.name}' created successfully!`,
+                keyId: res.key.id,
+                keySecret: res.key.key,
+                keyPrefix: res.key.keyPrefix,
+                permission: res.key.permission,
+                bucketId: res.key.bucketId || "ALL_BUCKETS",
+                instruction:
+                  "Inject this key secret into your application environment variables using 'whizan_set_env_vars' as WHIZAN_STORAGE_KEY or NEXT_PUBLIC_WHIZAN_STORAGE_KEY.",
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_list_api_keys": {
+      const res = await client.listStorageApiKeys();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res, null, 2),
           },
         ],
       };

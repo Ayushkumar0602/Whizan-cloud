@@ -646,6 +646,31 @@ export class WhizanClient {
     return data;
   }
 
+  async getApplicationLogs(params: {
+    targetType: "project" | "service";
+    targetId: string;
+    tail?: number;
+    timestamps?: boolean;
+  }): Promise<{ success: boolean; logs: string; containerId: string | null; error?: string }> {
+    await this.loadConfig();
+    const query = new URLSearchParams({
+      targetType: params.targetType,
+      targetId: params.targetId,
+      tail: String(params.tail || 200),
+      timestamps: params.timestamps ? "true" : "false",
+    });
+    const res = await fetch(`${this.config.apiUrl}/api/containers/logs?${query.toString()}`, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new Error(data.error || `Failed to fetch application logs: HTTP ${res.status}`);
+    }
+    return data;
+  }
+
   // ─── Edge Functions API ─────────────────────────────────────────────────────
 
   async listFunctions(): Promise<any[]> {
@@ -1139,6 +1164,43 @@ export class WhizanClient {
       throw new WhizanApiError(err.error || "Failed to get storage limits", res.status, err);
     }
     return res.json();
+  }
+
+  async createStorageApiKey(params: {
+    name: string;
+    permission?: "READ_WRITE" | "READ_ONLY";
+    bucketId?: string;
+  }): Promise<{ success: boolean; key: any }> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/keys`, {
+      method: "POST",
+      headers: this.getHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        name: params.name,
+        permission: params.permission || "READ_WRITE",
+        bucketId: params.bucketId || undefined,
+      }),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new WhizanApiError(data.message || data.error || "Failed to create Storage API Key", res.status, data);
+    }
+    return data;
+  }
+
+  async listStorageApiKeys(): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/keys`, {
+      method: "GET",
+      headers: this.getHeaders(),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new WhizanApiError(data.message || data.error || "Failed to list Storage API Keys", res.status, data);
+    }
+    return data;
   }
 }
 

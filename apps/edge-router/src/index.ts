@@ -574,7 +574,8 @@ const server = http.createServer(async (req, res) => {
     // Dynamic request → forward to SSR container
     if (containerPort) {
       req.headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] || "https";
-      req.headers["x-forwarded-host"] = req.headers["x-forwarded-host"] || req.headers.host || "";
+      const fwd = req.headers["x-forwarded-host"] || req.headers.host || "";
+      req.headers["x-forwarded-host"] = (Array.isArray(fwd) ? fwd[0] : fwd).replace(/:\d+$/, "");
       req.headers["x-forwarded-port"] = req.headers["x-forwarded-port"] || "443";
       proxy.web(req, res, { target: `http://127.0.0.1:${containerPort}` });
       return;
@@ -589,7 +590,8 @@ const server = http.createServer(async (req, res) => {
   if (type === "ssr" || type === "service") {
     if (containerPort) {
       req.headers["x-forwarded-proto"] = req.headers["x-forwarded-proto"] || "https";
-      req.headers["x-forwarded-host"] = req.headers["x-forwarded-host"] || req.headers.host || "";
+      const fwd = req.headers["x-forwarded-host"] || req.headers.host || "";
+      req.headers["x-forwarded-host"] = (Array.isArray(fwd) ? fwd[0] : fwd).replace(/:\d+$/, "");
       req.headers["x-forwarded-port"] = req.headers["x-forwarded-port"] || "443";
       proxy.web(req, res, { target: `http://127.0.0.1:${containerPort}` });
       // The proxy handles the response, so we track analytics in proxy.on('proxyRes')

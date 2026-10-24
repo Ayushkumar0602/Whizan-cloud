@@ -130,10 +130,51 @@ Once configured, just talk to your AI assistant in plain English:
   > *"Deploy my API endpoint as an edge function on Whizan."*
 * **Fix port and network issues**:
   > *"Analyze this workspace with Whizan. Check for any localhost port binding traps before deploying."*
-* **Manage Cloud Object Storage**:
-  > *"Check my Whizan storage usage quota, create a bucket named 'assets', and upload this image."*
+* **Manage Cloud Object Storage & Keys**:
+  > *"Create a private storage bucket named 'invoices', generate a READ_WRITE storage access key, and wire WHIZAN_STORAGE_KEY into my environment variables."*
+* **Live Application Runtime Logs**:
+  > *"Check the application runtime stdout/stderr logs for my project to see why it crashed or returned an error."*
 * **Check build logs**:
   > *"Check the latest Whizan build logs and make sure the server is healthy."*
+
+---
+
+## 🗄️ Cloud Object Storage Workflow for AI Agents
+
+When building applications that interact with Whizan Cloud Object Storage:
+
+1. **Inspect / Create Buckets**:
+   * Use `whizan_storage_list_buckets` to discover existing buckets.
+   * Use `whizan_storage_create_bucket` with `name` and `isPublic: false` (default private) or `true` (public CDN).
+2. **Generate Storage API Keys (`whz_stg_live_...`)**:
+   * Use `whizan_storage_create_api_key` with:
+     * `name`: Label (e.g. `"Web App Upload Key"`)
+     * `permission`: `"READ_WRITE"` (required for uploads) or `"READ_ONLY"`
+     * `bucketId`: (Optional) Restrict key strictly to a single bucket. Leave empty for all buckets.
+   * Note the returned **key ID** and **live key secret** (`whz_stg_live_...`).
+3. **Configure Application Environment**:
+   * Call `whizan_set_env_vars` to inject credentials before deployment:
+     ```env
+     WHIZAN_STORAGE_KEY=whz_stg_live_...
+     WHIZAN_API_URL=https://api.whizan.cloud
+     # For frontend client-side uploads (Next.js / Vite / Remix):
+     NEXT_PUBLIC_WHIZAN_STORAGE_KEY=whz_stg_live_...
+     ```
+4. **Troubleshoot Storage Access**:
+   * **403 FORBIDDEN**: Key permission is `READ_ONLY` or key is scoped to a different bucket. Call `whizan_storage_list_api_keys` to inspect scopes.
+   * **401 UNAUTHORIZED**: Missing `Authorization: Bearer <key>` header or `WHIZAN_STORAGE_KEY` environment variable.
+   * **502 / 503**: Application server threw an uncaught error. Call `whizan_get_application_logs` to inspect the exact container error stack trace.
+
+---
+
+## 🔍 Live Container Diagnostics & Application Logs
+
+Whizan provides dual-tier logging and interactive runtime inspection:
+
+* **Build Logs (`whizan_get_build_logs`)**: Captures npm install, Docker container synthesis, and asset compilation.
+* **Application Runtime Logs (`whizan_get_application_logs`)**: Captures live `console.log`, `stdout`, and `stderr` directly from the active or recently exited container.
+* **Interactive Container Exec (`whizan_exec_container_command`)**: Runs safe diagnostic commands inside running containers (`npx prisma migrate status`, `node -v`, `ps aux`, `df -h`).
+* **Deployment Inspection (`whizan_inspect_deployment`)**: Checks mapped ports, restart counts, memory usage, and internal service mesh routing.
 
 ---
 

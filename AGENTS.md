@@ -108,24 +108,37 @@ whizan_check_health         ◄── whizan_get_build_logs  ◄── whizan_de
      - **Edge Case: Node Maintenance & Reboot**: If the compute worker restarts or is powered off and turned back on, the runtime and router self-heal immediately. If bundles and Redis cache are empty, the runtime automatically queries the Render Control Plane (`GET /api/functions/:id/code`), recompiles the ESM bundle on-the-fly, caches it in Redis, and executes the first request with 200 OK seamlessly.
    - **Invocation Format**: Always invoke via `https://<slug>.whizan.cloud/<path>`. Verify responses using `whizan_invoke_function`.
 
-10. **Enterprise Cron & Scheduled Compute (`whizan_create_cron_job`, `whizan_list_cron_jobs`, `whizan_trigger_cron_job`, `whizan_get_cron_history`)**:
-   - **Zero-Idle Super Resource Optimization Architecture**:
-     * Built around an event-driven dynamic OS sleep loop (`< 0.01%` idle CPU), eliminating traditional 86,400 daily polling intervals.
-     * Uses Redis Sorted Sets (`cron:schedule:zset`) with Unix millisecond scores for $O(\log N)$ macro-scheduling.
-     * Awakens in `< 1ms` via Redis Pub/Sub (`cron:reschedule`) on creation or modification.
-     * Capped 64KB Circular Byte Ring Buffer prevents memory explosion / OOM crashes from verbose CLI outputs.
-     * Batch Telemetry Buffer flushes execution runs to PostgreSQL every 5 seconds, cutting database roundtrips by 98%.
-   - **Supported Target Pipelines**:
-     * `FUNCTION`: Directly invokes internal Edge Function isolates (`:9090`) in `< 3ms`.
-     * `CONTAINER_EXEC`: Interacts directly with Docker Engine socket (`/var/run/docker.sock`) to execute CLI commands inside containers (e.g. `python manage.py purge_sessions`) without requiring fake HTTP servers.
-     * `SERVICE`: Dispatches internal requests across private Docker network mesh (`http://service-<id>:port`).
-     * `WEBHOOK`: Sends signed HMAC-SHA256 HTTPS requests to external endpoints.
-   - **Disaster Recovery & Reboot Self-Healing**:
-     * If the compute node is powered off and turned back on, the scheduler automatically recovers overdue jobs and applies the configured `misfirePolicy`:
-       - `SKIP`: Discards missed runs to avoid thundering herd crashes on boot (recommended for high-frequency crons).
-       - `FIRE_LATEST_ONCE`: Fires 1 catchup execution immediately on boot (recommended for daily backups/rollups).
-       - `CATCH_UP_ALL`: Sequentially replays missed intervals with rate-limited intervals (for financial audits).
-     * If Redis in-memory state is wiped, the scheduler rehydrates from the Control Plane (`GET /api/crons/sync`) in a single atomic pass.
+11. **Cloud Object Storage Protocol (`whizan_storage_create_api_key`, `whizan_storage_list_api_keys`, `whizan_storage_create_bucket`, `whizan_storage_upload_object`)**:
+   - **Autonomous Storage Key Generation & Environment Injection**:
+     * When building or deploying applications that utilize Whizan Cloud Object Storage (e.g. file uploads, avatars, user media, invoice PDFs):
+     * **Step 1 (Bucket Provisioning)**: Call `whizan_storage_list_buckets` to inspect available buckets. If the target bucket does not exist, call `whizan_storage_create_bucket` with the desired name and visibility (`isPublic: false` for private data, `true` for public CDN assets).
+     * **Step 2 (Access Key Generation)**: Call `whizan_storage_create_api_key` with `name` (e.g. `"App Storage Key"`), `permission: "READ_WRITE"`, and optional `bucketId` scope.
+     * **Step 3 (Access Key Capture)**: Capture the returned live access key secret (`whz_stg_live_...`) and key ID (`keyId`).
+     * **Step 4 (Mandatory Environment Injection)**: Call `whizan_set_env_vars` to inject the storage credentials into the application's environment:
+       - `WHIZAN_STORAGE_KEY: "whz_stg_live_..."`
+       - `WHIZAN_API_URL: "https://api.whizan.cloud"`
+       - For frontend client-side frameworks (Next.js, Vite, Remix): also inject `NEXT_PUBLIC_WHIZAN_STORAGE_KEY` or `VITE_WHIZAN_STORAGE_KEY`.
+   - **Key Scoping & Permission Guardrails**:
+     * If a key is scoped to a specific `bucketId`, it is strictly forbidden from accessing other buckets. Any upload to an unscoped bucket will return 403 `KEY_BUCKET_SCOPE_MISMATCH`. For applications accessing multiple buckets, generate an unscoped key (`bucketId: undefined`).
+     * To permit uploads and file mutations, keys MUST have `permission: "READ_WRITE"`. `READ_ONLY` keys will reject uploads with 403 `KEY_PERMISSION_READ_ONLY`.
+   - **Diagnosis of Storage Errors (Avoiding Generic 503 Traps)**:
+     * When an upload to a private bucket fails:
+       - **401 UNAUTHORIZED**: Indicates the request is missing the `Authorization: Bearer whz_stg_live_...` header or `WHIZAN_STORAGE_KEY` is undefined in the container's runtime environment.
+       - **403 FORBIDDEN**: Indicates the key is either `READ_ONLY` or scoped to a different bucket ID. Inspect the error response's `code` and `details`.
+       - **503 / 502**: Indicates an application-level unhandled exception or container crash inside the user's web app when calling storage. Immediately call `whizan_get_application_logs` to read the exact Node/Python stack trace.
+
+12. **Zero-Downtime Blue/Green Deployments & Container Diagnostics (`whizan_get_application_logs`, `whizan_exec_container_command`, `whizan_inspect_deployment`)**:
+   - **Blue/Green Zero-Downtime Architecture**:
+     * Web projects use deterministic Blue/Green container orchestration: `app-${slug}-${shortId}`.
+     * When redeploying an existing project, the previous deployment container **continues serving live traffic** without interruption.
+     * The cloud build worker only cutovers traffic to the new container **after** it passes deep HTTP readiness checks (probing HTTP 200/301/308/404 responses, not just raw TCP socket binding).
+     * Only after the new deployment is registered with the Edge Router are legacy containers gracefully stopped with a 5-second drain window.
+   - **CSRF & Origin Matching Protocol**:
+     * Whizan's Universal Live Gateway transparently preserves the canonical public hostname (`x-forwarded-host: <slug>.whizan.cloud`, `x-forwarded-proto: https`).
+     * Modern frameworks (Next.js Server Actions, Django, Rails, SvelteKit) compare the client's `Origin` header against `X-Forwarded-Host`. Because Whizan forwards the public hostname, origin checks succeed automatically without requiring manual reverse-proxy rewrite rules.
+   - **Live Application Runtime Logs (`whizan_get_application_logs`)**:
+     * Agents MUST distinguish between **Build Logs** (`whizan_get_build_logs`, for compile/install phases) and **Application Runtime Logs** (`whizan_get_application_logs`, for live server stdout/stderr).
+     * If a web service reports `READY` but returns 500, 502, or 503 upon being visited, call `whizan_get_application_logs` with `targetType: "project" | "service"` and `targetId: "<slug-or-id>"` to inspect unhandled exceptions, database connection timeouts, and missing runtime secrets directly from the container.
 
 
 

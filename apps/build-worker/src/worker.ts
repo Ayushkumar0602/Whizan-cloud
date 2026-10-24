@@ -365,7 +365,8 @@ const worker = new Worker<BuildJob>(
           rootDir,
           imageTag,
           detectedPort,
-          slug
+          slug,
+          projectId
         );
         deploymentType = "SSR";
         await log(`✓ Web container started on host port ${containerPort}`);
@@ -438,7 +439,8 @@ const worker = new Worker<BuildJob>(
             rootDir,
             undefined,
             3000,
-            slug
+            slug,
+            projectId
           );
           await log(`✓ SSR container started on port ${containerPort}`);
         }
@@ -509,10 +511,16 @@ const worker = new Worker<BuildJob>(
 
           for (const old of oldDeployments) {
             // Stop old containers matching mount source, labels, or name prefix
+            const oldShort = old.id.slice(0, 8);
             const matches = containers.filter((c) =>
               c.Mounts?.some((m) => m.Source?.includes(old.id)) ||
               c.Labels?.["deploymentId"] === old.id ||
-              c.Names?.some((n) => n.includes(`app-${old.id.slice(0, 8)}`))
+              c.Names?.some((n) =>
+                n.includes(`app-${oldShort}`) ||
+                (slug && n.includes(`app-${slug}-${oldShort}`)) ||
+                (slug && n === `/app-${slug}`) ||
+                (slug && n === `app-${slug}`)
+              )
             );
             for (const info of matches) {
               try {
@@ -1036,16 +1044,62 @@ async function purgeAndVerifyVMResources(params: {
         return;
       }
 
-      if (payload.action === "GET_CONTAINER_LOGS") {
+      if (payload.action === "GET_CONTAINER_LOGS" || payload.action === "CONTAINER_LOGS") {
         const { exec } = await import("child_process");
         const util = await import("util");
         const execAsync = util.promisify(exec);
         try {
-          const { stdout, stderr } = await execAsync(`docker logs --tail 200 ${payload.containerId}`);
-          const logs = [stdout, stderr].filter(Boolean).join("\n").trim();
-          await redisPub.publish(payload.replyTo, logs || "Container has no logs yet.");
+          const Docker = (await import("dockerode")).default;
+          const docker = new Docker({ socketPath: "/var/run/docker.sock" });
+          const allContainers = await docker.listContainers({ all: true }).catch(() => []);
+          const tailLines = Math.min(1000, Math.max(10, parseInt(payload.tail, 10) || 200));
+          const withTimestamps = payload.timestamps ? " -t" : "";
+
+          let targetContainerId = payload.containerId;
+          if (!targetContainerId) {
+            const shortId = payload.deploymentId?.slice(0, 8);
+            const slug = payload.slug;
+            const targetId = payload.targetId;
+
+            const matched = allContainers.find((c) =>
+              (shortId && c.Names?.some((n) => n.includes(shortId))) ||
+              (slug && c.Names?.some((n) =>
+                n === `/service-${slug}` ||
+                n.startsWith(`/service-${slug}-`) ||
+                n === `/app-${slug}` ||
+                n.startsWith(`/app-${slug}-`)
+              )) ||
+              (slug && c.Labels?.["slug"] === slug) ||
+              (c.Labels?.["deploymentId"] && c.Labels["deploymentId"] === payload.deploymentId) ||
+              (targetId && (c.Labels?.["serviceId"] === targetId || c.Labels?.["projectId"] === targetId))
+            );
+            if (matched) {
+              targetContainerId = matched.Id;
+            }
+          }
+
+          if (!targetContainerId) {
+            await redisPub.publish(payload.replyTo, JSON.stringify({
+              success: false,
+              logs: `No container found on compute node for target '${payload.slug || payload.targetId || payload.deploymentId}'. It may have been cleaned up or not yet scheduled.`,
+              containerId: null,
+            }));
+            return;
+          }
+
+          const { stdout, stderr } = await execAsync(`docker logs --tail ${tailLines}${withTimestamps} ${targetContainerId}`);
+          const combined = [stdout, stderr].filter(Boolean).join("\n").trim();
+          await redisPub.publish(payload.replyTo, JSON.stringify({
+            success: true,
+            logs: combined || "Container is running with no standard output or error logs emitted yet.",
+            containerId: targetContainerId.slice(0, 12),
+          }));
         } catch (err: any) {
-          await redisPub.publish(payload.replyTo, `Failed to fetch logs: ${err.message}`);
+          await redisPub.publish(payload.replyTo, JSON.stringify({
+            success: false,
+            logs: `Failed to fetch container logs: ${err.message}`,
+            containerId: null,
+          }));
         }
         return;
       }
@@ -1176,7 +1230,13 @@ async function purgeAndVerifyVMResources(params: {
             c.State === "running" &&
             (
               (shortId && c.Names?.some((n) => n.includes(shortId))) ||
-              (slug && c.Names?.some((n) => n === `/service-${slug}` || n.startsWith(`/service-${slug}-`))) ||
+              (slug && c.Names?.some((n) =>
+                n === `/service-${slug}` ||
+                n.startsWith(`/service-${slug}-`) ||
+                n === `/app-${slug}` ||
+                n.startsWith(`/app-${slug}-`)
+              )) ||
+              (slug && c.Labels?.["slug"] === slug) ||
               (c.Labels?.["deploymentId"] && c.Labels["deploymentId"] === deploymentId) ||
               (c.Labels?.["serviceId"] && c.Labels["serviceId"] === targetId) ||
               (c.Labels?.["projectId"] && c.Labels["projectId"] === targetId)

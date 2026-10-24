@@ -30,18 +30,19 @@ export class AppRunner {
     rootDir?: string,
     customImage?: string,
     internalPort: number = 3000,
-    slug?: string
+    slug?: string,
+    projectId?: string
   ): Promise<number> {
     const shortId = deploymentId.slice(0, 8);
-    const containerName = slug ? `app-${slug}` : `app-${shortId}`;
+    // Blue/Green Zero-Downtime: Unique container name per deployment so old container remains active during startup
+    const containerName = slug ? `app-${slug}-${shortId}` : `app-${shortId}`;
     const exposedPortKey = `${internalPort}/tcp`;
 
-    // 1. Check if a container with this deterministic name already exists in Docker
+    // 1. Check if a container with this exact deployment ID already exists in Docker
     const allContainers = await docker.listContainers({ all: true }).catch(() => []);
     const existing = allContainers.find((c) =>
       c.Names?.some((n) => n === `/${containerName}` || n === containerName) ||
-      c.Labels?.["deploymentId"] === deploymentId ||
-      (slug && c.Labels?.["slug"] === slug)
+      c.Labels?.["deploymentId"] === deploymentId
     );
 
     if (existing) {
@@ -81,8 +82,9 @@ export class AppRunner {
       }
     }
 
-    // 2. Stop any remaining stale containers for this deployment
-    await this.stopApp(deploymentId, slug);
+    // Notice: We do NOT stop old deployment containers here!
+    // The previous deployment container continues serving live production traffic until
+    // this new container passes the HTTP health readiness check and registers with the edge router.
 
     const cleanRootDir = rootDir && rootDir !== "." ? rootDir.replace(/^\/+|\/+$/g, "") : "";
     const workingDir = cleanRootDir ? `/app/${cleanRootDir}` : "/app";
@@ -133,6 +135,8 @@ export class AppRunner {
       Labels: {
         deploymentId,
         slug: slug || "",
+        projectId: projectId || (envVars as any)?.WHIZAN_PROJECT_ID || "",
+        type: "project",
         managedBy: "whizan-worker",
       },
       ExposedPorts: { [exposedPortKey]: {} },
@@ -155,7 +159,7 @@ export class AppRunner {
       deploymentId,
     });
 
-    // Wait for the app to be ready (health check)
+    // Wait for the app to be fully HTTP ready before returning
     await this.waitForReady(container, port);
 
     return port;
@@ -167,19 +171,24 @@ export class AppRunner {
    */
   async stopApp(deploymentId: string, slug?: string): Promise<void> {
     const shortId = deploymentId.slice(0, 8);
-    const containerName = slug ? `app-${slug}` : `app-${shortId}`;
+    const containerName = slug ? `app-${slug}-${shortId}` : `app-${shortId}`;
     try {
       const containers = await docker.listContainers({ all: true }).catch(() => []);
       const matches = containers.filter((c: any) =>
         c.Labels?.["deploymentId"] === deploymentId ||
-        (slug && c.Labels?.["slug"] === slug) ||
-        c.Names?.some((n: string) => n === `/${containerName}` || n === containerName || n.includes(`app-${shortId}`))
+        c.Names?.some((n: string) =>
+          n === `/${containerName}` ||
+          n === containerName ||
+          n === `/app-${deploymentId}` ||
+          n === `/app-${shortId}` ||
+          (slug && n === `/app-${slug}-${shortId}`)
+        )
       );
       for (const info of matches) {
         try {
           const container = docker.getContainer(info.Id);
           if (info.State === "running" || info.State === "restarting") {
-            await container.stop({ t: 2 }).catch(() => {});
+            await container.stop({ t: 5 }).catch(() => {});
           }
           await container.remove({ force: true }).catch(() => {});
         } catch {}
@@ -204,36 +213,63 @@ export class AppRunner {
   }
 
   /**
-   * Polls the SSR container's port until it starts accepting connections.
-   * If the container crashes or exits prematurely, fails fast and extracts logs.
+   * Polls the SSR container's port until it starts accepting connections and responding to HTTP requests.
+   * If the container crashes, enters a restart loop, or exits prematurely, fails fast with full logs.
    */
   private async waitForReady(
     container: Docker.Container,
     port: number,
-    timeoutMs = 20_000
+    timeoutMs = 30_000
   ): Promise<void> {
     const start = Date.now();
+    let hasBoundTcp = false;
+
     while (Date.now() - start < timeoutMs) {
-      // Check if container died or failed to run
+      // 1. Check if container crashed or entered an on-failure restart loop
       try {
         const inspect = await container.inspect();
-        if (!inspect.State.Running && inspect.State.ExitCode !== 0) {
-          const logsBuffer = await container.logs({ stdout: true, stderr: true, tail: 20 }).catch(() => "");
-          throw new Error(`Web container exited unexpectedly with code ${inspect.State.ExitCode}: ${logsBuffer.toString()}`);
+        if (inspect.State?.Restarting) {
+          const rawLogs = await container.logs({ stdout: true, stderr: true, tail: 30 }).catch(() => "");
+          throw new Error(`Web container entered a crash-loop / restarting state: ${rawLogs.toString("utf8")}`);
+        }
+        if (!inspect.State?.Running && inspect.State?.ExitCode !== 0) {
+          const rawLogs = await container.logs({ stdout: true, stderr: true, tail: 30 }).catch(() => "");
+          throw new Error(`Web container exited unexpectedly with code ${inspect.State?.ExitCode}: ${rawLogs.toString("utf8")}`);
         }
       } catch (err: any) {
-        if (err.message?.includes("exited unexpectedly")) throw err;
+        if (err.message?.includes("exited unexpectedly") || err.message?.includes("crash-loop")) throw err;
       }
 
-      const ready = await new Promise<boolean>((resolve) => {
-        const socket = net.connect(port, "127.0.0.1");
-        socket.on("connect", () => { socket.destroy(); resolve(true); });
-        socket.on("error", () => resolve(false));
-      });
-      if (ready) return;
-      await new Promise((r) => setTimeout(r, 500));
+      // 2. First verify that TCP port is accepting socket connections
+      if (!hasBoundTcp) {
+        hasBoundTcp = await new Promise<boolean>((resolve) => {
+          const socket = net.connect(port, "127.0.0.1");
+          socket.on("connect", () => { socket.destroy(); resolve(true); });
+          socket.on("error", () => resolve(false));
+        });
+      }
+
+      // 3. Once TCP is open, perform an HTTP probe to verify Node/Next.js runtime has initialized
+      if (hasBoundTcp) {
+        try {
+          const httpRes = await fetch(`http://127.0.0.1:${port}/`, {
+            method: "HEAD",
+            headers: { "User-Agent": "Whizan-HealthCheck/1.0" },
+            signal: AbortSignal.timeout(2000),
+          }).catch(() => null);
+
+          // If the server answered with ANY HTTP response (200, 301, 302, 307, 308, 400, 404, 500),
+          // the application server is reliably reachable and finished compiling its request router!
+          if (httpRes && typeof httpRes.status === "number") {
+            console.log(`[AppRunner] Web container HTTP server confirmed ready on port ${port} (HTTP ${httpRes.status})`);
+            return;
+          }
+        } catch { }
+      }
+
+      await new Promise((r) => setTimeout(r, 600));
     }
-    throw new Error(`Web application on port ${port} did not become ready within ${timeoutMs / 1000}s`);
+    throw new Error(`Web application on port ${port} did not become HTTP ready within ${timeoutMs / 1000}s`);
   }
 
   /**

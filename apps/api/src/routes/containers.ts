@@ -53,13 +53,15 @@ export async function containerRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // 2. Verify target ownership and find active deployment
+    // 2. Verify target ownership and find active deployment (supports both UUID and slug)
     let slug = "";
     let deploymentId = "";
 
     if (targetType === "project") {
       const project = await prisma.project.findFirst({
-        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
         include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
       if (!project) return reply.code(404).send({ error: "Project not found or unauthorized." });
@@ -71,7 +73,9 @@ export async function containerRoutes(fastify: FastifyInstance) {
       deploymentId = deploy.id;
     } else {
       const service = await prisma.backendService.findFirst({
-        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
         include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
       if (!service) return reply.code(404).send({ error: "Service not found or unauthorized." });
@@ -128,6 +132,90 @@ export async function containerRoutes(fastify: FastifyInstance) {
     });
   });
 
+  // GET /api/containers/logs — Real-time stdout/stderr application logs from running/exited container
+  fastify.get("/logs", async (request, reply) => {
+    const { targetType, targetId, tail = "200", timestamps } = request.query as {
+      targetType?: string;
+      targetId?: string;
+      tail?: string;
+      timestamps?: string;
+    };
+
+    if (!targetType || !targetId) {
+      return reply.code(400).send({ error: "targetType ('project' | 'service') and targetId are required." });
+    }
+
+    const { userId, role } = request.user;
+    let slug = "";
+    let deploymentId = "";
+
+    if (targetType === "project") {
+      const project = await prisma.project.findFirst({
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
+        include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
+      });
+      if (!project) return reply.code(404).send({ error: "Project not found or unauthorized." });
+      const deploy = project.deployments[0];
+      slug = project.slug;
+      deploymentId = deploy?.id || "";
+    } else {
+      const service = await prisma.backendService.findFirst({
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
+        include: { deployments: { orderBy: { createdAt: "desc" }, take: 1 } },
+      });
+      if (!service) return reply.code(404).send({ error: "Service not found or unauthorized." });
+      const deploy = service.deployments[0];
+      slug = service.slug;
+      deploymentId = deploy?.id || "";
+    }
+
+    const replyChannel = `container:logs:reply:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`;
+    const sub = redisClient.duplicate();
+
+    return new Promise((resolve) => {
+      let timeout = setTimeout(() => {
+        sub.unsubscribe(replyChannel).catch(() => {});
+        sub.quit().catch(() => {});
+        resolve({
+          success: false,
+          logs: "Log fetch request timed out. Compute node may be offline or initializing.",
+          containerId: null,
+        });
+      }, 8000);
+
+      sub.subscribe(replyChannel, () => {
+        const payload = signAdminPayload({
+          action: "CONTAINER_LOGS",
+          targetType,
+          targetId,
+          deploymentId,
+          slug,
+          tail,
+          timestamps: timestamps === "true",
+          replyTo: replyChannel,
+        });
+        redisClient.publish("admin:commands", JSON.stringify(payload));
+      });
+
+      sub.on("message", (channel, message) => {
+        if (channel === replyChannel) {
+          clearTimeout(timeout);
+          sub.unsubscribe(replyChannel).catch(() => {});
+          sub.quit().catch(() => {});
+          try {
+            resolve(JSON.parse(message));
+          } catch {
+            resolve({ success: true, logs: message, containerId: null });
+          }
+        }
+      });
+    });
+  });
+
   // GET /api/containers/inspect — Inspect runtime deployment and container info
   fastify.get("/inspect", async (request, reply) => {
     const { targetType, targetId } = request.query as { targetType?: string; targetId?: string };
@@ -142,7 +230,9 @@ export async function containerRoutes(fastify: FastifyInstance) {
 
     if (targetType === "project") {
       const project = await prisma.project.findFirst({
-        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
         include: {
           deployments: { orderBy: { createdAt: "desc" }, take: 1 },
           envVariables: { select: { key: true } },
@@ -165,7 +255,9 @@ export async function containerRoutes(fastify: FastifyInstance) {
       };
     } else {
       const service = await prisma.backendService.findFirst({
-        where: role === "ADMIN" ? { id: targetId } : { id: targetId, userId },
+        where: role === "ADMIN"
+          ? { OR: [{ id: targetId }, { slug: targetId }] }
+          : { userId, OR: [{ id: targetId }, { slug: targetId }] },
         include: {
           deployments: { orderBy: { createdAt: "desc" }, take: 1 },
           envVariables: { select: { key: true } },

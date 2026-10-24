@@ -62,15 +62,23 @@ export const liveGatewayRoutes: FastifyPluginAsync = async (fastify) => {
     // 3. Reverse Proxy for API clients or explicit proxy requests
     try {
       const upstreamUrl = targetUrl + (request.url.includes("?") ? `?${request.url.split("?")[1]}` : "");
+      const outgoingHeaders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(request.headers)) {
+        if (typeof v === "string" && !["host", "connection", "content-length"].includes(k.toLowerCase())) {
+          outgoingHeaders[k] = v;
+        }
+      }
+      // Critical Origin & Host Alignment: Downstream app containers verify Origin against Host / X-Forwarded-Host
+      outgoingHeaders["host"] = targetHost;
+      outgoingHeaders["x-forwarded-host"] = targetHost;
+      outgoingHeaders["x-forwarded-proto"] = targetProto;
+      outgoingHeaders["x-forwarded-port"] = targetProto === "https" ? "443" : "80";
+      outgoingHeaders["x-whizan-gateway"] = "render-control-plane";
+      outgoingHeaders["x-whizan-client-host"] = request.headers.host || "";
+
       const upstreamRes = await fetch(upstreamUrl, {
         method: request.method,
-        headers: {
-          ...request.headers,
-          host: targetHost,
-          "x-forwarded-host": request.headers.host || "",
-          "x-forwarded-proto": "https",
-          "x-whizan-gateway": "render-control-plane",
-        },
+        headers: outgoingHeaders,
         body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
         redirect: "manual",
       });
