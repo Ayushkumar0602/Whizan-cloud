@@ -3,7 +3,7 @@
 import "dotenv/config";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createClient, WhizanStorageClient, StorageBucketApi } from "../../../../packages/storage-js/dist/index.js";
+import { createClient, WhizanStorageClient, StorageBucketApi } from "../../../../packages/storage-js/src/index.js";
 
 describe("Whizan Cloud Storage — Client SDK (@whizan/storage-js)", () => {
   it("Instantiates client and configures bucket APIs", () => {
