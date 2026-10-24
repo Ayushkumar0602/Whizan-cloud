@@ -290,7 +290,7 @@ export default function StorageDashboardPage() {
         const baseOrigin = process.env.NEXT_PUBLIC_STORAGE_URL 
           ? process.env.NEXT_PUBLIC_STORAGE_URL 
           : (isStorageDomain ? "https://api.whizan.cloud" : window.location.origin);
-        const publicUrl = `${baseOrigin}/api/storage/v1/public/${encodeURIComponent(selectedBucket.name)}/${encodedPath}`;
+        const publicUrl = `${baseOrigin}/public/${encodeURIComponent(selectedBucket.name)}/${encodedPath}`;
         await navigator.clipboard.writeText(publicUrl);
         setCopiedKey(obj.id);
         toast.success("Public URL copied to clipboard");
