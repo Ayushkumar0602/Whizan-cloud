@@ -101,6 +101,19 @@ await app.register(fastifyCors, {
   credentials: true,
 });
 
+// Enforce HTTP Strict Transport Security (HSTS) and core security headers
+app.addHook("onSend", async (request, reply) => {
+  reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("X-Frame-Options", "DENY");
+});
+
+// RFC 9116 Vulnerability Disclosure endpoint
+app.get("/.well-known/security.txt", async (request, reply) => {
+  reply.type("text/plain; charset=utf-8");
+  return `Contact: mailto:security@whizan.cloud\nExpires: 2027-12-31T23:59:59.000Z\nPreferred-Languages: en\nCanonical: https://api.whizan.cloud/.well-known/security.txt\nPolicy: https://whizan.cloud/contact\n`;
+});
+
 import crypto from "crypto";
 
 await app.register(fastifyCookie, {
