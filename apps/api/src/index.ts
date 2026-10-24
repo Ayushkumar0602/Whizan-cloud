@@ -106,6 +106,8 @@ app.addHook("onSend", async (request, reply) => {
   reply.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   reply.header("X-Content-Type-Options", "nosniff");
   reply.header("X-Frame-Options", "DENY");
+  reply.header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()");
+  reply.header("Cross-Origin-Resource-Policy", "cross-origin");
 });
 
 // RFC 9116 Vulnerability Disclosure endpoint

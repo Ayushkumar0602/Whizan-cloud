@@ -41,8 +41,203 @@ interface OtpRecord {
 }
 const otpMemoryStore = new Map<string, OtpRecord>();
 
+// Cooldown and rate limits for OTP generation (email flooding defense)
+const OTP_SEND_COOLDOWN_SEC = 60; // 60s cooldown per email / IP
+const OTP_SEND_HOURLY_LIMIT = 5;  // Max 5 OTPs per hour per email
+const MAX_OTP_ATTEMPTS = 5;       // Burn code after 5 failed attempts
+
+const otpSendCooldownStore = new Map<string, number>();
+const otpSendHourlyStore = new Map<string, { count: number; resetAt: number }>();
+
 function generateNumericOtp(): string {
   return String(crypto.randomInt(100000, 999999));
+}
+
+export interface VerifyOtpResult {
+  valid: boolean;
+  error?: string;
+  code?: string;
+  remainingAttempts?: number;
+}
+
+export async function checkSendOtpRateLimit(
+  email: string,
+  clientIp: string
+): Promise<{ allowed: boolean; retryAfter?: number; error?: string }> {
+  const now = Date.now();
+  const emailCooldownKey = `otp:cooldown:email:${email}`;
+  const ipCooldownKey = `otp:cooldown:ip:${clientIp}`;
+  const emailHourlyKey = `otp:hourly:email:${email}`;
+
+  // 1. Check 60-second cooldown
+  let isCoolingDown = false;
+  let remainingSeconds = OTP_SEND_COOLDOWN_SEC;
+
+  try {
+    const ttlEmail = await redisClient.ttl(emailCooldownKey);
+    const ttlIp = await redisClient.ttl(ipCooldownKey);
+    const maxTtl = Math.max(ttlEmail, ttlIp);
+    if (maxTtl > 0) {
+      isCoolingDown = true;
+      remainingSeconds = maxTtl;
+    }
+  } catch {
+    const lastSentEmail = otpSendCooldownStore.get(email) || 0;
+    const lastSentIp = otpSendCooldownStore.get(clientIp) || 0;
+    const lastSent = Math.max(lastSentEmail, lastSentIp);
+    if (now - lastSent < OTP_SEND_COOLDOWN_SEC * 1000) {
+      isCoolingDown = true;
+      remainingSeconds = Math.ceil((OTP_SEND_COOLDOWN_SEC * 1000 - (now - lastSent)) / 1000);
+    }
+  }
+
+  if (isCoolingDown) {
+    return {
+      allowed: false,
+      retryAfter: remainingSeconds,
+      error: `Please wait ${remainingSeconds} second(s) before requesting another verification code.`,
+    };
+  }
+
+  // 2. Check Hourly Limit: Max 5 per hour
+  let hourlyCount = 0;
+  try {
+    hourlyCount = await redisClient.incr(emailHourlyKey);
+    if (hourlyCount === 1) {
+      await redisClient.expire(emailHourlyKey, 3600);
+    }
+  } catch {
+    const memRate = otpSendHourlyStore.get(email);
+    if (memRate && now < memRate.resetAt) {
+      memRate.count += 1;
+      hourlyCount = memRate.count;
+    } else {
+      otpSendHourlyStore.set(email, { count: 1, resetAt: now + 3600_000 });
+      hourlyCount = 1;
+    }
+  }
+
+  if (hourlyCount > OTP_SEND_HOURLY_LIMIT) {
+    return {
+      allowed: false,
+      retryAfter: 3600,
+      error: "Hourly verification limit exceeded for this email address. Please wait an hour before requesting a new code.",
+    };
+  }
+
+  return { allowed: true };
+}
+
+export async function recordOtpSent(email: string, clientIp: string) {
+  const now = Date.now();
+  try {
+    await redisClient.set(`otp:cooldown:email:${email}`, "1", "EX", OTP_SEND_COOLDOWN_SEC);
+    await redisClient.set(`otp:cooldown:ip:${clientIp}`, "1", "EX", OTP_SEND_COOLDOWN_SEC);
+  } catch {}
+  otpSendCooldownStore.set(email, now);
+  otpSendCooldownStore.set(clientIp, now);
+}
+
+export async function verifyOtpWithLockout(
+  email: string,
+  passcode: string,
+  consumeOnSuccess: boolean = false
+): Promise<VerifyOtpResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const attemptsKey = `otp:attempts:${normalizedEmail}`;
+  const entry = otpMemoryStore.get(normalizedEmail);
+
+  let attempts = 0;
+  try {
+    const rawCount = await redisClient.get(attemptsKey);
+    if (rawCount) attempts = parseInt(rawCount, 10);
+  } catch {
+    attempts = entry?.attempts || 0;
+  }
+
+  if (attempts >= MAX_OTP_ATTEMPTS) {
+    // Burn OTP immediately to eliminate brute-force attack
+    otpMemoryStore.delete(normalizedEmail);
+    try {
+      await redisClient.del(`otp:${normalizedEmail}`);
+      await redisClient.del(attemptsKey);
+    } catch {}
+    return {
+      valid: false,
+      error: "Too many incorrect attempts. This verification code has been invalidated for security. Please request a new code.",
+      code: "OTP_MAX_ATTEMPTS_EXCEEDED",
+      remainingAttempts: 0,
+    };
+  }
+
+  let storedCode = entry?.code;
+  let isExpired = entry ? entry.expiresAt < Date.now() : true;
+
+  if (!storedCode) {
+    try {
+      const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
+      if (redisCode) {
+        storedCode = redisCode;
+        isExpired = false;
+      }
+    } catch {}
+  }
+
+  if (!storedCode || isExpired) {
+    return {
+      valid: false,
+      error: "Verification code expired or not found. Please request a new code.",
+      code: "OTP_EXPIRED",
+    };
+  }
+
+  if (storedCode.trim() !== passcode.trim()) {
+    attempts += 1;
+    if (entry) entry.attempts = attempts;
+    try {
+      await redisClient.incr(attemptsKey);
+      await redisClient.expire(attemptsKey, 900); // 15 min TTL
+    } catch {}
+
+    if (attempts >= MAX_OTP_ATTEMPTS) {
+      otpMemoryStore.delete(normalizedEmail);
+      try {
+        await redisClient.del(`otp:${normalizedEmail}`);
+        await redisClient.del(attemptsKey);
+      } catch {}
+      return {
+        valid: false,
+        error: "Too many incorrect attempts. This verification code has been invalidated for security. Please request a new code.",
+        code: "OTP_MAX_ATTEMPTS_EXCEEDED",
+        remainingAttempts: 0,
+      };
+    }
+
+    const remaining = MAX_OTP_ATTEMPTS - attempts;
+    return {
+      valid: false,
+      error: `Invalid verification code. You have ${remaining} attempt(s) remaining.`,
+      code: "INVALID_OTP",
+      remainingAttempts: remaining,
+    };
+  }
+
+  // Passcode matched!
+  if (consumeOnSuccess) {
+    otpMemoryStore.delete(normalizedEmail);
+    try {
+      await redisClient.del(`otp:${normalizedEmail}`);
+      await redisClient.del(attemptsKey);
+    } catch {}
+  } else {
+    // Validated, reset attempt counter so subsequent consumption in registration/login succeeds
+    try {
+      await redisClient.del(attemptsKey);
+    } catch {}
+    if (entry) entry.attempts = 0;
+  }
+
+  return { valid: true };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -106,12 +301,30 @@ async function issueTokens(
 
 export async function authRoutes(fastify: FastifyInstance) {
   // POST /api/auth/send-otp — Sends a 6-digit OTP via EmailJS
+  // POST /api/auth/send-otp — Sends a 6-digit OTP via EmailJS with flood prevention
   fastify.post("/send-otp", async (request, reply) => {
     const body = SendOtpSchema.safeParse(request.body);
     if (!body.success) {
       return reply.code(400).send({ error: "Invalid email format" });
     }
     const email = body.data.email.trim().toLowerCase();
+
+    const xForwardedFor = request.headers["x-forwarded-for"];
+    const cfConnectingIp = request.headers["cf-connecting-ip"];
+    const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+
+    // ── Email Flooding Defense: 60s cooldown & max 5 OTPs/hour ──────────
+    const rateCheck = await checkSendOtpRateLimit(email, clientIp);
+    if (!rateCheck.allowed) {
+      if (rateCheck.retryAfter) {
+        reply.header("Retry-After", String(rateCheck.retryAfter));
+      }
+      return reply.code(429).send({
+        error: rateCheck.error,
+        code: "RATE_LIMIT_EXCEEDED",
+        retryAfter: rateCheck.retryAfter,
+      });
+    }
 
     // Check if account already exists
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -125,11 +338,9 @@ export async function authRoutes(fastify: FastifyInstance) {
 
     try {
       await redisClient.setex(`otp:${email}`, 900, code);
+      await redisClient.del(`otp:attempts:${email}`); // Reset attempts counter on new OTP
     } catch {}
 
-    const xForwardedFor = request.headers["x-forwarded-for"];
-    const cfConnectingIp = request.headers["cf-connecting-ip"];
-    const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
     const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
     const country = (request.headers["cf-ipcountry"] as string) || "Global";
     const requestTime = new Date().toUTCString();
@@ -151,6 +362,8 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(500).send({ error: sendRes.error || "Failed to dispatch verification email." });
     }
 
+    await recordOtpSent(email, clientIp);
+
     return reply.send({
       ok: true,
       message: "Verification code sent to email",
@@ -158,7 +371,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     });
   });
 
-  // POST /api/auth/verify-otp — Verifies the 6-digit OTP
+  // POST /api/auth/verify-otp — Verifies the 6-digit OTP with brute-force lockout
   fastify.post("/verify-otp", async (request, reply) => {
     const body = VerifyOtpSchema.safeParse(request.body);
     if (!body.success) {
@@ -169,28 +382,14 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!email) {
       return reply.code(400).send({ error: "Email is required for OTP verification." });
     }
-    const normalizedEmail = email.trim().toLowerCase();
 
-    const entry = otpMemoryStore.get(normalizedEmail);
-    let storedCode = entry?.code;
-    let isExpired = entry ? entry.expiresAt < Date.now() : true;
-
-    if (!storedCode) {
-      try {
-        const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
-        if (redisCode) {
-          storedCode = redisCode;
-          isExpired = false;
-        }
-      } catch {}
-    }
-
-    if (!storedCode || isExpired) {
-      return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
-    }
-
-    if (storedCode !== passcode.trim()) {
-      return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
+    const result = await verifyOtpWithLockout(email, passcode, false);
+    if (!result.valid) {
+      return reply.code(400).send({
+        error: result.error,
+        code: result.code,
+        remainingAttempts: result.remainingAttempts,
+      });
     }
 
     return reply.send({ ok: true, verified: true });
@@ -205,35 +404,16 @@ export async function authRoutes(fastify: FastifyInstance) {
     const { email, password, name, passcode } = body.data;
     const normalizedEmail = email.trim().toLowerCase();
 
-    // If passcode is provided, strictly verify OTP before account creation
+    // If passcode is provided, strictly verify and consume OTP before account creation
     if (passcode) {
-      const entry = otpMemoryStore.get(normalizedEmail);
-      let storedCode = entry?.code;
-      let isExpired = entry ? entry.expiresAt < Date.now() : true;
-
-      if (!storedCode) {
-        try {
-          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
-          if (redisCode) {
-            storedCode = redisCode;
-            isExpired = false;
-          }
-        } catch {}
+      const result = await verifyOtpWithLockout(normalizedEmail, passcode, true);
+      if (!result.valid) {
+        return reply.code(400).send({
+          error: result.error,
+          code: result.code,
+          remainingAttempts: result.remainingAttempts,
+        });
       }
-
-      if (!storedCode || isExpired) {
-        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
-      }
-
-      if (storedCode !== passcode.trim()) {
-        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
-      }
-
-      // Consume OTP
-      otpMemoryStore.delete(normalizedEmail);
-      try {
-        await redisClient.del(`otp:${normalizedEmail}`);
-      } catch {}
     }
 
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -287,33 +467,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: "Invalid credentials" });
 
     if (passcode) {
-      const entry = otpMemoryStore.get(normalizedEmail);
-      let storedCode = entry?.code;
-      let isExpired = entry ? entry.expiresAt < Date.now() : true;
-
-      if (!storedCode) {
-        try {
-          const redisCode = await redisClient.get(`otp:${normalizedEmail}`);
-          if (redisCode) {
-            storedCode = redisCode;
-            isExpired = false;
-          }
-        } catch {}
+      const result = await verifyOtpWithLockout(normalizedEmail, passcode, true);
+      if (!result.valid) {
+        return reply.code(400).send({
+          error: result.error,
+          code: result.code,
+          remainingAttempts: result.remainingAttempts,
+        });
       }
-
-      if (!storedCode || isExpired) {
-        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
-      }
-
-      if (storedCode.trim() !== passcode.trim()) {
-        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
-      }
-
-      // Consume OTP
-      otpMemoryStore.delete(normalizedEmail);
-      try {
-        await redisClient.del(`otp:${normalizedEmail}`);
-      } catch {}
     } else if (password) {
       if (!user.passwordHash) {
         return reply.code(401).send({ error: "Please sign in using One-Time Email OTP." });
@@ -458,7 +619,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     }
   );
 
-  // POST /api/auth/send-verification-otp — Dispatches OTP for in-dashboard email verification
+  // POST /api/auth/send-verification-otp — Dispatches OTP for in-dashboard email verification with flood prevention
   fastify.post(
     "/send-verification-otp",
     { preHandler: [fastify.authenticate] },
@@ -470,16 +631,31 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.send({ ok: true, alreadyVerified: true, message: "Email is already verified." });
       }
 
+      const xForwardedFor = request.headers["x-forwarded-for"];
+      const cfConnectingIp = request.headers["cf-connecting-ip"];
+      const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+
+      // ── Email Flooding Defense: 60s cooldown & max 5 OTPs/hour ──────────
+      const rateCheck = await checkSendOtpRateLimit(email.toLowerCase(), clientIp);
+      if (!rateCheck.allowed) {
+        if (rateCheck.retryAfter) {
+          reply.header("Retry-After", String(rateCheck.retryAfter));
+        }
+        return reply.code(429).send({
+          error: rateCheck.error,
+          code: "RATE_LIMIT_EXCEEDED",
+          retryAfter: rateCheck.retryAfter,
+        });
+      }
+
       const code = generateNumericOtp();
       const expiresAt = Date.now() + 15 * 60 * 1000;
       otpMemoryStore.set(email.toLowerCase(), { code, expiresAt, attempts: 0 });
       try {
         await redisClient.setex(`otp:${email.toLowerCase()}`, 900, code);
+        await redisClient.del(`otp:attempts:${email.toLowerCase()}`);
       } catch {}
 
-      const xForwardedFor = request.headers["x-forwarded-for"];
-      const cfConnectingIp = request.headers["cf-connecting-ip"];
-      const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
       const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
       const country = (request.headers["cf-ipcountry"] as string) || "Global";
       const requestTime = new Date().toUTCString();
@@ -501,6 +677,8 @@ export async function authRoutes(fastify: FastifyInstance) {
         return reply.code(500).send({ error: sendRes.error || "Failed to dispatch verification email." });
       }
 
+      await recordOtpSent(email.toLowerCase(), clientIp);
+
       return reply.send({ ok: true, message: "Verification OTP dispatched to email", expiresIn: 900 });
     }
   );
@@ -518,33 +696,14 @@ export async function authRoutes(fastify: FastifyInstance) {
       const { userId, email } = request.user;
       const targetEmail = (body.data.email || email || "").trim().toLowerCase();
 
-      const entry = otpMemoryStore.get(targetEmail);
-      let storedCode = entry?.code;
-      let isExpired = entry ? entry.expiresAt < Date.now() : true;
-
-      if (!storedCode) {
-        try {
-          const redisCode = await redisClient.get(`otp:${targetEmail}`);
-          if (redisCode) {
-            storedCode = redisCode;
-            isExpired = false;
-          }
-        } catch {}
+      const result = await verifyOtpWithLockout(targetEmail, passcode, true);
+      if (!result.valid) {
+        return reply.code(400).send({
+          error: result.error,
+          code: result.code,
+          remainingAttempts: result.remainingAttempts,
+        });
       }
-
-      if (!storedCode || isExpired) {
-        return reply.code(400).send({ error: "Verification code expired. Please request a new code." });
-      }
-
-      if (storedCode !== passcode.trim()) {
-        return reply.code(400).send({ error: "Invalid verification code. Please check your email." });
-      }
-
-      // Consume OTP
-      otpMemoryStore.delete(targetEmail);
-      try {
-        await redisClient.del(`otp:${targetEmail}`);
-      } catch {}
 
       // Mark email as verified in DB
       const updated = await prisma.user.update({

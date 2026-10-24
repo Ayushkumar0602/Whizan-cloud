@@ -147,6 +147,71 @@ function serializeBigInt(obj: any): any {
   return obj;
 }
 
+// ── Stored XSS & MIME Confusion Mitigation Helper ────────────────────────────
+export function applyStorageSecurityHeaders(
+  reply: FastifyReply,
+  options: {
+    contentType?: string | null;
+    contentDisposition?: string | null;
+    objectName?: string | null;
+    corsOrigins?: string[];
+    requestOrigin?: string;
+    corsMaxAge?: number;
+  }
+) {
+  const { contentType, contentDisposition, objectName, corsOrigins, requestOrigin, corsMaxAge } = options;
+
+  // 1. Strict anti-MIME sniffing
+  reply.header("X-Content-Type-Options", "nosniff");
+
+  // 2. CORS headers
+  if (corsOrigins) {
+    const allowOrigin = corsOrigins.includes("*")
+      ? "*"
+      : (requestOrigin && corsOrigins.includes(requestOrigin))
+      ? requestOrigin
+      : corsOrigins[0] || "*";
+    reply.header("Access-Control-Allow-Origin", allowOrigin);
+    reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    reply.header("Access-Control-Max-Age", String(corsMaxAge || 3600));
+  }
+
+  // 3. Stored XSS Mitigation: Sandbox active script execution for active document types
+  const lowerMime = (contentType || "").toLowerCase();
+  const filename = (objectName || "download").split("/").pop() || "download";
+  const safeFilename = filename.replace(/["\r\n\\]/g, "_");
+
+  const isScriptOrMarkup =
+    lowerMime.includes("html") ||
+    lowerMime.includes("javascript") ||
+    lowerMime.includes("ecmascript") ||
+    lowerMime.includes("svg") ||
+    lowerMime.includes("xml") ||
+    lowerMime.includes("xhtml") ||
+    lowerMime.includes("flash") ||
+    lowerMime.includes("shockwave");
+
+  if (isScriptOrMarkup) {
+    // Sandbox active scripts so they cannot access cookies, localStorage, or domain origins
+    reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+
+    // Force attachment download for HTML, SVG, and JavaScript to prevent phishing & XSS execution
+    if (lowerMime.includes("html") || lowerMime.includes("javascript") || lowerMime.includes("svg")) {
+      reply.header(
+        "Content-Disposition",
+        contentDisposition && contentDisposition.includes("attachment")
+          ? contentDisposition
+          : `attachment; filename="${safeFilename}"`
+      );
+      return;
+    }
+  }
+
+  if (contentDisposition) {
+    reply.header("Content-Disposition", contentDisposition);
+  }
+}
+
 export async function storageRoutes(fastify: FastifyInstance) {
   // ── Error handler for storage domain errors ────────────────────────────────
   const handleError = (error: any, reply: FastifyReply) => {
@@ -192,43 +257,19 @@ export async function storageRoutes(fastify: FastifyInstance) {
       }
 
       // Security headers against Stored XSS and MIME confusion attacks
-      reply.header("X-Content-Type-Options", "nosniff");
-      const reqOrigin = request.headers.origin as string;
-      const bucketOrigins = (object as any).bucket?.corsOrigins || ["*"];
-      const allowOrigin = bucketOrigins.includes("*")
-        ? "*"
-        : (reqOrigin && bucketOrigins.includes(reqOrigin))
-        ? reqOrigin
-        : bucketOrigins[0] || "*";
-      reply.header("Access-Control-Allow-Origin", allowOrigin);
-      reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-      reply.header("Access-Control-Max-Age", String((object as any).bucket?.corsMaxAge || 3600));
-
-      // Sandbox active browser execution for HTML, SVG, and XML files in public storage
-      const lowerMime = (contentType || "").toLowerCase();
-      if (
-        lowerMime.includes("html") ||
-        lowerMime.includes("svg") ||
-        lowerMime.includes("xml") ||
-        lowerMime.includes("javascript")
-      ) {
-        reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-        if (lowerMime.includes("html")) {
-          // Force download for raw HTML to prevent phishing / cookie-theft under storage domain
-          reply.header(
-            "Content-Disposition",
-            contentDisposition || `attachment; filename="${object.name.split("/").pop() || "download"}"`
-          );
-        }
-      }
+      applyStorageSecurityHeaders(reply, {
+        contentType,
+        contentDisposition,
+        objectName: object.name,
+        corsOrigins: (object as any).bucket?.corsOrigins || ["*"],
+        requestOrigin: request.headers.origin as string,
+        corsMaxAge: (object as any).bucket?.corsMaxAge || 3600,
+      });
 
       reply.header("Content-Type", contentType);
       if (contentLength) reply.header("Content-Length", contentLength);
       if (etag) reply.header("ETag", `"${etag}"`);
       reply.header("Cache-Control", cacheControl || "public, max-age=3600, s-maxage=86400");
-      if (contentDisposition && !lowerMime.includes("html")) {
-        reply.header("Content-Disposition", contentDisposition);
-      }
 
       return reply.send(stream);
     } catch (err) {
@@ -1097,11 +1138,16 @@ export async function storageRoutes(fastify: FastifyInstance) {
           objectPath: query.path,
         });
 
+      applyStorageSecurityHeaders(reply, {
+        contentType,
+        contentDisposition,
+        objectName: query.path,
+      });
+
       reply.header("Content-Type", contentType);
       if (contentLength) reply.header("Content-Length", contentLength);
       if (etag) reply.header("ETag", `"${etag}"`);
       if (cacheControl) reply.header("Cache-Control", cacheControl);
-      if (contentDisposition) reply.header("Content-Disposition", contentDisposition);
 
       return reply.send(stream);
     } catch (err) {
@@ -1539,12 +1585,17 @@ export async function storageRoutes(fastify: FastifyInstance) {
         key,
       });
 
+      applyStorageSecurityHeaders(reply, {
+        contentType: res.contentType,
+        contentDisposition: res.contentDisposition,
+        objectName: key,
+      });
+
       if (res.etag) reply.header("ETag", res.etag);
       if (res.contentType) reply.header("Content-Type", res.contentType);
       if (res.contentLength !== undefined) reply.header("Content-Length", res.contentLength.toString());
       if (res.lastModified) reply.header("Last-Modified", res.lastModified.toUTCString());
       if (res.cacheControl) reply.header("Cache-Control", res.cacheControl);
-      if (res.contentDisposition) reply.header("Content-Disposition", res.contentDisposition);
 
       return reply.code(200).send();
     } catch (err) {
@@ -1565,11 +1616,16 @@ export async function storageRoutes(fastify: FastifyInstance) {
         key,
       });
 
+      applyStorageSecurityHeaders(reply, {
+        contentType: res.contentType,
+        contentDisposition: res.contentDisposition,
+        objectName: key,
+      });
+
       if (res.etag) reply.header("ETag", res.etag);
       if (res.contentType) reply.header("Content-Type", res.contentType);
       if (res.contentLength !== undefined) reply.header("Content-Length", res.contentLength.toString());
       if (res.cacheControl) reply.header("Cache-Control", res.cacheControl);
-      if (res.contentDisposition) reply.header("Content-Disposition", res.contentDisposition);
 
       return reply.send(res.stream);
     } catch (err) {

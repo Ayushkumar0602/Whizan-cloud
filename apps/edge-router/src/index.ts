@@ -244,6 +244,8 @@ const server = http.createServer(async (req, res) => {
   // ── Baseline Edge Security Headers ──────────────────────────────────────────
   res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
 
   // ── Top-level Router Health & Ping ───────────────────────────────────────
   if (req.url === "/health" || req.url === "/ping" || req.url === "/_internal/health") {
