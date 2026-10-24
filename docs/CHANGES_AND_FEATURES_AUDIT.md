@@ -187,3 +187,44 @@ sudo pm2 status
 - **Distributed Redis Sync**: Sub-second synchronization across all edge router instances via Redis Pub/Sub (`waf:alert`, `waf:unjail`).
 - **Full Architectural Documentation**: See [waf_ddos_rate_limiting_architecture.md](file:///Users/ayushjaiswal/Desktop/Hosting%20copy/docs/waf_ddos_rate_limiting_architecture.md) for the complete design and 10-scenario regression test specification.
 
+---
+
+## 8. Zero-Downtime Blue/Green Redeployments, Origin Forwarding & Storage Diagnostics
+
+> **Engineering Cycle:** October 24–25, 2026
+
+### 1. Zero-Downtime Blue/Green Container Architecture (`apps/build-worker/src/app-runner.ts`)
+* **Problem**: Container naming was previously hardcoded to `app-${slug}`. When redeploying an existing project, `startApp()` stopped and removed the old container *before* creating and starting the new container. This caused an unserved downtime gap during build and container compilation.
+* **Resolution**:
+  - Implemented Blue/Green unique container naming: `app-${slug}-${shortId}`.
+  - Eliminated the pre-emptive `stopApp()` call in `startApp()`. The existing deployment container remains online and actively serves production traffic throughout the entire build and initialization phase.
+  - Decommissioning of legacy containers is now strictly deferred to Step 9 in `worker.ts`, executing gracefully (`docker.stop({ t: 5 })`) only after the new container passes health readiness and registers with the Edge Router.
+
+### 2. Deep HTTP Readiness Health Probe & Crash-Loop Detection
+* **Problem**: `waitForReady()` previously performed only a raw TCP socket test (`net.connect(port)`). Node/Next.js binds TCP ports in milliseconds before loading chunks or running database connections. Containers that failed during startup were prematurely marked `READY`, causing the Edge Router and Live Gateway to return `202 ALLOCATING_RESOURCES` while the container restarted.
+* **Resolution**:
+  - Upgraded `waitForReady()` to actively inspect Docker state for `State.Restarting` (crash loops) and unexpected exits, immediately extracting container stdout/stderr.
+  - Added real HTTP readiness probing (`fetch("http://127.0.0.1:${port}/")` with a 30s timeout). The deployment is only marked `READY` once the HTTP server answers with a valid HTTP status code.
+
+### 3. Canonical Hostname & Origin Forwarding (CSRF 403 Resolution)
+* **Problem**: In `apps/api/src/routes/live-gateway.ts`, `x-forwarded-host` was forwarded as `api.whizan.cloud` instead of the public project host (`${slug}.${baseDomain}`). Next.js App Router Server Actions and web framework CSRF checks compared `Origin: https://${slug}.whizan.cloud` against `x-forwarded-host: api.whizan.cloud` and rejected requests with `403 Forbidden`.
+* **Resolution**:
+  - Updated `live-gateway.ts` to forward `x-forwarded-host: targetHost` (`${slug}.${baseDomain}`) and `x-forwarded-proto: https`.
+  - Updated `apps/edge-router/src/index.ts` to normalize `x-forwarded-host` and strip port numbers, guaranteeing consistent origin alignment.
+
+### 4. Storage Key Management & Diagnostics (Generic 503 Elimination)
+* **Problem**: When applications uploaded to private buckets with invalid or mis-scoped keys, unhandled exceptions caused the container to exit, surfacing on the router as a generic `503 Service Unavailable`. Agents had no MCP tools to inspect or generate dedicated storage keys.
+* **Resolution**:
+  - Added `whizan_storage_create_api_key`: Generates dedicated `whz_stg_live_...` keys with `READ_WRITE` or `READ_ONLY` permissions and optional bucket scoping. Returns the live key secret and key ID.
+  - Added `whizan_storage_list_api_keys`: Lists all storage keys, permissions, and bucket scopes.
+  - Added detailed diagnostic error responses in `apps/api/src/routes/storage.ts` (`KEY_BUCKET_SCOPE_MISMATCH`, `KEY_PERMISSION_READ_ONLY`, `STORAGE_AUTH_REQUIRED`).
+  - Added actionable error diagnostics in MCP `whizan_storage_upload_object` catching 401, 403, and 404 with step-by-step remediation guidance.
+
+### 5. Live Container Application Logs (`whizan_get_application_logs`)
+* **Problem**: Agents only had `whizan_get_build_logs` (compile-time logs). There was no way to retrieve live stdout/stderr application logs to debug runtime exceptions, database timeouts, or container crashes.
+* **Resolution**:
+  - Added `whizan_get_application_logs` to `@whizan/mcp-devops`.
+  - Added `GET /api/containers/logs` to `apps/api/src/routes/containers.ts`.
+  - Enhanced container resolution in `worker.ts` and `containers.ts` to support both UUIDs and slugs for projects and backend services.
+
+

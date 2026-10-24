@@ -131,8 +131,10 @@ const DOCS_DATA: Record<string, DocService> = {
       { key: "Custom Domain", desc: "Custom apex or subdomain (e.g. app.mycompany.com) with automatic HTTPS", defaultVal: "Optional" }
     ],
     proTips: [
-      "For Next.js App Router applications with dynamic routes, ensure your project uses standard Next.js standalone server mode.",
-      "Store client-accessible environment variables with standard prefixes (e.g. NEXT_PUBLIC_ or VITE_).",
+      "Zero-Downtime Blue/Green Deployments: Every redeployment launches side-by-side (`app-${slug}-${shortId}`). The existing container continues serving live traffic until the new container passes deep HTTP readiness checks.",
+      "Origin & CSRF Match: Whizan's Edge Router and Live Gateway automatically forward the canonical public hostname (`x-forwarded-host: <slug>.whizan.cloud`), ensuring Next.js Server Actions and framework CSRF origin checks pass seamlessly.",
+      "For Next.js App Router applications with dynamic routes, ensure your project uses standard Next.js standalone server mode without static export restrictions.",
+      "Store client-accessible environment variables with standard framework prefixes (e.g. NEXT_PUBLIC_ or VITE_).",
       "Each deployment generates an immutable preview URL so you can test changes before cutting over."
     ]
   },
@@ -460,8 +462,10 @@ export default defineWorkflow({
     whenToUse: [
       "Deploying projects directly from your local development machine without opening a browser",
       "Automating builds and deployments inside GitHub Actions, GitLab CI, or CircleCI",
-      "Autonomous AI coding agents in Cursor, Windsurf, or Antigravity that inspect, build, and deploy code",
-      "Tailing real-time build logs, checking container health, and running diagnostic commands"
+      "Autonomous AI coding agents in Cursor, Windsurf, Claude Code, or Antigravity that inspect, build, and deploy code",
+      "Tailing real-time build logs, checking container health, and running diagnostic commands",
+      "Retrieving live container application logs (`whizan_get_application_logs`) to debug runtime crashes and uncaught exceptions",
+      "Provisioning Cloud Object Storage buckets and generating scoped access keys (`whizan_storage_create_api_key`)"
     ],
     whenNotToUse: [
       "Users who prefer a 100% visual web console experience"
@@ -501,7 +505,9 @@ export default defineWorkflow({
     ],
     proTips: [
       "Run 'whizan status' from any directory with a .whizan.json file to inspect live deployment health.",
-      "With the DevOps MCP configured in Cursor or VS Code, you can prompt your AI assistant to 'deploy this project' and it will autonomously analyze your stack, synthesize settings, and trigger deployment."
+      "With the DevOps MCP configured in Cursor or VS Code, prompt your AI assistant to 'deploy this project' and it will autonomously analyze your stack, synthesize settings, and trigger deployment.",
+      "Debug runtime exceptions instantly: Call 'whizan_get_application_logs' to retrieve stdout/stderr directly from active or recently exited containers.",
+      "Autonomous Storage Workflow: Agents can call 'whizan_storage_create_api_key' to generate dedicated 'whz_stg_live_...' keys and wire them into WHIZAN_STORAGE_KEY."
     ]
   },
 

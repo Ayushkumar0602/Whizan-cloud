@@ -206,3 +206,158 @@ Completely deletes a service or project entity, gracefully stopping Docker conta
   |---|---|---|---|
   | `targetType` | `string` | **Yes** | Enum: `"service"` or `"project"`. |
   | `targetId` | `string` | **Yes** | Service ID or Project ID to delete. |
+
+---
+
+## Tool 15: `whizan_exec_container_command`
+Executes safe informational or diagnostic commands directly inside a running container with anti-abuse guardrails.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `targetType` | `string` | **Yes** | Enum: `"service"` or `"project"`. |
+  | `targetId` | `string` | **Yes** | Service or Project ID or slug. |
+  | `command` | `string` | **Yes** | Command to run (e.g. `ps aux`, `df -h`, `node -v`, `npx prisma status`). |
+
+---
+
+## Tool 16: `whizan_inspect_deployment`
+Inspects real-time container status, host port mappings, restart counts, memory limits, and Edge Router mesh routing.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `targetType` | `string` | **Yes** | Enum: `"service"` or `"project"`. |
+  | `targetId` | `string` | **Yes** | Service or Project ID or slug. |
+
+---
+
+## Tool 17: `whizan_get_analytics`
+Retrieves bandwidth, unique visitors, and page views for projects, or real-time CPU/memory metrics snapshots for services.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `targetType` | `string` | **Yes** | — | Enum: `"service"` or `"project"`. |
+  | `targetId` | `string` | **Yes** | — | Service or Project ID or slug. |
+  | `days` | `number` | No | `30` | Historical window in days (1 to 90). |
+
+---
+
+## Tool 18: `whizan_get_application_logs`
+Fetches live runtime standard output (`stdout`) and standard error (`stderr`) logs directly from the active or recently exited application container. Essential for diagnosing runtime crashes, database connection timeouts, and unhandled exceptions that occur after the build step completes.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `targetType` | `string` | **Yes** | — | Enum: `"service"` or `"project"`. |
+  | `targetId` | `string` | **Yes** | — | Service or Project ID or slug. |
+  | `tail` | `number` | No | `200` | Number of most recent log lines (max: 1000). |
+  | `timestamps` | `boolean` | No | `false` | Whether to include ISO timestamps for each line. |
+
+---
+
+## Tool 19: `whizan_storage_create_api_key`
+Generates a dedicated Storage API Key (`whz_stg_live_...`) with explicit scoping and permissions for applications and agents.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `name` | `string` | **Yes** | — | Descriptive label (e.g. `"Production App Key"`). |
+  | `permission` | `string` | No | `"READ_WRITE"` | Enum: `"READ_WRITE"` or `"READ_ONLY"`. |
+  | `bucketId` | `string` | No | `undefined` | Optional bucket ID to strictly scope this key to. |
+
+* **Returns**: Key ID, live key secret (`whz_stg_live_...`), prefix, and scoping metadata.
+
+---
+
+## Tool 20: `whizan_storage_list_api_keys`
+Lists all Storage API Keys configured for the authenticated user, displaying key ID, name, keyPrefix, permission, and bucket scope.
+
+* **Input Schema**: `{}` (No parameters)
+
+---
+
+## Tool 21: `whizan_storage_list_buckets`
+Lists all Cloudflare R2 object storage buckets owned by the authenticated user.
+
+* **Input Schema**: `{}` (No parameters)
+
+---
+
+## Tool 22: `whizan_storage_create_bucket`
+Creates a new Cloudflare R2 object storage bucket.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `name` | `string` | **Yes** | — | Bucket name (3-63 characters, lowercase alphanumeric and hyphens). |
+  | `description` | `string` | No | — | Optional description of bucket contents. |
+  | `isPublic` | `boolean` | No | `false` | Set `true` for public CDN assets, `false` for private authenticated data. |
+
+---
+
+## Tool 23: `whizan_storage_delete_bucket`
+Deletes a storage bucket.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `bucket` | `string` | **Yes** | — | Bucket name or ID. |
+  | `force` | `boolean` | No | `false` | Set `true` to delete all objects in the bucket before removing it. |
+
+---
+
+## Tool 24: `whizan_storage_list_objects`
+Lists and paginates objects stored within a storage bucket.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Default | Description |
+  |---|---|---|---|---|
+  | `bucket` | `string` | **Yes** | — | Bucket name or ID. |
+  | `prefix` | `string` | No | — | Optional path prefix to filter objects. |
+  | `limit` | `number` | No | `50` | Maximum objects to return (max: 100). |
+
+---
+
+## Tool 25: `whizan_storage_upload_object`
+Uploads a local file from the developer workspace directly to Whizan Cloud Object Storage with atomic quota reservation.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `bucket` | `string` | **Yes** | Target bucket name or ID. |
+  | `localFilePath` | `string` | **Yes** | Local filesystem path to the file to upload. |
+  | `destinationPath` | `string` | **Yes** | Destination path inside bucket (e.g. `avatars/user_1.png`). |
+  | `mimeType` | `string` | No | Optional MIME content type. |
+
+---
+
+## Tool 26: `whizan_storage_download_object`
+Downloads an object from Whizan Cloud Storage to a local filesystem destination in the workspace.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `bucket` | `string` | **Yes** | Source bucket name or ID. |
+  | `objectPath` | `string` | **Yes** | Object path inside bucket. |
+  | `localDestinationPath` | `string` | **Yes** | Local filesystem path to write the downloaded object. |
+
+---
+
+## Tool 27: `whizan_storage_delete_object`
+Deletes an object from Cloud Storage and releases the user's quota allocation.
+
+* **Input Parameters**:
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `bucket` | `string` | **Yes** | Bucket name or ID. |
+  | `objectPath` | `string` | **Yes** | Logical object path to delete. |
+
+---
+
+## Tool 28: `whizan_storage_get_usage`
+Fetches storage quota allocation (committed bytes, reserved bytes, object count, and tier limits).
+
+* **Input Schema**: `{}` (No parameters)
+
