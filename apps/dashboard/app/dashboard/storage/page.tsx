@@ -284,8 +284,13 @@ export default function StorageDashboardPage() {
 
     try {
       if (selectedBucket.isPublic) {
-        // Public CDN URL
-        const publicUrl = `${window.location.origin}/api/storage/v1/public/${selectedBucket.name}/${obj.name}`;
+        // Public CDN URL with proper URI component encoding
+        const encodedPath = obj.name.split("/").map(encodeURIComponent).join("/");
+        const isStorageDomain = typeof window !== "undefined" && window.location.hostname.includes("whizan.cloud");
+        const baseOrigin = process.env.NEXT_PUBLIC_STORAGE_URL 
+          ? process.env.NEXT_PUBLIC_STORAGE_URL 
+          : (isStorageDomain ? "https://api.whizan.cloud" : window.location.origin);
+        const publicUrl = `${baseOrigin}/api/storage/v1/public/${encodeURIComponent(selectedBucket.name)}/${encodedPath}`;
         await navigator.clipboard.writeText(publicUrl);
         setCopiedKey(obj.id);
         toast.success("Public URL copied to clipboard");
