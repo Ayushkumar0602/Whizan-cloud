@@ -286,7 +286,7 @@ export class StorageService {
 
     // Concurrency-safe atomic reservation using Prisma interactive transaction
     const reservation = await prisma.$transaction(async (tx) => {
-      // Clean up any stale expired reservations for this user first
+      // 1. Clean up any stale expired reservations for this user first
       await tx.storageReservation.updateMany({
         where: {
           userId,
@@ -296,7 +296,17 @@ export class StorageService {
         data: { status: "EXPIRED" },
       });
 
-      // Recalculate pending reservations
+      // 2. Recalculate actual active pending reservations to eliminate zombie quota locks
+      const activePending = await tx.storageReservation.findMany({
+        where: {
+          userId,
+          status: "PENDING",
+          expiresAt: { gte: new Date() },
+        },
+        select: { reservedBytes: true },
+      });
+      const accurateReservedBytes = activePending.reduce((sum, r) => sum + r.reservedBytes, 0n);
+
       const currentQuota = await tx.storageUserQuota.findUnique({
         where: { userId },
       });
@@ -305,30 +315,28 @@ export class StorageService {
         throw new StorageError("Quota record not found", 500, "QUOTA_NOT_FOUND");
       }
 
-      const totalProjected = currentQuota.usedBytes + currentQuota.reservedBytes + delta;
+      const totalProjected = currentQuota.usedBytes + accurateReservedBytes + delta;
       if (totalProjected > currentQuota.allocatedBytes) {
-        const availableBytes = currentQuota.allocatedBytes - (currentQuota.usedBytes + currentQuota.reservedBytes);
+        const availableBytes = currentQuota.allocatedBytes - (currentQuota.usedBytes + accurateReservedBytes);
         throw new QuotaExceededError(
           `Upload of ${Number(requestedBytes)} bytes exceeds available storage quota (${Number(availableBytes > 0n ? availableBytes : 0n)} bytes remaining out of ${Number(currentQuota.allocatedBytes)} bytes).`,
           {
             allocatedBytes: Number(currentQuota.allocatedBytes),
             usedBytes: Number(currentQuota.usedBytes),
-            reservedBytes: Number(currentQuota.reservedBytes),
+            reservedBytes: Number(accurateReservedBytes),
             availableBytes: Number(availableBytes > 0n ? availableBytes : 0n),
             requestedBytes: Number(requestedBytes),
           }
         );
       }
 
-      // Atomically increment reservedBytes
-      if (delta > 0n) {
-        await tx.storageUserQuota.update({
-          where: { userId },
-          data: {
-            reservedBytes: { increment: delta },
-          },
-        });
-      }
+      // 3. Atomically sync reservedBytes to exact active reservations + delta
+      await tx.storageUserQuota.update({
+        where: { userId },
+        data: {
+          reservedBytes: accurateReservedBytes + (delta > 0n ? delta : 0n),
+        },
+      });
 
       // Create reservation with TTL (30 minutes)
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
@@ -416,7 +424,7 @@ export class StorageService {
     return await prisma.$transaction(async (tx) => {
       const res = await tx.storageReservation.findUnique({
         where: { id: reservationId },
-        include: { bucket: true },
+        include: { bucket: { include: { user: true } } },
       });
 
       if (!res) {
@@ -440,6 +448,26 @@ export class StorageService {
         throw new StorageError(`Upload reservation is in ${res.status} state`, 409, "INVALID_RESERVATION_STATE");
       }
 
+      // Check plan max file size
+      const userTier = (res.bucket.user as any)?.subscriptionTier || "HOBBY";
+      const tierConfig = getStorageTierConfig(userTier);
+      if (actualBytes > BigInt(tierConfig.maxFileSizeBytes)) {
+        throw new StorageError(
+          `Uploaded file size (${Number(actualBytes)} bytes) exceeds the maximum allowed file size of ${Number(tierConfig.maxFileSizeBytes / 1000000n)} MB for ${tierConfig.displayName}.`,
+          400,
+          "FILE_TOO_LARGE"
+        );
+      }
+
+      // Check bucket-specific max file size
+      if (res.bucket.maxFileSize && actualBytes > res.bucket.maxFileSize) {
+        throw new StorageError(
+          `Uploaded file size (${Number(actualBytes)} bytes) exceeds the bucket limit of ${Number(res.bucket.maxFileSize)} bytes.`,
+          400,
+          "FILE_TOO_LARGE"
+        );
+      }
+
       // Check existing object to compute byte adjustments
       const existingObj = await tx.storageObject.findUnique({
         where: {
@@ -455,6 +483,21 @@ export class StorageService {
 
       // Net change in committed storage
       const netUsedChange = actualBytes - oldSize;
+
+      // Verify user quota cap cannot be bypassed
+      const currentQuota = await tx.storageUserQuota.findUnique({
+        where: { userId: res.userId },
+      });
+      if (currentQuota && currentQuota.usedBytes + netUsedChange > currentQuota.allocatedBytes) {
+        throw new QuotaExceededError(
+          `Upload exceeds allocated storage quota (${Number(currentQuota.allocatedBytes)} bytes maximum).`,
+          {
+            allocatedBytes: Number(currentQuota.allocatedBytes),
+            usedBytes: Number(currentQuota.usedBytes),
+            actualBytes: Number(actualBytes),
+          }
+        );
+      }
 
       // Update User Quota atomically
       await tx.storageUserQuota.update({
@@ -572,18 +615,19 @@ export class StorageService {
       );
     }
 
-    // Check duplicate bucket name for this user
+    // Check duplicate bucket name across Whizan Cloud (globally unique namespace like AWS S3 / R2)
     const existing = await prisma.storageBucket.findUnique({
       where: {
-        userId_name: {
-          userId,
-          name: name.toLowerCase(),
-        },
+        name: name.toLowerCase(),
       },
     });
 
     if (existing) {
-      throw new ConflictError(`Bucket with name '${name}' already exists in your account.`);
+      if (existing.userId === userId) {
+        throw new ConflictError(`Bucket with name '${name}' already exists in your account.`);
+      } else {
+        throw new ConflictError(`Bucket name '${name}' is already taken across Whizan Cloud. Bucket names must be globally unique.`);
+      }
     }
 
     const bucket = await prisma.storageBucket.create({
@@ -973,12 +1017,11 @@ export class StorageService {
     const { userId, bucketIdentifier, objectPath } = params;
     const safePath = normalizeObjectPath(objectPath);
 
-    // Look up bucket
-    const bucket = await prisma.storageBucket.findFirst({
-      where: {
-        OR: [{ id: bucketIdentifier }, { name: bucketIdentifier.toLowerCase() }],
-      },
-    });
+    // Look up bucket by UUID id or globally unique bucket name
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bucketIdentifier);
+    const bucket = isUuid
+      ? await prisma.storageBucket.findUnique({ where: { id: bucketIdentifier } })
+      : await prisma.storageBucket.findUnique({ where: { name: bucketIdentifier.toLowerCase() } });
 
     if (!bucket) {
       throw new NotFoundError("Bucket not found");

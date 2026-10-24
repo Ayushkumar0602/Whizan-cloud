@@ -943,7 +943,7 @@ model AgentAction {
 model StorageBucket {
   id               String               @id @default(uuid())
   userId           String               @map("user_id")
-  name             String
+  name             String               @unique // Globally unique bucket name across Whizan Cloud (like AWS S3 / R2)
   description      String?              @db.Text
   isPublic         Boolean              @default(false) @map("is_public")
   maxFileSize      BigInt?              @map("max_file_size") // Optional per-bucket file size limit in bytes
@@ -957,7 +957,6 @@ model StorageBucket {
   objects          StorageObject[]
   reservations     StorageReservation[]
 
-  @@unique([userId, name])
   @@index([userId])
   @@map("storage_buckets")
 }

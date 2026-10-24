@@ -118,15 +118,16 @@ export async function storageRoutes(fastify: FastifyInstance) {
   };
 
   // ── Public Access (No Auth required) ───────────────────────────────────────
-  // GET /public/:bucketName/* (e.g. /public/avatars/user-123/profile.png)
-  fastify.get("/public/:bucketName/*", async (request: FastifyRequest, reply: FastifyReply) => {
+  // GET /public/:bucketName/* or /b/:bucketIdentifier/*
+  const handlePublicDownload = async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const { bucketName } = request.params as { bucketName: string };
-      const rawWildcard = (request.params as any)["*"] as string;
+      const params = request.params as any;
+      const bucketIdentifier = params.bucketName || params.bucketId;
+      const rawWildcard = params["*"] as string;
 
       const { object, stream, contentType, contentLength, etag, cacheControl, contentDisposition } =
         await StorageService.downloadObjectStream({
-          bucketIdentifier: bucketName,
+          bucketIdentifier,
           objectPath: rawWildcard,
         });
 
@@ -134,22 +135,51 @@ export async function storageRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: "FORBIDDEN", message: "This object is in a private bucket." });
       }
 
+      // Security headers against Stored XSS and MIME confusion attacks
+      reply.header("X-Content-Type-Options", "nosniff");
+      reply.header("Access-Control-Allow-Origin", "*");
+      reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+
+      // Sandbox active browser execution for HTML, SVG, and XML files in public storage
+      const lowerMime = (contentType || "").toLowerCase();
+      if (
+        lowerMime.includes("html") ||
+        lowerMime.includes("svg") ||
+        lowerMime.includes("xml") ||
+        lowerMime.includes("javascript")
+      ) {
+        reply.header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+        if (lowerMime.includes("html")) {
+          // Force download for raw HTML to prevent phishing / cookie-theft under storage domain
+          reply.header(
+            "Content-Disposition",
+            contentDisposition || `attachment; filename="${object.name.split("/").pop() || "download"}"`
+          );
+        }
+      }
+
       reply.header("Content-Type", contentType);
       if (contentLength) reply.header("Content-Length", contentLength);
       if (etag) reply.header("ETag", `"${etag}"`);
       reply.header("Cache-Control", cacheControl || "public, max-age=3600, s-maxage=86400");
-      if (contentDisposition) reply.header("Content-Disposition", contentDisposition);
+      if (contentDisposition && !lowerMime.includes("html")) {
+        reply.header("Content-Disposition", contentDisposition);
+      }
 
       return reply.send(stream);
     } catch (err) {
       return handleError(err, reply);
     }
-  });
+  };
+
+  fastify.get("/public/:bucketName/*", handlePublicDownload);
+  fastify.get("/b/:bucketId/*", handlePublicDownload);
 
   // ── Authenticated Route Guard ──────────────────────────────────────────────
   fastify.addHook("preHandler", async (request: FastifyRequest, reply: FastifyReply) => {
-    // Skip auth for public asset stream
-    if (request.url.includes("/public/")) return;
+    // Skip auth for public asset streams
+    const url = request.url;
+    if (url.includes("/public/") || url.startsWith("/b/") || url.includes("/storage/v1/b/")) return;
 
     await (fastify as any).authenticate(request, reply);
     if (reply.sent) return;

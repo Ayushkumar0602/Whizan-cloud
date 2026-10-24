@@ -70,6 +70,7 @@ const app = Fastify({
     },
   },
   trustProxy: true,
+  bodyLimit: 100 * 1024 * 1024, // 100 MB max request body for file uploads
 });
 
 // ─── Plugins ─────────────────────────────────────────────────────────────────
@@ -283,6 +284,7 @@ await app.register(accountTerminalRoutes, { prefix: "/api/terminal" });
 await app.register(wafRoutes, { prefix: "/api/waf" });
 await app.register(storageRoutes, { prefix: "/api/storage/v1" });
 await app.register(storageRoutes, { prefix: "/storage/v1" });
+await app.register(storageRoutes); // Mounts /public/:bucketName/* and /b/:bucketId/* for storage.whizan.cloud
 await app.register(liveGatewayRoutes);
 
 import { checkVmOnline } from "./lib/vm-status.js";
