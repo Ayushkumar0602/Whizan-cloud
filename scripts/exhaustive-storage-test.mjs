@@ -1,8 +1,8 @@
 import { createClient } from "../packages/storage-js/dist/index.js";
 
-const apiKey = "whz_live_609fc03836fc6f0dde2de3ebdb658ca12bc8a39da8bae95a";
-const projectUrl = "https://api.whizan.cloud";
-const primaryBucket = "aj089";
+const apiKey = process.argv[2] || "whz_stg_live_a83bca0e838eb59f43bca3b142d0035ee914ddb3be6e03eb";
+const projectUrl = process.argv[3] || "https://api.whizan.cloud";
+const primaryBucket = process.argv[4] || "aj089";
 
 console.log("══════════════════════════════════════════════════════════════════════");
 console.log("  Whizan Cloud Storage — Exhaustive Live SDK & Gateway Test Suite");
