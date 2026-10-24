@@ -1848,6 +1848,9 @@ export interface StorageBucketItem {
   allowedMimeTypes: string[];
   corsOrigins?: string[];
   corsMaxAge?: number;
+  trashRetentionDays?: number;
+  trashEnabled?: boolean;
+  versioningEnabled?: boolean;
   fileCount: number;
   totalBytes: number;
   createdAt: string;
@@ -1890,6 +1893,9 @@ export interface StorageObjectItem {
   cacheControl?: string | null;
   contentDisposition?: string | null;
   metadata?: any;
+  deletedAt?: string | null;
+  isDeleted?: boolean;
+  versionId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1953,7 +1959,18 @@ export const storageApi = {
       body: JSON.stringify(data),
     }),
 
-  updateBucket: (bucketId: string, data: { description?: string; isPublic?: boolean; allowedMimeTypes?: string[] }) =>
+  updateBucket: (
+    bucketId: string,
+    data: {
+      description?: string;
+      isPublic?: boolean;
+      allowedMimeTypes?: string[];
+      corsOrigins?: string[];
+      corsMaxAge?: number;
+      maxFileSize?: number | string;
+      trashRetentionDays?: number;
+    }
+  ) =>
     request<{ success: boolean; bucket: StorageBucketItem }>(`/api/storage/v1/buckets/${bucketId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
@@ -2165,4 +2182,27 @@ export const storageApi = {
     request<{ success: boolean; message: string }>(`/api/storage/v1/webhooks/${webhookId}`, {
       method: "DELETE",
     }),
+
+  // Trash Bin (Soft-Delete & Retention)
+  listTrash: (bucketId: string) =>
+    request<StorageObjectItem[]>(`/api/storage/v1/buckets/${bucketId}/trash`),
+
+  restoreFromTrash: (bucketId: string, path: string) =>
+    request<{ success: boolean; object: StorageObjectItem }>(
+      `/api/storage/v1/buckets/${bucketId}/trash/restore`,
+      {
+        method: "POST",
+        body: JSON.stringify({ path }),
+      }
+    ),
+
+  purgeTrash: (bucketId: string, retentionDays?: number) => {
+    const query = retentionDays !== undefined ? `?retentionDays=${retentionDays}` : "";
+    return request<{ success: boolean; purgedCount: number }>(
+      `/api/storage/v1/buckets/${bucketId}/trash${query}`,
+      {
+        method: "DELETE",
+      }
+    );
+  },
 };
