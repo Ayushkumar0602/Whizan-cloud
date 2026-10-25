@@ -5,12 +5,16 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   type Tool,
+  type Resource,
 } from "@modelcontextprotocol/sdk/types.js";
 import { WhizanClient, WhizanApiError } from "./whizan-client.js";
 import { packDirectory } from "./utils/archive.js";
 import { analyzeWorkspace } from "./tools/analyze-workspace.js";
 import { generatePatch } from "./tools/generate-patch.js";
+import { WHIZAN_DOC_RESOURCES } from "./resources/documentation.js";
 import {
   printWhizanBanner,
   printServerStatusCard,
@@ -68,6 +72,7 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {},
     },
   }
 );
@@ -756,6 +761,20 @@ const TOOLS: Tool[] = [
       properties: {},
     },
   },
+  {
+    name: "whizan_storage_delete_api_key",
+    description: "Revokes and deletes a Storage API Key by its Key ID or key prefix (e.g. 'whz_stg_live_...'). Revoked keys immediately lose all access to Cloud Storage buckets and objects. See resource whizan://docs/storage-sdk for detailed key lifecycle guides.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        keyId: {
+          type: "string",
+          description: "Unique Key ID (UUID) or key prefix of the Storage API Key to revoke.",
+        },
+      },
+      required: ["keyId"],
+    },
+  },
 ];
 
 // ─── Request Handlers ────────────────────────────────────────────────────────
@@ -763,6 +782,37 @@ const TOOLS: Tool[] = [
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   McpLogger.info(`Delivered ${TOOLS.length} tool definitions to MCP client.`);
   return { tools: TOOLS };
+});
+
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  McpLogger.info(`Delivered ${WHIZAN_DOC_RESOURCES.length} documentation resources to MCP client.`);
+  return {
+    resources: WHIZAN_DOC_RESOURCES.map((r) => ({
+      uri: r.uri,
+      name: r.name,
+      description: r.description,
+      mimeType: r.mimeType,
+    })),
+  };
+});
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+  const doc = WHIZAN_DOC_RESOURCES.find((r) => r.uri === uri);
+  if (!doc) {
+    throw new Error(
+      `Resource '${uri}' not found. Available resources:\n${WHIZAN_DOC_RESOURCES.map((r) => ` - ${r.uri}: ${r.name}`).join("\n")}`
+    );
+  }
+  return {
+    contents: [
+      {
+        uri: doc.uri,
+        mimeType: doc.mimeType,
+        text: doc.content,
+      },
+    ],
+  };
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -2101,6 +2151,20 @@ Please gently inform the user of this situation:
 
     case "whizan_storage_list_api_keys": {
       const res = await client.listStorageApiKeys();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(res, null, 2),
+          },
+        ],
+      };
+    }
+
+    case "whizan_storage_delete_api_key": {
+      const { keyId } = (args || {}) as any;
+      if (!keyId) throw new Error("Argument 'keyId' is required.");
+      const res = await client.deleteStorageApiKey(keyId);
       return {
         content: [
           {

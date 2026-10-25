@@ -365,19 +365,19 @@ export class ServiceRunner {
           const hasPrisma = filesInWorkDir.includes("prisma") || Boolean(pkg.dependencies?.["@prisma/client"]) || Boolean(pkg.devDependencies?.["prisma"]);
           
           if (filesInWorkDir.includes("pnpm-lock.yaml")) {
-            effectiveInstallCommand = "npm install -g pnpm && pnpm install";
+            effectiveInstallCommand = "npm install -g pnpm && pnpm install --prod=false";
             if (hasPrisma) effectiveInstallCommand += " && npx prisma generate";
             if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
               effectiveInstallCommand += " && pnpm run build";
             }
           } else if (filesInWorkDir.includes("yarn.lock")) {
-            effectiveInstallCommand = "yarn install";
+            effectiveInstallCommand = "yarn install --production=false";
             if (hasPrisma) effectiveInstallCommand += " && npx prisma generate";
             if (hasBuildScript && !effectiveInstallCommand.includes("build")) {
               effectiveInstallCommand += " && yarn build";
             }
           } else {
-            if (!effectiveInstallCommand) effectiveInstallCommand = "npm install";
+            if (!effectiveInstallCommand || effectiveInstallCommand === "npm install") effectiveInstallCommand = "npm install --include=dev";
             if (hasPrisma && !effectiveInstallCommand.includes("prisma generate")) {
               effectiveInstallCommand += " && npx prisma generate";
             }
@@ -463,7 +463,7 @@ export class ServiceRunner {
       cmd = [
         "sh",
         "-c",
-        `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && ${effectiveInstallCommand} && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${effectiveStartCommand}`
+        `set -e && if [ ! -f .hostify_installed ]; then echo "--- Installing Dependencies ---" && (NODE_ENV=development ${effectiveInstallCommand}) && touch .hostify_installed; fi && echo "--- Starting Service ---" && ${effectiveStartCommand}`
       ];
     }
 
@@ -1011,10 +1011,10 @@ FROM node:20-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY package*.json pnpm-lock.yaml* yarn.lock* bun.lockb* ./
-RUN if [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm install; \\
-    elif [ -f yarn.lock ]; then yarn install; \\
+RUN if [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm install --prod=false; \\
+    elif [ -f yarn.lock ]; then yarn install --production=false; \\
     elif [ -f bun.lockb ]; then npm install -g bun && bun install; \\
-    elif [ -f package.json ]; then npm install; fi
+    elif [ -f package.json ]; then npm install --include=dev; fi
 COPY . .
 RUN if [ -f package.json ] && grep -q '"build"' package.json; then npm run build || true; fi
 ENV PORT=${port} HOST=0.0.0.0 HOSTNAME=0.0.0.0

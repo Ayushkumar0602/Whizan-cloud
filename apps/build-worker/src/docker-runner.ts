@@ -43,9 +43,9 @@ export async function runBuild(opts: RunBuildOptions): Promise<number> {
   // Force Node to garbage collect and not use excessive RAM
   envVars["NODE_OPTIONS"] = "--max_old_space_size=2048";
   
-  if (installCommand === "npm install") {
-    // Prevent network hang-ups and RAM bloat during install
-    installCommand = "npm install --no-fund --no-audit";
+  if (installCommand === "npm install" || installCommand === "npm i") {
+    // Prevent network hang-ups and RAM bloat during install, and ensure devDependencies are included for compile tools (tsc, vite)
+    installCommand = "npm install --include=dev --no-fund --no-audit";
   }
 
   // Format env vars for Docker

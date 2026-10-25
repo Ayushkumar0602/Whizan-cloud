@@ -1202,5 +1202,19 @@ export class WhizanClient {
     }
     return data;
   }
+
+  async deleteStorageApiKey(keyId: string): Promise<any> {
+    await this.loadConfig();
+    const res = await fetch(`${this.config.apiUrl}/api/storage/v1/keys/${encodeURIComponent(keyId)}`, {
+      method: "DELETE",
+      headers: this.getHeaders(),
+    });
+
+    const data: any = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    if (!res.ok) {
+      throw new WhizanApiError(data.message || data.error || "Failed to revoke Storage API Key", res.status, data);
+    }
+    return data;
+  }
 }
 

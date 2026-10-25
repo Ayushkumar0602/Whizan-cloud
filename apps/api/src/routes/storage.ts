@@ -120,8 +120,11 @@ const MultipartCompleteSchema = z.object({
 
 const CreateStorageKeySchema = z.object({
   name: z.string().min(1).max(100),
-  bucketId: z.string().uuid().nullable().optional(),
-  permission: z.enum(["READ_WRITE", "READ_ONLY"]).default("READ_WRITE"),
+  bucketId: z.string().nullable().optional(),
+  permission: z.preprocess(
+    (val) => (typeof val === "string" ? val.toUpperCase() : val),
+    z.enum(["READ_WRITE", "READ_ONLY"])
+  ).default("READ_WRITE"),
 });
 
 const RevealStorageKeySchema = z.object({
@@ -510,13 +513,23 @@ export async function storageRoutes(fastify: FastifyInstance) {
       const { name, bucketId, permission } = body.data;
 
       let bucketName: string | null = null;
-      if (bucketId) {
+      let resolvedBucketId: string | null = null;
+      if (bucketId && bucketId.trim() !== "") {
+        const cleanId = bucketId.trim();
         const bucket = await prisma.storageBucket.findFirst({
-          where: { id: bucketId, userId },
+          where: {
+            userId,
+            OR: [
+              { id: cleanId },
+              { name: cleanId.toLowerCase() },
+              { name: cleanId },
+            ],
+          },
         });
         if (!bucket) {
-          return reply.code(404).send({ error: "Selected bucket not found or does not belong to your account." });
+          return reply.code(404).send({ error: `Selected bucket '${cleanId}' not found or does not belong to your account.` });
         }
+        resolvedBucketId = bucket.id;
         bucketName = bucket.name;
       }
 
@@ -533,7 +546,7 @@ export async function storageRoutes(fastify: FastifyInstance) {
           keyPrefix,
           keyHash,
           encryptedSecret,
-          bucketId: bucketId || null,
+          bucketId: resolvedBucketId,
           permission,
         },
       });
@@ -561,19 +574,31 @@ export async function storageRoutes(fastify: FastifyInstance) {
     try {
       const { userId } = request.user;
       const { keyId } = request.params as { keyId: string };
+      const cleanKey = (keyId || "").trim();
 
       const existing = await prisma.storageApiKey.findFirst({
-        where: { id: keyId, userId },
+        where: {
+          userId,
+          OR: [
+            { id: cleanKey },
+            { keyPrefix: cleanKey },
+            { keyPrefix: cleanKey.endsWith("...") ? cleanKey : `${cleanKey}...` },
+          ],
+        },
       });
       if (!existing) {
-        return reply.code(404).send({ error: "Storage API key not found." });
+        return reply.code(404).send({ error: `Storage API key '${cleanKey}' not found.` });
       }
 
       await prisma.storageApiKey.delete({
-        where: { id: keyId },
+        where: { id: existing.id },
       });
 
-      return { success: true, message: "Storage API key revoked successfully." };
+      return {
+        success: true,
+        message: `Storage API key '${existing.name}' (${existing.keyPrefix}) revoked successfully.`,
+        revokedKeyId: existing.id,
+      };
     } catch (err) {
       return handleError(err, reply);
     }
