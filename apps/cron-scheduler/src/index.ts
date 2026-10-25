@@ -10,6 +10,9 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const API_URL = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://api.whizan.cloud";
 const MESH_TOKEN = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_2026_x89q";
 const RUNTIME_URL = process.env.FUNCTION_RUNTIME_URL || process.env.RUNTIME_URL || "http://127.0.0.1:9090";
+const ROUTER_PORT = Number(process.env.ROUTER_PORT) || 80;
+const BASE_DOMAIN = (process.env.BASE_DOMAIN || "whizan.cloud").trim();
+const API_PORT = Number(process.env.PORT || process.env.API_PORT) || 8000;
 
 console.log("─────────────────────────────────────────────────────────");
 console.log("⏱️  WHIZAN CRON ENGINE — SUPER RESOURCE OPTIMIZED DAEMON");
@@ -17,6 +20,8 @@ console.log("──────────────────────�
 console.log(`[Config] Redis: ${REDIS_URL}`);
 console.log(`[Config] API Control Plane: ${API_URL}`);
 console.log(`[Config] Function Runtime: ${RUNTIME_URL}`);
+console.log(`[Config] Edge Router Port: ${ROUTER_PORT}`);
+console.log(`[Config] Base Domain: ${BASE_DOMAIN}`);
 
 const redis = new Redis(REDIS_URL, {
   maxRetriesPerRequest: null,
@@ -68,7 +73,7 @@ async function rehydrateScheduleFromControlPlane() {
 
 // ─── Initialize Engine Components ─────────────────────────────────────────────
 const flusher = new BatchTelemetryFlusher(redis, API_URL, MESH_TOKEN);
-const dispatcher = new TaskDispatcher(redis, RUNTIME_URL, MESH_TOKEN);
+const dispatcher = new TaskDispatcher(redis, RUNTIME_URL, MESH_TOKEN, API_URL, BASE_DOMAIN, ROUTER_PORT, API_PORT);
 const scheduler = new ZeroIdleScheduler(redis, redisSub, redisStream, dispatcher, flusher);
 
 async function main() {

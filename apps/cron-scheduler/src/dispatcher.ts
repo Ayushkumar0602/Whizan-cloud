@@ -20,15 +20,34 @@ export class TaskDispatcher {
   private redis: Redis;
   private runtimeUrl: string;
   private meshToken: string;
+  private apiUrl: string;
+  private baseDomain: string;
+  private routerPort: number;
+  private apiPort: number;
 
   constructor(
     redis: Redis,
     runtimeUrl = "http://127.0.0.1:9090",
-    meshToken = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_2026_x89q"
+    meshToken = process.env.INTERNAL_MESH_TOKEN || "whizan_mesh_sec_2026_x89q",
+    apiUrl = process.env.API_URL || process.env.CONTROL_PLANE_URL || "https://api.whizan.cloud",
+    baseDomain = process.env.BASE_DOMAIN || "whizan.cloud",
+    routerPort = Number(process.env.ROUTER_PORT) || 80,
+    apiPort = Number(process.env.PORT || process.env.API_PORT) || 8000
   ) {
     this.redis = redis;
     this.runtimeUrl = runtimeUrl.replace(/\/$/, "");
     this.meshToken = meshToken;
+    this.apiUrl = apiUrl.replace(/\/$/, "");
+    const rawDomain = baseDomain.trim();
+    this.baseDomain = (
+      rawDomain === "api.whizan.cloud" ||
+      rawDomain.startsWith("api.") ||
+      rawDomain.includes("nip.io") ||
+      rawDomain.includes("onrender.com") ||
+      rawDomain.includes("vercel.app")
+    ) ? "whizan.cloud" : rawDomain;
+    this.routerPort = routerPort;
+    this.apiPort = apiPort;
   }
 
   /**
@@ -304,16 +323,12 @@ export class TaskDispatcher {
     });
   }
 
-  // ─── 3. INTERNAL SERVICE DISPATCH (Private Mesh) ───────────────────────────
+  // ─── 3. INTERNAL SERVICE DISPATCH (Private Mesh & Universal Gateway) ───────
   private async executeInternalService(job: CronJobData, executionId: string, log: (s: string) => void) {
-    const { serviceId, routePath = "/", port = 3000, method = "POST", payload } = job.targetConfig;
+    const { serviceId, routePath = "/", port = 3000, method = "POST", payload, headers } = job.targetConfig;
     const upperMethod = (method || "POST").toUpperCase();
     const isPayloadPermitted = !["GET", "HEAD"].includes(upperMethod);
-
-    // Internal Docker network routing
-    const targetUrl = `http://service-${serviceId}:${port}${routePath.startsWith("/") ? routePath : `/${routePath}`}`;
-
-    log(`[Internal-Mesh] Calling service endpoint at ${targetUrl}\n`);
+    const cleanPath = routePath.startsWith("/") ? routePath : `/${routePath}`;
 
     const reqHeaders: Record<string, string> = {
       "x-whizan-trigger": "CRON",
@@ -322,11 +337,29 @@ export class TaskDispatcher {
       "x-mesh-token": this.meshToken,
     };
 
+    if (headers && typeof headers === "object") {
+      Object.assign(reqHeaders, headers);
+    }
+
     let stringBody: string | undefined = undefined;
     if (isPayloadPermitted && payload) {
       stringBody = typeof payload === "string" ? payload : JSON.stringify(payload);
-      reqHeaders["Content-Type"] = "application/json";
+      reqHeaders["Content-Type"] = reqHeaders["Content-Type"] || "application/json";
     }
+
+    // 1. Resolve Target Slug
+    const slug = await this.resolveTargetSlug("SERVICE", serviceId, job.targetConfig);
+
+    if (slug) {
+      log(`[Internal-Mesh] Routing task to service "${slug}" (${cleanPath}) via Universal Gateway\n`);
+      const res = await this.sendRoutedHttpRequest(slug, cleanPath, upperMethod, reqHeaders, stringBody, log);
+      log(`[Internal-Mesh] Response (${res.statusCode}): ${res.body.slice(0, 1024)}\n`);
+      return { statusCode: res.statusCode };
+    }
+
+    // Fallback: Direct container network endpoint if slug cannot be resolved
+    const targetUrl = `http://service-${serviceId}:${port}${cleanPath}`;
+    log(`[Internal-Mesh] Calling direct service endpoint at ${targetUrl}\n`);
 
     const res = await fetch(targetUrl, {
       method: upperMethod,
@@ -339,14 +372,12 @@ export class TaskDispatcher {
     return { statusCode: res.status };
   }
 
-  // ─── 4. WEB PROJECT ROUTE DISPATCH ─────────────────────────────────────────
+  // ─── 4. WEB PROJECT ROUTE DISPATCH (Universal Gateway) ─────────────────────
   private async executeProjectRoute(job: CronJobData, executionId: string, log: (s: string) => void) {
-    const { projectId, routePath = "/", method = "GET", payload } = job.targetConfig;
+    const { projectId, routePath = "/", method = "GET", payload, headers } = job.targetConfig;
     const upperMethod = (method || "GET").toUpperCase();
     const isPayloadPermitted = !["GET", "HEAD"].includes(upperMethod);
-    const targetUrl = `http://project-${projectId}:3000${routePath.startsWith("/") ? routePath : `/${routePath}`}`;
-
-    log(`[Web-Project] Calling project route at ${targetUrl}\n`);
+    const cleanPath = routePath.startsWith("/") ? routePath : `/${routePath}`;
 
     const reqHeaders: Record<string, string> = {
       "x-whizan-trigger": "CRON",
@@ -354,11 +385,29 @@ export class TaskDispatcher {
       "x-whizan-execution-id": executionId,
     };
 
+    if (headers && typeof headers === "object") {
+      Object.assign(reqHeaders, headers);
+    }
+
     let stringBody: string | undefined = undefined;
     if (isPayloadPermitted && payload) {
       stringBody = typeof payload === "string" ? payload : JSON.stringify(payload);
-      reqHeaders["Content-Type"] = "application/json";
+      reqHeaders["Content-Type"] = reqHeaders["Content-Type"] || "application/json";
     }
+
+    // 1. Resolve Target Slug
+    const slug = await this.resolveTargetSlug("PROJECT", projectId, job.targetConfig);
+
+    if (slug) {
+      log(`[Web-Project] Routing task to project "${slug}" (${cleanPath}) via Universal Gateway\n`);
+      const res = await this.sendRoutedHttpRequest(slug, cleanPath, upperMethod, reqHeaders, stringBody, log);
+      log(`[Web-Project] Response (${res.statusCode}): ${res.body.slice(0, 1024)}\n`);
+      return { statusCode: res.statusCode };
+    }
+
+    // Fallback: Direct project container endpoint
+    const targetUrl = `http://project-${projectId}:3000${cleanPath}`;
+    log(`[Web-Project] Calling direct project route at ${targetUrl}\n`);
 
     const res = await fetch(targetUrl, {
       method: upperMethod,
@@ -422,26 +471,291 @@ export class TaskDispatcher {
   }
 
   /**
-   * Helper to query Docker socket for container matching serviceId
+   * Resilient target slug resolver:
+   * 1. Inspect targetConfig (serviceSlug, projectSlug, slug).
+   * 2. Direct Redis deployment key check (if id itself is a slug).
+   * 3. Redis slug cache check (service:slug:<id> or project:slug:<id>).
+   * 4. Redis deployment scan (matches serviceId / projectId in deployment JSON).
+   * 5. Docker socket container inspection (matches labels: serviceId, projectId, slug).
+   * 6. Control Plane API query (/api/crons/resolve-target with mesh token).
    */
-  private async resolveContainerId(serviceId: string): Promise<string | null> {
+  public async resolveTargetSlug(
+    targetType: "SERVICE" | "PROJECT",
+    targetId: string,
+    targetConfig: any = {}
+  ): Promise<string | null> {
+    if (!targetId) return null;
+
+    // 1. Direct from config
+    if (targetConfig.serviceSlug) return targetConfig.serviceSlug;
+    if (targetConfig.projectSlug) return targetConfig.projectSlug;
+    if (targetConfig.slug) return targetConfig.slug;
+
+    // 2. Direct Redis check: is targetId itself a slug?
+    try {
+      const direct = await this.redis.get(`deployment:${targetId}`);
+      if (direct) return targetId;
+    } catch {}
+
+    // 3. Cached slug in Redis
+    const cacheKey = targetType === "SERVICE" ? `service:slug:${targetId}` : `project:slug:${targetId}`;
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) return cached;
+    } catch {}
+
+    // 4. Redis scan: match serviceId/projectId in deployment:* values
+    try {
+      const keys = await this.redis.keys("deployment:*");
+      for (const k of keys) {
+        const raw = await this.redis.get(k);
+        if (!raw) continue;
+        try {
+          const info = JSON.parse(raw);
+          const matches =
+            (targetType === "SERVICE" && (info.serviceId === targetId || info.id === targetId)) ||
+            (targetType === "PROJECT" && (info.projectId === targetId || info.id === targetId)) ||
+            info.slug === targetId;
+
+          if (matches) {
+            const foundSlug = k.replace(/^deployment:/, "");
+            await this.redis.set(cacheKey, foundSlug, "EX", 86400).catch(() => {});
+            return foundSlug;
+          }
+        } catch {}
+      }
+    } catch {}
+
+    // 5. Docker Engine Socket /containers/json?all=1
+    try {
+      const containers = await this.queryDockerContainers();
+      for (const c of containers) {
+        const labels = c.Labels || {};
+        const matches =
+          (targetType === "SERVICE" && (labels.serviceId === targetId || labels.id === targetId)) ||
+          (targetType === "PROJECT" && (labels.projectId === targetId || labels.id === targetId)) ||
+          labels.slug === targetId;
+
+        if (matches && labels.slug) {
+          await this.redis.set(cacheKey, labels.slug, "EX", 86400).catch(() => {});
+          return labels.slug;
+        }
+      }
+    } catch {}
+
+    // 6. Control Plane API endpoint fallback
+    try {
+      const queryUrl = `${this.apiUrl}/api/crons/resolve-target?type=${targetType}&id=${encodeURIComponent(targetId)}`;
+      const res = await fetch(queryUrl, {
+        headers: { "x-mesh-token": this.meshToken },
+      });
+      if (res.ok) {
+        const body: any = await res.json();
+        if (body.slug) {
+          await this.redis.set(cacheKey, body.slug, "EX", 86400).catch(() => {});
+          return body.slug;
+        }
+      }
+    } catch {}
+
+    return null;
+  }
+
+  /**
+   * Universal routed HTTP dispatcher:
+   * Tier 1: Local Edge Router on loopback (ultra-low latency, auto-wakes sleeping containers).
+   * Tier 2: Universal Live Gateway on API port (local or remote).
+   * Tier 3: Public Edge HTTPS (<slug>.<baseDomain>).
+   */
+  private async sendRoutedHttpRequest(
+    slug: string,
+    routePath: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string,
+    log?: (s: string) => void
+  ): Promise<{ statusCode: number; body: string }> {
+    const cleanPath = routePath.startsWith("/") ? routePath : `/${routePath}`;
+    const targetHost = `${slug}.${this.baseDomain}`;
+
+    const outgoingHeaders: Record<string, string> = {
+      ...headers,
+      host: targetHost,
+      "x-forwarded-host": targetHost,
+      "x-forwarded-proto": "https",
+      "User-Agent": "Whizan-Cron/1.0",
+    };
+
+    if (body && !outgoingHeaders["Content-Type"]) {
+      outgoingHeaders["Content-Type"] = "application/json";
+    }
+
+    // Tier 1: Local Edge Router on loopback (ultra-low latency, auto-wakes sleeping containers)
+    try {
+      const edgeRes = await this.doHttpRequest({
+        host: "127.0.0.1",
+        port: this.routerPort,
+        path: cleanPath,
+        method,
+        headers: outgoingHeaders,
+        body,
+        timeoutMs: 30000,
+      });
+
+      // Handle 202 ALLOCATING_RESOURCES (Container warming up from eco-standby)
+      if (
+        edgeRes.statusCode === 202 &&
+        (edgeRes.body.includes("ALLOCATING_RESOURCES") || edgeRes.body.includes("warming up"))
+      ) {
+        log?.(`[Router] Service "${slug}" is waking up from eco-standby. Waiting 3s for resources...\n`);
+        await new Promise((r) => setTimeout(r, 3000));
+        const retryRes = await this.doHttpRequest({
+          host: "127.0.0.1",
+          port: this.routerPort,
+          path: cleanPath,
+          method,
+          headers: outgoingHeaders,
+          body,
+          timeoutMs: 30000,
+        });
+        return retryRes;
+      }
+
+      // If response is valid (including 200, 401, 403, 404, etc.), return immediately
+      if (edgeRes.statusCode < 500) {
+        return edgeRes;
+      }
+    } catch (edgeErr: any) {
+      log?.(`[Router] Loopback attempt to port ${this.routerPort} failed (${edgeErr.message}). Trying Live Gateway fallback...\n`);
+    }
+
+    // Tier 2: Universal Live Gateway on API port
+    try {
+      const gatewayUrl = `http://127.0.0.1:${this.apiPort}/live/${slug}${cleanPath}`;
+      const gwRes = await fetch(gatewayUrl, {
+        method,
+        headers: outgoingHeaders,
+        body,
+      });
+      const gwText = await gwRes.text();
+
+      // If gateway indicates warming up (202), wait and retry once
+      if (gwRes.status === 202 && gwText.includes("ALLOCATING_RESOURCES")) {
+        log?.(`[LiveGateway] Compute container is warming up. Waiting 3s...\n`);
+        await new Promise((r) => setTimeout(r, 3000));
+        const gwRetry = await fetch(gatewayUrl, { method, headers: outgoingHeaders, body });
+        const retryText = await gwRetry.text();
+        return { statusCode: gwRetry.status, body: retryText };
+      }
+
+      if (gwRes.status < 500) {
+        return { statusCode: gwRes.status, body: gwText };
+      }
+    } catch (gwErr: any) {
+      log?.(`[LiveGateway] Gateway fallback failed (${gwErr.message}). Trying public edge domain...\n`);
+    }
+
+    // Tier 3: Public Edge HTTPS
+    const publicUrl = `https://${slug}.${this.baseDomain}${cleanPath}`;
+    log?.(`[Edge-Public] Dispatching to public endpoint: ${publicUrl}\n`);
+    const pubRes = await fetch(publicUrl, {
+      method,
+      headers: outgoingHeaders,
+      body,
+    });
+    const pubText = await pubRes.text();
+    return { statusCode: pubRes.status, body: pubText };
+  }
+
+  private doHttpRequest(options: {
+    host: string;
+    port: number;
+    path: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    timeoutMs?: number;
+  }): Promise<{ statusCode: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: options.host,
+          port: options.port,
+          path: options.path,
+          method: options.method,
+          headers: options.headers,
+          timeout: options.timeoutMs || 30000,
+        },
+        (res) => {
+          let resBody = "";
+          res.on("data", (chunk) => (resBody += chunk));
+          res.on("end", () => {
+            resolve({ statusCode: res.statusCode || 200, body: resBody });
+          });
+        }
+      );
+
+      req.on("timeout", () => {
+        req.destroy(new Error(`HTTP request to ${options.host}:${options.port} timed out`));
+      });
+
+      req.on("error", (err) => reject(err));
+
+      if (options.body) {
+        req.write(options.body);
+      }
+      req.end();
+    });
+  }
+
+  /**
+   * Helper to query Docker socket for container matching serviceId, projectId, slug or name.
+   * If container was stopped or asleep, automatically starts it.
+   */
+  private async resolveContainerId(targetId: string): Promise<string | null> {
     return new Promise<string | null>((resolve) => {
       const req = http.request(
         {
           socketPath: "/var/run/docker.sock",
-          path: `/containers/json?filters=${encodeURIComponent(JSON.stringify({ name: [serviceId] }))}`,
+          path: "/containers/json?all=1",
           method: "GET",
         },
-        (res) => {
+        async (res) => {
           let body = "";
           res.on("data", (c) => (body += c));
-          res.on("end", () => {
+          res.on("end", async () => {
             try {
               const list = JSON.parse(body);
-              if (Array.isArray(list) && list.length > 0) {
-                return resolve(list[0].Id);
+              if (!Array.isArray(list)) return resolve(null);
+
+              const matched = list.find((c: any) => {
+                const labels = c.Labels || {};
+                const names = c.Names || [];
+                return (
+                  labels.serviceId === targetId ||
+                  labels.projectId === targetId ||
+                  labels.slug === targetId ||
+                  c.Id === targetId ||
+                  c.Id?.startsWith(targetId) ||
+                  names.some((n: string) =>
+                    n === `/${targetId}` ||
+                    n.includes(targetId) ||
+                    n.includes(`service-${targetId}`) ||
+                    n.includes(`app-${targetId}`)
+                  )
+                );
+              });
+
+              if (!matched) return resolve(null);
+
+              // If container is exited / sleeping, wake it up immediately
+              if (matched.State !== "running") {
+                await this.startStoppedContainer(matched.Id);
+                // Allow process to bind
+                await new Promise((r) => setTimeout(r, 1000));
               }
-              resolve(null);
+
+              return resolve(matched.Id);
             } catch {
               resolve(null);
             }
@@ -449,6 +763,48 @@ export class TaskDispatcher {
         }
       );
       req.on("error", () => resolve(null));
+      req.end();
+    });
+  }
+
+  private async startStoppedContainer(containerId: string): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      const req = http.request(
+        {
+          socketPath: "/var/run/docker.sock",
+          path: `/containers/${containerId}/start`,
+          method: "POST",
+        },
+        (res) => {
+          resolve(res.statusCode === 204 || res.statusCode === 304);
+        }
+      );
+      req.on("error", () => resolve(false));
+      req.end();
+    });
+  }
+
+  private async queryDockerContainers(): Promise<any[]> {
+    return new Promise((resolve) => {
+      const req = http.request(
+        {
+          socketPath: "/var/run/docker.sock",
+          path: "/containers/json?all=1",
+          method: "GET",
+        },
+        (res) => {
+          let body = "";
+          res.on("data", (c) => (body += c));
+          res.on("end", () => {
+            try {
+              resolve(JSON.parse(body));
+            } catch {
+              resolve([]);
+            }
+          });
+        }
+      );
+      req.on("error", () => resolve([]));
       req.end();
     });
   }

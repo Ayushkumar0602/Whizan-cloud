@@ -58,21 +58,26 @@ const TargetConfigSchema = z.preprocess(
       serviceId: z.string().min(1, "serviceId or functionId is required"),
       endpointPath: z.string().default("/"),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+      headers: z.record(z.string()).optional(),
       payload: z.any().optional(),
     }),
     z.object({
       targetType: z.literal("PROJECT"),
       projectId: z.string().min(1, "projectId is required"),
+      projectSlug: z.string().optional(),
       routePath: z.string().default("/"),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
+      headers: z.record(z.string()).optional(),
       payload: z.any().optional(),
     }),
     z.object({
       targetType: z.literal("SERVICE"),
       serviceId: z.string().min(1, "serviceId is required"),
+      serviceSlug: z.string().optional(),
       routePath: z.string().default("/"),
       port: z.number().int().positive().optional(),
       method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]).default("POST"),
+      headers: z.record(z.string()).optional(),
       payload: z.any().optional(),
     }),
     z.object({
@@ -157,7 +162,76 @@ function calculateNextRun(schedule: string, timezone = "UTC"): Date {
   return interval.next().toDate();
 }
 
+async function enrichTargetConfigWithSlug(target: any): Promise<any> {
+  if (!target || typeof target !== "object") return target;
+  const enriched = { ...target };
+
+  if (enriched.targetType === "SERVICE" && enriched.serviceId) {
+    try {
+      const svc = await prisma.backendService.findFirst({
+        where: { OR: [{ id: enriched.serviceId }, { slug: enriched.serviceId }] },
+        select: { id: true, slug: true, internalPort: true },
+      });
+      if (svc) {
+        enriched.serviceSlug = svc.slug;
+        if (!enriched.port && svc.internalPort) {
+          enriched.port = svc.internalPort;
+        }
+      }
+    } catch {}
+  } else if (enriched.targetType === "PROJECT" && enriched.projectId) {
+    try {
+      const proj = await prisma.project.findFirst({
+        where: { OR: [{ id: enriched.projectId }, { slug: enriched.projectId }] },
+        select: { id: true, slug: true },
+      });
+      if (proj) {
+        enriched.projectSlug = proj.slug;
+      }
+    } catch {}
+  }
+
+  return enriched;
+}
+
 export async function cronRoutes(app: FastifyInstance) {
+  // ─── 0. RESOLVE TARGET SLUG & MESH INFO (Internal Mesh) ──────────────────────
+  app.get("/resolve-target", async (request: any, reply) => {
+    const meshTokenHeader = request.headers["x-mesh-token"];
+    const authHeader = request.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!isAuthorizedMeshToken(meshTokenHeader) && !isAuthorizedMeshToken(bearerToken)) {
+      return reply.code(403).send({ error: "Forbidden: Internal Mesh Token required" });
+    }
+
+    const { type, id } = request.query as { type?: string; id?: string };
+    if (!id) {
+      return reply.code(400).send({ error: "Target id is required" });
+    }
+
+    const targetType = (type || "SERVICE").toUpperCase();
+
+    if (targetType === "SERVICE" || targetType === "CONTAINER_EXEC") {
+      const svc = await prisma.backendService.findFirst({
+        where: { OR: [{ id }, { slug: id }] },
+        select: { id: true, slug: true, internalPort: true, name: true },
+      });
+      if (svc) {
+        return reply.send({ ok: true, id: svc.id, slug: svc.slug, port: svc.internalPort, type: "SERVICE" });
+      }
+    } else if (targetType === "PROJECT") {
+      const proj = await prisma.project.findFirst({
+        where: { OR: [{ id }, { slug: id }] },
+        select: { id: true, slug: true, name: true },
+      });
+      if (proj) {
+        return reply.send({ ok: true, id: proj.id, slug: proj.slug, port: 3000, type: "PROJECT" });
+      }
+    }
+
+    return reply.code(404).send({ error: "Target resource not found", id, type: targetType });
+  });
+
   // ─── 1. LIST CRON JOBS ───────────────────────────────────────────────────────
   app.get("/", { preHandler: [app.authenticate] }, async (request: any, reply) => {
     const userId = request.user?.userId || request.user?.id;
@@ -200,8 +274,8 @@ export async function cronRoutes(app: FastifyInstance) {
     const { target, schedule, timezone, ...rest } = parsed.data;
     const nextRunAt = rest.enabled ? calculateNextRun(schedule, timezone) : null;
 
-    // Sanitize target config: Strip payload/body if method is GET or HEAD
-    const sanitizedTarget = { ...target } as any;
+    // Sanitize target config: Strip payload/body if method is GET or HEAD, and enrich with slug
+    const sanitizedTarget = await enrichTargetConfigWithSlug({ ...target });
     if (sanitizedTarget.method && ["GET", "HEAD"].includes(sanitizedTarget.method.toUpperCase())) {
       delete sanitizedTarget.body;
       delete sanitizedTarget.payload;
@@ -318,7 +392,7 @@ export async function cronRoutes(app: FastifyInstance) {
     };
 
     if (target) {
-      const sanitizedTarget = { ...target } as any;
+      const sanitizedTarget = await enrichTargetConfigWithSlug({ ...target });
       if (sanitizedTarget.method && ["GET", "HEAD"].includes(sanitizedTarget.method.toUpperCase())) {
         delete sanitizedTarget.body;
         delete sanitizedTarget.payload;
@@ -326,12 +400,12 @@ export async function cronRoutes(app: FastifyInstance) {
       updateData.targetType = sanitizedTarget.targetType;
       updateData.targetConfig = sanitizedTarget;
     } else if (existing.targetConfig) {
-      const existingConfig = { ...(existing.targetConfig as any) };
+      const existingConfig = await enrichTargetConfigWithSlug({ ...(existing.targetConfig as any) });
       if (existingConfig.method && ["GET", "HEAD"].includes(existingConfig.method.toUpperCase())) {
         delete existingConfig.body;
         delete existingConfig.payload;
-        updateData.targetConfig = existingConfig;
       }
+      updateData.targetConfig = existingConfig;
     }
 
     const updated = await prisma.cronJob.update({
