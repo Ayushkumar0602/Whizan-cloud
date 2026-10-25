@@ -222,6 +222,11 @@ const dbInactivityInterval = setInterval(async () => {
     const docker = new Docker({ socketPath: "/var/run/docker.sock" });
 
     for (const db of runningDatabases) {
+      // Only auto-sleep free tier databases
+      if (db.instanceType && db.instanceType.toLowerCase() !== "free") {
+        continue;
+      }
+
       const accessKey = `db:access:${db.id}`;
       const lastAccessRaw = await redisPub.get(accessKey);
       const lastAccess = lastAccessRaw ? parseInt(lastAccessRaw, 10) : db.updatedAt.getTime();
@@ -245,7 +250,7 @@ const dbInactivityInterval = setInterval(async () => {
                 db.databaseName,
                 "-t",
                 "-c",
-                "SELECT count(*) FROM pg_stat_activity WHERE state = 'active' AND pid <> pg_backend_pid();",
+                "SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid();",
               ],
               AttachStdout: true,
               AttachStderr: true,

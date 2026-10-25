@@ -90,16 +90,31 @@ const worker = new Worker<ServiceBuildJob>(
         const deploymentArchive = path.join(SOURCE_BASE_DIR, "deployments", `${deploymentId}.tar.gz`);
         const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
         const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
-        const archiveUrl =
-          (job.data as any).archiveUrl ||
-          (supabaseUrl
-            ? `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${serviceId}/${deploymentId}.tar.gz`
-            : null);
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+        const supabaseHeaders: Record<string, string> = {};
+        if (supabaseKey) {
+          supabaseHeaders["Authorization"] = `Bearer ${supabaseKey}`;
+          supabaseHeaders["apikey"] = supabaseKey;
+        }
+
+        const candidateUrls: string[] = [];
+        if ((job.data as any).archiveUrl) {
+          candidateUrls.push((job.data as any).archiveUrl);
+        }
+        if (supabaseUrl) {
+          candidateUrls.push(
+            `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${serviceId}/${deploymentId}.tar.gz`,
+            `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${serviceId}/source.tar.gz`,
+            `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${serviceId}.tar.gz`,
+            `${supabaseUrl}/storage/v1/object/authenticated/${supabaseBucket}/services/${serviceId}/${deploymentId}.tar.gz`,
+            `${supabaseUrl}/storage/v1/object/authenticated/${supabaseBucket}/services/${serviceId}/source.tar.gz`
+          );
+        }
 
         // 1. Download directly from Supabase S3 Object Storage if available
-        if (archiveUrl) {
+        for (const url of candidateUrls) {
           try {
-            const res = await fetch(archiveUrl, { method: "GET" });
+            const res = await fetch(url, { method: "GET", headers: supabaseHeaders });
             if (res.ok) {
               const arrayBuf = await res.arrayBuffer();
               if (arrayBuf.byteLength > 100) {
@@ -107,7 +122,8 @@ const worker = new Worker<ServiceBuildJob>(
                 await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
                 await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
                 await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
-                await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+                await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage (${path.basename(url)})`);
+                break;
               }
             }
           } catch {}
@@ -682,7 +698,29 @@ redisSub.on("message", async (channel, message) => {
             try {
               await fs.access(persistentArchive);
               archiveExists = true;
-            } catch {}
+            } catch {
+              const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+              const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+              if (supabaseUrl) {
+                try {
+                  const headers: Record<string, string> = {};
+                  if (supabaseKey) {
+                    headers["Authorization"] = `Bearer ${supabaseKey}`;
+                    headers["apikey"] = supabaseKey;
+                  }
+                  const res = await fetch(`${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/services/${dep.serviceId}/source.tar.gz`, { headers });
+                  if (res.ok) {
+                    const buf = await res.arrayBuffer();
+                    if (buf.byteLength > 100) {
+                      await fs.mkdir(path.dirname(persistentArchive), { recursive: true });
+                      await fs.writeFile(persistentArchive, Buffer.from(buf));
+                      archiveExists = true;
+                    }
+                  }
+                } catch {}
+              }
+            }
 
             if (archiveExists) {
               await publishLog(redisPub, deploymentId, `📦 [Wakeup] Restoring from persistent source archive...`);

@@ -182,15 +182,30 @@ const worker = new Worker<BuildJob>(
           // 1. Download directly from Supabase S3 Object Storage if available
           const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
           const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "whizan-deployments";
-          const archiveUrl =
-            (job.data as any).archiveUrl ||
-            (supabaseUrl
-              ? `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/projects/${projectId}/${deploymentId}.tar.gz`
-              : null);
+          const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || "";
+          const supabaseHeaders: Record<string, string> = {};
+          if (supabaseKey) {
+            supabaseHeaders["Authorization"] = `Bearer ${supabaseKey}`;
+            supabaseHeaders["apikey"] = supabaseKey;
+          }
 
-          if (archiveUrl) {
+          const candidateUrls: string[] = [];
+          if ((job.data as any).archiveUrl) {
+            candidateUrls.push((job.data as any).archiveUrl);
+          }
+          if (supabaseUrl) {
+            candidateUrls.push(
+              `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/projects/${projectId}/${deploymentId}.tar.gz`,
+              `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/projects/${projectId}/source.tar.gz`,
+              `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/projects/${projectId}.tar.gz`,
+              `${supabaseUrl}/storage/v1/object/authenticated/${supabaseBucket}/projects/${projectId}/${deploymentId}.tar.gz`,
+              `${supabaseUrl}/storage/v1/object/authenticated/${supabaseBucket}/projects/${projectId}/source.tar.gz`
+            );
+          }
+
+          for (const url of candidateUrls) {
             try {
-              const res = await fetch(archiveUrl, { method: "GET" });
+              const res = await fetch(url, { method: "GET", headers: supabaseHeaders });
               if (res.ok) {
                 const arrayBuf = await res.arrayBuffer();
                 if (arrayBuf.byteLength > 100) {
@@ -198,7 +213,8 @@ const worker = new Worker<BuildJob>(
                   await fs.mkdir(path.join(SOURCE_BASE_DIR, "deployments"), { recursive: true });
                   await fs.writeFile(persistentArchive, Buffer.from(arrayBuf));
                   await fs.writeFile(deploymentArchive, Buffer.from(arrayBuf));
-                  await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage`);
+                  await log(`✓ Downloaded ${(arrayBuf.byteLength / (1024 * 1024)).toFixed(2)} MB archive from Supabase Storage (${path.basename(url)})`);
+                  break;
                 }
               }
             } catch {}
