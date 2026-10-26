@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useAuth } from "@/lib/auth";
 import { auth, type User } from "@/lib/api";
-import { sendOtpEmail } from "@/lib/emailjs";
 import {
   enrollBiometric,
   isPlatformBiometricSupported,
@@ -27,6 +26,9 @@ import {
   Eye,
   Pencil,
   Check,
+  FileText,
+  ExternalLink,
+  X,
 } from "lucide-react";
 
 type RegistrationStep = "DETAILS" | "VERIFY_EMAIL" | "MANDATORY_2FA";
@@ -44,6 +46,9 @@ function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   // Pending user session held in memory until onboarding is completed
   const [pendingRegisterSession, setPendingRegisterSession] = useState<{
@@ -59,7 +64,6 @@ function RegisterForm() {
   // OTP state — Single string value for robust mobile entry
   const [otpCode, setOtpCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [localGeneratedOtp, setLocalGeneratedOtp] = useState<string>("");
   const [otpError, setOtpError] = useState(false);
 
   // 2FA Enrollment state (Step 3)
@@ -96,52 +100,36 @@ function RegisterForm() {
   }, [resendCooldown]);
 
   /**
-   * Dispatches the 6-digit OTP via API / EmailJS
-   */
-  async function triggerOtpDispatch(targetEmail: string) {
-    const rawOtp = String(Math.floor(100000 + Math.random() * 900000));
-    setLocalGeneratedOtp(rawOtp);
-
-    try {
-      await auth.sendOtp({ email: targetEmail });
-      return true;
-    } catch {
-      const directResult = await sendOtpEmail({
-        email: targetEmail,
-        passcode: rawOtp,
-        time: "15 minutes",
-        companyName: "Whizan Cloud Services",
-      });
-      if (!directResult.success) {
-        throw new Error(directResult.error || "Failed to deliver verification email.");
-      }
-      return true;
-    }
-  }
-
-  /**
-   * Step 1: Submit details, create unverified account, and trigger OTP email
+   * Step 1: Submit details, create unverified account, and accept terms.
+   * Single source of truth: backend automatically dispatches the single verification OTP email.
    */
   async function handleDetailsSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!agreedToTerms) {
+      toast.error("Please accept the Terms of Service & Acceptable Use Policy to continue.");
+      return;
+    }
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
     }
+    if (isSubmittingRef.current || loading) return;
+    isSubmittingRef.current = true;
 
     setLoading(true);
     try {
-      // 1. Create account on backend (unverified state)
+      // 1. Create account on backend (unverified state) with explicit terms acceptance
+      // Backend automatically generates & sends the 1 verification OTP email
       const res = await auth.register({
         email: email.trim().toLowerCase(),
         password,
         name: name.trim() || undefined,
+        acceptTerms: true,
       });
 
       setPendingRegisterSession(res);
 
-      // 2. Dispatch verification OTP to email
-      await triggerOtpDispatch(email.trim().toLowerCase());
+      // 2. Transition straight to Step 2 without duplicate client-side dispatch
       setStep("VERIFY_EMAIL");
       setResendCooldown(60);
       setOtpCode("");
@@ -151,6 +139,7 @@ function RegisterForm() {
       toast.error(err.message || "Failed to create account. Please try again.");
     } finally {
       setLoading(false);
+      isSubmittingRef.current = false;
     }
   }
 
@@ -181,9 +170,9 @@ function RegisterForm() {
       setResendCooldown(60);
       toast.success(`Email updated to ${cleanNewEmail}. New verification code sent!`);
     } catch (err: any) {
-      // Fallback: update local email state and dispatch fresh OTP
+      // Fallback: update local email state and dispatch fresh OTP via API
       try {
-        await triggerOtpDispatch(cleanNewEmail);
+        await auth.sendOtp({ email: cleanNewEmail });
         setEmail(cleanNewEmail);
         setIsEditingEmail(false);
         setOtpCode("");
@@ -199,14 +188,14 @@ function RegisterForm() {
   }
 
   /**
-   * Resend OTP in Step 2
+   * Resend OTP in Step 2 — Clean single server dispatch
    */
   async function handleResendOtp() {
     if (resendCooldown > 0 || loading) return;
     setLoading(true);
     setOtpError(false);
     try {
-      await triggerOtpDispatch(email.trim());
+      await auth.sendOtp({ email: email.trim().toLowerCase() });
       setResendCooldown(60);
       toast.success(`New verification code sent to ${email}`);
     } catch (err: any) {
@@ -217,7 +206,7 @@ function RegisterForm() {
   }
 
   /**
-   * Step 2: Verify OTP
+   * Step 2: Verify OTP via API
    */
   async function handleVerifyEmailOtp(codeToVerify?: string) {
     const code = (codeToVerify || otpCode).trim();
@@ -227,26 +216,12 @@ function RegisterForm() {
     setOtpError(false);
 
     try {
-      let isVerified = false;
-      try {
-        await auth.verifyOtp({ email: email.trim(), passcode: code });
-        isVerified = true;
-      } catch (err) {
-        if (localGeneratedOtp && localGeneratedOtp === code) {
-          isVerified = true;
-        } else {
-          throw err;
-        }
-      }
+      await auth.verifyOtp({ email: email.trim().toLowerCase(), passcode: code });
 
-      if (!isVerified) {
-        throw new Error("Invalid verification code. Please check your email.");
-      }
-
-      // Verify email on backend with session if available
+      // Mark email verified on backend with session if available
       if (pendingRegisterSession) {
         try {
-          await auth.verifyEmail({ passcode: code, email: email.trim() });
+          await auth.verifyEmail({ passcode: code, email: email.trim().toLowerCase() });
         } catch {}
       }
 
@@ -263,11 +238,13 @@ function RegisterForm() {
     }
   }
 
+
   /**
    * Case B: Defer email verification & enter in Read-Only Mode
    */
   function handleDeferVerificationToReadOnly() {
     if (!pendingRegisterSession) return;
+    saveTwoFactorTrust(email.trim().toLowerCase());
     setSession(pendingRegisterSession.accessToken, pendingRegisterSession.user);
     toast.info("Account active in View-Only mode. Verify your email anytime to unlock deployments.");
     router.push(destination);
@@ -417,9 +394,34 @@ function RegisterForm() {
               <div className="form-hint">Minimum 8 characters required</div>
             </div>
 
+            {/* Mandatory Terms & Conditions Checkbox */}
+            <div className="auth-terms-box">
+              <label className="auth-checkbox-label">
+                <input
+                  type="checkbox"
+                  id="accept-terms-checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="auth-checkbox"
+                  required
+                />
+                <span className="auth-terms-text">
+                  I agree to the{" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="auth-terms-link"
+                  >
+                    Terms of Service, Acceptable Use Policy
+                  </button>{" "}
+                  and Privacy Policy.
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
               className="btn btn-primary btn-lg"
               style={{ width: "100%", marginTop: "0.25rem" }}
             >
@@ -742,6 +744,84 @@ function RegisterForm() {
         </>
       )}
 
+      {/* ── TERMS & CONDITIONS PREVIEW MODAL ── */}
+      {showTermsModal && (
+        <div className="terms-modal-overlay" onClick={() => setShowTermsModal(false)}>
+          <div className="terms-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="terms-modal-header">
+              <div className="terms-modal-header-left">
+                <div className="terms-modal-icon">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="terms-modal-title">Terms of Service & Acceptable Use</h3>
+                  <div className="terms-modal-subtitle">Effective Oct 26, 2026 • Version 2026-10-v1</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(false)}
+                className="terms-modal-close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="terms-modal-body">
+              <div className="terms-summary-callout">
+                <strong>Platform Governance Highlights:</strong>
+                <ul className="terms-summary-list">
+                  <li><strong>Compute Runtimes:</strong> Microservices, Web Projects, and V8 Edge Functions run in isolated sandboxes.</li>
+                  <li><strong>Eco-Standby Policy:</strong> Free tier containers sleep after 15 min idle ($0/hr) and auto-wake on incoming requests.</li>
+                  <li><strong>Zero-Tolerance Misuse:</strong> Crypto-mining, DDoS botnets, phishing, and abusive scraping are strictly prohibited.</li>
+                  <li><strong>Ownership:</strong> You retain 100% intellectual property rights to your deployed source code and storage objects.</li>
+                </ul>
+              </div>
+
+              <div className="terms-text-scroll">
+                <h4>1. Platform Architecture & Hosting</h4>
+                <p>Whizan Cloud provides managed edge routing, serverless V8 edge functions, PostgreSQL clusters, and zero-docker container runtimes. All tenants are bound by allocated CPU and RAM limits determined by their subscription tier.</p>
+
+                <h4>2. Account Security & Two-Factor Authentication</h4>
+                <p>To safeguard infrastructure integrity, users must provide verifiable contact credentials and enroll in mandatory two-factor authentication (Biometric WebAuthn or Email OTP). You are solely responsible for actions performed under your generated API credentials.</p>
+
+                <h4>3. Acceptable Use Policy (AUP)</h4>
+                <p>The platform must not be used for cryptocurrency mining, botnet command-and-control, network stress testing, malicious software distribution, unsolicited bulk email (SPAM), or illegal content. Violations trigger immediate instance termination.</p>
+
+                <h4>4. Data Ownership & Backups</h4>
+                <p>You retain full copyright over your application source code, databases, and uploaded assets. While high-availability replication is provided, users remain responsible for maintaining independent offsite backups of critical databases.</p>
+
+                <h4>5. Limitation of Liability</h4>
+                <p>Whizan Cloud is provided on an &quot;AS IS&quot; basis. We are not liable for incidental, consequential, or punitive damages arising from hosting interruptions or maintenance windows.</p>
+              </div>
+            </div>
+
+            <div className="terms-modal-footer">
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noreferrer"
+                className="terms-external-link"
+              >
+                <span>Read Full Document</span>
+                <ExternalLink size={13} />
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setAgreedToTerms(true);
+                  setShowTermsModal(false);
+                }}
+                className="btn btn-primary"
+                style={{ padding: "0.5rem 1.25rem", fontSize: "0.85rem" }}
+              >
+                I Understand & Agree
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         .auth-form-root {
           animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -940,6 +1020,180 @@ function RegisterForm() {
         }
         .auth-form-link:hover {
           opacity: 0.8;
+        }
+
+        /* Terms & Conditions Checkbox & Box */
+        .auth-terms-box {
+          margin-top: 0.85rem;
+          margin-bottom: 0.4rem;
+          padding: 0.65rem 0.75rem;
+          border-radius: 8px;
+          background: var(--bg-subtle);
+          border: 1px solid var(--border);
+        }
+        .auth-checkbox-label {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.55rem;
+          cursor: pointer;
+          font-size: 0.78rem;
+          line-height: 1.42;
+          color: var(--muted);
+          user-select: none;
+        }
+        .auth-checkbox {
+          width: 15px;
+          height: 15px;
+          margin-top: 1.5px;
+          accent-color: var(--accent);
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .auth-terms-text {
+          flex: 1;
+        }
+        .auth-terms-link {
+          background: none;
+          border: none;
+          padding: 0;
+          color: var(--accent);
+          font-weight: 600;
+          text-decoration: underline;
+          cursor: pointer;
+          font-family: inherit;
+          font-size: inherit;
+        }
+        .auth-terms-link:hover {
+          opacity: 0.8;
+        }
+
+        /* Terms Preview Modal */
+        .terms-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          background: rgba(0, 0, 0, 0.55);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+          animation: fadeIn 0.15s ease-out;
+        }
+        .terms-modal-card {
+          width: 100%;
+          max-width: 580px;
+          max-height: 85vh;
+          background: #ffffff;
+          border-radius: 14px;
+          border: 1px solid var(--border);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .terms-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 1rem 1.25rem;
+          border-bottom: 1px solid var(--border);
+          background: #f8fafc;
+        }
+        .terms-modal-header-left {
+          display: flex;
+          align-items: center;
+          gap: 0.65rem;
+        }
+        .terms-modal-icon {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          background: var(--accent-glow);
+          color: var(--accent);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .terms-modal-title {
+          font-size: 0.96rem;
+          font-weight: 700;
+          color: #0f172a;
+          margin: 0;
+        }
+        .terms-modal-subtitle {
+          font-size: 0.72rem;
+          color: #64748b;
+          margin-top: 0.1rem;
+        }
+        .terms-modal-close {
+          background: none;
+          border: none;
+          color: #64748b;
+          cursor: pointer;
+          padding: 0.35rem;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s;
+        }
+        .terms-modal-close:hover {
+          background: #e2e8f0;
+          color: #0f172a;
+        }
+        .terms-modal-body {
+          padding: 1.25rem;
+          overflow-y: auto;
+          flex: 1;
+        }
+        .terms-summary-callout {
+          background: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 0.85rem 1rem;
+          margin-bottom: 1rem;
+          font-size: 0.8rem;
+          color: #334155;
+        }
+        .terms-summary-list {
+          margin: 0.4rem 0 0 1.2rem;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+        }
+        .terms-text-scroll h4 {
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #1e293b;
+          margin: 0.9rem 0 0.25rem 0;
+        }
+        .terms-text-scroll p {
+          font-size: 0.8rem;
+          line-height: 1.5;
+          color: #475569;
+          margin: 0;
+        }
+        .terms-modal-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.85rem 1.25rem;
+          border-top: 1px solid var(--border);
+          background: #f8fafc;
+        }
+        .terms-external-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.8rem;
+          color: var(--accent);
+          font-weight: 600;
+          text-decoration: none;
+        }
+        .terms-external-link:hover {
+          text-decoration: underline;
         }
       `}</style>
     </div>

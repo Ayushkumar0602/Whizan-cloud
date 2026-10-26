@@ -126,7 +126,7 @@ function LoginForm() {
     setLocalGeneratedOtp(rawOtp);
 
     try {
-      await auth.sendOtp({ email: targetEmail });
+      await auth.sendOtp({ email: targetEmail, purpose: "LOGIN_2FA" });
       return true;
     } catch {
       const direct = await sendOtpEmail({

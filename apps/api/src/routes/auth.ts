@@ -15,10 +15,16 @@ const RegisterSchema = z.object({
   password: z.string().min(8),
   name: z.string().min(1).optional(),
   passcode: z.string().min(6).max(6).optional(),
+  acceptTerms: z.boolean().optional(),
+});
+
+const AcceptTermsSchema = z.object({
+  version: z.string().optional(),
 });
 
 const SendOtpSchema = z.object({
   email: z.string().email(),
+  purpose: z.enum(["REGISTRATION", "LOGIN_2FA", "RESET"]).optional(),
 });
 
 const VerifyOtpSchema = z.object({
@@ -326,10 +332,18 @@ export async function authRoutes(fastify: FastifyInstance) {
       });
     }
 
-    // Check if account already exists
+    const purpose = body.data.purpose || "REGISTRATION";
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return reply.code(409).send({ error: "An account with this email already exists. Please log in." });
+
+    if (purpose === "LOGIN_2FA") {
+      if (!existing) {
+        return reply.code(404).send({ error: "No account found with this email address." });
+      }
+    } else {
+      // Registration flow: prevent sending to already-verified accounts
+      if (existing && (existing as any).emailVerified) {
+        return reply.code(409).send({ error: "An account with this email already exists. Please log in." });
+      }
     }
 
     const code = generateNumericOtp();
@@ -401,8 +415,15 @@ export async function authRoutes(fastify: FastifyInstance) {
     if (!body.success)
       return reply.code(400).send({ error: body.error.flatten() });
 
-    const { email, password, name, passcode } = body.data;
+    const { email, password, name, passcode, acceptTerms } = body.data;
     const normalizedEmail = email.trim().toLowerCase();
+
+    // Mandatory Terms & Conditions acceptance
+    if (acceptTerms !== true) {
+      return reply.code(400).send({
+        error: "You must accept the Terms of Service, Acceptable Use Policy, and Privacy Policy to create an account.",
+      });
+    }
 
     // If passcode is provided, strictly verify and consume OTP before account creation
     if (passcode) {
@@ -431,8 +452,47 @@ export async function authRoutes(fastify: FastifyInstance) {
         role: assignedRole,
         emailVerified: !!passcode,
         emailVerifiedAt: passcode ? new Date() : null,
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+        termsVersion: "2026-10-v1",
       },
     });
+
+    // Single source of truth: dispatch exactly one verification OTP if registered unverified
+    const xForwardedFor = request.headers["x-forwarded-for"];
+    const cfConnectingIp = request.headers["cf-connecting-ip"];
+    const clientIp = (typeof cfConnectingIp === "string" ? cfConnectingIp : (typeof xForwardedFor === "string" ? xForwardedFor.split(",")[0].trim() : request.ip)) || "127.0.0.1";
+
+    if (!passcode) {
+      const code = generateNumericOtp();
+      const expiresAt = Date.now() + 15 * 60 * 1000;
+      otpMemoryStore.set(normalizedEmail, { code, expiresAt, attempts: 0 });
+      try {
+        await redisClient.setex(`otp:${normalizedEmail}`, 900, code);
+        await redisClient.del(`otp:attempts:${normalizedEmail}`);
+      } catch {}
+
+      const userAgent = (request.headers["user-agent"] as string) || "Browser / Web Client";
+      const country = (request.headers["cf-ipcountry"] as string) || "Global";
+      const requestTime = new Date().toUTCString();
+      const expiryTimeString = new Date(expiresAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+
+      sendOtpEmail({
+        email: normalizedEmail,
+        passcode: code,
+        time: `${expiryTimeString} (15 minutes)`,
+        requestTime,
+        clientIp,
+        deviceInfo: userAgent,
+        location: country,
+        requestId: request.id || `reg_${Date.now().toString(36)}`,
+        companyName: "Whizan Cloud Services",
+      }).catch((err) => {
+        fastify.log.error({ err }, "[Auth] Failed to dispatch registration verification email");
+      });
+
+      await recordOtpSent(normalizedEmail, clientIp).catch(() => {});
+    }
 
     const { accessToken } = await issueTokens(fastify, reply, user.id, user.email, {
       role: assignedRole,
@@ -450,6 +510,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         emailVerified: user.emailVerified,
         twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
         twoFactorMethod: (user as any).twoFactorMethod ?? null,
+        termsAccepted: user.termsAccepted,
+        termsAcceptedAt: user.termsAcceptedAt,
+        termsVersion: user.termsVersion,
       },
     });
   });
@@ -505,6 +568,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         emailVerified: (user as any).emailVerified ?? false,
         twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
         twoFactorMethod: (user as any).twoFactorMethod ?? null,
+        termsAccepted: (user as any).termsAccepted ?? false,
+        termsAcceptedAt: (user as any).termsAcceptedAt ?? null,
+        termsVersion: (user as any).termsVersion ?? null,
       },
     });
   });
@@ -542,6 +608,9 @@ export async function authRoutes(fastify: FastifyInstance) {
       emailVerified: (user as any).emailVerified ?? false,
       twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
       twoFactorMethod: (user as any).twoFactorMethod ?? null,
+      termsAccepted: (user as any).termsAccepted ?? false,
+      termsAcceptedAt: (user as any).termsAcceptedAt ?? null,
+      termsVersion: (user as any).termsVersion ?? null,
     };
 
     // Rotate the refresh token
@@ -599,6 +668,9 @@ export async function authRoutes(fastify: FastifyInstance) {
           twoFactorEnrolled: true,
           twoFactorMethod: true,
           twoFactorVerifiedAt: true,
+          termsAccepted: true,
+          termsAcceptedAt: true,
+          termsVersion: true,
         },
       });
       if (!user) return reply.code(404).send({ error: "User not found" });
@@ -615,6 +687,9 @@ export async function authRoutes(fastify: FastifyInstance) {
         twoFactorEnrolled: (user as any).twoFactorEnrolled ?? false,
         twoFactorMethod: (user as any).twoFactorMethod ?? null,
         twoFactorVerifiedAt: (user as any).twoFactorVerifiedAt ?? null,
+        termsAccepted: (user as any).termsAccepted ?? false,
+        termsAcceptedAt: (user as any).termsAcceptedAt ?? null,
+        termsVersion: (user as any).termsVersion ?? null,
       });
     }
   );
@@ -848,6 +923,51 @@ export async function authRoutes(fastify: FastifyInstance) {
       return reply.send({
         ok: true,
         message: `Two-factor authentication successfully enrolled via ${method}.`,
+        user: updated,
+      });
+    }
+  );
+
+  // POST /api/auth/accept-terms — Records user acceptance of platform Terms of Service & Acceptable Use Policy
+  fastify.post(
+    "/accept-terms",
+    { preHandler: [fastify.authenticate] },
+    async (request, reply) => {
+      const { userId } = request.user;
+      const body = AcceptTermsSchema.safeParse(request.body || {});
+      const version = body.success && body.data.version ? body.data.version : "2026-10-v1";
+
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          termsAccepted: true,
+          termsAcceptedAt: new Date(),
+          termsVersion: version,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          avatarUrl: true,
+          role: true,
+          subscriptionTier: true,
+          emailVerified: true,
+          emailVerifiedAt: true,
+          twoFactorEnrolled: true,
+          twoFactorMethod: true,
+          twoFactorVerifiedAt: true,
+          termsAccepted: true,
+          termsAcceptedAt: true,
+          termsVersion: true,
+          createdAt: true,
+        },
+      });
+
+      userMetaCache.delete(userId);
+
+      return reply.send({
+        ok: true,
+        message: "Terms and Conditions accepted successfully.",
         user: updated,
       });
     }

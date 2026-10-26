@@ -225,13 +225,13 @@ export { apiCache };
 // ─── Auth ──────────────────────────────────────────────────────────────────
 
 export const auth = {
-  register: (data: { email: string; password: string; name?: string; passcode?: string }) =>
+  register: (data: { email: string; password: string; name?: string; passcode?: string; acceptTerms?: boolean }) =>
     request<{ accessToken: string; user: User }>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  sendOtp: (data: { email: string }) =>
+  sendOtp: (data: { email: string; purpose?: "REGISTRATION" | "LOGIN_2FA" | "RESET" }) =>
     request<{ ok: boolean; message: string; expiresIn?: number }>("/api/auth/send-otp", {
       method: "POST",
       body: JSON.stringify(data),
@@ -280,6 +280,12 @@ export const auth = {
     request<{ success: boolean; subscriptionTier: string; message: string }>("/api/auth/subscription", {
       method: "PATCH",
       body: JSON.stringify({ subscriptionTier }),
+    }),
+
+  acceptTerms: (data?: { version?: string }) =>
+    request<{ ok: boolean; message: string; user: User }>("/api/auth/accept-terms", {
+      method: "POST",
+      body: JSON.stringify(data || {}),
     }),
 };
 
@@ -427,6 +433,9 @@ export type User = {
   twoFactorEnrolled?: boolean;
   twoFactorMethod?: "BIOMETRIC" | "EMAIL_OTP" | string | null;
   twoFactorVerifiedAt?: string | null;
+  termsAccepted?: boolean;
+  termsAcceptedAt?: string | null;
+  termsVersion?: string | null;
   createdAt: string;
 };
 

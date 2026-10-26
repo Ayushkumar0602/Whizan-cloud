@@ -31,6 +31,9 @@ model User {
   twoFactorEnrolled Boolean   @default(false) @map("two_factor_enrolled")
   twoFactorMethod   String?   @map("two_factor_method")
   twoFactorVerifiedAt DateTime? @map("two_factor_verified_at")
+  termsAccepted     Boolean   @default(false) @map("terms_accepted")
+  termsAcceptedAt   DateTime? @map("terms_accepted_at")
+  termsVersion      String?   @default("2026-10-v1") @map("terms_version")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
