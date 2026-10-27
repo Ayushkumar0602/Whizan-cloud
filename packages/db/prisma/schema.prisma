@@ -242,6 +242,7 @@ model BackendService {
   cpuLimit       Float           @default(0.5) @map("cpu_limit")           // vCPUs (e.g. 0.1 for free/spin down, 0.5, 1.0, 2.0, 4.0)
   memoryLimit    Int             @default(512) @map("memory_limit")        // RAM in MB (e.g. 512, 1024, 2048, 4096)
   serviceType    String?         @default("WEB_SERVICE") @map("service_type")
+  isWorker       Boolean         @default(false) @map("is_worker")
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
 
