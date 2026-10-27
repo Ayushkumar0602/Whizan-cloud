@@ -274,6 +274,7 @@ model ServiceDeployment {
   status           DeploymentStatus @default(QUEUED)
   uploadType       String?          @default("git") @map("upload_type") // "git" or "direct"
   containerPort    Int?             @map("container_port")  // Mapped host port
+  isWorker         Boolean?         @default(false) @map("is_worker")
   buildStartedAt   DateTime?        @map("build_started_at")
   buildFinishedAt  DateTime?        @map("build_finished_at")
   errorMessage     String?          @map("error_message")
