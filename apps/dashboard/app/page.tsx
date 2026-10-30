@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand";
-import SoftAurora from "@/components/soft-aurora";
+import SplashCursor from "@/components/splash-cursor";
 import { useAuth } from "@/lib/auth";
 import {
   ArrowRight,
@@ -592,22 +592,7 @@ export default function LandingPage() {
       <div className="hero-shell">
         <section className="hero" ref={heroRef}>
           <div className="sky" aria-hidden />
-          <div className="aurora" aria-hidden>
-            <SoftAurora
-              color1="#ffffff"
-              color2="#9fdcff"
-              spectrum={0.04}
-              bandHeight={0.93}
-              bandSpread={1.1}
-              tilt={-6}
-              speed={0.35}
-              colorSpeed={0.5}
-              brightness={1.05}
-              opacity={0.65}
-              mouseInfluence={0.12}
-              clickPulse={false}
-            />
-          </div>
+
           <div className="hero-cloud hc-1" aria-hidden><div className="float" style={cssVars({ "--dur": "14s" })}><PaintedCloud shape="c" seed={11} /></div></div>
           <div className="hero-cloud hc-2" aria-hidden><div className="float" style={cssVars({ "--dur": "16s", "--delay": "-6s" })}><PaintedCloud shape="c" seed={17} /></div></div>
           <div className="hero-cloud hc-3" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={3} /></div></div>
@@ -661,6 +646,22 @@ export default function LandingPage() {
             8 products · 1 console · Free Hobby plan
           </div>
 
+          <SplashCursor
+            contained
+            zIndex={1}
+            intro={false}
+            rainbow={false}
+            colors={["#ffffff", "#eaf4ff", "#d4e8ff"]}
+            colorSpeed={0.3}
+            intensity={0.7}
+            size={1.5}
+            force={0.8}
+            swirl={2.2}
+            trail={1.6}
+            momentum={1.1}
+            shading={0.3}
+            quality="medium"
+          />
           <div className="bank bank-back" aria-hidden><PaintedCloud shape="bank" seed={21} /></div>
           <div className="bank bank-front" aria-hidden><PaintedCloud shape="bank" seed={5} /></div>
         </section>
@@ -1058,16 +1059,6 @@ export default function LandingPage() {
             radial-gradient(70% 45% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 70%),
             radial-gradient(50% 40% at 80% 20%, rgba(130, 190, 255, 0.45), transparent 70%),
             linear-gradient(180deg, #0f5ad8 0%, #1f74ea 28%, #4597f2 55%, #8cc3f8 78%, #d9ecfd 100%);
-        }
-        /* Aurora glows high in the sky, behind clouds, fading before the cloud bank */
-        .aurora {
-          position: absolute;
-          inset: 0;
-          z-index: -2;
-          pointer-events: none;
-          mix-blend-mode: screen;
-          -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 30%, transparent 60%);
-          mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 30%, transparent 60%);
         }
         .hero-cloud {
           position: absolute;
@@ -1769,7 +1760,7 @@ export default function LandingPage() {
           .hc-3 { width: 70vw; left: -25%; top: 55%; }
           .hc-4 { width: 65vw; right: -25%; top: 50%; }
           .bank-back { width: 320%; }
-          .bank-front { width: 280%; bottom: -40px; }
+          .bank-front { width: 280%; bottom: -120px; }
           .section { padding: 5rem 1.25rem 1rem; }
           .why-title { font-size: 1.75rem; }
           .bento { grid-template-columns: 1fr; }
