@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
-import { Instrument_Serif } from "next/font/google";
 import { BrandMark } from "@/components/brand";
 import { useAuth } from "@/lib/auth";
 import {
@@ -20,18 +19,12 @@ import {
   HardDrive,
   Clock,
   Workflow,
-  GitBranch,
+  Plus,
+  Rocket,
+  Moon,
   Copy,
-  Check,
-  X
+  Check
 } from "lucide-react";
-
-const serif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-serif-display",
-});
 
 /* ─── Static content ─────────────────────────────────────────────── */
 
@@ -52,22 +45,7 @@ const DEPLOY_HOLD = 6;
 
 const STACK = [
   "Next.js", "React", "Vite", "Astro", "Node.js", "Python", "Go",
-  "Rust", "Java", "PHP", "Ruby", "Docker", "PostgreSQL", "Redis",
-];
-
-const PROBLEMS = [
-  {
-    title: "Too many dashboards",
-    body: "Frontend on one host, the API on another, the database somewhere else. Each with its own login and bill.",
-  },
-  {
-    title: "Releases that break things",
-    body: "A bad deploy takes the site down, and you find out from your users while you scramble to roll back.",
-  },
-  {
-    title: "Setup before shipping",
-    body: "Dockerfiles, YAML and DNS records stand between you and the first request your app serves.",
-  },
+  "Rust", "Java", "PHP", "Ruby", ".NET", "Docker", "PostgreSQL", "Redis",
 ];
 
 const PRODUCTS = [
@@ -179,7 +157,7 @@ const MCP_CONFIG = `{
   }
 }`;
 
-/* ─── Watercolor clouds ──────────────────────────────────────────── */
+/* ─── Painted clouds ─────────────────────────────────────────────── */
 
 type Puff = [number, number, number];
 
@@ -206,9 +184,9 @@ const CLOUD_SHAPES: Record<"a" | "b" | "c" | "bank", { w: number; h: number; bas
   },
 };
 
-// Painterly cloud drawn with SVG filters: rough pigment edges,
-// a soft blue belly, white highlights and paper grain.
-function WatercolorCloud({ shape, seed = 3 }: { shape: keyof typeof CLOUD_SHAPES; seed?: number }) {
+// Painterly white cloud drawn with SVG filters: rough edges,
+// soft blue shading underneath, highlights and paper grain.
+function PaintedCloud({ shape, seed = 3 }: { shape: keyof typeof CLOUD_SHAPES; seed?: number }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const { w, h, base, puffs } = CLOUD_SHAPES[shape];
   const id = (name: string) => `${name}-${uid}`;
@@ -223,45 +201,40 @@ function WatercolorCloud({ shape, seed = 3 }: { shape: keyof typeof CLOUD_SHAPES
     ));
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="wc-cloud" aria-hidden>
+    <svg viewBox={`0 0 ${w} ${h}`} className="cloud-svg" aria-hidden>
       <defs>
         <clipPath id={id("cut")}>
           <rect x="0" y="0" width={w} height={base} />
         </clipPath>
         <clipPath id={id("shape")}>{circles()}</clipPath>
-        <radialGradient id={id("body")} cx="45%" cy="25%" r="80%">
-          <stop offset="0" stopColor="#f7faff" />
-          <stop offset="0.45" stopColor="#d9e7ff" />
-          <stop offset="0.8" stopColor="#a9c6f7" />
-          <stop offset="1" stopColor="#7fa6ee" />
+        <radialGradient id={id("body")} cx="45%" cy="22%" r="85%">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="0.5" stopColor="#f3f8ff" />
+          <stop offset="0.82" stopColor="#d7e7fb" />
+          <stop offset="1" stopColor="#b6cff2" />
         </radialGradient>
         <filter id={id("rough")} x="-15%" y="-15%" width="130%" height="130%">
           <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" seed={seed} result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="20" xChannelSelector="R" yChannelSelector="G" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="18" xChannelSelector="R" yChannelSelector="G" />
         </filter>
         <filter id={id("soft")} x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation="12" />
         </filter>
         <filter id={id("grain")}>
           <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed={seed + 7} />
-          <feColorMatrix type="matrix" values="0 0 0 0 0.15  0 0 0 0 0.3  0 0 0 0 0.75  0 0 0 0.9 -0.35" />
+          <feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.45  0 0 0 0 0.8  0 0 0 0.8 -0.35" />
         </filter>
       </defs>
 
       <g filter={`url(#${id("rough")})`}>
         <g clipPath={`url(#${id("cut")})`}>
-          {/* Pigment pooled at the outer edge, then the body painted just inside it */}
-          <g fill="#8db0ef" opacity="0.85">{circles()}</g>
-          <g fill={`url(#${id("body")})`}>{circles({ inset: 3.5 })}</g>
-
-          {/* Blue belly shading pooled at the bottom */}
+          <g fill="#c4d9f5" opacity="0.9">{circles()}</g>
+          <g fill={`url(#${id("body")})`}>{circles({ inset: 3 })}</g>
           <g clipPath={`url(#${id("shape")})`}>
-            <g fill="#5d8ce8" opacity="0.32" filter={`url(#${id("soft")})`}>{circles({ dx: 6, dy: 34, scale: 0.92 })}</g>
-            <rect x="0" y="0" width={w} height={h} filter={`url(#${id("grain")})`} opacity="0.22" />
-            {/* Highlights where light hits the tops */}
-            <g fill="#ffffff" opacity="0.75" filter={`url(#${id("soft")})`}>{circles({ dx: -10, dy: -30, scale: 0.55 })}</g>
+            <g fill="#87a9e6" opacity="0.3" filter={`url(#${id("soft")})`}>{circles({ dx: 6, dy: 34, scale: 0.92 })}</g>
+            <rect x="0" y="0" width={w} height={h} filter={`url(#${id("grain")})`} opacity="0.15" />
+            <g fill="#ffffff" opacity="0.9" filter={`url(#${id("soft")})`}>{circles({ dx: -10, dy: -30, scale: 0.55 })}</g>
           </g>
-
         </g>
       </g>
     </svg>
@@ -298,7 +271,7 @@ function useScrollReveal() {
   }, []);
 }
 
-// Writes the pointer position into CSS variables for cloud parallax
+// Writes the pointer position into CSS variables for parallax and tilt
 function usePointerParallax(ref: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const el = ref.current;
@@ -355,6 +328,153 @@ function highlightShell(src: string): ReactNode[] {
 }
 
 const cssVars = (vars: Record<string, string | number>) => vars as CSSProperties;
+
+/* ─── Hero card arc ──────────────────────────────────────────────── */
+
+// Small product screens arranged on a curved 3D arc around the viewer.
+const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
+  {
+    key: "cron",
+    body: (
+      <>
+        <div className="mini-label"><Clock size={11} /> Cron</div>
+        <div className="mini-mono mini-big">0 3 * * *</div>
+        <div className="mini-text">Nightly backup</div>
+        <div className="mini-chip mini-chip-ok">Next run 03:00</div>
+      </>
+    ),
+  },
+  {
+    key: "deploys",
+    body: (
+      <>
+        <div className="mini-label"><Rocket size={11} /> Deployments</div>
+        {[
+          ["web", "Ready", "ok"],
+          ["api", "Ready", "ok"],
+          ["worker", "Building", "busy"],
+          ["docs", "Ready", "ok"],
+        ].map(([name, state, tone]) => (
+          <div key={name} className="mini-row">
+            <span className="mini-mono">{name}</span>
+            <span className={`mini-chip mini-chip-${tone}`}>{state}</span>
+          </div>
+        ))}
+      </>
+    ),
+  },
+  {
+    key: "metrics",
+    body: (
+      <>
+        <div className="mini-label"><Activity size={11} /> CPU · api-gateway</div>
+        <div className="mini-big">12%</div>
+        <svg viewBox="0 0 140 56" className="mini-chart" aria-hidden>
+          <defs>
+            <linearGradient id="arc-chart-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#2563eb" stopOpacity="0.35" />
+              <stop offset="1" stopColor="#2563eb" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16 L140 56 L0 56 Z" fill="url(#arc-chart-fill)" />
+          <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16" fill="none" stroke="#2563eb" strokeWidth="2" />
+        </svg>
+      </>
+    ),
+  },
+  {
+    key: "logs",
+    body: (
+      <>
+        <div className="mini-label"><Terminal size={11} /> Runtime logs</div>
+        <div className="mini-log mini-mono">
+          <div><span>12:04</span> GET /users 200</div>
+          <div><span>12:04</span> GET /plans 200</div>
+          <div><span>12:05</span> POST /orders 201</div>
+          <div><span>12:05</span> GET /health 200</div>
+        </div>
+      </>
+    ),
+  },
+  {
+    key: "console",
+    tone: "dark",
+    body: (
+      <>
+        <div className="mini-dark-title">
+          Frontends, APIs <span className="mini-dot" /> and databases
+          <span className="mini-dim"> in one console.</span>
+        </div>
+      </>
+    ),
+  },
+  {
+    key: "new",
+    tone: "glass",
+    body: (
+      <>
+        <span className="mini-plus"><Plus size={18} /></span>
+        <div className="mini-glass-title">New deployment</div>
+        <div className="mini-glass-sub">from GitHub</div>
+      </>
+    ),
+  },
+  {
+    key: "db",
+    body: (
+      <>
+        <div className="mini-label"><Database size={11} /> users</div>
+        <div className="mini-table mini-mono">
+          {[["1", "ana@…"], ["2", "raj@…"], ["3", "li@…"], ["4", "sam@…"]].map(([id, email]) => (
+            <div key={id} className="mini-row"><span>{id}</span><span>{email}</span></div>
+          ))}
+        </div>
+      </>
+    ),
+  },
+  {
+    key: "storage",
+    body: (
+      <>
+        <div className="mini-label"><HardDrive size={11} /> Storage</div>
+        <div className="mini-mono mini-text">assets</div>
+        <div className="mini-big">1.2 GB</div>
+        <div className="mini-bar"><span style={{ width: "38%" }} /></div>
+      </>
+    ),
+  },
+  {
+    key: "mcp",
+    body: (
+      <>
+        <div className="mini-label"><Terminal size={11} /> MCP</div>
+        <div className="mini-mono mini-text">whizan_check_health</div>
+        <div className="mini-chip mini-chip-ok">200 OK</div>
+      </>
+    ),
+  },
+];
+
+function CardArc() {
+  const mid = (ARC_CARDS.length - 1) / 2;
+  return (
+    <div className="arc" aria-hidden>
+      <div className="arc-tilt">
+        <div className="arc-sway">
+          {ARC_CARDS.map((card, i) => (
+            <div
+              key={card.key}
+              className={`arc-card ${card.tone ? `arc-card-${card.tone}` : ""}`}
+              style={cssVars({ "--a": `${(mid - i) * 9.5}deg`, "--i": i })}
+            >
+              {card.body}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* ─── Deploy animation ───────────────────────────────────────────── */
 
@@ -429,22 +549,10 @@ export default function LandingPage() {
   const ctaLabel = !loading && user ? "Open console" : "Start for free";
   const [devTab, setDevTab] = useState<"cli" | "mcp">("cli");
   const [copied, setCopied] = useState(false);
-  const [bannerOpen, setBannerOpen] = useState(true);
   const heroRef = useRef<HTMLElement>(null);
 
   useScrollReveal();
   usePointerParallax(heroRef);
-
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem("wz-cli-banner") === "closed") setBannerOpen(false);
-    } catch {}
-  }, []);
-
-  const closeBanner = () => {
-    setBannerOpen(false);
-    try { sessionStorage.setItem("wz-cli-banner", "closed"); } catch {}
-  };
 
   const copySnippet = () => {
     navigator.clipboard.writeText(devTab === "cli" ? CLI_SNIPPET : MCP_CONFIG);
@@ -453,108 +561,79 @@ export default function LandingPage() {
   };
 
   return (
-    <div className={`lp ${serif.variable}`}>
-      {/* Announcement */}
-      {bannerOpen && (
-        <div className="banner">
-          <span>
-            The Whizan CLI is here. Deploy from your terminal with <code className="mono">whizan deploy</code>.{" "}
-            <Link href="/docs" className="banner-link">Read the docs</Link>
-          </span>
-          <button type="button" className="banner-close" onClick={closeBanner} aria-label="Dismiss announcement">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* Nav */}
-      <header className="lp-nav-wrap">
-        <div className="lp-nav">
-          <BrandMark compact />
-          <nav className="lp-nav-links">
-            <a href="#problem">Why Whizan</a>
-            <a href="#products">Products</a>
-            <a href="#how">How it works</a>
-            <a href="#developers">Developers</a>
-            <a href="#plans">Plans</a>
-          </nav>
-          <div className="lp-nav-cta">
-            {user ? (
-              <Link href="/dashboard" className="lp-btn lp-btn-primary lp-btn-sm">
-                Console <ArrowRight size={14} />
-              </Link>
-            ) : (
-              <>
-                <Link href="/login" className="lp-btn lp-btn-ghost lp-btn-sm">Sign in</Link>
-                <Link href="/register" className="lp-btn lp-btn-primary lp-btn-sm">Get started</Link>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
+    <div className="lp">
       {/* Hero */}
-      <section className="hero" ref={heroRef}>
-        <div className="sky" aria-hidden />
+      <div className="hero-shell">
+        <section className="hero" ref={heroRef}>
+          <div className="sky" aria-hidden />
+          <div className="hero-cloud hc-1" aria-hidden><div className="float" style={cssVars({ "--dur": "14s" })}><PaintedCloud shape="c" seed={11} /></div></div>
+          <div className="hero-cloud hc-2" aria-hidden><div className="float" style={cssVars({ "--dur": "16s", "--delay": "-6s" })}><PaintedCloud shape="c" seed={17} /></div></div>
+          <div className="hero-cloud hc-3" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={3} /></div></div>
+          <div className="hero-cloud hc-4" aria-hidden><div className="float" style={cssVars({ "--dur": "13s", "--delay": "-4s" })}><PaintedCloud shape="b" seed={8} /></div></div>
 
-        <div className="hero-cloud hero-cloud-far-l" aria-hidden><div className="float" style={cssVars({ "--dur": "13s" })}><WatercolorCloud shape="c" seed={11} /></div></div>
-        <div className="hero-cloud hero-cloud-far-r" aria-hidden><div className="float" style={cssVars({ "--dur": "15s", "--delay": "-4s" })}><WatercolorCloud shape="c" seed={17} /></div></div>
+          {/* Nav */}
+          <header className="nav">
+            <BrandMark compact className="nav-brand" />
+            <nav className="nav-links mono">
+              <a href="#why">Why Whizan</a>
+              <a href="#products">Products</a>
+              <a href="#how">How it works</a>
+              <a href="#developers">Developers</a>
+              <a href="#plans">Plans</a>
+            </nav>
+            <div className="nav-cta">
+              {user ? (
+                <Link href="/dashboard" className="btn btn-sun btn-sm mono">Console</Link>
+              ) : (
+                <>
+                  <Link href="/login" className="nav-signin mono">Sign in</Link>
+                  <Link href="/register" className="btn btn-sun btn-sm mono">Get started</Link>
+                </>
+              )}
+            </div>
+          </header>
 
-        <div className="hero-cloud hero-cloud-left">
-          <div className="float" style={cssVars({ "--dur": "9s" })}>
-            <WatercolorCloud shape="a" seed={3} />
-            <div className="cloud-chip chip-left mono">
-              <GitBranch size={12} /> git push · main
+          <div className="hero-copy">
+            <h1 className="hero-title">
+              <span className="hero-line hero-fade" style={cssVars({ "--d": "80ms" })}>Your whole stack,</span>
+              <span className="hero-line hero-line-soft hero-fade" style={cssVars({ "--d": "200ms" })}>deployed from one console</span>
+            </h1>
+            <p className="hero-sub hero-fade" style={cssVars({ "--d": "340ms" })}>
+              Host frontends, APIs, functions, databases and storage in one place.
+              Every release goes live only after it passes a health check.
+            </p>
+            <div className="hero-ctas hero-fade" style={cssVars({ "--d": "460ms" })}>
+              <a href="#how" className="btn btn-glass mono">How it works</a>
+              <Link href={ctaHref} className="btn btn-sun btn-arrow mono" id="hero-cta-btn">
+                {ctaLabel}
+                <span className="btn-arrow-dot"><ArrowUpRight size={15} /></span>
+              </Link>
             </div>
           </div>
-        </div>
-        <div className="hero-cloud hero-cloud-right">
-          <div className="float" style={cssVars({ "--dur": "11s", "--delay": "-3s" })}>
-            <WatercolorCloud shape="b" seed={8} />
-            <div className="cloud-chip chip-right mono">
-              <span className="chip-dot" /> api-gateway is live
-            </div>
-          </div>
-        </div>
 
-        <div className="hero-copy">
-          <div className="pill-label hero-fade" style={cssVars({ "--d": "0ms" })}>
-            <span className="pill-label-dot" /> The Hobby plan is free
+          <div className="hero-arc hero-fade" style={cssVars({ "--d": "600ms" })}>
+            <CardArc />
           </div>
-          <h1 className="hero-title">
-            <span className="hero-line hero-fade" style={cssVars({ "--d": "120ms" })}>Shipping to the cloud</span>
-            <span className="hero-line hero-serif hero-fade" style={cssVars({ "--d": "260ms" })}>shouldn&apos;t feel stormy.</span>
-          </h1>
-          <p className="hero-sub hero-fade" style={cssVars({ "--d": "420ms" })}>
-            Whizan hosts your frontends, APIs, functions, databases and storage in one place,
-            and every release goes live only after it passes a health check.
-          </p>
-          <div className="hero-ctas hero-fade" style={cssVars({ "--d": "540ms" })}>
-            <Link href={ctaHref} className="lp-btn lp-btn-primary lp-btn-lg" id="hero-cta-btn">
-              {ctaLabel} <ArrowRight size={16} />
-            </Link>
-            <a href="#how" className="lp-btn lp-btn-secondary lp-btn-lg">
-              See how it works
-            </a>
-          </div>
-        </div>
 
-        <div className="hero-stage hero-fade" style={cssVars({ "--d": "700ms" })}>
-          <div className="bank bank-back" aria-hidden><WatercolorCloud shape="bank" seed={21} /></div>
-          <DeployPreview />
-          <div className="bank bank-front" aria-hidden><WatercolorCloud shape="bank" seed={5} /></div>
-        </div>
-      </section>
+          <div className="hero-foot mono hero-fade" style={cssVars({ "--d": "800ms" })}>
+            8 products · 1 console · Free Hobby plan
+          </div>
+
+          <div className="bank bank-back" aria-hidden><PaintedCloud shape="bank" seed={21} /></div>
+          <div className="bank bank-front" aria-hidden><PaintedCloud shape="bank" seed={5} /></div>
+        </section>
+      </div>
 
       {/* Stack marquee */}
       <section className="stack" aria-label="Supported languages and frameworks">
-        <div className="pill-label">Runs your stack</div>
         <div className="marquee">
           <div className="marquee-track">
             {[0, 1].map(copy => (
               <div key={copy} className="marquee-group" aria-hidden={copy === 1}>
                 {STACK.map(name => (
-                  <span key={name} className="stack-item">{name}</span>
+                  <span key={name} className="stack-item">
+                    <span className="stack-glyph" />{name}
+                  </span>
                 ))}
               </div>
             ))}
@@ -562,37 +641,62 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Problem */}
-      <section id="problem" className="section section-center">
-        <div className="section-head" data-reveal>
-          <div className="pill-label">The problem</div>
-          <h2 className="section-title">
-            Your app is simple. <span className="serif-accent">Hosting it rarely is.</span>
+      {/* Why */}
+      <section id="why" className="section">
+        <div className="why-head" data-reveal>
+          <div className="eyebrow mono">• Why Whizan</div>
+          <h2 className="why-title">
+            One cloud platform built to make shipping{" "}
+            <span className="nowrap"><span className="inline-badge badge-blue"><Zap size={20} /></span> faster</span>
+            <span className="why-soft">
+              {" "}and{" "}
+              <span className="nowrap"><span className="inline-badge badge-sun"><Moon size={20} /></span> calmer</span>
+            </span>
           </h2>
         </div>
 
-        <div className="problems">
-          {PROBLEMS.map((p, i) => (
-            <div key={p.title} className="problem" data-reveal style={cssVars({ "--d": `${i * 100}ms` })}>
-              <span className="problem-index mono">0{i + 1}</span>
-              <h3 className="problem-title">{p.title}</h3>
-              <p className="problem-body">{p.body}</p>
+        <div className="bento">
+          <div className="bento-sky" data-reveal>
+            <div className="bento-sky-cloud" aria-hidden><PaintedCloud shape="b" seed={4} /></div>
+            <div className="bento-sky-tag mono">WHIZAN</div>
+            <div className="bento-sky-card">
+              <div className="bento-num">8</div>
+              <p className="bento-text">Products in one console: hosting, backends, functions, databases, storage, cron, pipelines and MCP.</p>
             </div>
-          ))}
-        </div>
+          </div>
 
-        <p className="answer" data-reveal>
-          Whizan keeps all of it in <span className="serif-accent">one calm console.</span>
-        </p>
+          <div className="bento-grey" data-reveal style={cssVars({ "--d": "100ms" })}>
+            <div className="bento-label">Every release is checked</div>
+            <div className="bento-num">200 OK</div>
+            <div className="bento-grey-foot">
+              <div className="runtime-stack">
+                {["N", "Py", "Go", "Rs", "J"].map(r => <span key={r} className="runtime-dot mono">{r}</span>)}
+              </div>
+              <p className="bento-quote">
+                New versions take traffic only after their health check passes. Until then, the previous version keeps serving.
+              </p>
+            </div>
+          </div>
+
+          <div className="bento-col">
+            <div className="bento-sun" data-reveal style={cssVars({ "--d": "200ms" })}>
+              <div className="bento-label">Dockerfiles needed</div>
+              <div className="bento-num">0</div>
+              <p className="bento-text">Whizan builds Node.js, Python, Go, Rust, Java, PHP, Ruby and .NET apps without one, or uses yours.</p>
+            </div>
+            <div className="bento-dark" data-reveal style={cssVars({ "--d": "300ms" })}>
+              <span className="bento-label">Hobby plan</span>
+              <span className="bento-num">Free</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Products */}
       <section id="products" className="section">
-        <div className="section-head section-head-center" data-reveal>
-          <div className="pill-label">The platform</div>
-          <h2 className="section-title">
-            Everything your app runs on, <span className="serif-accent">under one sky.</span>
-          </h2>
+        <div className="section-head" data-reveal>
+          <div className="eyebrow mono">• Products</div>
+          <h2 className="section-title">Everything your app runs on.</h2>
         </div>
 
         <div className="products">
@@ -606,11 +710,11 @@ export default function LandingPage() {
                 data-reveal
                 style={cssVars({ "--d": `${(i % 4) * 80}ms` })}
               >
-                <span className="product-icon"><Icon size={18} /></span>
-                <div className="product-name">
-                  {p.name}
-                  <ArrowUpRight size={16} className="product-arrow" />
+                <div className="product-top">
+                  <span className="product-icon"><Icon size={18} /></span>
+                  <span className="product-go"><ArrowUpRight size={15} /></span>
                 </div>
+                <div className="product-name">{p.name}</div>
                 <div className="product-tagline">{p.tagline}</div>
                 <p className="product-desc">{p.description}</p>
               </Link>
@@ -621,24 +725,26 @@ export default function LandingPage() {
 
       {/* How it works */}
       <section id="how" className="section">
-        <div className="section-head section-head-center" data-reveal>
-          <div className="pill-label">How it works</div>
-          <h2 className="section-title">
-            From repository <span className="serif-accent">to live URL.</span>
-          </h2>
+        <div className="section-head" data-reveal>
+          <div className="eyebrow mono">• How it works</div>
+          <h2 className="section-title">From repository to live URL.</h2>
         </div>
 
-        <div className="timeline" data-reveal>
-          <div className="timeline-track"><span /></div>
-          <ol className="timeline-steps">
+        <div className="how">
+          <ol className="how-steps">
             {HOW_STEPS.map((s, i) => (
-              <li key={s.title} className="timeline-step" style={cssVars({ "--i": i })}>
-                <span className="timeline-node mono">{i + 1}</span>
-                <div className="timeline-title">{s.title}</div>
-                <p className="timeline-body">{s.body}</p>
+              <li key={s.title} className="how-step" data-reveal style={cssVars({ "--d": `${i * 90}ms` })}>
+                <span className="how-num mono">0{i + 1}</span>
+                <div>
+                  <div className="how-title">{s.title}</div>
+                  <p className="how-body">{s.body}</p>
+                </div>
               </li>
             ))}
           </ol>
+          <div className="how-visual" data-reveal style={cssVars({ "--d": "150ms" })}>
+            <DeployPreview />
+          </div>
         </div>
 
         <div className="facts">
@@ -659,10 +765,8 @@ export default function LandingPage() {
       <section id="developers" className="section">
         <div className="dev">
           <div className="dev-copy" data-reveal>
-            <div className="pill-label">For developers</div>
-            <h2 className="section-title">
-              Deploy from your terminal <span className="serif-accent">or your editor.</span>
-            </h2>
+            <div className="eyebrow mono">• Developers</div>
+            <h2 className="section-title">Deploy from your terminal or your editor.</h2>
             <p className="section-sub">
               Use the whizan CLI, or add the MCP server to Cursor, Windsurf or Claude so your agent
               can inspect the repository, set variables, deploy and check health.
@@ -727,11 +831,9 @@ export default function LandingPage() {
 
       {/* Plans */}
       <section id="plans" className="section">
-        <div className="section-head section-head-center" data-reveal>
-          <div className="pill-label">Plans</div>
-          <h2 className="section-title">
-            Start free. <span className="serif-accent">Grow when you need to.</span>
-          </h2>
+        <div className="section-head" data-reveal>
+          <div className="eyebrow mono">• Plans</div>
+          <h2 className="section-title">Start free. Upgrade when you need more.</h2>
         </div>
 
         <div className="plans">
@@ -744,7 +846,7 @@ export default function LandingPage() {
               <li>Services sleep after 15 minutes idle</li>
               <li>Starter databases with 512 MB RAM</li>
             </ul>
-            <Link href={ctaHref} className="lp-btn lp-btn-secondary plan-btn">
+            <Link href={ctaHref} className="btn btn-outline mono plan-btn">
               {ctaLabel} <ArrowRight size={15} />
             </Link>
           </div>
@@ -758,29 +860,31 @@ export default function LandingPage() {
               <li>Larger Postgres and Redis sizes</li>
               <li>Size chosen per service when you deploy</li>
             </ul>
-            <Link href={user ? "/dashboard/settings" : "/register"} className="lp-btn lp-btn-primary plan-btn">
-              {user ? "Upgrade in Settings" : "Create account"} <ArrowRight size={15} />
+            <Link href={user ? "/dashboard/settings" : "/register"} className="btn btn-sun btn-arrow mono plan-btn">
+              {user ? "Upgrade in Settings" : "Create account"}
+              <span className="btn-arrow-dot"><ArrowUpRight size={15} /></span>
             </Link>
           </div>
         </div>
       </section>
 
       {/* Closing */}
-      <section className="closing" data-reveal>
-        <div className="closing-cloud closing-cloud-l" aria-hidden>
-          <div className="float" style={cssVars({ "--dur": "10s" })}><WatercolorCloud shape="a" seed={14} /></div>
-        </div>
-        <div className="closing-cloud closing-cloud-r" aria-hidden>
-          <div className="float" style={cssVars({ "--dur": "12s", "--delay": "-5s" })}><WatercolorCloud shape="c" seed={9} /></div>
-        </div>
-        <h2 className="closing-title">
-          Clear skies <span className="serif-accent">for every deploy.</span>
-        </h2>
-        <p className="closing-sub">Connect a repository and go live in a few minutes.</p>
-        <Link href={ctaHref} className="lp-btn lp-btn-primary lp-btn-lg">
-          {ctaLabel} <ArrowRight size={16} />
-        </Link>
-      </section>
+      <div className="closing-shell">
+        <section className="closing" data-reveal>
+          <div className="sky" aria-hidden />
+          <div className="closing-cloud cc-l" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={14} /></div></div>
+          <div className="closing-cloud cc-r" aria-hidden><div className="float" style={cssVars({ "--dur": "13s", "--delay": "-5s" })}><PaintedCloud shape="b" seed={9} /></div></div>
+          <h2 className="closing-title">
+            Clear skies
+            <span className="hero-line-soft"> for every deploy.</span>
+          </h2>
+          <p className="closing-sub">Connect a repository and go live in a few minutes.</p>
+          <Link href={ctaHref} className="btn btn-sun btn-arrow mono">
+            {ctaLabel}
+            <span className="btn-arrow-dot"><ArrowUpRight size={15} /></span>
+          </Link>
+        </section>
+      </div>
 
       {/* Footer */}
       <footer className="footer">
@@ -790,7 +894,7 @@ export default function LandingPage() {
         </div>
         <div className="footer-cols">
           <div className="footer-col">
-            <div className="footer-head">Products</div>
+            <div className="footer-head mono">Products</div>
             <Link href="/dashboard/hosting">Frontend</Link>
             <Link href="/dashboard/backend">Backend</Link>
             <Link href="/dashboard/functions">Functions</Link>
@@ -798,7 +902,7 @@ export default function LandingPage() {
             <Link href="/dashboard/storage">Storage</Link>
           </div>
           <div className="footer-col">
-            <div className="footer-head">Developers</div>
+            <div className="footer-head mono">Developers</div>
             <Link href="/docs">Docs</Link>
             <Link href="/dashboard/cli">CLI</Link>
             <Link href="/dashboard/mcp">MCP</Link>
@@ -806,7 +910,7 @@ export default function LandingPage() {
             <Link href="/dashboard/cron">Cron</Link>
           </div>
           <div className="footer-col">
-            <div className="footer-head">Company</div>
+            <div className="footer-head mono">Company</div>
             <Link href="/contact">Contact</Link>
             <Link href="/terms">Terms</Link>
             <Link href="/login">Sign in</Link>
@@ -822,17 +926,17 @@ export default function LandingPage() {
         .lp {
           --ink: #0b1530;
           --ink-2: #334155;
-          --ink-3: #4b5b72;
           --muted: #64748b;
           --faint: #94a3b8;
-          --line: #e3ebf7;
-          --sky-50: #f6f9ff;
-          --sky-100: #ecf3ff;
-          --sky-200: #d7e6ff;
+          --line: #e7edf6;
+          --grey: #f2f4f7;
+          --sky-50: #f5f9ff;
+          --sky-100: #eaf2ff;
           --blue: #2563eb;
-          --blue-hover: #1d4ed8;
+          --blue-deep: #1450c8;
+          --sun: #ffd84d;
+          --sun-deep: #f5c518;
           --green: #15803d;
-          --serif: var(--font-serif-display), "Instrument Serif", Georgia, serif;
           min-height: 100vh;
           background: #ffffff;
           color: var(--ink);
@@ -845,215 +949,159 @@ export default function LandingPage() {
         .lp a { color: inherit; text-decoration: none; }
         .lp .mono { font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace; }
         .lp .brand-logo-img { height: 38px; width: auto; }
-        .serif-accent {
-          font-family: var(--serif);
-          font-style: italic;
-          font-weight: 400;
-          letter-spacing: -0.01em;
-          color: var(--blue);
-        }
 
         /* ── Buttons ── */
-        .lp-btn {
+        .btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 0.45rem;
-          padding: 0.62rem 1.15rem;
-          font-size: 0.9rem;
-          font-weight: 550;
-          font-family: inherit;
+          gap: 0.6rem;
+          padding: 0.8rem 1.35rem;
+          border-radius: 999px;
           border: 1px solid transparent;
-          border-radius: 999px;
-          cursor: pointer;
+          font-size: 0.8rem;
+          font-weight: 500;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
           white-space: nowrap;
-          transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+          cursor: pointer;
+          transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
         }
-        .lp-btn-sm { padding: 0.45rem 0.95rem; font-size: 0.84rem; }
-        .lp-btn-lg { padding: 0.85rem 1.6rem; font-size: 1rem; }
-        .lp .lp-btn-primary {
-          background: var(--blue);
+        .btn-sm { padding: 0.55rem 1.05rem; font-size: 0.74rem; }
+        .lp .btn-sun { background: var(--sun); color: var(--ink); box-shadow: 0 10px 30px -12px rgba(245, 197, 24, 0.9); }
+        .lp .btn-sun:hover { background: var(--sun-deep); transform: translateY(-1px); }
+        .lp .btn-glass {
+          background: rgba(11, 21, 48, 0.28);
           color: #ffffff;
-          box-shadow: 0 10px 24px -10px rgba(37, 99, 235, 0.6);
+          border-color: rgba(255, 255, 255, 0.22);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
         }
-        .lp .lp-btn-primary:hover { background: var(--blue-hover); transform: translateY(-1px); }
-        .lp .lp-btn-secondary { background: #ffffff; color: var(--ink); border-color: var(--line); }
-        .lp .lp-btn-secondary:hover { border-color: #c4d5f2; background: var(--sky-50); }
-        .lp .lp-btn-ghost { background: transparent; color: var(--ink-3); }
-        .lp .lp-btn-ghost:hover { color: var(--ink); }
-        .lp-btn svg { transition: transform 0.2s ease; }
-        .lp-btn:hover svg { transform: translateX(2px); }
-
-        /* ── Pill label ── */
-        .pill-label {
+        .lp .btn-glass:hover { background: rgba(11, 21, 48, 0.4); }
+        .lp .btn-outline { background: #ffffff; color: var(--ink); border-color: var(--line); }
+        .lp .btn-outline:hover { border-color: #c9d6ea; }
+        .btn-arrow { padding-right: 0.4rem; }
+        .btn-arrow-dot {
           display: inline-flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.38rem 0.9rem;
-          border: 1px solid var(--line);
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.85);
-          font-size: 0.72rem;
-          font-weight: 600;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: var(--ink-3);
-        }
-        .pill-label-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12); }
-
-        /* ── Announcement ── */
-        .banner {
-          position: relative;
-          display: flex;
-          align-items: center;
           justify-content: center;
-          padding: 0.6rem 3rem;
-          background: var(--blue-hover);
-          color: #e8f0ff;
-          font-size: 0.86rem;
-          text-align: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: var(--ink);
+          color: #ffffff;
+          transition: transform 0.25s ease;
         }
-        .banner code { background: rgba(255, 255, 255, 0.14); padding: 0.1rem 0.4rem; border-radius: 6px; font-size: 0.8rem; color: #ffffff; }
-        .banner-link { color: #ffffff; text-decoration: underline !important; text-underline-offset: 3px; font-weight: 550; }
-        .banner-close {
-          position: absolute;
-          right: 1rem;
-          top: 50%;
-          transform: translateY(-50%);
-          display: flex;
-          background: transparent;
-          border: none;
-          color: #e8f0ff;
-          cursor: pointer;
-          padding: 0.25rem;
-          border-radius: 999px;
-        }
-        .banner-close:hover { background: rgba(255, 255, 255, 0.14); }
+        .btn-arrow:hover .btn-arrow-dot { transform: rotate(45deg); }
 
-        /* ── Nav ── */
-        .lp-nav-wrap {
-          position: sticky;
-          top: 0;
-          z-index: 40;
-          background: rgba(255, 255, 255, 0.82);
-          backdrop-filter: saturate(180%) blur(12px);
-          -webkit-backdrop-filter: saturate(180%) blur(12px);
-          border-bottom: 1px solid rgba(227, 235, 247, 0.7);
-        }
-        .lp-nav {
-          max-width: 1240px;
-          margin: 0 auto;
-          padding: 0.75rem 1.5rem;
-          display: grid;
-          grid-template-columns: 1fr auto 1fr;
-          align-items: center;
-          gap: 1rem;
-        }
-        .lp-nav-links {
-          display: flex;
-          gap: 0.25rem;
-          padding: 0.3rem;
-          border: 1px solid var(--line);
-          border-radius: 999px;
-          background: #ffffff;
-          box-shadow: 0 6px 20px -12px rgba(11, 21, 48, 0.15);
-        }
-        .lp-nav-links a {
-          font-size: 0.86rem;
-          color: var(--ink-3);
-          font-weight: 500;
-          padding: 0.4rem 0.9rem;
-          border-radius: 999px;
-          transition: color 0.15s ease, background 0.15s ease;
-        }
-        .lp-nav-links a:hover { color: var(--ink); background: var(--sky-50); }
-        .lp-nav-cta { display: flex; justify-content: flex-end; align-items: center; gap: 0.35rem; }
-
-        /* ── Hero ── */
+        /* ── Hero shell ── */
+        .hero-shell { padding: 12px; }
         .hero {
           --mx: 0;
           --my: 0;
           position: relative;
           overflow: hidden;
-          padding: 6.5rem 1.5rem 0;
+          border-radius: 28px;
+          min-height: 880px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          isolation: isolate;
         }
         .sky {
           position: absolute;
           inset: 0;
+          z-index: -2;
           background:
-            radial-gradient(60% 50% at 50% 0%, rgba(214, 230, 255, 0.85), transparent 70%),
-            radial-gradient(40% 40% at 15% 35%, rgba(236, 243, 255, 0.9), transparent 70%),
-            radial-gradient(40% 40% at 85% 30%, rgba(236, 243, 255, 0.9), transparent 70%),
-            linear-gradient(to bottom, #f8fbff 0%, #ffffff 70%);
-          pointer-events: none;
+            radial-gradient(70% 45% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 70%),
+            radial-gradient(50% 40% at 80% 20%, rgba(130, 190, 255, 0.45), transparent 70%),
+            linear-gradient(180deg, #0f5ad8 0%, #1f74ea 28%, #4597f2 55%, #8cc3f8 78%, #d9ecfd 100%);
         }
         .hero-cloud {
           position: absolute;
-          z-index: 1;
+          z-index: -1;
           pointer-events: none;
           transform: translate3d(calc(var(--mx) * var(--depth, 20px)), calc(var(--my) * var(--depth, 20px)), 0);
           transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
         }
-        .hero-cloud-left { left: -3%; top: 8rem; width: min(31vw, 470px); --depth: -34px; }
-        .hero-cloud-right { right: -3%; top: 4.5rem; width: min(29vw, 440px); --depth: -26px; }
-        .hero-cloud-far-l { left: 22%; top: 2rem; width: min(12vw, 170px); opacity: 0.55; --depth: -10px; }
-        .hero-cloud-far-r { right: 20%; top: 17rem; width: min(10vw, 140px); opacity: 0.45; --depth: -8px; }
+        .hc-1 { left: 8%; top: 120px; width: 180px; opacity: 0.55; --depth: -10px; }
+        .hc-2 { right: 10%; top: 210px; width: 150px; opacity: 0.5; --depth: -12px; }
+        .hc-3 { left: -4%; top: 440px; width: min(34vw, 520px); opacity: 0.95; --depth: -30px; }
+        .hc-4 { right: -5%; top: 400px; width: min(32vw, 480px); opacity: 0.95; --depth: -26px; }
         .float {
           position: relative;
           animation: lpFloat var(--dur, 10s) ease-in-out var(--delay, 0s) infinite alternate;
           will-change: transform;
         }
-        .wc-cloud { display: block; width: 100%; height: auto; overflow: visible; }
-        .hero-cloud-left .wc-cloud, .hero-cloud-right .wc-cloud { filter: drop-shadow(0 24px 30px rgba(37, 99, 235, 0.12)); }
+        .cloud-svg { display: block; width: 100%; height: auto; overflow: visible; }
 
-        .cloud-chip {
-          position: absolute;
-          display: inline-flex;
+        .bank { position: absolute; left: 50%; pointer-events: none; }
+        .bank-back { width: 160%; bottom: 40px; transform: translateX(-50%); opacity: 0.85; z-index: -1; }
+        .bank-front { width: 140%; bottom: -170px; transform: translateX(-48%); z-index: 3; }
+        .bank .cloud-svg { animation: lpBank 20s ease-in-out infinite alternate; }
+
+        /* ── Nav ── */
+        .nav {
+          position: relative;
+          z-index: 5;
+          width: 100%;
+          max-width: 1240px;
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
           align-items: center;
-          gap: 0.4rem;
-          padding: 0.38rem 0.75rem;
-          border-radius: 999px;
-          background: rgba(255, 255, 255, 0.92);
-          border: 1px solid var(--line);
-          box-shadow: 0 10px 24px -14px rgba(11, 21, 48, 0.35);
-          font-size: 0.72rem;
-          color: var(--ink-2);
-          white-space: nowrap;
-          pointer-events: auto;
+          gap: 1rem;
+          padding: 1.1rem 1.75rem;
         }
-        .chip-left { left: 32%; bottom: 4%; color: var(--blue); }
-        .chip-right { right: 30%; bottom: 6%; }
-        .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; animation: lpPulse 1.6s ease-in-out infinite; }
+        .lp .nav-brand .brand-logo-img { filter: brightness(0) invert(1); }
+        .nav-links { display: flex; gap: 2rem; }
+        .nav-links a {
+          font-size: 0.74rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.85);
+          transition: color 0.15s ease;
+        }
+        .nav-links a:hover { color: #ffffff; }
+        .nav-cta { display: flex; justify-content: flex-end; align-items: center; gap: 1.1rem; }
+        .nav-signin {
+          font-size: 0.74rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.9);
+        }
+        .nav-signin:hover { color: #ffffff; }
 
+        /* ── Hero copy ── */
         .hero-copy {
           position: relative;
-          z-index: 2;
-          max-width: 780px;
-          margin: 0 auto;
+          z-index: 4;
+          max-width: 1000px;
+          padding: 4rem 1.5rem 0;
           text-align: center;
           display: flex;
           flex-direction: column;
           align-items: center;
         }
         .hero-title {
-          margin: 1.75rem 0 1.4rem;
-          font-size: clamp(2.6rem, 5.6vw, 4.6rem);
-          line-height: 1.02;
-          letter-spacing: -0.045em;
-          font-weight: 600;
-          color: var(--ink);
+          margin: 0 0 1.4rem;
+          font-size: clamp(2.5rem, 5.2vw, 4.25rem);
+          line-height: 1.04;
+          letter-spacing: -0.05em;
+          font-weight: 550;
+          color: #ffffff;
+          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.18);
         }
         .hero-line { display: block; text-wrap: balance; }
-        .hero-serif {
-          font-family: var(--serif);
-          font-style: italic;
-          font-weight: 400;
-          font-size: 1.14em;
-          letter-spacing: -0.02em;
-          line-height: 1;
-          color: var(--blue);
-          padding-bottom: 0.08em;
+        .hero-line-soft { color: rgba(255, 255, 255, 0.68); }
+        .hero-sub {
+          max-width: 34rem;
+          margin: 0 0 2.1rem;
+          font-size: 1.02rem;
+          line-height: 1.6;
+          color: rgba(255, 255, 255, 0.86);
+          text-wrap: balance;
         }
+        .hero-ctas { display: flex; gap: 0.7rem; flex-wrap: wrap; justify-content: center; }
         .hero-fade {
           opacity: 0;
           transform: translateY(14px);
@@ -1061,44 +1109,334 @@ export default function LandingPage() {
           animation: lpFadeUp 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
           animation-delay: var(--d, 0ms);
         }
-        .hero-sub {
-          max-width: 38rem;
-          font-size: 1.12rem;
-          line-height: 1.65;
-          color: var(--muted);
-          margin: 0 0 2.2rem;
-          text-wrap: balance;
-        }
-        .hero-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
 
-        .hero-stage {
+        /* ── Card arc ── */
+        .hero-arc { position: relative; z-index: 2; width: 100%; margin-top: 3rem; }
+        .arc {
           position: relative;
-          z-index: 2;
-          max-width: 880px;
-          margin: 5rem auto 0;
-          padding-bottom: 3.5rem;
+          height: 250px;
+          perspective: 1500px;
+          perspective-origin: 50% 40%;
         }
-        .bank {
+        .arc-tilt {
+          position: absolute;
+          inset: 0;
+          transform-style: preserve-3d;
+          transform: rotateY(calc(var(--mx) * 10deg)) rotateX(calc(var(--my) * -6deg));
+          transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+        }
+        .arc-sway {
+          position: absolute;
+          inset: 0;
+          transform-style: preserve-3d;
+          animation: lpSway 14s ease-in-out infinite alternate;
+        }
+        .arc-card {
+          --r: 1150px;
           position: absolute;
           left: 50%;
-          pointer-events: none;
-          -webkit-mask-image: radial-gradient(ellipse 50% 100% at 50% 20%, #000 55%, transparent 100%);
-          mask-image: radial-gradient(ellipse 50% 100% at 50% 20%, #000 55%, transparent 100%);
+          top: 10px;
+          width: 152px;
+          min-height: 178px;
+          margin-left: -76px;
+          padding: 0.85rem;
+          border-radius: 16px;
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 24px 50px -24px rgba(8, 38, 110, 0.55), 0 2px 6px rgba(8, 38, 110, 0.12);
+          transform: translateZ(var(--r)) rotateY(var(--a)) translateZ(calc(var(--r) * -1));
+          backface-visibility: hidden;
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+          color: var(--ink);
+          font-size: 0.7rem;
         }
-        .bank-back { width: 150%; bottom: -1rem; transform: translateX(-50%); opacity: 0.75; z-index: 0; }
-        .bank-front { width: 135%; bottom: -5.5rem; transform: translateX(-46%); z-index: 3; }
-        .bank .wc-cloud { animation: lpBank 18s ease-in-out infinite alternate; }
+        .arc-card-dark { background: #0b1530; color: #ffffff; justify-content: flex-end; }
+        .arc-card-glass {
+          background: linear-gradient(160deg, rgba(37, 99, 235, 0.85), rgba(20, 80, 200, 0.7));
+          border: 1px solid rgba(255, 255, 255, 0.35);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          color: #ffffff;
+          align-items: center;
+          justify-content: center;
+          text-align: center;
+        }
+        .mini-label {
+          display: flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.66rem;
+          font-weight: 600;
+          color: var(--muted);
+          margin-bottom: 0.2rem;
+        }
+        .mini-big { font-size: 1.35rem; font-weight: 600; letter-spacing: -0.03em; }
+        .mini-mono { font-family: var(--font-geist-mono), ui-monospace, monospace; }
+        .mini-text { color: var(--ink-2); }
+        .mini-row { display: flex; justify-content: space-between; align-items: center; padding: 0.22rem 0; border-bottom: 1px solid #eef2f8; }
+        .mini-row:last-child { border-bottom: none; }
+        .mini-chip {
+          align-self: flex-start;
+          display: inline-flex;
+          padding: 0.12rem 0.45rem;
+          border-radius: 999px;
+          font-size: 0.6rem;
+          font-weight: 600;
+        }
+        .mini-chip-ok { background: #ecfdf3; color: var(--green); }
+        .mini-chip-busy { background: #eff6ff; color: var(--blue); }
+        .mini-chart { width: 100%; height: auto; margin-top: auto; }
+        .mini-log { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.6rem; color: var(--ink-2); }
+        .mini-log span { color: var(--faint); margin-right: 0.3rem; }
+        .mini-table { font-size: 0.62rem; color: var(--ink-2); }
+        .mini-bar { height: 6px; border-radius: 999px; background: var(--sky-100); overflow: hidden; margin-top: auto; }
+        .mini-bar span { display: block; height: 100%; border-radius: 999px; background: var(--blue); }
+        .mini-dark-title { font-size: 0.95rem; line-height: 1.3; font-weight: 500; letter-spacing: -0.02em; }
+        .mini-dot { display: inline-block; width: 9px; height: 9px; margin: 0 0.15rem; border-radius: 50%; background: var(--sun); box-shadow: 0 0 0 3px rgba(255, 216, 77, 0.3); }
+        .mini-dim { color: rgba(255, 255, 255, 0.55); }
+        .mini-plus {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          background: #ffffff;
+          color: var(--blue);
+          margin-bottom: 0.5rem;
+          box-shadow: 0 6px 20px -6px rgba(11, 21, 48, 0.4);
+        }
+        .mini-glass-title { font-size: 0.95rem; font-weight: 600; }
+        .mini-glass-sub { font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); }
 
-        /* ── Deploy preview ── */
-        .deploy {
+        .hero-foot {
           position: relative;
-          z-index: 2;
+          z-index: 4;
+          margin: 1.75rem 0 7rem;
+          font-size: 0.72rem;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: rgba(11, 21, 48, 0.6);
+        }
+
+        /* ── Stack marquee ── */
+        .stack { padding: 2.25rem 0 1rem; }
+        .marquee {
+          overflow: hidden;
+          -webkit-mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+          mask-image: linear-gradient(to right, transparent, #000 10%, #000 90%, transparent);
+        }
+        .marquee-track { display: flex; width: max-content; animation: lpMarquee 44s linear infinite; }
+        .marquee:hover .marquee-track { animation-play-state: paused; }
+        .marquee-group { display: flex; }
+        .stack-item {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.55rem;
+          padding: 0.5rem 2rem;
+          font-size: 1.05rem;
+          font-weight: 600;
+          color: #a3adbd;
+          white-space: nowrap;
+        }
+        .stack-glyph { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(135deg, #c7d2e2, #e3e9f2); }
+
+        /* ── Sections ── */
+        .section { max-width: 1200px; margin: 0 auto; padding: 7rem 1.5rem 1rem; }
+        .eyebrow {
+          font-size: 0.72rem;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: var(--ink-2);
+        }
+        .section-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.1rem; margin-bottom: 3.5rem; }
+        .section-title {
+          margin: 0;
+          max-width: 44rem;
+          font-size: clamp(2rem, 4vw, 3.1rem);
+          line-height: 1.08;
+          letter-spacing: -0.045em;
+          font-weight: 550;
+          text-wrap: balance;
+        }
+        .section-sub { margin: 1rem 0 0; font-size: 1.02rem; line-height: 1.65; color: var(--muted); }
+
+        .lp [data-reveal] {
+          opacity: 0;
+          transform: translateY(18px);
+          transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+          transition-delay: var(--d, 0ms);
+        }
+        .lp [data-reveal].is-in { opacity: 1; transform: none; }
+
+        /* ── Why ── */
+        .why-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1.4rem; margin-bottom: 3.5rem; }
+        .why-title {
+          margin: 0;
+          max-width: 52rem;
+          font-size: clamp(2rem, 4.2vw, 3.3rem);
+          line-height: 1.12;
+          letter-spacing: -0.045em;
+          font-weight: 550;
+          text-wrap: balance;
+        }
+        .why-soft { color: #9aa6b8; }
+        .nowrap { white-space: nowrap; }
+        .inline-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 1.05em;
+          height: 1.05em;
+          border-radius: 50%;
+          vertical-align: -0.12em;
+          margin: 0 0.04em;
+        }
+        .badge-blue { background: #38bdf8; color: #ffffff; }
+        .badge-sun { background: var(--sun); color: var(--ink); }
+
+        .bento {
+          display: grid;
+          grid-template-columns: 1fr 1.2fr 1.05fr;
+          gap: 1rem;
+          min-height: 400px;
+        }
+        .bento > *, .bento-col > * { border-radius: 24px; overflow: hidden; position: relative; }
+        .bento-label { font-size: 0.85rem; color: inherit; opacity: 0.75; }
+        .bento-num { font-size: clamp(2.4rem, 4vw, 3.4rem); font-weight: 500; letter-spacing: -0.05em; line-height: 1; }
+        .bento-text { margin: 0; font-size: 0.9rem; line-height: 1.5; }
+
+        .bento-sky {
+          background: linear-gradient(180deg, #1f74ea 0%, #5aa6f5 60%, #bfe0fc 100%);
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          padding: 1rem;
+          min-height: 400px;
+        }
+        .bento-sky-cloud { position: absolute; left: -15%; top: 18%; width: 130%; opacity: 0.95; }
+        .bento-sky-tag {
+          position: absolute;
+          top: 1.2rem;
+          left: 1.3rem;
+          font-size: 0.85rem;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          color: #ffffff;
+        }
+        .bento-sky-card {
+          position: relative;
+          background: #ffffff;
+          border-radius: 18px;
+          padding: 1.4rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.8rem;
+          color: var(--ink);
+        }
+        .bento-sky-card .bento-text { color: var(--ink-2); }
+
+        .bento-grey {
+          background: var(--grey);
+          padding: 1.6rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.9rem;
+        }
+        .bento-grey-foot { margin-top: auto; display: flex; flex-direction: column; gap: 1rem; }
+        .runtime-stack { display: flex; }
+        .runtime-dot {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          margin-left: -8px;
+          border-radius: 50%;
+          border: 3px solid var(--grey);
+          background: #ffffff;
+          font-size: 0.7rem;
+          font-weight: 600;
+          color: var(--blue);
+        }
+        .runtime-dot:first-child { margin-left: 0; }
+        .bento-quote { margin: 0; font-size: 0.98rem; line-height: 1.5; color: var(--ink); }
+
+        .bento-col { display: grid; grid-template-rows: 1.4fr 0.6fr; gap: 1rem; }
+        .bento-sun {
+          background: var(--sun);
+          padding: 1.6rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.9rem;
+        }
+        .bento-sun .bento-text { margin-top: auto; }
+        .bento-dark {
+          background: var(--ink);
+          color: #ffffff;
+          padding: 1.4rem 1.6rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .bento-dark .bento-num { font-size: 2.2rem; }
+
+        /* ── Products ── */
+        .products { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+        .product {
+          display: flex;
+          flex-direction: column;
+          padding: 1.5rem;
+          border-radius: 22px;
+          background: var(--grey);
+          transition: background 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+        }
+        .product:hover { background: #ffffff; transform: translateY(-3px); box-shadow: 0 30px 60px -36px rgba(37, 99, 235, 0.45), 0 0 0 1px var(--line); }
+        .product-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2.2rem; }
+        .product-icon {
+          width: 42px;
+          height: 42px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          background: #ffffff;
+          color: var(--blue);
+        }
+        .product-go {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: var(--ink);
+          color: #ffffff;
+          opacity: 0;
+          transform: scale(0.7);
+          transition: all 0.25s ease;
+        }
+        .product:hover .product-go { opacity: 1; transform: none; }
+        .product-name { font-size: 1.08rem; font-weight: 600; letter-spacing: -0.02em; }
+        .product-tagline { margin-top: 0.2rem; font-size: 0.8rem; color: var(--faint); }
+        .product-desc { margin: 0.9rem 0 0; font-size: 0.9rem; line-height: 1.55; color: var(--muted); }
+
+        /* ── How it works ── */
+        .how { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 3.5rem; align-items: center; margin-bottom: 3rem; }
+        .how-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+        .how-step { display: flex; gap: 1.4rem; padding: 1.4rem 0; border-bottom: 1px solid var(--line); }
+        .how-step:first-child { padding-top: 0; }
+        .how-num { font-size: 0.8rem; color: var(--blue); padding-top: 0.25rem; }
+        .how-title { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.02em; }
+        .how-body { margin: 0.35rem 0 0; font-size: 0.94rem; line-height: 1.55; color: var(--muted); }
+
+        .deploy {
           background: #ffffff;
           border: 1px solid var(--line);
-          border-radius: 18px;
+          border-radius: 22px;
           overflow: hidden;
-          box-shadow: 0 40px 80px -40px rgba(11, 21, 48, 0.35), 0 1px 3px rgba(11, 21, 48, 0.06);
-          text-align: left;
+          box-shadow: 0 40px 80px -45px rgba(11, 21, 48, 0.4);
         }
         .deploy-head {
           display: flex;
@@ -1119,7 +1457,7 @@ export default function LandingPage() {
           background: var(--sky-100);
           color: var(--blue);
         }
-        .deploy-name { font-weight: 600; font-size: 0.92rem; color: var(--ink); }
+        .deploy-name { font-weight: 600; font-size: 0.92rem; }
         .deploy-ref { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
         .deploy-meta { display: flex; align-items: center; gap: 0.75rem; }
         .deploy-time { font-size: 0.75rem; color: var(--muted); }
@@ -1139,7 +1477,6 @@ export default function LandingPage() {
         .pill-building { color: var(--blue); background: #eff6ff; border-color: #bfdbfe; }
         .pill-building .pill-dot { animation: lpPulse 1s ease-in-out infinite; }
         .pill-ready { color: var(--green); background: #f0fdf4; border-color: #bbf7d0; }
-
         .deploy-steps {
           list-style: none;
           margin: 0;
@@ -1150,15 +1487,7 @@ export default function LandingPage() {
           border-bottom: 1px solid var(--line);
         }
         .deploy-step { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
-        .step-label {
-          font-size: 0.72rem;
-          font-weight: 500;
-          color: var(--faint);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          transition: color 0.3s ease;
-        }
+        .step-label { font-size: 0.72rem; font-weight: 500; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.3s ease; }
         .step-bar { position: relative; height: 4px; border-radius: 999px; background: var(--sky-100); overflow: hidden; }
         .step-bar span {
           position: absolute;
@@ -1172,11 +1501,10 @@ export default function LandingPage() {
         .step-done .step-label, .step-active .step-label { color: var(--ink); }
         .step-done .step-bar span { transform: scaleX(1); }
         .step-active .step-bar span { animation: lpIndeterminate 1.1s ease-in-out infinite; }
-
         .deploy-log {
           background: var(--sky-50);
-          padding: 0.95rem 1.2rem 3.6rem;
-          height: calc(7 * 1.75em + 4.6rem);
+          padding: 0.95rem 1.2rem;
+          height: calc(7 * 1.75em + 1.9rem);
           font-size: 0.78rem;
           line-height: 1.75;
           color: var(--ink-2);
@@ -1186,299 +1514,64 @@ export default function LandingPage() {
         .log-row > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .log-ts { color: var(--faint); flex-shrink: 0; }
         .log-final { color: var(--green); font-weight: 600; }
-        .log-caret {
-          display: inline-block;
-          width: 7px;
-          height: 1em;
-          background: var(--ink);
-          vertical-align: middle;
-          animation: lpBlink 1s steps(1) infinite;
-        }
+        .log-caret { display: inline-block; width: 7px; height: 1em; background: var(--ink); vertical-align: middle; animation: lpBlink 1s steps(1) infinite; }
 
-        /* ── Stack marquee ── */
-        .stack {
-          position: relative;
-          z-index: 4;
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 4.5rem 1.5rem 1rem;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 1.5rem;
-        }
-        .marquee {
-          width: 100%;
-          overflow: hidden;
-          -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-          mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
-        }
-        .marquee-track { display: flex; width: max-content; animation: lpMarquee 42s linear infinite; }
-        .marquee:hover .marquee-track { animation-play-state: paused; }
-        .marquee-group { display: flex; }
-        .stack-item {
-          padding: 0.6rem 1.9rem;
-          font-size: 1.05rem;
-          font-weight: 550;
-          color: var(--faint);
-          white-space: nowrap;
-          transition: color 0.2s ease;
-        }
-        .stack-item:hover { color: var(--ink); }
-
-        /* ── Sections ── */
-        .section {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 7rem 1.5rem 2rem;
-        }
-        .section-center { text-align: center; }
-        .section-head { display: flex; flex-direction: column; align-items: flex-start; gap: 1.4rem; margin-bottom: 3.5rem; }
-        .section-center .section-head, .section-head-center { align-items: center; text-align: center; }
-        .section-title {
-          max-width: 46rem;
-          font-size: clamp(2rem, 4vw, 3.2rem);
-          line-height: 1.08;
-          letter-spacing: -0.04em;
-          font-weight: 600;
-          margin: 0;
-          color: var(--ink);
-          text-wrap: balance;
-        }
-        .section-title .serif-accent { font-size: 1.1em; }
-        .section-sub {
-          margin: 1rem 0 0;
-          font-size: 1.04rem;
-          line-height: 1.65;
-          color: var(--muted);
-        }
-
-        .lp [data-reveal] {
-          opacity: 0;
-          transform: translateY(18px);
-          transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
-          transition-delay: var(--d, 0ms);
-        }
-        .lp [data-reveal].is-in { opacity: 1; transform: none; }
-
-        /* ── Problem ── */
-        .problems {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-          gap: 1.25rem;
-          text-align: left;
-        }
-        .problem {
-          padding: 2rem;
-          border-radius: 22px;
-          background: var(--sky-50);
-          border: 1px solid #edf2fb;
-        }
-        .problem-index { font-size: 0.78rem; color: var(--blue); }
-        .problem-title { margin: 1.4rem 0 0.6rem; font-size: 1.15rem; font-weight: 600; letter-spacing: -0.02em; color: var(--ink); }
-        .problem-body { margin: 0; font-size: 0.95rem; line-height: 1.6; color: var(--muted); }
-        .answer {
-          margin: 4rem auto 0;
-          font-size: clamp(1.4rem, 2.6vw, 2rem);
-          letter-spacing: -0.03em;
-          font-weight: 550;
-          color: var(--ink);
-        }
-        .answer .serif-accent { font-size: 1.15em; }
-
-        /* ── Products ── */
-        .products {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 1rem;
-        }
-        .product {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          padding: 1.6rem;
-          border-radius: 22px;
-          border: 1px solid var(--line);
-          background: #ffffff;
-          overflow: hidden;
-          transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
-        }
-        .product::after {
-          content: "";
-          position: absolute;
-          right: -40%;
-          top: -50%;
-          width: 90%;
-          height: 90%;
-          border-radius: 50%;
-          background: radial-gradient(circle, rgba(215, 230, 255, 0.9), transparent 65%);
-          opacity: 0;
-          transition: opacity 0.35s ease;
-          pointer-events: none;
-        }
-        .product:hover {
-          border-color: #c9daf6;
-          box-shadow: 0 24px 50px -30px rgba(37, 99, 235, 0.45);
-          transform: translateY(-3px);
-        }
-        .product:hover::after { opacity: 1; }
-        .product > * { position: relative; z-index: 1; }
-        .product-icon {
-          width: 42px;
-          height: 42px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 14px;
-          color: var(--blue);
-          background: var(--sky-100);
-          margin-bottom: 1.6rem;
-        }
-        .product-name {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 1.06rem;
-          font-weight: 600;
-          letter-spacing: -0.02em;
-          color: var(--ink);
-        }
-        .product-arrow {
-          color: var(--blue);
-          opacity: 0;
-          transform: translate(-4px, 4px);
-          transition: all 0.25s ease;
-        }
-        .product:hover .product-arrow { opacity: 1; transform: none; }
-        .product-tagline { font-size: 0.82rem; color: var(--faint); margin-top: 0.2rem; }
-        .product-desc { margin: 0.9rem 0 0; font-size: 0.9rem; line-height: 1.55; color: var(--muted); }
-
-        /* ── Timeline ── */
-        .timeline { position: relative; margin-bottom: 3rem; }
-        .timeline-track {
-          position: absolute;
-          top: 21px;
-          left: 22px;
-          right: 22px;
-          height: 2px;
-          border-radius: 999px;
-          background: var(--sky-100);
-        }
-        .timeline-track span {
-          position: absolute;
-          inset: 0;
-          border-radius: 999px;
-          background: linear-gradient(90deg, #93b8f8, var(--blue));
-          transform: scaleX(0);
-          transform-origin: left;
-          transition: transform 1.6s cubic-bezier(0.4, 0, 0.2, 1) 0.2s;
-        }
-        .timeline.is-in .timeline-track span { transform: scaleX(1); }
-        .timeline-steps {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          position: relative;
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 2rem;
-        }
-        .timeline-node {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          border: 1px solid var(--line);
-          background: #ffffff;
-          font-size: 0.85rem;
-          color: var(--muted);
-          margin-bottom: 1.3rem;
-          transition: all 0.45s ease;
-          transition-delay: calc(var(--i) * 0.4s + 0.2s);
-        }
-        .timeline.is-in .timeline-node {
-          border-color: var(--blue);
-          background: var(--blue);
-          color: #ffffff;
-          box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.12);
-        }
-        .timeline-title { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
-        .timeline-body { margin: 0.4rem 0 0; font-size: 0.92rem; line-height: 1.55; color: var(--muted); }
-
-        .facts {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 1rem;
-        }
-        .fact { padding: 1.5rem; border-radius: 20px; background: var(--sky-50); }
+        .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+        .fact { padding: 1.5rem; border-radius: 22px; background: var(--grey); }
         .fact-icon {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 34px;
-          height: 34px;
+          width: 36px;
+          height: 36px;
           border-radius: 50%;
           background: #ffffff;
           color: var(--blue);
           margin-bottom: 1rem;
-          box-shadow: 0 4px 12px -6px rgba(37, 99, 235, 0.4);
         }
-        .fact-title { font-size: 0.96rem; font-weight: 600; color: var(--ink); }
+        .fact-title { font-size: 0.96rem; font-weight: 600; }
         .fact-body { margin: 0.35rem 0 0; font-size: 0.87rem; line-height: 1.55; color: var(--muted); }
 
         /* ── Developers ── */
-        .dev {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-          gap: 4rem;
-          align-items: center;
-        }
-        .code { margin-top: 2rem; border: 1px solid var(--line); border-radius: 18px; background: var(--sky-50); overflow: hidden; }
-        .code-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 0.5rem 0.65rem 0.5rem 0.5rem;
-          border-bottom: 1px solid var(--line);
-        }
+        .dev { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4rem; align-items: center; }
+        .dev .eyebrow { display: block; margin-bottom: 1.1rem; }
+        .dev .section-title { text-align: left; }
+        .code { margin-top: 2rem; border-radius: 22px; background: var(--grey); overflow: hidden; }
+        .code-head { display: flex; align-items: center; justify-content: space-between; padding: 0.55rem 0.7rem 0.55rem 0.55rem; }
         .code-tabs { display: flex; gap: 0.25rem; }
         .code-tab {
           background: transparent;
-          border: 1px solid transparent;
+          border: none;
           border-radius: 999px;
           color: var(--muted);
           font-size: 0.76rem;
           font-family: var(--font-geist-mono), ui-monospace, monospace;
-          padding: 0.3rem 0.8rem;
+          padding: 0.35rem 0.85rem;
           cursor: pointer;
           transition: color 0.15s ease, background 0.15s ease;
         }
         .code-tab:hover { color: var(--ink); }
-        .code-tab.active { background: #ffffff; border-color: var(--line); color: var(--ink); }
+        .code-tab.active { background: #ffffff; color: var(--ink); }
         .code-copy {
           display: inline-flex;
           align-items: center;
           gap: 0.35rem;
           background: #ffffff;
-          border: 1px solid var(--line);
+          border: none;
           border-radius: 999px;
           color: var(--ink);
           font-size: 0.74rem;
           font-family: inherit;
-          padding: 0.28rem 0.7rem;
+          padding: 0.32rem 0.75rem;
           cursor: pointer;
-          transition: border-color 0.15s ease;
         }
-        .code-copy:hover { border-color: #c4d5f2; }
         .code-body {
           margin: 0;
-          padding: 1.1rem 1.2rem;
-          min-height: 15.5rem;
+          padding: 0.6rem 1.3rem 1.3rem;
+          min-height: 15rem;
           font-size: 0.78rem;
           line-height: 1.7;
-          color: var(--ink-3);
+          color: var(--ink-2);
           overflow-x: auto;
           background: transparent;
           border: none;
@@ -1488,41 +1581,17 @@ export default function LandingPage() {
         .tok-prompt { color: var(--faint); }
 
         .agent {
-          border: 1px solid var(--line);
-          border-radius: 22px;
-          background: #ffffff;
-          overflow: hidden;
-          box-shadow: 0 40px 80px -45px rgba(37, 99, 235, 0.45);
+          border-radius: 24px;
+          background: linear-gradient(180deg, #1f74ea 0%, #5aa6f5 100%);
+          padding: 1.1rem;
+          box-shadow: 0 40px 80px -45px rgba(37, 99, 235, 0.7);
         }
-        .agent-head {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.8rem 1.1rem;
-          border-bottom: 1px solid var(--line);
-          font-size: 0.76rem;
-          color: var(--muted);
-        }
-        .agent-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; }
-        .agent-body { padding: 1.3rem; display: flex; flex-direction: column; gap: 1rem; }
+        .agent-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0.4rem 0.9rem; font-size: 0.76rem; color: rgba(255, 255, 255, 0.85); }
+        .agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sun); }
+        .agent-body { background: #ffffff; border-radius: 18px; padding: 1.2rem; display: flex; flex-direction: column; gap: 1rem; }
         .agent-msg { font-size: 0.92rem; line-height: 1.5; }
-        .agent-user {
-          align-self: flex-end;
-          background: var(--blue);
-          color: #ffffff;
-          padding: 0.6rem 0.95rem;
-          border-radius: 16px 16px 4px 16px;
-        }
-        .agent-calls {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-          border: 1px solid var(--line);
-          border-radius: 14px;
-          overflow: hidden;
-        }
+        .agent-user { align-self: flex-end; background: var(--ink); color: #ffffff; padding: 0.6rem 0.95rem; border-radius: 16px 16px 4px 16px; }
+        .agent-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: 14px; background: var(--grey); overflow: hidden; }
         .agent-call {
           display: grid;
           grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1530,19 +1599,13 @@ export default function LandingPage() {
           gap: 0.65rem;
           padding: 0.6rem 0.85rem;
           font-size: 0.76rem;
-          border-bottom: 1px solid #f0f4fb;
+          border-bottom: 1px solid #e6eaf0;
         }
         .agent-call:last-child { border-bottom: none; }
         .agent-check { color: var(--green); }
-        .agent-tool { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .agent-tool { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .agent-result { color: var(--muted); white-space: nowrap; }
-        .agent-reply {
-          align-self: flex-start;
-          color: var(--ink-2);
-          background: var(--sky-50);
-          padding: 0.6rem 0.95rem;
-          border-radius: 16px 16px 16px 4px;
-        }
+        .agent-reply { align-self: flex-start; color: var(--ink); background: var(--sun); padding: 0.6rem 0.95rem; border-radius: 16px 16px 16px 4px; }
         .agent-call, .agent-reply {
           opacity: 0;
           transform: translateX(-6px);
@@ -1552,182 +1615,131 @@ export default function LandingPage() {
         .agent.is-in .agent-call, .agent.is-in .agent-reply { opacity: 1; transform: none; }
 
         /* ── Plans ── */
-        .plans {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 1.25rem;
-          max-width: 980px;
-          margin: 0 auto;
-        }
-        .plan {
-          display: flex;
-          flex-direction: column;
-          padding: 2.4rem;
-          border-radius: 24px;
-          border: 1px solid var(--line);
-          background: #ffffff;
-        }
-        .plan-pro {
-          background:
-            radial-gradient(80% 60% at 100% 0%, rgba(215, 230, 255, 0.9), transparent 70%),
-            var(--sky-50);
-          border-color: #cfe0fb;
-        }
-        .plan-name { font-size: 0.86rem; font-weight: 600; color: var(--muted); }
-        .plan-price { margin-top: 0.5rem; font-size: 2.2rem; font-weight: 600; letter-spacing: -0.04em; color: var(--ink); }
-        .plan-list {
-          list-style: none;
-          margin: 1.75rem 0 2.2rem;
-          padding: 0;
-          display: flex;
-          flex-direction: column;
-          gap: 0.8rem;
-          flex: 1;
-        }
-        .plan-list li { position: relative; padding-left: 1.6rem; font-size: 0.94rem; line-height: 1.5; color: var(--ink-2); }
+        .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; max-width: 980px; margin: 0 auto; }
+        .plan { display: flex; flex-direction: column; padding: 2.3rem; border-radius: 26px; background: var(--grey); }
+        .plan-pro { background: var(--ink); color: #ffffff; }
+        .plan-name { font-size: 0.86rem; font-weight: 600; opacity: 0.7; }
+        .plan-price { margin-top: 0.5rem; font-size: 2.4rem; font-weight: 550; letter-spacing: -0.045em; }
+        .plan-list { list-style: none; margin: 1.75rem 0 2.2rem; padding: 0; display: flex; flex-direction: column; gap: 0.8rem; flex: 1; }
+        .plan-list li { position: relative; padding-left: 1.6rem; font-size: 0.94rem; line-height: 1.5; opacity: 0.88; }
         .plan-list li::before {
           content: "";
           position: absolute;
           left: 0;
-          top: 0.32em;
-          width: 16px;
-          height: 16px;
+          top: 0.4em;
+          width: 12px;
+          height: 12px;
           border-radius: 50%;
-          background: var(--sky-100) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 8.2l2.2 2.2 4.8-4.8' fill='none' stroke='%232563eb' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
+          background: var(--blue);
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
         }
+        .plan-pro .plan-list li::before { background: var(--sun); box-shadow: 0 0 0 3px rgba(255, 216, 77, 0.2); }
         .plan-btn { align-self: flex-start; }
 
         /* ── Closing ── */
+        .closing-shell { padding: 7rem 12px 0; }
         .closing {
           position: relative;
           overflow: hidden;
-          margin: 7rem auto 0;
-          max-width: 1180px;
+          isolation: isolate;
+          border-radius: 28px;
           padding: 8rem 1.5rem;
-          text-align: center;
           display: flex;
           flex-direction: column;
           align-items: center;
-          border-radius: 36px;
-          background:
-            radial-gradient(60% 70% at 50% 100%, rgba(215, 230, 255, 0.9), transparent 70%),
-            linear-gradient(to bottom, #ffffff, var(--sky-50));
-          border: 1px solid #edf2fb;
+          text-align: center;
         }
-        .closing-cloud { position: absolute; pointer-events: none; }
-        .closing-cloud-l { left: -6%; bottom: -10%; width: min(36vw, 460px); }
-        .closing-cloud-r { right: -3%; top: 8%; width: min(20vw, 260px); opacity: 0.8; }
-        .closing > *:not(.closing-cloud) { position: relative; z-index: 1; }
+        .closing-cloud { position: absolute; z-index: -1; pointer-events: none; }
+        .cc-l { left: -5%; bottom: -14%; width: min(40vw, 560px); }
+        .cc-r { right: -6%; top: 6%; width: min(30vw, 400px); opacity: 0.85; }
         .closing-title {
-          font-size: clamp(2.3rem, 5vw, 4rem);
-          line-height: 1.05;
-          letter-spacing: -0.045em;
-          font-weight: 600;
           margin: 0;
-          color: var(--ink);
+          font-size: clamp(2.4rem, 5.2vw, 4.2rem);
+          line-height: 1.05;
+          letter-spacing: -0.05em;
+          font-weight: 550;
+          color: #ffffff;
           text-wrap: balance;
+          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.18);
         }
-        .closing-title .serif-accent { font-size: 1.12em; display: block; }
-        .closing-sub { margin: 1.2rem 0 2.2rem; font-size: 1.08rem; color: var(--muted); }
+        .closing-sub { margin: 1.2rem 0 2.2rem; font-size: 1.05rem; color: rgba(255, 255, 255, 0.86); }
 
         /* ── Footer ── */
-        .footer {
-          max-width: 1180px;
-          margin: 0 auto;
-          padding: 4.5rem 1.5rem 3rem;
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 2.5rem 4rem;
-        }
+        .footer { max-width: 1200px; margin: 0 auto; padding: 4.5rem 1.5rem 3rem; display: grid; grid-template-columns: 1fr auto; gap: 2.5rem 4rem; }
         .footer-tag { margin: 0.85rem 0 0; font-size: 0.88rem; color: var(--muted); max-width: 22rem; }
         .footer-cols { display: flex; gap: 4rem; }
         .footer-col { display: flex; flex-direction: column; gap: 0.6rem; }
-        .footer-head { font-size: 0.8rem; font-weight: 600; color: var(--ink); margin-bottom: 0.35rem; }
-        .footer-col a { font-size: 0.88rem; color: var(--muted); transition: color 0.15s ease; }
+        .footer-head { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); margin-bottom: 0.35rem; }
+        .footer-col a { font-size: 0.88rem; color: var(--ink-2); transition: color 0.15s ease; }
         .footer-col a:hover { color: var(--blue); }
-        .footer-copy {
-          grid-column: 1 / -1;
-          padding-top: 1.5rem;
-          border-top: 1px solid var(--line);
-          font-size: 0.8rem;
-          color: var(--faint);
-        }
+        .footer-copy { grid-column: 1 / -1; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: 0.8rem; color: var(--faint); }
 
         /* ── Keyframes ── */
         @keyframes lpFadeUp { to { opacity: 1; transform: none; filter: blur(0); } }
-        @keyframes lpFloat {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(14px, -16px, 0); }
-        }
-        @keyframes lpBank {
-          0% { transform: translateX(-1.5%); }
-          100% { transform: translateX(1.5%); }
-        }
+        @keyframes lpFloat { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(14px, -14px, 0); } }
+        @keyframes lpBank { 0% { transform: translateX(-1.5%); } 100% { transform: translateX(1.5%); } }
+        @keyframes lpSway { 0% { transform: rotateY(-4deg); } 100% { transform: rotateY(4deg); } }
         @keyframes lpLogIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
         @keyframes lpBlink { 50% { opacity: 0; } }
         @keyframes lpPulse { 50% { opacity: 0.35; } }
-        @keyframes lpIndeterminate {
-          0% { transform: translateX(-100%) scaleX(0.4); }
-          100% { transform: translateX(250%) scaleX(0.4); }
-        }
+        @keyframes lpIndeterminate { 0% { transform: translateX(-100%) scaleX(0.4); } 100% { transform: translateX(250%) scaleX(0.4); } }
         @keyframes lpMarquee { to { transform: translateX(-50%); } }
 
         /* ── Responsive ── */
         @media (max-width: 1100px) {
           .products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .lp-nav-links a { padding: 0.4rem 0.65rem; }
+          .nav-links { gap: 1.2rem; }
+          .bento { grid-template-columns: 1fr 1fr; }
+          .bento-col { grid-column: 1 / -1; grid-template-rows: auto; grid-template-columns: 1.4fr 0.6fr; }
         }
         @media (max-width: 1000px) {
-          .dev { grid-template-columns: 1fr; gap: 3rem; }
+          .how, .dev { grid-template-columns: 1fr; gap: 3rem; }
           .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .problems { grid-template-columns: 1fr; }
-          .hero-cloud-left { width: 34vw; top: 10rem; }
-          .hero-cloud-right { width: 32vw; }
-          .cloud-chip { display: none; }
+          .arc { transform: scale(0.82); transform-origin: 50% 0; }
         }
         @media (max-width: 860px) {
-          .lp-nav { grid-template-columns: 1fr auto; }
-          .lp-nav-links { display: none; }
+          .nav { grid-template-columns: 1fr auto; }
+          .nav-links { display: none; }
         }
-        @media (max-width: 760px) {
-          .banner { padding: 0.6rem 2.75rem 0.6rem 1rem; font-size: 0.8rem; }
-          .hero { padding-top: 4.5rem; }
-          .hero-cloud-left { left: -18%; top: 0.5rem; width: 62vw; opacity: 0.55; }
-          .hero-cloud-right { right: -22%; top: auto; bottom: 46%; width: 58vw; opacity: 0.5; }
-          .hero-cloud-far-l, .hero-cloud-far-r { display: none; }
-          .hero-stage { margin-top: 3.5rem; }
-          .bank-back { width: 320%; bottom: 0; }
-          .bank-front { width: 280%; bottom: -3rem; }
-          .deploy-log { padding-bottom: 2.6rem; height: calc(7 * 1.75em + 3.6rem); }
+        @media (max-width: 640px) {
+          .hero-shell, .closing-shell { padding-left: 8px; padding-right: 8px; }
+          .hero { min-height: 0; border-radius: 22px; }
+          .nav { padding: 0.9rem 1rem; }
+          .nav-signin { display: none; }
+          .hero-copy { padding-top: 3rem; }
+          .hero-arc { margin-top: 2.5rem; }
+          .arc { height: 210px; transform: scale(0.62); transform-origin: 50% 0; }
+          .arc-card:nth-child(1), .arc-card:nth-child(9) { display: none; }
+          .hero-foot { margin: 0 0 5rem; text-align: center; padding: 0 1rem; }
+          .hc-1, .hc-2 { display: none; }
+          .hc-3 { width: 70vw; left: -25%; top: 55%; }
+          .hc-4 { width: 65vw; right: -25%; top: 50%; }
+          .bank-back { width: 320%; }
+          .bank-front { width: 280%; bottom: -40px; }
           .section { padding: 5rem 1.25rem 1rem; }
-          .products { grid-template-columns: 1fr; }
-          .timeline-track { top: 22px; bottom: 22px; left: 21px; right: auto; width: 2px; height: auto; }
-          .timeline-track span { transform: scaleY(0); transform-origin: top; background: linear-gradient(180deg, #93b8f8, var(--blue)); }
-          .timeline.is-in .timeline-track span { transform: scaleY(1); }
-          .timeline-steps { grid-template-columns: 1fr; gap: 1.75rem; }
-          .timeline-step { padding-left: 3.75rem; position: relative; }
-          .timeline-node { position: absolute; left: 0; top: 0; margin: 0; }
-          .facts { grid-template-columns: 1fr; }
-          .plans { grid-template-columns: 1fr; }
+          .why-title { font-size: 1.75rem; }
+          .bento { grid-template-columns: 1fr; }
+          .bento-col { grid-template-columns: 1fr; }
+          .bento-sky { min-height: 340px; }
+          .products, .facts, .plans { grid-template-columns: 1fr; }
           .plan { padding: 1.8rem; }
           .deploy-ref { display: none; }
           .step-label { font-size: 0.64rem; }
-          .closing { margin: 5rem 1rem 0; padding: 5.5rem 1.25rem; border-radius: 28px; }
-          .closing-cloud-l { width: 70vw; left: -25%; bottom: -12%; opacity: 0.7; }
-          .closing-cloud-r { width: 40vw; opacity: 0.5; }
+          .closing { padding: 5.5rem 1.25rem; border-radius: 22px; }
+          .cc-l { width: 80vw; left: -30%; }
+          .cc-r { width: 55vw; right: -25%; }
           .footer { grid-template-columns: 1fr; }
           .footer-cols { gap: 2.5rem; flex-wrap: wrap; }
         }
 
         @media (prefers-reduced-motion: reduce) {
           .hero-fade { animation: none; opacity: 1; transform: none; filter: none; }
-          .float, .bank .wc-cloud, .marquee-track, .chip-dot { animation: none; }
-          .hero-cloud { transition: none; transform: none; }
+          .float, .bank .cloud-svg, .marquee-track, .arc-sway { animation: none; }
+          .hero-cloud, .arc-tilt { transition: none; transform: none; }
           .lp [data-reveal] { opacity: 1; transform: none; transition: none; }
           .agent-call, .agent-reply { opacity: 1; transform: none; transition: none; }
-          .timeline-track span, .timeline-node { transition: none; }
           .log-row { animation: none; }
-          .product, .lp-btn { transition: none; }
+          .product, .btn { transition: none; }
         }
       `}</style>
     </div>
