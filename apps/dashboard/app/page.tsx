@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand";
+import SoftAurora from "@/components/soft-aurora";
 import { useAuth } from "@/lib/auth";
 import {
   ArrowRight,
@@ -591,6 +592,22 @@ export default function LandingPage() {
       <div className="hero-shell">
         <section className="hero" ref={heroRef}>
           <div className="sky" aria-hidden />
+          <div className="aurora" aria-hidden>
+            <SoftAurora
+              color1="#ffffff"
+              color2="#9fdcff"
+              spectrum={0.04}
+              bandHeight={0.93}
+              bandSpread={1.1}
+              tilt={-6}
+              speed={0.35}
+              colorSpeed={0.5}
+              brightness={1.05}
+              opacity={0.65}
+              mouseInfluence={0.12}
+              clickPulse={false}
+            />
+          </div>
           <div className="hero-cloud hc-1" aria-hidden><div className="float" style={cssVars({ "--dur": "14s" })}><PaintedCloud shape="c" seed={11} /></div></div>
           <div className="hero-cloud hc-2" aria-hidden><div className="float" style={cssVars({ "--dur": "16s", "--delay": "-6s" })}><PaintedCloud shape="c" seed={17} /></div></div>
           <div className="hero-cloud hc-3" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={3} /></div></div>
@@ -1036,11 +1053,21 @@ export default function LandingPage() {
         .sky {
           position: absolute;
           inset: 0;
-          z-index: -2;
+          z-index: -3;
           background:
             radial-gradient(70% 45% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 70%),
             radial-gradient(50% 40% at 80% 20%, rgba(130, 190, 255, 0.45), transparent 70%),
             linear-gradient(180deg, #0f5ad8 0%, #1f74ea 28%, #4597f2 55%, #8cc3f8 78%, #d9ecfd 100%);
+        }
+        /* Aurora glows high in the sky, behind clouds, fading before the cloud bank */
+        .aurora {
+          position: absolute;
+          inset: 0;
+          z-index: -2;
+          pointer-events: none;
+          mix-blend-mode: screen;
+          -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 30%, transparent 60%);
+          mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 30%, transparent 60%);
         }
         .hero-cloud {
           position: absolute;
@@ -1083,18 +1110,20 @@ export default function LandingPage() {
           font-size: 0.74rem;
           letter-spacing: 0.08em;
           text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.85);
-          transition: color 0.15s ease;
+          color: #ffffff;
+          opacity: 0.92;
+          text-shadow: 0 1px 12px rgba(11, 40, 110, 0.35);
+          transition: opacity 0.15s ease;
         }
-        .nav-links a:hover { color: #ffffff; }
+        .nav-links a:hover { opacity: 1; }
         .nav-cta { display: flex; justify-content: flex-end; align-items: center; gap: 1.1rem; }
         .nav-signin {
           font-size: 0.74rem;
           letter-spacing: 0.08em;
           text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.9);
+          color: #ffffff;
+          text-shadow: 0 1px 12px rgba(11, 40, 110, 0.35);
         }
-        .nav-signin:hover { color: #ffffff; }
 
         /* ── Hero copy ── */
         .hero-copy {
@@ -1117,7 +1146,7 @@ export default function LandingPage() {
           text-shadow: 0 2px 30px rgba(11, 40, 110, 0.18);
         }
         .hero-line { display: block; text-wrap: balance; }
-        .hero-line-soft { color: rgba(255, 255, 255, 0.68); }
+        .hero-line-soft { color: rgba(255, 255, 255, 0.72); }
         .hero-sub {
           max-width: 34rem;
           margin: 0 0 2.1rem;
