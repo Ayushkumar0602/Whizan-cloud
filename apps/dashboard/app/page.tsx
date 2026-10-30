@@ -157,86 +157,111 @@ const MCP_CONFIG = `{
   }
 }`;
 
-/* ─── Painted clouds ─────────────────────────────────────────────── */
+/* ─── Clouds ─────────────────────────────────────────────────────── */
 
-type Puff = [number, number, number];
+// Each lobe is [cx, cy, rx, ry]. Wide, flat lobes form the base;
+// rounder ones build the billowing top.
+type Lobe = [number, number, number, number];
 
-const CLOUD_SHAPES: Record<"a" | "b" | "c" | "bank", { w: number; h: number; base: number; puffs: Puff[] }> = {
+const CLOUD_SHAPES: Record<"a" | "b" | "c" | "bank", { w: number; h: number; lobes: Lobe[] }> = {
   a: {
-    w: 520, h: 300, base: 252,
-    puffs: [[150, 186, 80], [238, 140, 100], [336, 160, 86], [408, 200, 60], [96, 212, 52], [262, 206, 90], [190, 220, 66], [352, 222, 64]],
+    w: 640, h: 340,
+    lobes: [
+      [320, 236, 250, 62], [200, 196, 120, 84], [330, 150, 150, 118], [460, 196, 118, 82],
+      [140, 228, 90, 50], [520, 230, 90, 46], [262, 120, 80, 70], [400, 128, 86, 72],
+    ],
   },
   b: {
-    w: 520, h: 300, base: 250,
-    puffs: [[130, 200, 66], [210, 150, 86], [300, 124, 98], [392, 172, 78], [452, 214, 46], [252, 210, 84], [352, 220, 70], [84, 224, 42]],
+    w: 640, h: 340,
+    lobes: [
+      [320, 240, 260, 58], [250, 160, 150, 112], [400, 180, 126, 90], [160, 206, 100, 66],
+      [500, 218, 92, 54], [320, 112, 92, 76], [200, 128, 70, 58],
+    ],
   },
   c: {
-    w: 360, h: 200, base: 168,
-    puffs: [[96, 128, 48], [160, 96, 64], [236, 112, 54], [292, 140, 36], [180, 136, 56], [60, 146, 30]],
+    w: 520, h: 240,
+    lobes: [[260, 168, 210, 46], [220, 128, 104, 64], [320, 136, 96, 58], [150, 158, 70, 36], [380, 160, 74, 34]],
   },
   bank: {
-    w: 1400, h: 260, base: 300,
-    puffs: [
-      [40, 190, 90], [150, 160, 110], [280, 175, 95], [400, 150, 120], [540, 180, 100], [680, 160, 115],
-      [820, 185, 95], [960, 155, 120], [1100, 180, 100], [1230, 160, 110], [1360, 190, 90],
-      [90, 235, 90], [330, 235, 100], [600, 238, 110], [880, 235, 100], [1150, 238, 105], [1330, 240, 80],
+    w: 1600, h: 380,
+    lobes: [
+      [800, 330, 860, 80],
+      [90, 250, 160, 110], [270, 220, 180, 130], [470, 240, 170, 115], [660, 200, 190, 140],
+      [860, 230, 180, 125], [1060, 205, 190, 138], [1250, 235, 175, 118], [1450, 225, 180, 125],
+      [180, 300, 220, 80], [560, 300, 240, 85], [960, 300, 240, 85], [1360, 300, 230, 80],
     ],
   },
 };
 
-// Painterly white cloud drawn with SVG filters: rough edges,
-// soft blue shading underneath, highlights and paper grain.
+// Volumetric-looking cloud: feathered gradient lobes are torn apart by
+// fractal noise (feTurbulence + feDisplacementMap) for wispy edges, then
+// shaded with a cool underside and a sunlit top.
 function PaintedCloud({ shape, seed = 3 }: { shape: keyof typeof CLOUD_SHAPES; seed?: number }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const { w, h, base, puffs } = CLOUD_SHAPES[shape];
+  const { w, h, lobes } = CLOUD_SHAPES[shape];
   const id = (name: string) => `${name}-${uid}`;
-  const circles = (extra: { dx?: number; dy?: number; scale?: number; inset?: number } = {}) =>
-    puffs.map(([cx, cy, r], i) => (
-      <circle
+  const k = w / 640; // keeps noise detail consistent across shape sizes
+
+  const ellipses = (fill: string, opts: { dy?: number; scale?: number } = {}) =>
+    lobes.map(([cx, cy, rx, ry], i) => (
+      <ellipse
         key={i}
-        cx={cx + (extra.dx ?? 0)}
-        cy={cy + (extra.dy ?? 0)}
-        r={Math.max(0, r * (extra.scale ?? 1) - (extra.inset ?? 0))}
+        cx={cx}
+        cy={cy + (opts.dy ?? 0) * ry}
+        rx={rx * (opts.scale ?? 1)}
+        ry={ry * (opts.scale ?? 1)}
+        fill={fill}
       />
     ));
+
+  const tear = (name: string, freq: number, octaves: number, scale: number, blur: number, s: number) => (
+    <filter id={id(name)} x="-30%" y="-40%" width="160%" height="180%" colorInterpolationFilters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency={freq / k} numOctaves={octaves} seed={s} result="noise" />
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale={scale * k} xChannelSelector="R" yChannelSelector="G" result="torn" />
+      <feGaussianBlur in="torn" stdDeviation={blur * k} />
+    </filter>
+  );
 
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="cloud-svg" aria-hidden>
       <defs>
-        <clipPath id={id("cut")}>
-          <rect x="0" y="0" width={w} height={base} />
-        </clipPath>
-        <clipPath id={id("shape")}>{circles()}</clipPath>
-        <radialGradient id={id("body")} cx="45%" cy="22%" r="85%">
-          <stop offset="0" stopColor="#ffffff" />
-          <stop offset="0.5" stopColor="#f3f8ff" />
-          <stop offset="0.82" stopColor="#d7e7fb" />
-          <stop offset="1" stopColor="#b6cff2" />
+        <radialGradient id={id("body")}>
+          <stop offset="0" stopColor="#ffffff" stopOpacity="1" />
+          <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.96" />
+          <stop offset="0.78" stopColor="#f3f7fd" stopOpacity="0.55" />
+          <stop offset="1" stopColor="#eef4fc" stopOpacity="0" />
         </radialGradient>
-        <filter id={id("rough")} x="-15%" y="-15%" width="130%" height="130%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" seed={seed} result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="18" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-        <filter id={id("soft")} x="-30%" y="-30%" width="160%" height="160%">
-          <feGaussianBlur stdDeviation="12" />
-        </filter>
-        <filter id={id("grain")}>
-          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed={seed + 7} />
-          <feColorMatrix type="matrix" values="0 0 0 0 0.3  0 0 0 0 0.45  0 0 0 0 0.8  0 0 0 0.8 -0.35" />
+        <radialGradient id={id("shade")} cy="62%">
+          <stop offset="0" stopColor="#7d93b8" stopOpacity="0.5" />
+          <stop offset="0.6" stopColor="#93a8c9" stopOpacity="0.22" />
+          <stop offset="1" stopColor="#a9bad6" stopOpacity="0" />
+        </radialGradient>
+        {tear("shade", 0.009, 4, 90, 9, seed + 3)}
+
+        {/* Body: torn silhouette, lit like a volume. The noise doubles as a
+            height map so a light from above shades each billow. */}
+        <filter id={id("lit")} x="-30%" y="-40%" width="160%" height="180%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency={0.011 / k} numOctaves={5} seed={seed} result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale={130 * k} xChannelSelector="R" yChannelSelector="G" result="torn" />
+          <feGaussianBlur in="torn" stdDeviation={0.7 * k} result="shape" />
+          <feGaussianBlur in="shape" stdDeviation={16 * k} result="dome" />
+          <feTurbulence type="fractalNoise" baseFrequency={0.028 / k} numOctaves={4} seed={seed + 9} result="detail" />
+          <feColorMatrix in="detail" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.9 0 0 0 0" result="detailAlpha" />
+          <feComposite in="dome" in2="detailAlpha" operator="arithmetic" k1="0" k2="1" k3="0.45" k4="0" result="height" />
+          <feDiffuseLighting in="height" surfaceScale={7} diffuseConstant={1.15} lightingColor="#ffffff" result="light">
+            <feDistantLight azimuth={-95} elevation={58} />
+          </feDiffuseLighting>
+          <feComponentTransfer in="light" result="tinted">
+            <feFuncR type="linear" slope="0.36" intercept="0.66" />
+            <feFuncG type="linear" slope="0.29" intercept="0.72" />
+            <feFuncB type="linear" slope="0.17" intercept="0.84" />
+          </feComponentTransfer>
+          <feComposite in="tinted" in2="shape" operator="in" />
         </filter>
       </defs>
 
-      <g filter={`url(#${id("rough")})`}>
-        <g clipPath={`url(#${id("cut")})`}>
-          <g fill="#c4d9f5" opacity="0.9">{circles()}</g>
-          <g fill={`url(#${id("body")})`}>{circles({ inset: 3 })}</g>
-          <g clipPath={`url(#${id("shape")})`}>
-            <g fill="#87a9e6" opacity="0.3" filter={`url(#${id("soft")})`}>{circles({ dx: 6, dy: 34, scale: 0.92 })}</g>
-            <rect x="0" y="0" width={w} height={h} filter={`url(#${id("grain")})`} opacity="0.15" />
-            <g fill="#ffffff" opacity="0.9" filter={`url(#${id("soft")})`}>{circles({ dx: -10, dy: -30, scale: 0.55 })}</g>
-          </g>
-        </g>
-      </g>
+      <g filter={`url(#${id("lit")})`}>{ellipses(`url(#${id("body")})`)}</g>
+      <g filter={`url(#${id("shade")})`} opacity="0.32">{ellipses(`url(#${id("shade")})`, { dy: 0.45, scale: 0.7 })}</g>
     </svg>
   );
 }
@@ -1187,7 +1212,7 @@ export default function LandingPage() {
         .mini-chip-ok { background: #ecfdf3; color: var(--green); }
         .mini-chip-busy { background: #eff6ff; color: var(--blue); }
         .mini-chart { width: 100%; height: auto; margin-top: auto; }
-        .mini-log { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.6rem; color: var(--ink-2); }
+        .mini-log { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.6rem; color: var(--ink-2); white-space: nowrap; }
         .mini-log span { color: var(--faint); margin-right: 0.3rem; }
         .mini-table { font-size: 0.62rem; color: var(--ink-2); }
         .mini-bar { height: 6px; border-radius: 999px; background: var(--sky-100); overflow: hidden; margin-top: auto; }
