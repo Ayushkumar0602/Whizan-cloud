@@ -24,7 +24,10 @@ import {
   Rocket,
   Moon,
   Copy,
-  Check
+  Check,
+  Cpu,
+  Layers,
+  Sparkles
 } from "lucide-react";
 
 /* ─── Static content ─────────────────────────────────────────────── */
@@ -36,9 +39,9 @@ const DEPLOY_LOG = [
   { step: 0, text: "Checked out 4f8e2c1" },
   { step: 1, text: "npm ci · 412 packages installed" },
   { step: 2, text: "npm run build" },
-  { step: 2, text: "Image built · 148 MB" },
-  { step: 3, text: "GET /health → 200 OK" },
-  { step: 4, text: "Traffic moved to the new version" },
+  { step: 2, text: "Container image synthesized · 148 MB" },
+  { step: 3, text: "Deep health check: GET /health → 200 OK" },
+  { step: 4, text: "Traffic seamlessly shifted to live version" },
 ];
 
 // Ticks to hold the finished state before the loop restarts
@@ -48,90 +51,98 @@ const PRODUCTS = [
   {
     id: "hosting",
     icon: Globe,
+    badge: "EDGE CDN · SPA & SSR",
     name: "Frontend Hosting",
-    tagline: "Next.js, React, Vite, Astro",
-    description: "Deploy from Git. Every push builds and goes live on its own URL with HTTPS.",
+    tagline: "Next.js, React, Vite, Astro, Static HTML",
+    description: "Deploy directly from Git. Every commit automatically builds and goes live on a global Edge CDN with automated SSL.",
     href: "/dashboard/hosting",
   },
   {
     id: "backend",
     icon: Server,
+    badge: "CONTAINERS · ZERO-DOCKER",
     name: "Backend Services",
     tagline: "Node.js, Python, Go, Rust, Java, Docker",
-    description: "APIs and workers in isolated containers. New versions take traffic after a health check.",
+    description: "APIs and queue workers running in isolated production containers. Zero-downtime cutover after readiness probes.",
     href: "/dashboard/backend",
   },
   {
     id: "functions",
     icon: Zap,
+    badge: "SUB-5MS · V8 RUNTIME",
     name: "Edge Functions",
     tagline: "TypeScript and JavaScript",
-    description: "Handlers for API routes and webhooks, each with its own URL and API keys.",
+    description: "Serverless handlers for API routes, webhooks, and microservices with granular public and API-key protected endpoints.",
     href: "/dashboard/functions",
   },
   {
     id: "databases",
     icon: Database,
+    badge: "MANAGED · ACID COMPLIANT",
     name: "Databases",
     tagline: "PostgreSQL and Redis",
-    description: "Dedicated instances with connection pooling, a table browser and a SQL console.",
+    description: "Dedicated instances with automated connection pooling, visual table explorer, and interactive SQL terminal.",
     href: "/dashboard/databases",
   },
   {
     id: "storage",
     icon: HardDrive,
+    badge: "S3-COMPATIBLE · MULTI-BUCKET",
     name: "Cloud Storage",
-    tagline: "S3-compatible objects",
-    description: "Buckets for uploads and assets, with access policies and per-project quotas.",
+    tagline: "High-throughput object storage",
+    description: "S3-compatible buckets for media, file uploads, and assets with granular key scoping and CDN asset caching.",
     href: "/dashboard/storage",
   },
   {
     id: "cron",
     icon: Clock,
+    badge: "SERVERLESS · CRON ENGINE",
     name: "Cron Jobs",
-    tagline: "Scheduled tasks",
-    description: "Run jobs on a schedule against your services and functions, without an always-on server.",
+    tagline: "Automated task schedules",
+    description: "Execute scheduled background jobs against your services and edge endpoints without running costly 24/7 idle servers.",
     href: "/dashboard/cron",
   },
   {
     id: "flow",
     icon: Workflow,
+    badge: "PIPELINES · AUTONOMOUS CI/CD",
     name: "Whizan Flow",
-    tagline: "Pipelines",
-    description: "Build, test and canary-deploy pipelines that recover automatically after failures.",
+    tagline: "Multi-stage deployment pipelines",
+    description: "Build, test, canary-deploy, and rollback pipelines that self-heal and orchestrate multi-tier deployments cleanly.",
     href: "/dashboard/flows",
   },
   {
     id: "devtools",
     icon: Terminal,
+    badge: "AI-READY · AGENT DEVOPS",
     name: "CLI and MCP",
-    tagline: "Terminal and editor",
-    description: "Deploy, read logs and manage services with the whizan CLI, or through MCP in your editor.",
+    tagline: "Terminal CLI and IDE Agent Integration",
+    description: "Manage infrastructure directly via terminal or connect Cursor, Windsurf, and Claude via @whizan/mcp-devops.",
     href: "/dashboard/cli",
   },
 ];
 
 const HOW_STEPS = [
-  { title: "Connect", body: "Pick a GitHub repository and branch, or run whizan deploy." },
-  { title: "Configure", body: "Set the port, environment variables and instance size." },
-  { title: "Build", body: "Each push builds in an isolated container. Logs stream as it runs." },
-  { title: "Go live", body: "Traffic moves to the new version once its health check returns 200." },
+  { title: "Connect", body: "Select a GitHub repository and branch, or run whizan deploy directly from your local terminal." },
+  { title: "Configure", body: "Set environment variables, target internal ports, and choose instance sizing in one simple pane." },
+  { title: "Build", body: "Every push compiles in an isolated sandbox. Real-time build logs stream live as assets build." },
+  { title: "Go live", body: "Traffic transitions seamlessly to the new version only after its deep health check returns 200 OK." },
 ];
 
 const FACTS = [
-  { icon: ShieldCheck, title: "HTTPS by default", body: "Every deployment gets its own URL and certificate." },
-  { icon: Activity, title: "Logs and metrics", body: "Build logs, runtime logs, CPU and memory per service." },
-  { icon: KeyRound, title: "Encrypted variables", body: "Environment variables are stored encrypted with AES-256." },
-  { icon: RotateCcw, title: "Safe releases", body: "The previous version keeps serving until the new one passes." },
+  { icon: ShieldCheck, title: "Universal Wildcard SSL", body: "Zero-maintenance HTTPS certificates provisioned and rotated automatically for every domain." },
+  { icon: Activity, title: "Real-time Telemetry", body: "Live streaming build logs, container stdout/stderr, CPU, and memory utilization analytics." },
+  { icon: KeyRound, title: "Encrypted Vault Secrets", body: "Production environment variables stored securely with AES-256 military-grade encryption." },
+  { icon: RotateCcw, title: "Zero-Downtime Blue/Green", body: "Previous releases continue serving live traffic uninterrupted until new containers report healthy." },
 ];
 
 const AGENT_CALLS = [
-  { tool: "whizan_analyze_workspace", result: "Next.js app · port 3000" },
-  { tool: "whizan_set_env_vars", result: "2 variables set" },
-  { tool: "whizan_create_project", result: "project created" },
-  { tool: "whizan_deploy_direct", result: "deployment queued" },
-  { tool: "whizan_get_build_logs", result: "READY" },
-  { tool: "whizan_check_health", result: "200 OK" },
+  { tool: "whizan_analyze_workspace", result: "Next.js 15 · port 3000 · V8 verified" },
+  { tool: "whizan_set_env_vars", result: "2 production secrets vaulted" },
+  { tool: "whizan_create_project", result: "production project provisioned" },
+  { tool: "whizan_deploy_direct", result: "build job enqueued" },
+  { tool: "whizan_get_build_logs", result: "READY (18.4s build time)" },
+  { tool: "whizan_check_health", result: "200 OK · Edge route live" },
 ];
 
 const CLI_SNIPPET = `npm install -g @whizan/cli
@@ -147,19 +158,17 @@ const MCP_CONFIG = `{
       "args": ["-y", "@whizan/mcp-devops"],
       "env": {
         "WHIZAN_API_URL": "https://api.whizan.cloud",
-        "WHIZAN_API_KEY": "whz_live_your_key"
+        "WHIZAN_API_KEY": "whz_live_your_secret_key"
       }
     }
   }
 }`;
 
-/* ─── Clouds (Pure GPU-Accelerated Feathered Volumes) ─────────────── */
+/* ─── Realistic Atmospheric Clouds (Pure GPU 120 FPS Volumetric SVG) ── */
 
-// Each lobe is [cx, cy, rx, ry]. Wide, flat lobes form the base;
-// rounder ones build the billowing top.
 type Lobe = [number, number, number, number];
 
-const CLOUD_SHAPES: Record<"a" | "b" | "c" | "bank", { w: number; h: number; lobes: Lobe[] }> = {
+const CLOUD_SHAPES: Record<"a" | "b" | "c" | "wisp" | "bank", { w: number; h: number; lobes: Lobe[] }> = {
   a: {
     w: 640, h: 340,
     lobes: [
@@ -176,7 +185,15 @@ const CLOUD_SHAPES: Record<"a" | "b" | "c" | "bank", { w: number; h: number; lob
   },
   c: {
     w: 520, h: 240,
-    lobes: [[260, 168, 210, 46], [220, 128, 104, 64], [320, 136, 96, 58], [150, 158, 70, 36], [380, 160, 74, 34]],
+    lobes: [
+      [260, 168, 210, 46], [220, 128, 104, 64], [320, 136, 96, 58], [150, 158, 70, 36], [380, 160, 74, 34]
+    ],
+  },
+  wisp: {
+    w: 560, h: 200,
+    lobes: [
+      [280, 120, 240, 42], [200, 95, 110, 55], [340, 90, 120, 58], [120, 115, 75, 34], [440, 115, 80, 36]
+    ],
   },
   bank: {
     w: 1600, h: 380,
@@ -198,34 +215,45 @@ function PaintedCloud({ shape }: { shape: keyof typeof CLOUD_SHAPES; seed?: numb
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="cloud-svg" aria-hidden>
       <defs>
-        <radialGradient id={id("body")} cx="50%" cy="38%" r="56%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
-          <stop offset="48%" stopColor="#ffffff" stopOpacity="0.92" />
-          <stop offset="78%" stopColor="#f0f6fe" stopOpacity="0.65" />
-          <stop offset="100%" stopColor="#e2ecfb" stopOpacity="0" />
+        {/* Sunlit top highlight - direct sunlight crest */}
+        <radialGradient id={id("highlight")} cx="50%" cy="20%" r="55%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.88" />
+          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
-        <radialGradient id={id("shade")} cx="50%" cy="68%" r="52%">
-          <stop offset="0%" stopColor="#8fa9ce" stopOpacity="0.36" />
-          <stop offset="60%" stopColor="#b2c6e2" stopOpacity="0.15" />
-          <stop offset="100%" stopColor="#cad7ea" stopOpacity="0" />
+        {/* Volumetric body scatter */}
+        <radialGradient id={id("body")} cx="50%" cy="36%" r="58%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.99" />
+          <stop offset="42%" stopColor="#ffffff" stopOpacity="0.94" />
+          <stop offset="76%" stopColor="#f0f6fe" stopOpacity="0.68" />
+          <stop offset="100%" stopColor="#e0ecfc" stopOpacity="0" />
         </radialGradient>
+        {/* Natural atmospheric Rayleigh underbelly shadow */}
+        <radialGradient id={id("shade")} cx="50%" cy="72%" r="52%">
+          <stop offset="0%" stopColor="#809ecb" stopOpacity="0.42" />
+          <stop offset="58%" stopColor="#a8c1e4" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#c5d7ee" stopOpacity="0" />
+        </radialGradient>
+        {/* Smooth GPU-friendly Gaussian blur filter */}
         <filter id={id("soft")} x="-25%" y="-25%" width="150%" height="150%" colorInterpolationFilters="sRGB">
-          <feGaussianBlur stdDeviation={6 * k} />
+          <feGaussianBlur stdDeviation={5.5 * k} />
         </filter>
       </defs>
 
       <g filter={`url(#${id("soft")})`}>
+        {/* Base shadow layer */}
         {lobes.map(([cx, cy, rx, ry], i) => (
           <ellipse
             key={`s-${i}`}
             cx={cx}
-            cy={cy + 0.35 * ry}
-            rx={rx * 0.95}
-            ry={ry * 0.85}
+            cy={cy + 0.32 * ry}
+            rx={rx * 0.96}
+            ry={ry * 0.84}
             fill={`url(#${id("shade")})`}
-            opacity="0.8"
+            opacity="0.85"
           />
         ))}
+        {/* Main cloud body */}
         {lobes.map(([cx, cy, rx, ry], i) => (
           <ellipse
             key={`b-${i}`}
@@ -234,6 +262,18 @@ function PaintedCloud({ shape }: { shape: keyof typeof CLOUD_SHAPES; seed?: numb
             rx={rx}
             ry={ry}
             fill={`url(#${id("body")})`}
+          />
+        ))}
+        {/* Sunlit top rim highlights */}
+        {lobes.slice(0, Math.ceil(lobes.length * 0.75)).map(([cx, cy, rx, ry], i) => (
+          <ellipse
+            key={`h-${i}`}
+            cx={cx}
+            cy={cy - 0.16 * ry}
+            rx={rx * 0.78}
+            ry={ry * 0.58}
+            fill={`url(#${id("highlight")})`}
+            opacity="0.9"
           />
         ))}
       </g>
@@ -304,17 +344,17 @@ function highlightShell(src: string): ReactNode[] {
 
 const cssVars = (vars: Record<string, string | number>) => vars as CSSProperties;
 
-/* ─── Hero card arc ──────────────────────────────────────────────── */
+/* ─── Hero card arc (Enterprise Ceramic Finish & 3D Layering) ──── */
 
 const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
   {
     key: "cron",
     body: (
       <>
-        <div className="mini-label"><Clock size={11} /> Cron</div>
+        <div className="mini-label"><Clock size={12} className="mini-label-icon text-amber-500" /> Scheduled Cron</div>
         <div className="mini-mono mini-big">0 3 * * *</div>
-        <div className="mini-text">Nightly backup</div>
-        <div className="mini-chip mini-chip-ok">Next run 03:00</div>
+        <div className="mini-text">Nightly database backup</div>
+        <div className="mini-chip mini-chip-ok"><span className="mini-pulse-dot" /> Next run 03:00</div>
       </>
     ),
   },
@@ -322,7 +362,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "deploys",
     body: (
       <>
-        <div className="mini-label"><Rocket size={11} /> Deployments</div>
+        <div className="mini-label"><Rocket size={12} className="mini-label-icon text-blue-500" /> Deployments</div>
         {[
           ["web", "Ready", "ok"],
           ["api", "Ready", "ok"],
@@ -331,7 +371,10 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
         ].map(([name, state, tone]) => (
           <div key={name} className="mini-row">
             <span className="mini-mono">{name}</span>
-            <span className={`mini-chip mini-chip-${tone}`}>{state}</span>
+            <span className={`mini-chip mini-chip-${tone}`}>
+              {tone === "ok" && <span className="mini-pulse-dot" />}
+              {state}
+            </span>
           </div>
         ))}
       </>
@@ -341,17 +384,18 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "metrics",
     body: (
       <>
-        <div className="mini-label"><Activity size={11} /> CPU · api-gateway</div>
-        <div className="mini-big">12%</div>
+        <div className="mini-label"><Activity size={12} className="mini-label-icon text-emerald-500" /> CPU · api-gateway</div>
+        <div className="mini-big">12.4%</div>
         <svg viewBox="0 0 140 56" className="mini-chart" aria-hidden>
           <defs>
             <linearGradient id="arc-chart-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#2563eb" stopOpacity="0.35" />
-              <stop offset="1" stopColor="#2563eb" stopOpacity="0" />
+              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
             </linearGradient>
           </defs>
           <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16 L140 56 L0 56 Z" fill="url(#arc-chart-fill)" />
-          <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16" fill="none" stroke="#2563eb" strokeWidth="2" />
+          <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16" fill="none" stroke="#2563eb" strokeWidth="2.2" strokeLinecap="round" />
+          <circle cx="126" cy="10" r="3.5" fill="#2563eb" stroke="#ffffff" strokeWidth="1.5" />
         </svg>
       </>
     ),
@@ -360,12 +404,12 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "logs",
     body: (
       <>
-        <div className="mini-label"><Terminal size={11} /> Runtime logs</div>
+        <div className="mini-label"><Terminal size={12} className="mini-label-icon text-indigo-500" /> Live Stream</div>
         <div className="mini-log mini-mono">
-          <div><span>12:04</span> GET /users 200</div>
-          <div><span>12:04</span> GET /plans 200</div>
-          <div><span>12:05</span> POST /orders 201</div>
-          <div><span>12:05</span> GET /health 200</div>
+          <div><span>12:04:18</span> <span className="mini-log-code">GET</span> /users 200</div>
+          <div><span>12:04:22</span> <span className="mini-log-code">GET</span> /plans 200</div>
+          <div><span>12:05:01</span> <span className="mini-log-code post">POST</span> /orders 201</div>
+          <div><span>12:05:09</span> <span className="mini-log-code">GET</span> /health 200</div>
         </div>
       </>
     ),
@@ -375,8 +419,12 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     tone: "dark",
     body: (
       <>
+        <div className="mini-dark-badge">
+          <span className="mini-dark-pip" />
+          <span>UNIFIED CONTROL PLANE</span>
+        </div>
         <div className="mini-dark-title">
-          Frontends, APIs <span className="mini-dot" /> and databases
+          Frontends, APIs <span className="mini-dot" /> &amp; databases
           <span className="mini-dim"> in one console.</span>
         </div>
       </>
@@ -388,8 +436,8 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     body: (
       <>
         <span className="mini-plus"><Plus size={18} /></span>
-        <div className="mini-glass-title">New deployment</div>
-        <div className="mini-glass-sub">from GitHub</div>
+        <div className="mini-glass-title">Instant Deploy</div>
+        <div className="mini-glass-sub">GitHub · Gitlab · CLI · MCP</div>
       </>
     ),
   },
@@ -397,9 +445,9 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "db",
     body: (
       <>
-        <div className="mini-label"><Database size={11} /> users</div>
+        <div className="mini-label"><Database size={12} className="mini-label-icon text-cyan-600" /> Postgres · users</div>
         <div className="mini-table mini-mono">
-          {[["1", "ana@…"], ["2", "raj@…"], ["3", "li@…"], ["4", "sam@…"]].map(([id, email]) => (
+          {[["1", "ana@company.com"], ["2", "raj@enterprise.io"], ["3", "li@startup.dev"], ["4", "sam@whizan.cloud"]].map(([id, email]) => (
             <div key={id} className="mini-row"><span>{id}</span><span>{email}</span></div>
           ))}
         </div>
@@ -410,10 +458,10 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "storage",
     body: (
       <>
-        <div className="mini-label"><HardDrive size={11} /> Storage</div>
-        <div className="mini-mono mini-text">assets</div>
-        <div className="mini-big">1.2 GB</div>
-        <div className="mini-bar"><span style={{ width: "38%" }} /></div>
+        <div className="mini-label"><HardDrive size={12} className="mini-label-icon text-violet-500" /> S3 Storage</div>
+        <div className="mini-mono mini-text">production-assets</div>
+        <div className="mini-big">1.48 GB</div>
+        <div className="mini-bar"><span style={{ width: "44%" }} /></div>
       </>
     ),
   },
@@ -421,9 +469,9 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "mcp",
     body: (
       <>
-        <div className="mini-label"><Terminal size={11} /> MCP</div>
+        <div className="mini-label"><Terminal size={12} className="mini-label-icon text-emerald-600" /> DevOps MCP</div>
         <div className="mini-mono mini-text">whizan_check_health</div>
-        <div className="mini-chip mini-chip-ok">200 OK</div>
+        <div className="mini-chip mini-chip-ok"><span className="mini-pulse-dot" /> 200 OK · Healthy</div>
       </>
     ),
   },
@@ -450,7 +498,7 @@ function CardArc() {
   );
 }
 
-/* ─── Deploy animation ───────────────────────────────────────────── */
+/* ─── Deploy animation (macOS Glass Window & Live Stream) ────────── */
 
 function DeployPreview() {
   const [tick, setTick] = useState(0);
@@ -470,12 +518,17 @@ function DeployPreview() {
   const finished = tick >= DEPLOY_LOG.length;
   const current = shown === 0 ? -1 : DEPLOY_LOG[shown - 1].step;
   const status = tick === 0 ? "queued" : finished ? "ready" : "building";
-  const statusLabel = { queued: "Queued", building: "Building", ready: "Ready" }[status];
+  const statusLabel = { queued: "Queued", building: "Building", ready: "Ready · 200 OK" }[status];
   const elapsed = `0:${String(shown * 6).padStart(2, "0")}`;
 
   return (
     <div className="deploy" aria-label="Example deployment">
       <div className="deploy-head">
+        <div className="deploy-traffic-lights" aria-hidden>
+          <span className="dot dot-red" />
+          <span className="dot dot-yellow" />
+          <span className="dot dot-green" />
+        </div>
         <div className="deploy-title">
           <span className="deploy-icon"><Server size={14} /></span>
           <span className="deploy-name">api-gateway</span>
@@ -520,7 +573,7 @@ function DeployPreview() {
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const ctaHref = !loading && user ? "/dashboard" : "/register";
-  const ctaLabel = !loading && user ? "Open console" : "Start for free";
+  const ctaLabel = !loading && user ? "Open Console" : "Start for Free";
   const [devTab, setDevTab] = useState<"cli" | "mcp">("cli");
   const [copied, setCopied] = useState(false);
   const heroRef = useRef<HTMLElement>(null);
@@ -535,7 +588,7 @@ export default function LandingPage() {
 
   return (
     <div className="lp">
-      {/* ── Top Sticky Header (Authentic Logo in Rightful Place) ── */}
+      {/* ── Top Sticky Header (Authentic Brandmark in Rightful Place) ── */}
       <header className="lp-nav-wrap">
         <div className="lp-nav">
           <BrandMark compact className="lp-brand-logo" />
@@ -571,21 +624,43 @@ export default function LandingPage() {
         <section className="hero" ref={heroRef}>
           <div className="sky" aria-hidden />
 
-          {/* Calming, floating clouds (Decoupled from mouse cursor) */}
-          <div className="hero-cloud hc-1" aria-hidden><div className="float" style={cssVars({ "--dur": "14s" })}><PaintedCloud shape="c" seed={11} /></div></div>
-          <div className="hero-cloud hc-2" aria-hidden><div className="float" style={cssVars({ "--dur": "16s", "--delay": "-6s" })}><PaintedCloud shape="c" seed={17} /></div></div>
-          <div className="hero-cloud hc-3" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={3} /></div></div>
-          <div className="hero-cloud hc-4" aria-hidden><div className="float" style={cssVars({ "--dur": "13s", "--delay": "-4s" })}><PaintedCloud shape="b" seed={8} /></div></div>
+          {/* Authentic Multi-Layered Atmospheric Wind-Drift Clouds (GPU-accelerated, 120 FPS) */}
+          <div className="hero-cloud hc-1" aria-hidden>
+            <div className="cloud-drift-h1"><PaintedCloud shape="c" seed={11} /></div>
+          </div>
+          <div className="hero-cloud hc-2" aria-hidden>
+            <div className="cloud-drift-h2"><PaintedCloud shape="c" seed={17} /></div>
+          </div>
+          <div className="hero-cloud hc-wisp" aria-hidden>
+            <div className="cloud-drift-wisp"><PaintedCloud shape="wisp" seed={29} /></div>
+          </div>
+          <div className="hero-cloud hc-3" aria-hidden>
+            <div className="cloud-billow-left"><PaintedCloud shape="a" seed={3} /></div>
+          </div>
+          <div className="hero-cloud hc-4" aria-hidden>
+            <div className="cloud-billow-right"><PaintedCloud shape="b" seed={8} /></div>
+          </div>
 
           <div className="hero-copy">
+            {/* Enterprise Kicker Badge */}
+            <div className="hero-kicker hero-fade" style={cssVars({ "--d": "40ms" })}>
+              <span className="hero-kicker-dot" />
+              <span className="hero-kicker-badge">Whizan Cloud 2.0</span>
+              <span className="hero-kicker-sep">·</span>
+              <span className="hero-kicker-desc">Universal Multi-Runtime Infrastructure</span>
+              <ArrowRight size={13} className="hero-kicker-arrow" />
+            </div>
+
             <h1 className="hero-title">
-              <span className="hero-line hero-fade" style={cssVars({ "--d": "80ms" })}>Your whole stack,</span>
-              <span className="hero-line hero-line-soft hero-fade" style={cssVars({ "--d": "200ms" })}>deployed from one console</span>
+              <span className="hero-line hero-fade" style={cssVars({ "--d": "100ms" })}>Your whole stack,</span>
+              <span className="hero-line hero-line-soft hero-fade" style={cssVars({ "--d": "220ms" })}>deployed from one console</span>
             </h1>
+
             <p className="hero-sub hero-fade" style={cssVars({ "--d": "340ms" })}>
               Host frontends, APIs, functions, databases and storage in one place.
               Every release goes live only after it passes a health check.
             </p>
+
             <div className="hero-ctas hero-fade" style={cssVars({ "--d": "460ms" })}>
               <a href="#how" className="btn btn-glass mono">How it works</a>
               <Link href={ctaHref} className="btn btn-sun btn-arrow mono" id="hero-cta-btn">
@@ -600,17 +675,31 @@ export default function LandingPage() {
           </div>
 
           <div className="hero-foot mono hero-fade" style={cssVars({ "--d": "800ms" })}>
-            8 products · 1 console · Free Hobby plan
+            <div className="hero-foot-pill">
+              <span className="hero-foot-item">8 Cloud Products</span>
+              <span className="hero-foot-bullet">•</span>
+              <span className="hero-foot-item">1 Unified Console</span>
+              <span className="hero-foot-bullet">•</span>
+              <span className="hero-foot-item">Sub-5ms Edge Routing</span>
+              <span className="hero-foot-bullet">•</span>
+              <span className="hero-foot-item">Zero-Docker Synthesis</span>
+              <span className="hero-foot-bullet">•</span>
+              <span className="hero-foot-item highlight">Free Hobby Plan</span>
+            </div>
           </div>
 
-          <div className="bank bank-back" aria-hidden><PaintedCloud shape="bank" seed={21} /></div>
-          <div className="bank bank-front" aria-hidden><PaintedCloud shape="bank" seed={5} /></div>
+          <div className="bank bank-back" aria-hidden>
+            <div className="cloud-bank-back"><PaintedCloud shape="bank" seed={21} /></div>
+          </div>
+          <div className="bank bank-front" aria-hidden>
+            <div className="cloud-bank-front"><PaintedCloud shape="bank" seed={5} /></div>
+          </div>
         </section>
       </div>
 
       {/* ── Stack marquee (All Official Language & Framework Logos) ── */}
       <section className="stack" aria-label="Supported languages and frameworks">
-        <div className="stack-badge mono">RUNS ANY STACK</div>
+        <div className="stack-badge mono">RUNS ANY STACK · ZERO-DOCKER ARCHITECTURE</div>
         <div className="marquee">
           <div className="marquee-track">
             {[0, 1, 2].map(copy => (
@@ -647,7 +736,9 @@ export default function LandingPage() {
         <div className="bento">
           <div className="bento-sky" data-reveal>
             <div className="bento-sky-cloud" aria-hidden><PaintedCloud shape="b" seed={4} /></div>
-            <div className="bento-sky-tag mono">WHIZAN</div>
+            <div className="bento-sky-tag mono">
+              <span className="bento-sky-pill">ALL-IN-ONE CLOUD</span>
+            </div>
             <div className="bento-sky-card">
               <div className="bento-num">8</div>
               <p className="bento-text">Products in one console: hosting, backends, functions, databases, storage, cron, pipelines and MCP.</p>
@@ -656,7 +747,9 @@ export default function LandingPage() {
 
           <div className="bento-grey" data-reveal style={cssVars({ "--d": "100ms" })}>
             <div className="bento-label">Every release is checked</div>
-            <div className="bento-num">200 OK</div>
+            <div className="bento-num">
+              <span className="bento-ok-dot" /> 200 OK
+            </div>
             <div className="bento-grey-foot">
               <div className="runtime-stack">
                 {["N", "Py", "Go", "Rs", "J"].map(r => <span key={r} className="runtime-dot mono">{r}</span>)}
@@ -701,6 +794,7 @@ export default function LandingPage() {
               >
                 <div className="product-top">
                   <span className="product-icon"><Icon size={18} /></span>
+                  <span className="product-tag-pill mono">{p.badge}</span>
                   <span className="product-go"><ArrowUpRight size={15} /></span>
                 </div>
                 <div className="product-name">{p.name}</div>
@@ -797,10 +891,10 @@ export default function LandingPage() {
           <div className="agent" data-reveal style={cssVars({ "--d": "120ms" })}>
             <div className="agent-head">
               <span className="agent-dot" />
-              <span className="mono">Agent session</span>
+              <span className="mono">Agent session (Cursor / Claude / Windsurf)</span>
             </div>
             <div className="agent-body">
-              <div className="agent-msg agent-user">Deploy this repo to Whizan.</div>
+              <div className="agent-msg agent-user">Deploy this repository to Whizan Cloud.</div>
               <ul className="agent-calls mono">
                 {AGENT_CALLS.map((c, i) => (
                   <li key={c.tool} className="agent-call" style={cssVars({ "--i": i })}>
@@ -811,7 +905,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <div className="agent-msg agent-reply" style={cssVars({ "--i": AGENT_CALLS.length })}>
-                Deployed. The health check passed.
+                Successfully deployed. The health check passed with HTTP 200 OK.
               </div>
             </div>
           </div>
@@ -830,10 +924,11 @@ export default function LandingPage() {
             <div className="plan-name">Hobby</div>
             <div className="plan-price">Free</div>
             <ul className="plan-list">
-              <li>Frontend apps</li>
+              <li>Global Edge CDN frontend hosting</li>
               <li>Backend services with 0.1 vCPU and 512 MB RAM</li>
-              <li>Services sleep after 15 minutes idle</li>
-              <li>Starter databases with 512 MB RAM</li>
+              <li>Services sleep after 15 minutes of inactivity</li>
+              <li>Dedicated starter Postgres &amp; Redis databases</li>
+              <li>S3-compatible object storage buckets</li>
             </ul>
             <Link href={ctaHref} className="btn btn-outline mono plan-btn">
               {ctaLabel} <ArrowRight size={15} />
@@ -841,13 +936,15 @@ export default function LandingPage() {
           </div>
 
           <div className="plan plan-pro" data-reveal style={cssVars({ "--d": "100ms" })}>
+            <div className="plan-badge mono">PRO INFRASTRUCTURE</div>
             <div className="plan-name">Professional</div>
-            <div className="plan-price">More compute</div>
+            <div className="plan-price">Always On</div>
             <ul className="plan-list">
-              <li>Starter, Standard or Pro sizes, up to 4 vCPU and 4 GB RAM</li>
-              <li>Services stay on, with no sleep</li>
-              <li>Larger Postgres and Redis sizes</li>
-              <li>Size chosen per service when you deploy</li>
+              <li>Upgraded instance tiers up to 4 vCPU and 4 GB RAM</li>
+              <li>Always-on services with zero sleep latency</li>
+              <li>High-capacity Postgres and Redis clusters</li>
+              <li>Granular compute allocated per microservice</li>
+              <li>Dedicated priority build workers &amp; custom domains</li>
             </ul>
             <Link href={user ? "/dashboard/settings" : "/register"} className="btn btn-sun btn-arrow mono plan-btn">
               {user ? "Upgrade in Settings" : "Create account"}
@@ -861,13 +958,17 @@ export default function LandingPage() {
       <div className="closing-shell">
         <section className="closing" data-reveal>
           <div className="sky" aria-hidden />
-          <div className="closing-cloud cc-l" aria-hidden><div className="float" style={cssVars({ "--dur": "11s" })}><PaintedCloud shape="a" seed={14} /></div></div>
-          <div className="closing-cloud cc-r" aria-hidden><div className="float" style={cssVars({ "--dur": "13s", "--delay": "-5s" })}><PaintedCloud shape="b" seed={9} /></div></div>
+          <div className="closing-cloud cc-l" aria-hidden>
+            <div className="cloud-billow-left"><PaintedCloud shape="a" seed={14} /></div>
+          </div>
+          <div className="closing-cloud cc-r" aria-hidden>
+            <div className="cloud-billow-right"><PaintedCloud shape="b" seed={9} /></div>
+          </div>
           <h2 className="closing-title">
             Clear skies
             <span className="hero-line-soft"> for every deploy.</span>
           </h2>
-          <p className="closing-sub">Connect a repository and go live in a few minutes.</p>
+          <p className="closing-sub">Connect your repository and go live with enterprise resilience in seconds.</p>
           <Link href={ctaHref} className="btn btn-sun btn-arrow mono">
             {ctaLabel}
             <span className="btn-arrow-dot"><ArrowUpRight size={15} /></span>
@@ -879,7 +980,7 @@ export default function LandingPage() {
       <footer className="footer">
         <div className="footer-brand">
           <BrandMark compact />
-          <p className="footer-tag">Frontends, APIs, functions, databases and storage in one console.</p>
+          <p className="footer-tag">Frontends, APIs, functions, databases and storage in one unified console.</p>
         </div>
         <div className="footer-cols">
           <div className="footer-col">
@@ -906,10 +1007,10 @@ export default function LandingPage() {
             <Link href="/register">Create account</Link>
           </div>
         </div>
-        <div className="footer-copy">© {new Date().getFullYear()} Whizan Cloud</div>
+        <div className="footer-copy">© {new Date().getFullYear()} Whizan Cloud Services. All rights reserved.</div>
       </footer>
 
-      {/* ── Scoped Styling (Buttery Smooth 120 FPS, No Invert Filter, Real Logos) ── */}
+      {/* ── Scoped Styling (Butter-Smooth 120 FPS, GPU-Accelerated, Real Logos) ── */}
       <style>{`
         .lp {
           --ink: #0b1530;
@@ -988,123 +1089,270 @@ export default function LandingPage() {
           color: var(--ink);
         }
 
-        /* ── Buttons ── */
+        /* ── Buttons (Enterprise Luxury Finish) ── */
         .btn {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 0.6rem;
-          padding: 0.8rem 1.35rem;
+          gap: 0.65rem;
+          padding: 0.85rem 1.45rem;
           border-radius: 999px;
           border: 1px solid transparent;
-          font-size: 0.8rem;
-          font-weight: 500;
+          font-size: 0.82rem;
+          font-weight: 600;
           letter-spacing: 0.06em;
           text-transform: uppercase;
           white-space: nowrap;
           cursor: pointer;
-          transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+          transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                      border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .btn-sm { padding: 0.55rem 1.05rem; font-size: 0.74rem; }
-        .lp .btn-sun { background: var(--sun); color: var(--ink); box-shadow: 0 10px 30px -12px rgba(245, 197, 24, 0.9); }
-        .lp .btn-sun:hover { background: var(--sun-deep); transform: translateY(-1px); }
+        .btn-sm { padding: 0.55rem 1.15rem; font-size: 0.74rem; }
+        .lp .btn-sun {
+          background: linear-gradient(180deg, #ffe066 0%, #f5c518 100%);
+          color: var(--ink);
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7),
+                      0 14px 34px -8px rgba(245, 197, 24, 0.75),
+                      0 2px 6px rgba(11, 21, 48, 0.1);
+        }
+        .lp .btn-sun:hover {
+          background: linear-gradient(180deg, #ffea80 0%, #fab005 100%);
+          transform: translateY(-2px);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+                      0 18px 40px -8px rgba(245, 197, 24, 0.85),
+                      0 4px 10px rgba(11, 21, 48, 0.15);
+        }
         .lp .btn-glass {
-          background: rgba(11, 21, 48, 0.28);
+          background: rgba(11, 21, 48, 0.26);
           color: #ffffff;
-          border-color: rgba(255, 255, 255, 0.22);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.35);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+                      0 10px 25px -5px rgba(11, 40, 110, 0.2);
         }
-        .lp .btn-glass:hover { background: rgba(11, 21, 48, 0.4); }
+        .lp .btn-glass:hover {
+          background: rgba(11, 21, 48, 0.4);
+          border-color: rgba(255, 255, 255, 0.55);
+          transform: translateY(-2px);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                      0 14px 30px -5px rgba(11, 40, 110, 0.28);
+        }
         .lp .btn-outline { background: #ffffff; color: var(--ink); border-color: var(--line); }
-        .lp .btn-outline:hover { border-color: #c9d6ea; }
-        .btn-arrow { padding-right: 0.4rem; }
+        .lp .btn-outline:hover { border-color: #c9d6ea; transform: translateY(-1px); }
+        .btn-arrow { padding-right: 0.45rem; }
         .btn-arrow-dot {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 30px;
-          height: 30px;
+          width: 32px;
+          height: 32px;
           border-radius: 50%;
           background: var(--ink);
           color: #ffffff;
-          transition: transform 0.25s ease;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
         }
-        .btn-arrow:hover .btn-arrow-dot { transform: rotate(45deg); }
+        .btn-arrow:hover .btn-arrow-dot {
+          transform: rotate(45deg);
+          background: #000000;
+        }
 
         /* ── Hero shell ── */
         .hero-shell { padding: 12px; }
         .hero {
           position: relative;
           overflow: hidden;
-          border-radius: 28px;
-          min-height: 840px;
+          border-radius: 30px;
+          min-height: 860px;
           display: flex;
           flex-direction: column;
           align-items: center;
           isolation: isolate;
+          box-shadow: 0 20px 60px -20px rgba(11, 40, 110, 0.15);
         }
         .sky {
           position: absolute;
           inset: 0;
           z-index: -3;
           background:
-            radial-gradient(70% 45% at 50% 0%, rgba(255, 255, 255, 0.22), transparent 70%),
-            radial-gradient(50% 40% at 80% 20%, rgba(130, 190, 255, 0.45), transparent 70%),
-            linear-gradient(180deg, #0f5ad8 0%, #1f74ea 28%, #4597f2 55%, #8cc3f8 78%, #d9ecfd 100%);
+            radial-gradient(ellipse 65% 45% at 50% -5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 248, 225, 0.22) 35%, transparent 70%),
+            radial-gradient(60% 45% at 85% 15%, rgba(147, 197, 253, 0.35), transparent 65%),
+            radial-gradient(55% 45% at 15% 25%, rgba(186, 230, 253, 0.3), transparent 65%),
+            linear-gradient(180deg, #0d59d6 0%, #1a6fe4 24%, #3b8cf0 52%, #7abdf8 76%, #d8ecfe 100%);
         }
-        /* Clouds decoupled from mouse cursor - pure serene CSS float */
+
+        /* ── Authentic Atmospheric Clouds (Pure GPU Keyframes) ── */
         .hero-cloud {
           position: absolute;
           z-index: -1;
           pointer-events: none;
         }
-        .hc-1 { left: 8%; top: 60px; width: 180px; opacity: 0.55; }
-        .hc-2 { right: 10%; top: 120px; width: 150px; opacity: 0.5; }
-        .hc-3 { left: -4%; top: 380px; width: min(34vw, 520px); opacity: 0.95; }
-        .hc-4 { right: -5%; top: 340px; width: min(32vw, 480px); opacity: 0.95; }
-        .float {
-          position: relative;
-          animation: lpFloat var(--dur, 10s) ease-in-out var(--delay, 0s) infinite alternate;
+        .hc-1 { left: 6%; top: 45px; width: 200px; opacity: 0.65; }
+        .hc-2 { right: 8%; top: 110px; width: 175px; opacity: 0.6; }
+        .hc-wisp { left: 24%; top: 220px; width: 340px; opacity: 0.52; }
+        .hc-3 { left: -4%; top: 360px; width: min(36vw, 540px); opacity: 0.98; }
+        .hc-4 { right: -5%; top: 320px; width: min(34vw, 500px); opacity: 0.98; }
+
+        .cloud-drift-h1 {
           will-change: transform;
+          animation: lpCloudDriftH1 54s ease-in-out infinite alternate;
         }
+        @keyframes lpCloudDriftH1 {
+          0% { transform: translate3d(-40px, 0, 0) scale(0.96); }
+          50% { transform: translate3d(50px, -8px, 0) scale(1.02); }
+          100% { transform: translate3d(95px, -3px, 0) scale(0.98); }
+        }
+
+        .cloud-drift-h2 {
+          will-change: transform;
+          animation: lpCloudDriftH2 62s ease-in-out -14s infinite alternate;
+        }
+        @keyframes lpCloudDriftH2 {
+          0% { transform: translate3d(50px, 0, 0) scale(1.02); }
+          50% { transform: translate3d(-35px, 8px, 0) scale(0.98); }
+          100% { transform: translate3d(-80px, 2px, 0) scale(1.01); }
+        }
+
+        .cloud-drift-wisp {
+          will-change: transform;
+          animation: lpCloudDriftWisp 72s ease-in-out -26s infinite alternate;
+        }
+        @keyframes lpCloudDriftWisp {
+          0% { transform: translate3d(-60px, 0, 0) scale(0.97); opacity: 0.42; }
+          50% { transform: translate3d(40px, -10px, 0) scale(1.03); opacity: 0.62; }
+          100% { transform: translate3d(85px, -4px, 0) scale(1.0); opacity: 0.48; }
+        }
+
+        .cloud-billow-left {
+          will-change: transform;
+          animation: lpCloudBillowLeft 34s ease-in-out infinite alternate;
+        }
+        @keyframes lpCloudBillowLeft {
+          0% { transform: translate3d(-20px, 0, 0) scale(0.98); }
+          50% { transform: translate3d(32px, -14px, 0) scale(1.035); }
+          100% { transform: translate3d(55px, -6px, 0) scale(1.01); }
+        }
+
+        .cloud-billow-right {
+          will-change: transform;
+          animation: lpCloudBillowRight 38s ease-in-out -8s infinite alternate;
+        }
+        @keyframes lpCloudBillowRight {
+          0% { transform: translate3d(24px, 0, 0) scale(1.02); }
+          50% { transform: translate3d(-28px, -16px, 0) scale(0.985); }
+          100% { transform: translate3d(-60px, -7px, 0) scale(1.03); }
+        }
+
         .cloud-svg { display: block; width: 100%; height: auto; overflow: visible; }
         .bank { position: absolute; left: 50%; pointer-events: none; }
-        .bank-back { width: 160%; bottom: 40px; transform: translateX(-50%); opacity: 0.85; z-index: -1; }
-        .bank-front { width: 140%; bottom: -170px; transform: translateX(-48%); z-index: 3; }
-        .bank .cloud-svg { animation: lpBank 20s ease-in-out infinite alternate; }
+        .bank-back { width: 160%; bottom: 35px; transform: translateX(-50%); opacity: 0.88; z-index: -1; }
+        .bank-front { width: 145%; bottom: -170px; transform: translateX(-48%); z-index: 3; }
+
+        .cloud-bank-back {
+          will-change: transform;
+          animation: lpBankBackDrift 44s ease-in-out infinite alternate;
+        }
+        @keyframes lpBankBackDrift {
+          0% { transform: translate3d(-35px, 0, 0) scale(1); }
+          50% { transform: translate3d(25px, -8px, 0) scale(1.015); }
+          100% { transform: translate3d(48px, -3px, 0) scale(1); }
+        }
+
+        .cloud-bank-front {
+          will-change: transform;
+          animation: lpBankFrontDrift 30s ease-in-out -6s infinite alternate;
+        }
+        @keyframes lpBankFrontDrift {
+          0% { transform: translate3d(35px, 0, 0) scale(1.01); }
+          50% { transform: translate3d(-25px, -12px, 0) scale(0.99); }
+          100% { transform: translate3d(-48px, -5px, 0) scale(1.015); }
+        }
 
         /* ── Hero copy ── */
         .hero-copy {
           position: relative;
           z-index: 4;
-          max-width: 1000px;
-          padding: 4.5rem 1.5rem 0;
+          max-width: 1040px;
+          padding: 4.2rem 1.5rem 0;
           text-align: center;
           display: flex;
           flex-direction: column;
           align-items: center;
         }
+        .hero-kicker {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          padding: 0.38rem 0.95rem;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.22);
+          border: 1px solid rgba(255, 255, 255, 0.4);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: 0 4px 20px rgba(11, 40, 110, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+          font-size: 0.74rem;
+          color: #ffffff;
+          margin-bottom: 1.35rem;
+          letter-spacing: 0.02em;
+          font-weight: 500;
+          transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+          user-select: none;
+        }
+        .hero-kicker:hover {
+          background: rgba(255, 255, 255, 0.32);
+          border-color: rgba(255, 255, 255, 0.6);
+          transform: translateY(-1px);
+        }
+        .hero-kicker-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--sun);
+          box-shadow: 0 0 10px var(--sun);
+          animation: kickerPulse 2s ease-in-out infinite;
+        }
+        @keyframes kickerPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.6; transform: scale(0.85); }
+        }
+        .hero-kicker-badge {
+          font-weight: 600;
+          color: #ffffff;
+          font-family: var(--font-geist-mono), monospace;
+        }
+        .hero-kicker-sep { opacity: 0.5; }
+        .hero-kicker-desc { color: rgba(255, 255, 255, 0.95); }
+        .hero-kicker-arrow {
+          opacity: 0.8;
+          margin-left: 0.15rem;
+          transition: transform 0.2s ease;
+        }
+        .hero-kicker:hover .hero-kicker-arrow { transform: translateX(2px); }
+
         .hero-title {
-          margin: 0 0 1.4rem;
-          font-size: clamp(2.5rem, 5.2vw, 4.25rem);
+          margin: 0 0 1.35rem;
+          font-size: clamp(2.6rem, 5.4vw, 4.35rem);
           line-height: 1.04;
           letter-spacing: -0.05em;
-          font-weight: 550;
+          font-weight: 600;
           color: #ffffff;
-          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.18);
+          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.22);
         }
         .hero-line { display: block; text-wrap: balance; }
-        .hero-line-soft { color: rgba(255, 255, 255, 0.72); }
+        .hero-line-soft { color: rgba(255, 255, 255, 0.74); }
         .hero-sub {
-          max-width: 34rem;
-          margin: 0 0 2.1rem;
-          font-size: 1.02rem;
+          max-width: 35rem;
+          margin: 0 0 2.2rem;
+          font-size: 1.05rem;
           line-height: 1.6;
-          color: rgba(255, 255, 255, 0.86);
+          color: rgba(255, 255, 255, 0.9);
           text-wrap: balance;
         }
-        .hero-ctas { display: flex; gap: 0.7rem; flex-wrap: wrap; justify-content: center; }
+        .hero-ctas { display: flex; gap: 0.85rem; flex-wrap: wrap; justify-content: center; }
         .hero-fade {
           opacity: 0;
           transform: translateY(14px);
@@ -1116,14 +1364,14 @@ export default function LandingPage() {
           to { opacity: 1; transform: translateY(0); filter: blur(0); }
         }
 
-        /* ── 3D Card Arc (Pure CSS 3D Transforms, 120 FPS) ── */
+        /* ── 3D Card Arc (High-Craft Ceramic Finish, 120 FPS) ── */
         .hero-arc {
           position: relative;
           z-index: 2;
           width: 100%;
           max-width: 1200px;
           height: 380px;
-          margin-top: 1.5rem;
+          margin-top: 1.25rem;
           perspective: 1200px;
           overflow: visible;
         }
@@ -1147,14 +1395,17 @@ export default function LandingPage() {
           position: absolute;
           left: 50%;
           bottom: 20px;
-          width: 190px;
-          height: 140px;
-          margin-left: -95px;
-          background: #ffffff;
-          border-radius: 14px;
-          padding: 0.95rem;
-          box-shadow: 0 20px 45px -10px rgba(11, 40, 110, 0.28), 0 2px 6px rgba(11, 40, 110, 0.08);
-          transform-origin: 50% 380px;
+          width: 196px;
+          height: 144px;
+          margin-left: -98px;
+          background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+          border: 1px solid rgba(255, 255, 255, 0.95);
+          border-radius: 16px;
+          padding: 1rem;
+          box-shadow: inset 0 1px 0 #ffffff,
+                      0 24px 50px -12px rgba(11, 40, 110, 0.24),
+                      0 3px 8px rgba(11, 40, 110, 0.06);
+          transform-origin: 50% 390px;
           transform: rotateZ(var(--a)) translateY(-18px) translateZ(calc(120px - abs(var(--i) - 4) * 22px));
           display: flex;
           flex-direction: column;
@@ -1162,65 +1413,113 @@ export default function LandingPage() {
           font-size: 0.72rem;
           color: var(--ink);
           user-select: none;
-          transition: transform 0.3s ease, box-shadow 0.3s ease;
+          transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                      border-color 0.25s ease;
         }
         .arc-card:hover {
-          transform: rotateZ(var(--a)) translateY(-32px) translateZ(160px) scale(1.04);
-          box-shadow: 0 30px 60px -12px rgba(11, 40, 110, 0.38);
+          transform: rotateZ(var(--a)) translateY(-36px) translateZ(175px) scale(1.05);
+          box-shadow: inset 0 1px 0 #ffffff,
+                      0 32px 70px -12px rgba(37, 99, 235, 0.38),
+                      0 0 0 1px rgba(37, 99, 235, 0.35);
+          border-color: rgba(37, 99, 235, 0.4);
+          z-index: 10;
         }
         .arc-card-dark {
-          background: var(--ink);
+          background: linear-gradient(145deg, #0b132b 0%, #1c2541 100%);
           color: #ffffff;
-          box-shadow: 0 22px 50px -10px rgba(0, 0, 0, 0.45);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+                      0 28px 65px -10px rgba(0, 0, 0, 0.55);
+        }
+        .arc-card-dark:hover {
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                      0 36px 80px -12px rgba(0, 0, 0, 0.65),
+                      0 0 0 1px rgba(255, 216, 77, 0.4);
+        }
+        .mini-dark-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          font-size: 0.58rem;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          color: var(--sun);
+          text-transform: uppercase;
+        }
+        .mini-dark-pip {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: var(--sun);
+          box-shadow: 0 0 6px var(--sun);
         }
         .arc-card-glass {
-          background: rgba(255, 255, 255, 0.6);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          border: 1px solid rgba(255, 255, 255, 0.7);
+          background: rgba(255, 255, 255, 0.7);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.9);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+                      0 20px 45px -10px rgba(11, 40, 110, 0.18);
         }
         .mini-label {
           display: flex;
           align-items: center;
-          gap: 0.35rem;
+          gap: 0.4rem;
           font-size: 0.65rem;
           text-transform: uppercase;
           letter-spacing: 0.06em;
           color: var(--muted);
-          font-weight: 500;
+          font-weight: 600;
         }
-        .mini-big { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1; margin: 0.35rem 0; }
+        .mini-big { font-size: 1.45rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1; margin: 0.35rem 0; }
         .mini-text { font-size: 0.7rem; color: var(--muted); }
-        .mini-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; margin: 0.15rem 0; }
+        .mini-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.68rem; margin: 0.18rem 0; }
         .mini-chip {
-          display: inline-block;
-          font-size: 0.6rem;
-          padding: 0.1rem 0.4rem;
+          display: inline-flex;
+          align-items: center;
+          font-size: 0.62rem;
+          padding: 0.12rem 0.45rem;
           border-radius: 999px;
-          font-weight: 500;
+          font-weight: 550;
         }
         .mini-chip-ok { background: #dcfce7; color: var(--green); }
         .mini-chip-busy { background: #dbeafe; color: var(--blue); }
-        .mini-chart { width: 100%; height: 38px; display: block; margin-top: auto; }
-        .mini-log { font-size: 0.6rem; line-height: 1.45; color: var(--muted); margin-top: 0.2rem; }
+        .mini-pulse-dot {
+          display: inline-block;
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: currentColor;
+          margin-right: 0.3rem;
+          animation: miniPulse 1.8s ease-in-out infinite;
+        }
+        @keyframes miniPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.8); }
+        }
+        .mini-chart { width: 100%; height: 40px; display: block; margin-top: auto; }
+        .mini-log { font-size: 0.6rem; line-height: 1.5; color: var(--muted); margin-top: 0.2rem; }
         .mini-log span { color: var(--faint); }
-        .mini-dark-title { font-size: 0.85rem; line-height: 1.35; font-weight: 500; margin: auto 0; }
+        .mini-log-code { font-weight: 600; color: #16a34a !important; }
+        .mini-log-code.post { color: #2563eb !important; }
+        .mini-dark-title { font-size: 0.88rem; line-height: 1.35; font-weight: 550; margin: auto 0; }
         .mini-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--sun); vertical-align: middle; margin: 0 0.15rem; }
-        .mini-dim { color: rgba(255, 255, 255, 0.55); }
+        .mini-dim { color: rgba(255, 255, 255, 0.6); }
         .mini-plus {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 30px;
-          height: 30px;
+          width: 32px;
+          height: 32px;
           border-radius: 50%;
           background: #ffffff;
-          box-shadow: 0 4px 12px rgba(11, 40, 110, 0.1);
+          box-shadow: 0 4px 14px rgba(11, 40, 110, 0.12);
           color: var(--blue);
         }
-        .mini-glass-title { font-size: 0.8rem; font-weight: 600; margin-top: 0.4rem; }
-        .mini-glass-sub { font-size: 0.68rem; color: var(--muted); }
-        .mini-table { font-size: 0.64rem; line-height: 1.4; color: var(--muted); margin-top: 0.25rem; }
+        .mini-glass-title { font-size: 0.82rem; font-weight: 600; margin-top: 0.45rem; }
+        .mini-glass-sub { font-size: 0.66rem; color: var(--muted); }
+        .mini-table { font-size: 0.64rem; line-height: 1.45; color: var(--muted); margin-top: 0.25rem; }
         .mini-table span:first-child { color: var(--faint); width: 12px; }
         .mini-bar { height: 4px; border-radius: 2px; background: var(--grey); overflow: hidden; margin-top: 0.35rem; }
         .mini-bar span { display: block; height: 100%; background: var(--blue); }
@@ -1230,16 +1529,34 @@ export default function LandingPage() {
           z-index: 4;
           margin-top: auto;
           padding: 1.5rem 1rem 1.8rem;
-          font-size: 0.72rem;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.9);
-          text-shadow: 0 1px 12px rgba(11, 40, 110, 0.25);
+          display: flex;
+          justify-content: center;
         }
+        .hero-foot-pill {
+          display: inline-flex;
+          align-items: center;
+          flex-wrap: wrap;
+          justify-content: center;
+          gap: 0.65rem;
+          padding: 0.55rem 1.25rem;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.24);
+          border: 1px solid rgba(255, 255, 255, 0.45);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: 0 8px 25px -5px rgba(11, 40, 110, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          font-size: 0.74rem;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.95);
+          text-shadow: 0 1px 8px rgba(11, 40, 110, 0.25);
+        }
+        .hero-foot-bullet { color: var(--sun); opacity: 0.85; }
+        .hero-foot-item.highlight { color: var(--sun); font-weight: 600; }
 
-        /* ── Stack marquee (Language Logos) ── */
+        /* ── Stack marquee (All Official Logos) ── */
         .stack {
-          padding: 3rem 0 3.5rem;
+          padding: 3.2rem 0 3.8rem;
           border-bottom: 1px solid var(--line);
           background: #ffffff;
           overflow: hidden;
@@ -1247,14 +1564,14 @@ export default function LandingPage() {
         }
         .stack-badge {
           display: inline-block;
-          font-size: 0.7rem;
+          font-size: 0.72rem;
           letter-spacing: 0.1em;
           text-transform: uppercase;
           color: var(--blue);
           background: var(--sky-100);
-          padding: 0.25rem 0.75rem;
+          padding: 0.3rem 0.85rem;
           border-radius: 999px;
-          margin-bottom: 1.5rem;
+          margin-bottom: 1.75rem;
           font-weight: 600;
         }
         .marquee {
@@ -1277,22 +1594,24 @@ export default function LandingPage() {
         .stack-item {
           display: inline-flex;
           align-items: center;
-          gap: 0.65rem;
+          gap: 0.7rem;
           font-size: 0.85rem;
           color: var(--ink);
-          font-weight: 500;
+          font-weight: 550;
           white-space: nowrap;
-          padding: 0.55rem 1.15rem;
+          padding: 0.55rem 1.25rem;
           border-radius: 999px;
           border: 1px solid var(--line);
           background: #ffffff;
-          box-shadow: 0 1px 3px rgba(11, 40, 110, 0.03);
-          transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+          box-shadow: 0 2px 5px rgba(11, 40, 110, 0.03);
+          transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      border-color 0.2s ease,
+                      box-shadow 0.2s ease;
         }
         .stack-item:hover {
-          transform: translateY(-2px);
-          border-color: #cbd5e1;
-          box-shadow: 0 4px 12px rgba(11, 40, 110, 0.06);
+          transform: translateY(-3px);
+          border-color: #94a3b8;
+          box-shadow: 0 8px 20px -4px rgba(11, 40, 110, 0.08);
         }
         .stack-tech-icon {
           display: inline-flex;
@@ -1306,9 +1625,7 @@ export default function LandingPage() {
           height: 100%;
           object-fit: contain;
         }
-        .stack-tech-name {
-          font-weight: 550;
-        }
+        .stack-tech-name { font-weight: 550; }
 
         /* ── Common section styles ── */
         .section {
@@ -1380,6 +1697,7 @@ export default function LandingPage() {
           display: flex;
           flex-direction: column;
           justify-content: space-between;
+          box-shadow: 0 10px 30px -10px rgba(31, 116, 234, 0.3);
         }
         .bento-sky-cloud {
           position: absolute;
@@ -1389,19 +1707,23 @@ export default function LandingPage() {
           transform: translateX(-50%);
           pointer-events: none;
         }
-        .bento-sky-tag {
-          font-size: 0.68rem;
+        .bento-sky-pill {
+          display: inline-block;
+          font-size: 0.65rem;
           letter-spacing: 0.08em;
-          color: rgba(255, 255, 255, 0.8);
-          font-weight: 500;
+          padding: 0.2rem 0.6rem;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.2);
+          backdrop-filter: blur(10px);
+          font-weight: 600;
         }
         .bento-sky-card {
           position: relative;
           z-index: 2;
-          background: rgba(255, 255, 255, 0.16);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          border: 1px solid rgba(255, 255, 255, 0.25);
+          background: rgba(255, 255, 255, 0.18);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(255, 255, 255, 0.3);
           border-radius: 16px;
           padding: 1.25rem;
         }
@@ -1411,6 +1733,16 @@ export default function LandingPage() {
           letter-spacing: -0.04em;
           line-height: 1;
           margin-bottom: 0.6rem;
+        }
+        .bento-ok-dot {
+          display: inline-block;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: var(--green);
+          box-shadow: 0 0 10px rgba(21, 128, 61, 0.6);
+          vertical-align: 2px;
+          margin-right: 0.4rem;
         }
         .bento-text {
           font-size: 0.875rem;
@@ -1424,7 +1756,7 @@ export default function LandingPage() {
           text-transform: uppercase;
           color: var(--muted);
           margin-bottom: 0.6rem;
-          font-weight: 500;
+          font-weight: 600;
         }
 
         .bento-grey {
@@ -1435,6 +1767,7 @@ export default function LandingPage() {
           flex-direction: column;
           justify-content: space-between;
           min-height: 340px;
+          border: 1px solid var(--line);
         }
         .bento-grey .bento-num { color: var(--blue); }
         .runtime-stack { display: flex; gap: 0.35rem; margin-bottom: 0.75rem; }
@@ -1450,16 +1783,18 @@ export default function LandingPage() {
           font-weight: 600;
           color: var(--ink);
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+          border: 1px solid var(--line);
         }
         .bento-quote { font-size: 0.82rem; line-height: 1.55; color: var(--ink-2); margin: 0; }
 
         .bento-col { display: flex; flex-direction: column; gap: 1rem; }
         .bento-sun {
-          background: var(--sun);
+          background: linear-gradient(180deg, #ffe066 0%, #ffd84d 100%);
           border-radius: 24px;
           padding: 1.5rem 1.6rem;
           color: var(--ink);
           flex: 1;
+          box-shadow: 0 10px 25px -10px rgba(255, 216, 77, 0.4);
         }
         .bento-sun .bento-label { color: rgba(11, 21, 48, 0.65); }
         .bento-sun .bento-text { color: var(--ink-2); font-size: 0.82rem; }
@@ -1471,11 +1806,12 @@ export default function LandingPage() {
           display: flex;
           align-items: baseline;
           justify-content: space-between;
+          box-shadow: 0 10px 25px -10px rgba(11, 21, 48, 0.3);
         }
         .bento-dark .bento-label { color: var(--faint); margin: 0; }
         .bento-dark .bento-num { color: var(--sun); margin: 0; font-size: 2rem; }
 
-        /* ── Products grid ── */
+        /* ── Products grid (8 Unified Products) ── */
         .products {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
@@ -1488,12 +1824,12 @@ export default function LandingPage() {
           padding: 1.5rem;
           display: flex;
           flex-direction: column;
-          transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+          transition: border-color 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
         }
         .product:hover {
-          border-color: #cbd5e1;
-          transform: translateY(-2px);
-          box-shadow: 0 12px 30px -10px rgba(11, 40, 110, 0.08);
+          border-color: #94a3b8;
+          transform: translateY(-3px);
+          box-shadow: 0 14px 35px -10px rgba(11, 40, 110, 0.1);
         }
         .product:hover .product-go { transform: translate(2px, -2px); color: var(--blue); }
         .product-top {
@@ -1511,6 +1847,14 @@ export default function LandingPage() {
           border-radius: 12px;
           background: var(--sky-100);
           color: var(--blue);
+        }
+        .product-tag-pill {
+          font-size: 0.62rem;
+          letter-spacing: 0.05em;
+          color: var(--muted);
+          background: var(--grey);
+          padding: 0.15rem 0.45rem;
+          border-radius: 4px;
         }
         .product-go { color: var(--faint); transition: transform 0.2s ease, color 0.2s ease; }
         .product-name { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.25rem; }
@@ -1539,12 +1883,12 @@ export default function LandingPage() {
         .how-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.25rem; }
         .how-body { font-size: 0.88rem; line-height: 1.55; color: var(--muted); margin: 0; }
 
-        /* ── Deploy window (in How it works) ── */
+        /* ── Deploy window (macOS Terminal Header) ── */
         .deploy {
           background: #ffffff;
           border: 1px solid var(--line);
           border-radius: 20px;
-          box-shadow: 0 20px 50px -15px rgba(11, 40, 110, 0.08);
+          box-shadow: 0 20px 50px -15px rgba(11, 40, 110, 0.1);
           overflow: hidden;
         }
         .deploy-head {
@@ -1555,6 +1899,19 @@ export default function LandingPage() {
           align-items: center;
           background: #ffffff;
         }
+        .deploy-traffic-lights {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .deploy-traffic-lights .dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+        }
+        .dot-red { background: #ef4444; }
+        .dot-yellow { background: #eab308; }
+        .dot-green { background: #22c55e; }
         .deploy-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; font-weight: 500; }
         .deploy-icon { color: var(--blue); display: inline-flex; }
         .deploy-ref { font-size: 0.74rem; color: var(--faint); }
@@ -1601,7 +1958,7 @@ export default function LandingPage() {
         }
         .log-row { display: flex; gap: 0.85rem; }
         .log-ts { color: var(--faint); }
-        .log-final { color: var(--green); font-weight: 500; }
+        .log-final { color: var(--green); font-weight: 550; }
         .log-caret { display: inline-block; width: 6px; height: 11px; background: var(--blue); vertical-align: -1px; animation: lpCaret 0.9s infinite; }
         @keyframes lpCaret { 50% { opacity: 0; } }
 
@@ -1614,6 +1971,7 @@ export default function LandingPage() {
           background: var(--grey);
           border-radius: 20px;
           padding: 1.35rem;
+          border: 1px solid var(--line);
         }
         .fact-icon {
           display: inline-flex;
@@ -1625,6 +1983,7 @@ export default function LandingPage() {
           background: #ffffff;
           color: var(--blue);
           margin-bottom: 0.85rem;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
         .fact-title { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.35rem; }
         .fact-body { font-size: 0.82rem; line-height: 1.5; color: var(--muted); margin: 0; }
@@ -1642,6 +2001,7 @@ export default function LandingPage() {
           overflow: hidden;
           color: #ffffff;
           margin-top: 1.75rem;
+          box-shadow: 0 20px 45px -15px rgba(11, 21, 48, 0.4);
         }
         .code-head {
           display: flex;
@@ -1696,25 +2056,27 @@ export default function LandingPage() {
           gap: 0.5rem;
           font-size: 0.74rem;
           color: var(--muted);
+          background: var(--sky-50);
         }
-        .agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+        .agent-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px rgba(22, 163, 74, 0.6); }
         .agent-body { padding: 1.25rem; display: flex; flex-direction: column; gap: 0.85rem; font-size: 0.82rem; }
         .agent-msg { padding: 0.65rem 0.95rem; border-radius: 12px; }
         .agent-user { background: var(--grey); color: var(--ink); align-self: flex-start; }
-        .agent-reply { background: var(--sky-100); color: var(--blue-deep); align-self: flex-start; }
+        .agent-reply { background: var(--sky-100); color: var(--blue-deep); align-self: flex-start; font-weight: 500; }
         .agent-calls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
         .agent-call {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           font-size: 0.72rem;
-          padding: 0.3rem 0.5rem;
+          padding: 0.35rem 0.55rem;
           border-radius: 8px;
           background: var(--sky-50);
           color: var(--ink-2);
+          border: 1px solid var(--line);
         }
         .agent-check { color: var(--green); flex-shrink: 0; }
-        .agent-tool { font-weight: 500; }
+        .agent-tool { font-weight: 600; }
         .agent-result { color: var(--faint); margin-left: auto; }
 
         /* ── Plans ── */
@@ -1733,9 +2095,22 @@ export default function LandingPage() {
           flex-direction: column;
         }
         .plan-pro {
+          position: relative;
           background: linear-gradient(180deg, #ffffff 0%, var(--sky-50) 100%);
           border-color: #bcd4f5;
-          box-shadow: 0 16px 40px -15px rgba(37, 99, 235, 0.15);
+          box-shadow: 0 16px 40px -15px rgba(37, 99, 235, 0.18);
+        }
+        .plan-badge {
+          display: inline-block;
+          font-size: 0.65rem;
+          letter-spacing: 0.08em;
+          color: var(--blue);
+          background: var(--sky-100);
+          padding: 0.2rem 0.55rem;
+          border-radius: 999px;
+          margin-bottom: 0.8rem;
+          align-self: flex-start;
+          font-weight: 600;
         }
         .plan-name { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.35rem; }
         .plan-price { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.04em; margin-bottom: 1.25rem; color: var(--blue); }
@@ -1748,7 +2123,7 @@ export default function LandingPage() {
         .closing {
           position: relative;
           overflow: hidden;
-          border-radius: 28px;
+          border-radius: 30px;
           min-height: 480px;
           padding: 5rem 1.5rem;
           display: flex;
@@ -1758,6 +2133,7 @@ export default function LandingPage() {
           text-align: center;
           color: #ffffff;
           isolation: isolate;
+          box-shadow: 0 20px 60px -20px rgba(11, 40, 110, 0.15);
         }
         .closing-cloud { position: absolute; pointer-events: none; }
         .cc-l { left: -6%; bottom: -40px; width: min(34vw, 500px); opacity: 0.95; }
@@ -1766,15 +2142,15 @@ export default function LandingPage() {
           font-size: clamp(2.4rem, 4.8vw, 3.8rem);
           line-height: 1.06;
           letter-spacing: -0.05em;
-          font-weight: 550;
+          font-weight: 600;
           margin: 0 0 1rem;
           text-shadow: 0 2px 30px rgba(11, 40, 110, 0.2);
         }
         .closing-sub {
           font-size: 1.05rem;
-          color: rgba(255, 255, 255, 0.85);
+          color: rgba(255, 255, 255, 0.88);
           margin: 0 0 2rem;
-          max-width: 28rem;
+          max-width: 30rem;
         }
 
         /* ── Footer ── */
@@ -1800,15 +2176,7 @@ export default function LandingPage() {
           color: var(--faint);
         }
 
-        /* ── Animations ── */
-        @keyframes lpFloat {
-          0% { transform: translate3d(0, 0, 0); }
-          100% { transform: translate3d(0, -12px, 0); }
-        }
-        @keyframes lpBank {
-          0% { transform: translateX(-50%) translate3d(0, 0, 0); }
-          100% { transform: translateX(-50%) translate3d(0, -16px, 0); }
-        }
+        /* ── Reveal & Accessibility ── */
         [data-reveal] {
           opacity: 0;
           transform: translateY(16px);
