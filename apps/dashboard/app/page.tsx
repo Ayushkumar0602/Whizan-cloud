@@ -24,10 +24,7 @@ import {
   Rocket,
   Moon,
   Copy,
-  Check,
-  Cpu,
-  Layers,
-  Sparkles
+  Check
 } from "lucide-react";
 
 /* ─── Static content ─────────────────────────────────────────────── */
@@ -44,7 +41,6 @@ const DEPLOY_LOG = [
   { step: 4, text: "Traffic seamlessly shifted to live version" },
 ];
 
-// Ticks to hold the finished state before the loop restarts
 const DEPLOY_HOLD = 6;
 
 const PRODUCTS = [
@@ -54,7 +50,7 @@ const PRODUCTS = [
     badge: "EDGE CDN · SPA & SSR",
     name: "Frontend Hosting",
     tagline: "Next.js, React, Vite, Astro, Static HTML",
-    description: "Deploy directly from Git. Every commit automatically builds and goes live on a global Edge CDN with automated SSL.",
+    description: "Deploy directly from Git. Every commit automatically builds and goes live on a global Edge CDN with automated wildcard SSL.",
     href: "/dashboard/hosting",
   },
   {
@@ -63,7 +59,7 @@ const PRODUCTS = [
     badge: "CONTAINERS · ZERO-DOCKER",
     name: "Backend Services",
     tagline: "Node.js, Python, Go, Rust, Java, Docker",
-    description: "APIs and queue workers running in isolated production containers. Zero-downtime cutover after readiness probes.",
+    description: "APIs and queue workers running in isolated production containers. Zero-downtime cutover after deep HTTP readiness probes.",
     href: "/dashboard/backend",
   },
   {
@@ -81,7 +77,7 @@ const PRODUCTS = [
     badge: "MANAGED · ACID COMPLIANT",
     name: "Databases",
     tagline: "PostgreSQL and Redis",
-    description: "Dedicated instances with automated connection pooling, visual table explorer, and interactive SQL terminal.",
+    description: "Dedicated instances with automated connection pooling, visual table explorer, and interactive SQL console.",
     href: "/dashboard/databases",
   },
   {
@@ -164,7 +160,7 @@ const MCP_CONFIG = `{
   }
 }`;
 
-/* ─── Realistic Atmospheric Clouds (Pure GPU 120 FPS Volumetric SVG) ── */
+/* ─── Volumetric Stylized Cumulus Clouds (Crisp Contours + Sunlit Rims) ── */
 
 type Lobe = [number, number, number, number];
 
@@ -196,12 +192,12 @@ const CLOUD_SHAPES: Record<"a" | "b" | "c" | "wisp" | "bank", { w: number; h: nu
     ],
   },
   bank: {
-    w: 1600, h: 380,
+    w: 1600, h: 360,
     lobes: [
-      [800, 330, 860, 80],
-      [90, 250, 160, 110], [270, 220, 180, 130], [470, 240, 170, 115], [660, 200, 190, 140],
-      [860, 230, 180, 125], [1060, 205, 190, 138], [1250, 235, 175, 118], [1450, 225, 180, 125],
-      [180, 300, 220, 80], [560, 300, 240, 85], [960, 300, 240, 85], [1360, 300, 230, 80],
+      [800, 310, 860, 70],
+      [100, 240, 150, 100], [280, 210, 170, 120], [480, 230, 160, 110], [670, 195, 180, 130],
+      [870, 220, 170, 118], [1070, 200, 180, 128], [1260, 225, 165, 110], [1460, 220, 170, 118],
+      [190, 290, 210, 75], [570, 290, 230, 80], [970, 290, 230, 80], [1370, 290, 220, 75],
     ],
   },
 };
@@ -215,45 +211,45 @@ function PaintedCloud({ shape }: { shape: keyof typeof CLOUD_SHAPES; seed?: numb
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="cloud-svg" aria-hidden>
       <defs>
-        {/* Sunlit top highlight - direct sunlight crest */}
-        <radialGradient id={id("highlight")} cx="50%" cy="20%" r="55%">
+        {/* Crisp sunlit rim highlight */}
+        <radialGradient id={id("rim")} cx="50%" cy="18%" r="50%">
           <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
-          <stop offset="55%" stopColor="#ffffff" stopOpacity="0.88" />
+          <stop offset="60%" stopColor="#ffffff" stopOpacity="0.85" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
         {/* Volumetric body scatter */}
-        <radialGradient id={id("body")} cx="50%" cy="36%" r="58%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.99" />
-          <stop offset="42%" stopColor="#ffffff" stopOpacity="0.94" />
-          <stop offset="76%" stopColor="#f0f6fe" stopOpacity="0.68" />
-          <stop offset="100%" stopColor="#e0ecfc" stopOpacity="0" />
+        <radialGradient id={id("body")} cx="50%" cy="38%" r="56%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
+          <stop offset="50%" stopColor="#f8faff" stopOpacity="0.94" />
+          <stop offset="80%" stopColor="#ebf3fd" stopOpacity="0.82" />
+          <stop offset="100%" stopColor="#dce8f9" stopOpacity="0.2" />
         </radialGradient>
-        {/* Natural atmospheric Rayleigh underbelly shadow */}
-        <radialGradient id={id("shade")} cx="50%" cy="72%" r="52%">
-          <stop offset="0%" stopColor="#809ecb" stopOpacity="0.42" />
-          <stop offset="58%" stopColor="#a8c1e4" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#c5d7ee" stopOpacity="0" />
+        {/* Atmospheric Rayleigh shadow */}
+        <radialGradient id={id("shade")} cx="50%" cy="75%" r="48%">
+          <stop offset="0%" stopColor="#6488b8" stopOpacity="0.45" />
+          <stop offset="60%" stopColor="#8ba8d2" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="#b4c8e5" stopOpacity="0" />
         </radialGradient>
-        {/* Smooth GPU-friendly Gaussian blur filter */}
-        <filter id={id("soft")} x="-25%" y="-25%" width="150%" height="150%" colorInterpolationFilters="sRGB">
-          <feGaussianBlur stdDeviation={5.5 * k} />
+        {/* Refined Gaussian blur: sharp enough to see billow silhouettes, soft enough for atmosphere */}
+        <filter id={id("soft")} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+          <feGaussianBlur stdDeviation={2.2 * k} />
         </filter>
       </defs>
 
       <g filter={`url(#${id("soft")})`}>
-        {/* Base shadow layer */}
+        {/* Bottom shadow lobes */}
         {lobes.map(([cx, cy, rx, ry], i) => (
           <ellipse
             key={`s-${i}`}
             cx={cx}
-            cy={cy + 0.32 * ry}
-            rx={rx * 0.96}
-            ry={ry * 0.84}
+            cy={cy + 0.3 * ry}
+            rx={rx * 0.98}
+            ry={ry * 0.85}
             fill={`url(#${id("shade")})`}
-            opacity="0.85"
+            opacity="0.9"
           />
         ))}
-        {/* Main cloud body */}
+        {/* Main cloud volume */}
         {lobes.map(([cx, cy, rx, ry], i) => (
           <ellipse
             key={`b-${i}`}
@@ -264,16 +260,16 @@ function PaintedCloud({ shape }: { shape: keyof typeof CLOUD_SHAPES; seed?: numb
             fill={`url(#${id("body")})`}
           />
         ))}
-        {/* Sunlit top rim highlights */}
+        {/* Sunlit top crest highlights */}
         {lobes.slice(0, Math.ceil(lobes.length * 0.75)).map(([cx, cy, rx, ry], i) => (
           <ellipse
-            key={`h-${i}`}
+            key={`r-${i}`}
             cx={cx}
-            cy={cy - 0.16 * ry}
-            rx={rx * 0.78}
-            ry={ry * 0.58}
-            fill={`url(#${id("highlight")})`}
-            opacity="0.9"
+            cy={cy - 0.18 * ry}
+            rx={rx * 0.8}
+            ry={ry * 0.55}
+            fill={`url(#${id("rim")})`}
+            opacity="0.95"
           />
         ))}
       </g>
@@ -344,17 +340,17 @@ function highlightShell(src: string): ReactNode[] {
 
 const cssVars = (vars: Record<string, string | number>) => vars as CSSProperties;
 
-/* ─── Hero card arc (Enterprise Ceramic Finish & 3D Layering) ──── */
+/* ─── Hero card arc (Elevated Porcelain Finish & Zero Occlusion) ── */
 
 const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
   {
     key: "cron",
     body: (
       <>
-        <div className="mini-label"><Clock size={12} className="mini-label-icon text-amber-500" /> Scheduled Cron</div>
+        <div className="mini-label"><Clock size={12} className="mini-icon text-amber-500" /> Cron Schedule</div>
         <div className="mini-mono mini-big">0 3 * * *</div>
         <div className="mini-text">Nightly database backup</div>
-        <div className="mini-chip mini-chip-ok"><span className="mini-pulse-dot" /> Next run 03:00</div>
+        <div className="mini-chip mini-chip-ok"><span className="mini-pulse-dot" /> Next run 03:00 UTC</div>
       </>
     ),
   },
@@ -362,12 +358,12 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "deploys",
     body: (
       <>
-        <div className="mini-label"><Rocket size={12} className="mini-label-icon text-blue-500" /> Deployments</div>
+        <div className="mini-label"><Rocket size={12} className="mini-icon text-blue-500" /> Deployments</div>
         {[
-          ["web", "Ready", "ok"],
-          ["api", "Ready", "ok"],
-          ["worker", "Building", "busy"],
-          ["docs", "Ready", "ok"],
+          ["web-portal", "Ready", "ok"],
+          ["api-gateway", "Ready", "ok"],
+          ["queue-worker", "Building", "busy"],
+          ["docs-site", "Ready", "ok"],
         ].map(([name, state, tone]) => (
           <div key={name} className="mini-row">
             <span className="mini-mono">{name}</span>
@@ -384,13 +380,13 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "metrics",
     body: (
       <>
-        <div className="mini-label"><Activity size={12} className="mini-label-icon text-emerald-500" /> CPU · api-gateway</div>
+        <div className="mini-label"><Activity size={12} className="mini-icon text-emerald-500" /> CPU · api-gateway</div>
         <div className="mini-big">12.4%</div>
         <svg viewBox="0 0 140 56" className="mini-chart" aria-hidden>
           <defs>
             <linearGradient id="arc-chart-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.4" />
-              <stop offset="100%" stopColor="#2563eb" stopOpacity="0" />
+              <stop offset="0%" stopColor="#2563eb" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#2563eb" stopOpacity="0.02" />
             </linearGradient>
           </defs>
           <path d="M0 44 L14 40 L28 42 L42 30 L56 34 L70 22 L84 26 L98 14 L112 20 L126 10 L140 16 L140 56 L0 56 Z" fill="url(#arc-chart-fill)" />
@@ -404,7 +400,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "logs",
     body: (
       <>
-        <div className="mini-label"><Terminal size={12} className="mini-label-icon text-indigo-500" /> Live Stream</div>
+        <div className="mini-label"><Terminal size={12} className="mini-icon text-indigo-500" /> Live Stream</div>
         <div className="mini-log mini-mono">
           <div><span>12:04:18</span> <span className="mini-log-code">GET</span> /users 200</div>
           <div><span>12:04:22</span> <span className="mini-log-code">GET</span> /plans 200</div>
@@ -437,7 +433,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
       <>
         <span className="mini-plus"><Plus size={18} /></span>
         <div className="mini-glass-title">Instant Deploy</div>
-        <div className="mini-glass-sub">GitHub · Gitlab · CLI · MCP</div>
+        <div className="mini-glass-sub">GitHub · GitLab · CLI · MCP</div>
       </>
     ),
   },
@@ -445,7 +441,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "db",
     body: (
       <>
-        <div className="mini-label"><Database size={12} className="mini-label-icon text-cyan-600" /> Postgres · users</div>
+        <div className="mini-label"><Database size={12} className="mini-icon text-cyan-600" /> Postgres · users</div>
         <div className="mini-table mini-mono">
           {[["1", "ana@company.com"], ["2", "raj@enterprise.io"], ["3", "li@startup.dev"], ["4", "sam@whizan.cloud"]].map(([id, email]) => (
             <div key={id} className="mini-row"><span>{id}</span><span>{email}</span></div>
@@ -458,7 +454,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "storage",
     body: (
       <>
-        <div className="mini-label"><HardDrive size={12} className="mini-label-icon text-violet-500" /> S3 Storage</div>
+        <div className="mini-label"><HardDrive size={12} className="mini-icon text-violet-500" /> S3 Storage</div>
         <div className="mini-mono mini-text">production-assets</div>
         <div className="mini-big">1.48 GB</div>
         <div className="mini-bar"><span style={{ width: "44%" }} /></div>
@@ -469,7 +465,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     key: "mcp",
     body: (
       <>
-        <div className="mini-label"><Terminal size={12} className="mini-label-icon text-emerald-600" /> DevOps MCP</div>
+        <div className="mini-label"><Terminal size={12} className="mini-icon text-emerald-600" /> DevOps MCP</div>
         <div className="mini-mono mini-text">whizan_check_health</div>
         <div className="mini-chip mini-chip-ok"><span className="mini-pulse-dot" /> 200 OK · Healthy</div>
       </>
@@ -498,7 +494,7 @@ function CardArc() {
   );
 }
 
-/* ─── Deploy animation (macOS Glass Window & Live Stream) ────────── */
+/* ─── Deploy animation (macOS Window & Live Stream) ──────────────── */
 
 function DeployPreview() {
   const [tick, setTick] = useState(0);
@@ -588,7 +584,7 @@ export default function LandingPage() {
 
   return (
     <div className="lp">
-      {/* ── Top Sticky Header (Authentic Brandmark in Rightful Place) ── */}
+      {/* ── Top Sticky Header (Authentic Logo in Rightful Place) ── */}
       <header className="lp-nav-wrap">
         <div className="lp-nav">
           <BrandMark compact className="lp-brand-logo" />
@@ -619,7 +615,7 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* ── Hero Shell (Saubhagya's Sky Panel & 3D Card Arc) ── */}
+      {/* ── Hero Shell (Atmospheric Sky, Flying Cards, Crisp Clouds) ── */}
       <div className="hero-shell">
         <section className="hero" ref={heroRef}>
           <div className="sky" aria-hidden />
@@ -670,10 +666,12 @@ export default function LandingPage() {
             </div>
           </div>
 
+          {/* ── 3D Card Arc (z-index 10: Sits High & Proud, Never Drowned) ── */}
           <div className="hero-arc hero-fade" style={cssVars({ "--d": "600ms" })}>
             <CardArc />
           </div>
 
+          {/* ── High-Contrast Midnight Glass Footer Ribbon ── */}
           <div className="hero-foot mono hero-fade" style={cssVars({ "--d": "800ms" })}>
             <div className="hero-foot-pill">
               <span className="hero-foot-item">8 Cloud Products</span>
@@ -688,6 +686,7 @@ export default function LandingPage() {
             </div>
           </div>
 
+          {/* Horizon Cloud Bed (Placed Low So Cards are 100% Legible) */}
           <div className="bank bank-back" aria-hidden>
             <div className="cloud-bank-back"><PaintedCloud shape="bank" seed={21} /></div>
           </div>
@@ -1017,15 +1016,15 @@ export default function LandingPage() {
           --ink-2: #334155;
           --muted: #64748b;
           --faint: #94a3b8;
-          --line: #e7edf6;
-          --grey: #f2f4f7;
+          --line: #e2e8f0;
+          --grey: #f8fafc;
           --sky-50: #f5f9ff;
           --sky-100: #eaf2ff;
           --blue: #2563eb;
           --blue-deep: #1450c8;
           --sun: #ffd84d;
           --sun-deep: #f5c518;
-          --green: #15803d;
+          --green: #16a34a;
           min-height: 100vh;
           background: #ffffff;
           color: var(--ink);
@@ -1044,7 +1043,7 @@ export default function LandingPage() {
           position: sticky;
           top: 0;
           z-index: 100;
-          background: rgba(255, 255, 255, 0.88);
+          background: rgba(255, 255, 255, 0.9);
           backdrop-filter: saturate(180%) blur(16px);
           -webkit-backdrop-filter: saturate(180%) blur(16px);
           border-bottom: 1px solid var(--line);
@@ -1113,36 +1112,36 @@ export default function LandingPage() {
         .lp .btn-sun {
           background: linear-gradient(180deg, #ffe066 0%, #f5c518 100%);
           color: var(--ink);
-          border: 1px solid rgba(255, 255, 255, 0.45);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7),
+          border: 1px solid rgba(255, 255, 255, 0.55);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
                       0 14px 34px -8px rgba(245, 197, 24, 0.75),
-                      0 2px 6px rgba(11, 21, 48, 0.1);
+                      0 2px 6px rgba(11, 21, 48, 0.12);
         }
         .lp .btn-sun:hover {
           background: linear-gradient(180deg, #ffea80 0%, #fab005 100%);
           transform: translateY(-2px);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
                       0 18px 40px -8px rgba(245, 197, 24, 0.85),
-                      0 4px 10px rgba(11, 21, 48, 0.15);
+                      0 4px 10px rgba(11, 21, 48, 0.16);
         }
         .lp .btn-glass {
-          background: rgba(11, 21, 48, 0.26);
+          background: rgba(11, 21, 48, 0.32);
           color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.35);
+          border: 1px solid rgba(255, 255, 255, 0.4);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
                       0 10px 25px -5px rgba(11, 40, 110, 0.2);
         }
         .lp .btn-glass:hover {
-          background: rgba(11, 21, 48, 0.4);
-          border-color: rgba(255, 255, 255, 0.55);
+          background: rgba(11, 21, 48, 0.46);
+          border-color: rgba(255, 255, 255, 0.65);
           transform: translateY(-2px);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-                      0 14px 30px -5px rgba(11, 40, 110, 0.28);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                      0 14px 30px -5px rgba(11, 40, 110, 0.3);
         }
         .lp .btn-outline { background: #ffffff; color: var(--ink); border-color: var(--line); }
-        .lp .btn-outline:hover { border-color: #c9d6ea; transform: translateY(-1px); }
+        .lp .btn-outline:hover { border-color: #94a3b8; transform: translateY(-1px); }
         .btn-arrow { padding-right: 0.45rem; }
         .btn-arrow-dot {
           display: inline-flex;
@@ -1167,117 +1166,119 @@ export default function LandingPage() {
           position: relative;
           overflow: hidden;
           border-radius: 30px;
-          min-height: 860px;
+          min-height: 890px;
           display: flex;
           flex-direction: column;
           align-items: center;
           isolation: isolate;
-          box-shadow: 0 20px 60px -20px rgba(11, 40, 110, 0.15);
+          box-shadow: 0 20px 60px -20px rgba(11, 40, 110, 0.18);
         }
         .sky {
           position: absolute;
           inset: 0;
           z-index: -3;
           background:
-            radial-gradient(ellipse 65% 45% at 50% -5%, rgba(255, 255, 255, 0.45) 0%, rgba(255, 248, 225, 0.22) 35%, transparent 70%),
+            radial-gradient(ellipse 70% 45% at 50% -5%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 248, 225, 0.22) 32%, transparent 70%),
             radial-gradient(60% 45% at 85% 15%, rgba(147, 197, 253, 0.35), transparent 65%),
             radial-gradient(55% 45% at 15% 25%, rgba(186, 230, 253, 0.3), transparent 65%),
-            linear-gradient(180deg, #0d59d6 0%, #1a6fe4 24%, #3b8cf0 52%, #7abdf8 76%, #d8ecfe 100%);
+            linear-gradient(180deg, #0b55d1 0%, #176ce2 22%, #388bf0 48%, #6fb6f8 74%, #cce5fd 100%);
         }
 
-        /* ── Authentic Atmospheric Clouds (Pure GPU Keyframes) ── */
+        /* ── Atmospheric Clouds (Defined Contours & GPU Horizontal Drift) ── */
         .hero-cloud {
           position: absolute;
-          z-index: -1;
+          z-index: 0;
           pointer-events: none;
         }
-        .hc-1 { left: 6%; top: 45px; width: 200px; opacity: 0.65; }
-        .hc-2 { right: 8%; top: 110px; width: 175px; opacity: 0.6; }
-        .hc-wisp { left: 24%; top: 220px; width: 340px; opacity: 0.52; }
-        .hc-3 { left: -4%; top: 360px; width: min(36vw, 540px); opacity: 0.98; }
-        .hc-4 { right: -5%; top: 320px; width: min(34vw, 500px); opacity: 0.98; }
+        .hc-1 { left: 5%; top: 40px; width: 210px; opacity: 0.75; }
+        .hc-2 { right: 7%; top: 100px; width: 185px; opacity: 0.7; }
+        .hc-wisp { left: 22%; top: 210px; width: 350px; opacity: 0.6; }
+        .hc-3 { left: -3%; top: 340px; width: min(34vw, 500px); opacity: 0.95; }
+        .hc-4 { right: -4%; top: 310px; width: min(32vw, 470px); opacity: 0.95; }
 
         .cloud-drift-h1 {
           will-change: transform;
-          animation: lpCloudDriftH1 54s ease-in-out infinite alternate;
+          animation: lpCloudDriftH1 50s ease-in-out infinite alternate;
         }
         @keyframes lpCloudDriftH1 {
-          0% { transform: translate3d(-40px, 0, 0) scale(0.96); }
-          50% { transform: translate3d(50px, -8px, 0) scale(1.02); }
-          100% { transform: translate3d(95px, -3px, 0) scale(0.98); }
+          0% { transform: translate3d(-35px, 0, 0) scale(0.97); }
+          50% { transform: translate3d(45px, -6px, 0) scale(1.02); }
+          100% { transform: translate3d(80px, -2px, 0) scale(0.99); }
         }
 
         .cloud-drift-h2 {
           will-change: transform;
-          animation: lpCloudDriftH2 62s ease-in-out -14s infinite alternate;
+          animation: lpCloudDriftH2 58s ease-in-out -14s infinite alternate;
         }
         @keyframes lpCloudDriftH2 {
-          0% { transform: translate3d(50px, 0, 0) scale(1.02); }
-          50% { transform: translate3d(-35px, 8px, 0) scale(0.98); }
-          100% { transform: translate3d(-80px, 2px, 0) scale(1.01); }
+          0% { transform: translate3d(45px, 0, 0) scale(1.02); }
+          50% { transform: translate3d(-30px, 6px, 0) scale(0.98); }
+          100% { transform: translate3d(-70px, 2px, 0) scale(1.01); }
         }
 
         .cloud-drift-wisp {
           will-change: transform;
-          animation: lpCloudDriftWisp 72s ease-in-out -26s infinite alternate;
+          animation: lpCloudDriftWisp 68s ease-in-out -24s infinite alternate;
         }
         @keyframes lpCloudDriftWisp {
-          0% { transform: translate3d(-60px, 0, 0) scale(0.97); opacity: 0.42; }
-          50% { transform: translate3d(40px, -10px, 0) scale(1.03); opacity: 0.62; }
-          100% { transform: translate3d(85px, -4px, 0) scale(1.0); opacity: 0.48; }
+          0% { transform: translate3d(-50px, 0, 0) scale(0.98); opacity: 0.45; }
+          50% { transform: translate3d(35px, -8px, 0) scale(1.02); opacity: 0.65; }
+          100% { transform: translate3d(75px, -3px, 0) scale(1.0); opacity: 0.5; }
         }
 
         .cloud-billow-left {
           will-change: transform;
-          animation: lpCloudBillowLeft 34s ease-in-out infinite alternate;
+          animation: lpCloudBillowLeft 32s ease-in-out infinite alternate;
         }
         @keyframes lpCloudBillowLeft {
-          0% { transform: translate3d(-20px, 0, 0) scale(0.98); }
-          50% { transform: translate3d(32px, -14px, 0) scale(1.035); }
-          100% { transform: translate3d(55px, -6px, 0) scale(1.01); }
+          0% { transform: translate3d(-15px, 0, 0) scale(0.98); }
+          50% { transform: translate3d(28px, -10px, 0) scale(1.025); }
+          100% { transform: translate3d(48px, -4px, 0) scale(1.0); }
         }
 
         .cloud-billow-right {
           will-change: transform;
-          animation: lpCloudBillowRight 38s ease-in-out -8s infinite alternate;
+          animation: lpCloudBillowRight 36s ease-in-out -8s infinite alternate;
         }
         @keyframes lpCloudBillowRight {
-          0% { transform: translate3d(24px, 0, 0) scale(1.02); }
-          50% { transform: translate3d(-28px, -16px, 0) scale(0.985); }
-          100% { transform: translate3d(-60px, -7px, 0) scale(1.03); }
+          0% { transform: translate3d(20px, 0, 0) scale(1.02); }
+          50% { transform: translate3d(-24px, -12px, 0) scale(0.985); }
+          100% { transform: translate3d(-50px, -5px, 0) scale(1.02); }
         }
 
         .cloud-svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+        /* Horizon Cloud Bed (Under Cards, Never Drowning Them) */
         .bank { position: absolute; left: 50%; pointer-events: none; }
-        .bank-back { width: 160%; bottom: 35px; transform: translateX(-50%); opacity: 0.88; z-index: -1; }
-        .bank-front { width: 145%; bottom: -170px; transform: translateX(-48%); z-index: 3; }
+        .bank-back { width: 155%; bottom: -40px; transform: translateX(-50%); opacity: 0.75; z-index: 1; }
+        .bank-front { width: 145%; bottom: -240px; transform: translateX(-48%); z-index: 2; opacity: 0.7; }
 
         .cloud-bank-back {
           will-change: transform;
-          animation: lpBankBackDrift 44s ease-in-out infinite alternate;
+          animation: lpBankBackDrift 42s ease-in-out infinite alternate;
         }
         @keyframes lpBankBackDrift {
-          0% { transform: translate3d(-35px, 0, 0) scale(1); }
-          50% { transform: translate3d(25px, -8px, 0) scale(1.015); }
-          100% { transform: translate3d(48px, -3px, 0) scale(1); }
+          0% { transform: translate3d(-30px, 0, 0) scale(1); }
+          50% { transform: translate3d(20px, -6px, 0) scale(1.01); }
+          100% { transform: translate3d(40px, -2px, 0) scale(1); }
         }
 
         .cloud-bank-front {
           will-change: transform;
-          animation: lpBankFrontDrift 30s ease-in-out -6s infinite alternate;
+          animation: lpBankFrontDrift 28s ease-in-out -5s infinite alternate;
         }
         @keyframes lpBankFrontDrift {
-          0% { transform: translate3d(35px, 0, 0) scale(1.01); }
-          50% { transform: translate3d(-25px, -12px, 0) scale(0.99); }
-          100% { transform: translate3d(-48px, -5px, 0) scale(1.015); }
+          0% { transform: translate3d(30px, 0, 0) scale(1.01); }
+          50% { transform: translate3d(-20px, -8px, 0) scale(0.99); }
+          100% { transform: translate3d(-40px, -3px, 0) scale(1.01); }
         }
 
         /* ── Hero copy ── */
         .hero-copy {
           position: relative;
-          z-index: 4;
+          z-index: 8;
           max-width: 1040px;
-          padding: 4.2rem 1.5rem 0;
+          padding: 3.8rem 1.5rem 0;
           text-align: center;
           display: flex;
           flex-direction: column;
@@ -1289,8 +1290,8 @@ export default function LandingPage() {
           gap: 0.45rem;
           padding: 0.38rem 0.95rem;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.22);
-          border: 1px solid rgba(255, 255, 255, 0.4);
+          background: rgba(255, 255, 255, 0.24);
+          border: 1px solid rgba(255, 255, 255, 0.45);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           box-shadow: 0 4px 20px rgba(11, 40, 110, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.45);
@@ -1303,8 +1304,8 @@ export default function LandingPage() {
           user-select: none;
         }
         .hero-kicker:hover {
-          background: rgba(255, 255, 255, 0.32);
-          border-color: rgba(255, 255, 255, 0.6);
+          background: rgba(255, 255, 255, 0.35);
+          border-color: rgba(255, 255, 255, 0.65);
           transform: translateY(-1px);
         }
         .hero-kicker-dot {
@@ -1340,16 +1341,16 @@ export default function LandingPage() {
           letter-spacing: -0.05em;
           font-weight: 600;
           color: #ffffff;
-          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.22);
+          text-shadow: 0 2px 30px rgba(11, 40, 110, 0.25);
         }
         .hero-line { display: block; text-wrap: balance; }
-        .hero-line-soft { color: rgba(255, 255, 255, 0.74); }
+        .hero-line-soft { color: rgba(255, 255, 255, 0.78); }
         .hero-sub {
           max-width: 35rem;
           margin: 0 0 2.2rem;
           font-size: 1.05rem;
           line-height: 1.6;
-          color: rgba(255, 255, 255, 0.9);
+          color: rgba(255, 255, 255, 0.92);
           text-wrap: balance;
         }
         .hero-ctas { display: flex; gap: 0.85rem; flex-wrap: wrap; justify-content: center; }
@@ -1364,14 +1365,14 @@ export default function LandingPage() {
           to { opacity: 1; transform: translateY(0); filter: blur(0); }
         }
 
-        /* ── 3D Card Arc (High-Craft Ceramic Finish, 120 FPS) ── */
+        /* ── 3D Card Arc (High z-index: 10, Always 100% Unobstructed) ── */
         .hero-arc {
           position: relative;
-          z-index: 2;
+          z-index: 10;
           width: 100%;
-          max-width: 1200px;
-          height: 380px;
-          margin-top: 1.25rem;
+          max-width: 1220px;
+          height: 390px;
+          margin-top: 1.5rem;
           perspective: 1200px;
           overflow: visible;
         }
@@ -1388,23 +1389,23 @@ export default function LandingPage() {
           animation: lpArcSway 14s ease-in-out infinite alternate;
         }
         @keyframes lpArcSway {
-          0% { transform: rotateY(-3.5deg) rotateX(1deg); }
-          100% { transform: rotateY(3.5deg) rotateX(-1deg); }
+          0% { transform: rotateY(-3deg) rotateX(1deg); }
+          100% { transform: rotateY(3deg) rotateX(-1deg); }
         }
         .arc-card {
           position: absolute;
           left: 50%;
-          bottom: 20px;
-          width: 196px;
-          height: 144px;
-          margin-left: -98px;
-          background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-          border: 1px solid rgba(255, 255, 255, 0.95);
+          bottom: 30px;
+          width: 204px;
+          height: 148px;
+          margin-left: -102px;
+          background: #ffffff;
+          border: 1px solid rgba(226, 232, 240, 0.85);
           border-radius: 16px;
-          padding: 1rem;
+          padding: 1.05rem;
           box-shadow: inset 0 1px 0 #ffffff,
-                      0 24px 50px -12px rgba(11, 40, 110, 0.24),
-                      0 3px 8px rgba(11, 40, 110, 0.06);
+                      0 22px 48px -10px rgba(11, 40, 110, 0.28),
+                      0 4px 12px rgba(11, 40, 110, 0.08);
           transform-origin: 50% 390px;
           transform: rotateZ(var(--a)) translateY(-18px) translateZ(calc(120px - abs(var(--i) - 4) * 22px));
           display: flex;
@@ -1418,17 +1419,17 @@ export default function LandingPage() {
                       border-color 0.25s ease;
         }
         .arc-card:hover {
-          transform: rotateZ(var(--a)) translateY(-36px) translateZ(175px) scale(1.05);
+          transform: rotateZ(var(--a)) translateY(-38px) translateZ(175px) scale(1.05);
           box-shadow: inset 0 1px 0 #ffffff,
                       0 32px 70px -12px rgba(37, 99, 235, 0.38),
                       0 0 0 1px rgba(37, 99, 235, 0.35);
           border-color: rgba(37, 99, 235, 0.4);
-          z-index: 10;
+          z-index: 20;
         }
         .arc-card-dark {
-          background: linear-gradient(145deg, #0b132b 0%, #1c2541 100%);
+          background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
           color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.16);
+          border: 1px solid rgba(255, 255, 255, 0.18);
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
                       0 28px 65px -10px rgba(0, 0, 0, 0.55);
         }
@@ -1455,12 +1456,12 @@ export default function LandingPage() {
           box-shadow: 0 0 6px var(--sun);
         }
         .arc-card-glass {
-          background: rgba(255, 255, 255, 0.7);
+          background: rgba(255, 255, 255, 0.85);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.9);
+          border: 1px solid rgba(255, 255, 255, 0.95);
           box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
-                      0 20px 45px -10px rgba(11, 40, 110, 0.18);
+                      0 22px 48px -10px rgba(11, 40, 110, 0.2);
         }
         .mini-label {
           display: flex;
@@ -1521,14 +1522,15 @@ export default function LandingPage() {
         .mini-glass-sub { font-size: 0.66rem; color: var(--muted); }
         .mini-table { font-size: 0.64rem; line-height: 1.45; color: var(--muted); margin-top: 0.25rem; }
         .mini-table span:first-child { color: var(--faint); width: 12px; }
-        .mini-bar { height: 4px; border-radius: 2px; background: var(--grey); overflow: hidden; margin-top: 0.35rem; }
+        .mini-bar { height: 4px; border-radius: 2px; background: #e2e8f0; overflow: hidden; margin-top: 0.35rem; }
         .mini-bar span { display: block; height: 100%; background: var(--blue); }
 
+        /* ── High-Contrast Midnight Glass Footer Ribbon (100% Readable) ── */
         .hero-foot {
           position: relative;
-          z-index: 4;
+          z-index: 12;
           margin-top: auto;
-          padding: 1.5rem 1rem 1.8rem;
+          padding: 1.25rem 1rem 1.6rem;
           display: flex;
           justify-content: center;
         }
@@ -1540,18 +1542,18 @@ export default function LandingPage() {
           gap: 0.65rem;
           padding: 0.55rem 1.25rem;
           border-radius: 999px;
-          background: rgba(255, 255, 255, 0.24);
-          border: 1px solid rgba(255, 255, 255, 0.45);
+          background: rgba(11, 21, 48, 0.72);
+          border: 1px solid rgba(255, 255, 255, 0.25);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-          box-shadow: 0 8px 25px -5px rgba(11, 40, 110, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          box-shadow: 0 8px 25px rgba(11, 40, 110, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.2);
           font-size: 0.74rem;
           letter-spacing: 0.07em;
           text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.95);
-          text-shadow: 0 1px 8px rgba(11, 40, 110, 0.25);
+          color: #ffffff;
+          text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
         }
-        .hero-foot-bullet { color: var(--sun); opacity: 0.85; }
+        .hero-foot-bullet { color: var(--sun); opacity: 0.9; }
         .hero-foot-item.highlight { color: var(--sun); font-weight: 600; }
 
         /* ── Stack marquee (All Official Logos) ── */
@@ -1740,7 +1742,7 @@ export default function LandingPage() {
           height: 12px;
           border-radius: 50%;
           background: var(--green);
-          box-shadow: 0 0 10px rgba(21, 128, 61, 0.6);
+          box-shadow: 0 0 10px rgba(22, 163, 74, 0.6);
           vertical-align: 2px;
           margin-right: 0.4rem;
         }
