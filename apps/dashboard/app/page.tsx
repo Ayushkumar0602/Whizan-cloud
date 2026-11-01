@@ -213,26 +213,26 @@ function PaintedCloud({ shape }: { shape: keyof typeof CLOUD_SHAPES; seed?: numb
       <defs>
         {/* Crisp sunlit rim highlight */}
         <radialGradient id={id("rim")} cx="50%" cy="18%" r="50%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
-          <stop offset="60%" stopColor="#ffffff" stopOpacity="0.85" />
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
+          <stop offset="60%" stopColor="#ffffff" stopOpacity="0.7" />
           <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
         </radialGradient>
         {/* Volumetric body scatter */}
         <radialGradient id={id("body")} cx="50%" cy="38%" r="56%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.98" />
-          <stop offset="50%" stopColor="#f8faff" stopOpacity="0.94" />
-          <stop offset="80%" stopColor="#ebf3fd" stopOpacity="0.82" />
-          <stop offset="100%" stopColor="#dce8f9" stopOpacity="0.2" />
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+          <stop offset="50%" stopColor="#f8faff" stopOpacity="0.8" />
+          <stop offset="80%" stopColor="#ebf3fd" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#dce8f9" stopOpacity="0.1" />
         </radialGradient>
         {/* Atmospheric Rayleigh shadow */}
         <radialGradient id={id("shade")} cx="50%" cy="75%" r="48%">
-          <stop offset="0%" stopColor="#6488b8" stopOpacity="0.45" />
-          <stop offset="60%" stopColor="#8ba8d2" stopOpacity="0.2" />
+          <stop offset="0%" stopColor="#6488b8" stopOpacity="0.3" />
+          <stop offset="60%" stopColor="#8ba8d2" stopOpacity="0.12" />
           <stop offset="100%" stopColor="#b4c8e5" stopOpacity="0" />
         </radialGradient>
         {/* Refined Gaussian blur: sharp enough to see billow contours, soft enough for atmosphere */}
         <filter id={id("soft")} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
-          <feGaussianBlur stdDeviation={2.2 * k} />
+          <feGaussianBlur stdDeviation={1.5 * k} />
         </filter>
       </defs>
 
@@ -423,6 +423,11 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
           Frontends, APIs <span className="mini-dot" /> &amp; databases
           <span className="mini-dim"> in one console.</span>
         </div>
+        <div className="mini-dark-meta">
+          <span className="mini-dark-stat">8 Products</span>
+          <span className="mini-dark-sep">•</span>
+          <span className="mini-dark-stat">Sub-5ms Edge</span>
+        </div>
       </>
     ),
   },
@@ -431,7 +436,7 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
     tone: "glass",
     body: (
       <>
-        <span className="mini-plus"><Plus size={18} /></span>
+        <span className="mini-plus"><Plus size={16} /></span>
         <div className="mini-glass-title">Instant Deploy</div>
         <div className="mini-glass-sub">GitHub · GitLab · CLI · MCP</div>
       </>
@@ -474,20 +479,26 @@ const ARC_CARDS: { key: string; tone?: "dark" | "glass"; body: ReactNode }[] = [
 ];
 
 function CardArc() {
-  const mid = (ARC_CARDS.length - 1) / 2;
+  const mid = 4;
   return (
     <div className="arc" aria-hidden>
       <div className="arc-tilt">
         <div className="arc-sway">
-          {ARC_CARDS.map((card, i) => (
-            <div
-              key={card.key}
-              className={`arc-card ${card.tone ? `arc-card-${card.tone}` : ""}`}
-              style={cssVars({ "--a": `${(mid - i) * 9.5}deg`, "--i": i })}
-            >
-              {card.body}
-            </div>
-          ))}
+          {ARC_CARDS.map((card, i) => {
+            const offset = i - mid;
+            return (
+              <div
+                key={card.key}
+                className={`arc-card ${card.tone ? `arc-card-${card.tone}` : ""} ${i === mid ? "arc-card-center" : ""}`}
+                style={cssVars({
+                  "--offset": offset,
+                  "--i": i,
+                })}
+              >
+                {card.body}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -589,7 +600,7 @@ export default function LandingPage() {
         <div className="lp-nav">
           <BrandMark compact className="lp-brand-logo" />
 
-          <nav className="lp-nav-links mono">
+          <nav className="lp-nav-links">
             <a href="#why">Why Whizan</a>
             <a href="#products">Products</a>
             <a href="#how">How it works</a>
@@ -600,13 +611,13 @@ export default function LandingPage() {
 
           <div className="lp-nav-cta">
             {user ? (
-              <Link href="/dashboard" className="btn btn-sun btn-sm mono">
+              <Link href="/dashboard" className="btn btn-sun btn-sm">
                 Console <ArrowRight size={14} />
               </Link>
             ) : (
               <>
-                <Link href="/login" className="lp-nav-signin mono">Sign in</Link>
-                <Link href="/register" className="btn btn-sun btn-sm mono">
+                <Link href="/login" className="lp-nav-signin">Sign in</Link>
+                <Link href="/register" className="btn btn-sun btn-sm">
                   Get started <ArrowRight size={14} />
                 </Link>
               </>
@@ -620,15 +631,12 @@ export default function LandingPage() {
         <section className="hero" ref={heroRef}>
           <div className="sky" aria-hidden />
 
-          {/* Authentic Multi-Layered Atmospheric Wind-Drift Clouds (GPU-accelerated, 120 FPS) */}
+          {/* Balanced Atmospheric Clouds (Framing Composition, Crisp Contours) */}
           <div className="hero-cloud hc-1" aria-hidden>
             <div className="cloud-drift-h1"><PaintedCloud shape="c" seed={11} /></div>
           </div>
           <div className="hero-cloud hc-2" aria-hidden>
             <div className="cloud-drift-h2"><PaintedCloud shape="c" seed={17} /></div>
-          </div>
-          <div className="hero-cloud hc-wisp" aria-hidden>
-            <div className="cloud-drift-wisp"><PaintedCloud shape="wisp" seed={29} /></div>
           </div>
           <div className="hero-cloud hc-3" aria-hidden>
             <div className="cloud-billow-left"><PaintedCloud shape="a" seed={3} /></div>
@@ -649,8 +657,8 @@ export default function LandingPage() {
             </p>
 
             <div className="hero-ctas hero-fade" style={cssVars({ "--d": "360ms" })}>
-              <a href="#how" className="btn btn-glass mono">How it works</a>
-              <Link href={ctaHref} className="btn btn-sun btn-arrow mono" id="hero-cta-btn">
+              <a href="#how" className="btn btn-glass">How it works</a>
+              <Link href={ctaHref} className="btn btn-sun btn-arrow" id="hero-cta-btn">
                 {ctaLabel}
                 <span className="btn-arrow-dot"><ArrowUpRight size={15} /></span>
               </Link>
@@ -665,9 +673,6 @@ export default function LandingPage() {
           {/* Horizon Cloud Bed (Under Cards, Never Drowning Them) */}
           <div className="bank bank-back" aria-hidden>
             <div className="cloud-bank-back"><PaintedCloud shape="bank" seed={21} /></div>
-          </div>
-          <div className="bank bank-front" aria-hidden>
-            <div className="cloud-bank-front"><PaintedCloud shape="bank" seed={5} /></div>
           </div>
         </section>
       </div>
@@ -1019,49 +1024,64 @@ export default function LandingPage() {
           position: sticky;
           top: 0;
           z-index: 100;
-          background: rgba(255, 255, 255, 0.9);
+          background: rgba(255, 255, 255, 0.88);
           backdrop-filter: saturate(180%) blur(16px);
           -webkit-backdrop-filter: saturate(180%) blur(16px);
-          border-bottom: 1px solid var(--line);
+          border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+          transition: background 0.2s ease, border-color 0.2s ease;
         }
         .lp-nav {
           max-width: 1240px;
           margin: 0 auto;
-          padding: 0.75rem 1.5rem;
+          padding: 0 1.5rem;
+          height: 64px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 1.5rem;
         }
+        .lp-brand-logo {
+          display: flex;
+          align-items: center;
+          transition: opacity 0.15s ease;
+        }
+        .lp-brand-logo:hover {
+          opacity: 0.85;
+        }
         .lp-nav-links {
           display: flex;
           align-items: center;
-          gap: 1.75rem;
+          gap: 0.5rem;
         }
         .lp-nav-links a {
-          font-size: 0.74rem;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--muted);
-          transition: color 0.15s ease;
+          font-size: 0.86rem;
+          font-weight: 500;
+          letter-spacing: -0.01em;
+          color: #475569;
+          padding: 0.4rem 0.75rem;
+          border-radius: 8px;
+          transition: color 0.15s ease, background-color 0.15s ease;
         }
         .lp-nav-links a:hover {
-          color: var(--ink);
+          color: #0f172a;
+          background: rgba(15, 23, 42, 0.04);
         }
         .lp-nav-cta {
           display: flex;
           align-items: center;
-          gap: 1.1rem;
+          gap: 1.25rem;
         }
         .lp-nav-signin {
-          font-size: 0.74rem;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--muted);
+          font-size: 0.86rem;
+          font-weight: 500;
+          letter-spacing: -0.01em;
+          color: #475569;
+          padding: 0.4rem 0.5rem;
+          border-radius: 6px;
           transition: color 0.15s ease;
         }
         .lp-nav-signin:hover {
-          color: var(--ink);
+          color: #0f172a;
         }
 
         /* ── Buttons (Enterprise Luxury Finish) ── */
@@ -1073,48 +1093,56 @@ export default function LandingPage() {
           padding: 0.85rem 1.45rem;
           border-radius: 999px;
           border: 1px solid transparent;
-          font-size: 0.82rem;
+          font-size: 0.84rem;
           font-weight: 600;
-          letter-spacing: 0.06em;
+          letter-spacing: 0.03em;
           text-transform: uppercase;
           white-space: nowrap;
           cursor: pointer;
-          transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-                      border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-                      transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-                      box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+          transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                      box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .btn-sm { padding: 0.55rem 1.15rem; font-size: 0.74rem; }
+        .btn:active {
+          transform: scale(0.98) translateY(0);
+        }
+        .btn-sm {
+          padding: 0.55rem 1.15rem;
+          font-size: 0.82rem;
+          letter-spacing: 0.02em;
+          text-transform: none;
+        }
         .lp .btn-sun {
           background: linear-gradient(180deg, #ffe066 0%, #f5c518 100%);
           color: var(--ink);
           border: 1px solid rgba(255, 255, 255, 0.55);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
-                      0 14px 34px -8px rgba(245, 197, 24, 0.75),
-                      0 2px 6px rgba(11, 21, 48, 0.12);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85),
+                      0 10px 28px -6px rgba(245, 197, 24, 0.6),
+                      0 2px 6px rgba(11, 21, 48, 0.1);
         }
         .lp .btn-sun:hover {
           background: linear-gradient(180deg, #ffea80 0%, #fab005 100%);
           transform: translateY(-2px);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-                      0 18px 40px -8px rgba(245, 197, 24, 0.85),
-                      0 4px 10px rgba(11, 21, 48, 0.16);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95),
+                      0 14px 34px -6px rgba(245, 197, 24, 0.75),
+                      0 4px 10px rgba(11, 21, 48, 0.14);
         }
         .lp .btn-glass {
-          background: rgba(11, 21, 48, 0.32);
+          background: rgba(11, 21, 48, 0.26);
           color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.4);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
-                      0 10px 25px -5px rgba(11, 40, 110, 0.2);
+          border: 1px solid rgba(255, 255, 255, 0.32);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                      0 8px 20px -4px rgba(11, 40, 110, 0.18);
         }
         .lp .btn-glass:hover {
-          background: rgba(11, 21, 48, 0.46);
-          border-color: rgba(255, 255, 255, 0.65);
+          background: rgba(11, 21, 48, 0.4);
+          border-color: rgba(255, 255, 255, 0.55);
           transform: translateY(-2px);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4),
-                      0 14px 30px -5px rgba(11, 40, 110, 0.3);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                      0 12px 26px -4px rgba(11, 40, 110, 0.26);
         }
         .lp .btn-outline { background: #ffffff; color: var(--ink); border-color: var(--line); }
         .lp .btn-outline:hover { border-color: #94a3b8; transform: translateY(-1px); }
@@ -1136,7 +1164,7 @@ export default function LandingPage() {
           background: #000000;
         }
 
-        /* ── Hero shell (Dynamically Bounded Height: Never Out of Bounds) ── */
+        /* ── Hero shell (Balanced Height, Cohesive Composition) ── */
         .hero-shell {
           padding: 10px 12px;
         }
@@ -1144,13 +1172,12 @@ export default function LandingPage() {
           position: relative;
           overflow: hidden;
           border-radius: 28px;
-          height: clamp(620px, calc(100vh - 86px), 780px);
           min-height: 620px;
-          max-height: 780px;
+          height: clamp(640px, 86vh, 790px);
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: space-between;
+          justify-content: flex-start;
           isolation: isolate;
           box-shadow: 0 20px 60px -20px rgba(11, 40, 110, 0.18);
         }
@@ -1159,10 +1186,10 @@ export default function LandingPage() {
           inset: 0;
           z-index: -3;
           background:
-            radial-gradient(ellipse 70% 45% at 50% -5%, rgba(255, 255, 255, 0.5) 0%, rgba(255, 248, 225, 0.22) 32%, transparent 70%),
-            radial-gradient(60% 45% at 85% 15%, rgba(147, 197, 253, 0.35), transparent 65%),
-            radial-gradient(55% 45% at 15% 25%, rgba(186, 230, 253, 0.3), transparent 65%),
-            linear-gradient(180deg, #0b55d1 0%, #176ce2 22%, #388bf0 48%, #6fb6f8 74%, #cce5fd 100%);
+            radial-gradient(ellipse 80% 50% at 50% -8%, rgba(255, 255, 255, 0.45) 0%, rgba(219, 234, 254, 0.2) 36%, transparent 70%),
+            radial-gradient(60% 45% at 85% 15%, rgba(147, 197, 253, 0.3), transparent 65%),
+            radial-gradient(55% 45% at 15% 25%, rgba(186, 230, 253, 0.25), transparent 65%),
+            linear-gradient(180deg, #1d4ed8 0%, #2563eb 20%, #3b82f6 45%, #60a5fa 72%, #bfdbfe 95%, #dbeafe 100%);
         }
 
         /* ── Atmospheric Clouds (Multi-Altitude Wind Currents & Convective Billowing) ── */
@@ -1172,67 +1199,50 @@ export default function LandingPage() {
           pointer-events: none;
         }
         .hc-1 {
-          left: 5%;
-          top: 35px;
-          width: clamp(140px, 14vw, 200px);
-          opacity: 0.78;
+          left: 6%;
+          top: 40px;
+          width: clamp(120px, 11vw, 160px);
+          opacity: 0.6;
         }
         .hc-2 {
           right: 7%;
-          top: 80px;
-          width: clamp(120px, 12vw, 175px);
-          opacity: 0.72;
-        }
-        .hc-wisp {
-          left: 20%;
-          top: 175px;
-          width: clamp(220px, 22vw, 320px);
+          top: 70px;
+          width: clamp(110px, 10vw, 150px);
           opacity: 0.55;
         }
         .hc-3 {
-          left: -4%;
-          top: clamp(230px, 30vh, 310px);
-          width: min(33vw, 480px);
-          opacity: 0.95;
+          left: -2%;
+          bottom: clamp(60px, 10vh, 100px);
+          width: clamp(200px, 20vw, 290px);
+          opacity: 0.5;
         }
         .hc-4 {
-          right: -4%;
-          top: clamp(210px, 28vh, 280px);
-          width: min(31vw, 450px);
-          opacity: 0.95;
+          right: -2%;
+          bottom: clamp(70px, 11vh, 110px);
+          width: clamp(190px, 19vw, 280px);
+          opacity: 0.5;
         }
 
         /* High puff 1: steady eastward wind drift with gentle altitude wave */
         .cloud-drift-h1 {
-          will-change: transform, opacity;
-          animation: lpCloudDriftH1 44s ease-in-out infinite alternate;
+          will-change: transform;
+          animation: lpCloudDriftH1 40s ease-in-out infinite alternate;
         }
         @keyframes lpCloudDriftH1 {
-          0% { transform: translate3d(-30px, 0, 0) scale(0.96); opacity: 0.7; }
-          50% { transform: translate3d(45px, -10px, 0) scale(1.02); opacity: 0.88; }
-          100% { transform: translate3d(90px, -3px, 0) scale(0.99); opacity: 0.75; }
+          0% { transform: translate3d(-20px, 0, 0) scale(0.97); }
+          50% { transform: translate3d(30px, -8px, 0) scale(1.02); }
+          100% { transform: translate3d(60px, -2px, 0) scale(0.99); }
         }
 
         /* High puff 2: counter-altitude wave drift */
         .cloud-drift-h2 {
-          will-change: transform, opacity;
-          animation: lpCloudDriftH2 52s ease-in-out -12s infinite alternate;
+          will-change: transform;
+          animation: lpCloudDriftH2 48s ease-in-out -10s infinite alternate;
         }
         @keyframes lpCloudDriftH2 {
-          0% { transform: translate3d(40px, 0, 0) scale(1.02); opacity: 0.65; }
-          50% { transform: translate3d(-35px, 8px, 0) scale(0.97); opacity: 0.82; }
-          100% { transform: translate3d(-75px, 2px, 0) scale(1.01); opacity: 0.7; }
-        }
-
-        /* Mid-sky wisp: panoramic ethereal sweep */
-        .cloud-drift-wisp {
-          will-change: transform, opacity;
-          animation: lpCloudDriftWisp 64s ease-in-out -20s infinite alternate;
-        }
-        @keyframes lpCloudDriftWisp {
-          0% { transform: translate3d(-45px, 0, 0) scale(0.98); opacity: 0.42; }
-          50% { transform: translate3d(35px, -12px, 0) scale(1.03); opacity: 0.62; }
-          100% { transform: translate3d(80px, -4px, 0) scale(1.0); opacity: 0.48; }
+          0% { transform: translate3d(30px, 0, 0) scale(1.01); }
+          50% { transform: translate3d(-25px, 6px, 0) scale(0.98); }
+          100% { transform: translate3d(-55px, 2px, 0) scale(1.0); }
         }
 
         /* Left flanking mass: convective swelling & lateral updraft */
@@ -1241,55 +1251,44 @@ export default function LandingPage() {
           animation: lpCloudBillowLeft 28s ease-in-out infinite alternate;
         }
         @keyframes lpCloudBillowLeft {
-          0% { transform: translate3d(-15px, 0, 0) scale(0.98) rotateZ(-0.5deg); }
-          50% { transform: translate3d(32px, -12px, 0) scale(1.035) rotateZ(1deg); }
-          100% { transform: translate3d(52px, -5px, 0) scale(1.01) rotateZ(0deg); }
+          0% { transform: translate3d(-10px, 0, 0) scale(0.98); }
+          50% { transform: translate3d(20px, -8px, 0) scale(1.02); }
+          100% { transform: translate3d(35px, -3px, 0) scale(1.0); }
         }
 
         /* Right flanking mass: convective swelling & lateral updraft */
         .cloud-billow-right {
           will-change: transform;
-          animation: lpCloudBillowRight 32s ease-in-out -7s infinite alternate;
+          animation: lpCloudBillowRight 32s ease-in-out -6s infinite alternate;
         }
         @keyframes lpCloudBillowRight {
-          0% { transform: translate3d(18px, 0, 0) scale(1.02) rotateZ(0.5deg); }
-          50% { transform: translate3d(-26px, -14px, 0) scale(0.985) rotateZ(-1deg); }
-          100% { transform: translate3d(-52px, -6px, 0) scale(1.025) rotateZ(0deg); }
+          0% { transform: translate3d(12px, 0, 0) scale(1.01); }
+          50% { transform: translate3d(-18px, -10px, 0) scale(0.99); }
+          100% { transform: translate3d(-35px, -4px, 0) scale(1.01); }
         }
 
         .cloud-svg { display: block; width: 100%; height: auto; overflow: visible; }
 
-        /* Horizon Cloud Bed (Under Cards, Never Drowning Them) */
+        /* Horizon Cloud Bed (Soft Mist Glow Under Cards) */
         .bank { position: absolute; left: 50%; pointer-events: none; }
-        .bank-back { width: 155%; bottom: -30px; transform: translateX(-50%); opacity: 0.75; z-index: 1; }
-        .bank-front { width: 145%; bottom: -230px; transform: translateX(-48%); z-index: 2; opacity: 0.7; }
+        .bank-back { width: 140%; bottom: -80px; transform: translateX(-50%); opacity: 0.35; z-index: 1; }
 
         .cloud-bank-back {
           will-change: transform;
-          animation: lpBankBackDrift 38s ease-in-out infinite alternate;
+          animation: lpBankBackDrift 36s ease-in-out infinite alternate;
         }
         @keyframes lpBankBackDrift {
-          0% { transform: translate3d(-30px, 0, 0) scale(1); }
-          50% { transform: translate3d(20px, -6px, 0) scale(1.01); }
-          100% { transform: translate3d(40px, -2px, 0) scale(1); }
+          0% { transform: translate3d(-20px, 0, 0); }
+          50% { transform: translate3d(15px, -4px, 0); }
+          100% { transform: translate3d(30px, -2px, 0); }
         }
 
-        .cloud-bank-front {
-          will-change: transform;
-          animation: lpBankFrontDrift 26s ease-in-out -4s infinite alternate;
-        }
-        @keyframes lpBankFrontDrift {
-          0% { transform: translate3d(30px, 0, 0) scale(1.01); }
-          50% { transform: translate3d(-20px, -8px, 0) scale(0.99); }
-          100% { transform: translate3d(-40px, -3px, 0) scale(1.01); }
-        }
-
-        /* ── Hero copy (Compact, Focused, No Out of Bound Clutter) ── */
+        /* ── Hero copy (Balanced, Cohesive Flow, Zero Void) ── */
         .hero-copy {
           position: relative;
           z-index: 8;
-          max-width: 980px;
-          padding: clamp(2rem, 3.8vh, 3.2rem) 1.5rem 0;
+          max-width: 960px;
+          padding: clamp(2.5rem, 4.5vh, 3.8rem) 1.5rem 0;
           text-align: center;
           display: flex;
           flex-direction: column;
@@ -1297,25 +1296,32 @@ export default function LandingPage() {
         }
 
         .hero-title {
-          margin: 0 0 clamp(0.75rem, 1.4vh, 1.15rem);
-          font-size: clamp(2.35rem, 4.6vw, 3.85rem);
-          line-height: 1.05;
-          letter-spacing: -0.05em;
-          font-weight: 600;
+          margin: 0 0 clamp(0.85rem, 1.6vh, 1.25rem);
+          font-size: clamp(2.4rem, 4.8vw, 3.85rem);
+          line-height: 1.12;
+          letter-spacing: -0.035em;
+          font-weight: 650;
           color: #ffffff;
-          text-shadow: 0 2px 28px rgba(11, 40, 110, 0.25);
+          text-shadow: 0 2px 24px rgba(11, 40, 110, 0.22);
         }
         .hero-line { display: block; text-wrap: balance; }
-        .hero-line-soft { color: rgba(255, 255, 255, 0.78); }
+        .hero-line-soft { color: rgba(255, 255, 255, 0.82); }
         .hero-sub {
-          max-width: 34rem;
-          margin: 0 0 clamp(1.2rem, 2vh, 1.75rem);
-          font-size: clamp(0.94rem, 1.15vw, 1.04rem);
-          line-height: 1.55;
+          max-width: 38rem;
+          margin: 0 0 clamp(1.4rem, 2.5vh, 2rem);
+          font-size: clamp(1rem, 1.2vw, 1.125rem);
+          line-height: 1.6;
           color: rgba(255, 255, 255, 0.92);
           text-wrap: balance;
+          font-weight: 400;
         }
-        .hero-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; justify-content: center; }
+        .hero-ctas {
+          display: flex;
+          gap: 0.85rem;
+          flex-wrap: wrap;
+          justify-content: center;
+          margin-bottom: clamp(1.5rem, 2.8vh, 2.2rem);
+        }
         .hero-fade {
           opacity: 0;
           transform: translateY(14px);
@@ -1327,49 +1333,73 @@ export default function LandingPage() {
           to { opacity: 1; transform: translateY(0); filter: blur(0); }
         }
 
-        /* ── 3D Card Arc (High z-index: 10, Always 100% Unobstructed) ── */
+        /* ── 3D Card Arc (Always 100% Unobstructed, Proportioned) ── */
         .hero-arc {
           position: relative;
           z-index: 10;
           width: 100%;
-          max-width: 1180px;
-          height: clamp(260px, 32vh, 320px);
-          margin-top: auto;
-          perspective: 1200px;
+          max-width: 1120px;
+          height: clamp(240px, 28vh, 290px);
+          display: flex;
+          justify-content: center;
+          align-items: flex-end;
+          perspective: 1100px;
           overflow: visible;
+          padding-bottom: clamp(18px, 3vh, 28px);
+          margin-top: auto;
         }
-        .arc { position: absolute; inset: 0; }
+        .arc {
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: center;
+          align-items: flex-end;
+        }
         .arc-tilt {
-          position: absolute;
-          inset: 0;
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: center;
+          align-items: flex-end;
           transform-style: preserve-3d;
         }
         .arc-sway {
-          position: absolute;
-          inset: 0;
+          position: relative;
+          width: 100%;
+          height: 100%;
+          display: flex;
+          justify-content: center;
+          align-items: flex-end;
           transform-style: preserve-3d;
-          animation: lpArcSway 14s ease-in-out infinite alternate;
+          animation: lpArcSway 16s ease-in-out infinite alternate;
         }
         @keyframes lpArcSway {
-          0% { transform: rotateY(-3deg) rotateX(1deg); }
-          100% { transform: rotateY(3deg) rotateX(-1deg); }
+          0% { transform: rotateY(-2.5deg) rotateX(1deg); }
+          100% { transform: rotateY(2.5deg) rotateX(-1deg); }
         }
         .arc-card {
           position: absolute;
-          left: 50%;
-          bottom: clamp(15px, 2.5vh, 25px);
-          width: clamp(176px, 14vw, 196px);
-          height: clamp(126px, 10.5vw, 142px);
-          margin-left: calc(-1 * clamp(176px, 14vw, 196px) / 2);
-          background: #ffffff;
-          border: 1px solid rgba(226, 232, 240, 0.9);
-          border-radius: 16px;
-          padding: 0.95rem;
-          box-shadow: inset 0 1px 0 #ffffff,
-                      0 22px 48px -10px rgba(11, 40, 110, 0.28),
-                      0 4px 12px rgba(11, 40, 110, 0.08);
-          transform-origin: 50% clamp(320px, 30vw, 380px);
-          transform: rotateZ(calc(var(--a) * var(--arc-spread, 1))) translateY(var(--arc-y, -16px)) translateZ(calc(110px - abs(var(--i) - 4) * 20px));
+          bottom: 0;
+          width: clamp(174px, 14vw, 194px);
+          height: clamp(128px, 10.4vw, 142px);
+          background: rgba(255, 255, 255, 0.94);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(226, 232, 240, 0.85);
+          border-radius: 14px;
+          padding: 0.85rem 0.95rem;
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.95),
+            0 16px 36px -10px rgba(11, 40, 110, 0.18),
+            0 2px 6px rgba(11, 40, 110, 0.04);
+          transform:
+            translateX(calc(var(--offset) * clamp(46px, 4.4vw, 58px) * var(--arc-spread, 1)))
+            translateY(calc(abs(var(--offset)) * 7px))
+            rotateZ(calc(var(--offset) * 4.6deg * var(--arc-spread, 1)))
+            translateZ(calc((4 - abs(var(--offset))) * 16px));
+          z-index: calc(10 - abs(var(--offset)));
           display: flex;
           flex-direction: column;
           justify-content: space-between;
@@ -1381,24 +1411,40 @@ export default function LandingPage() {
                       border-color 0.25s ease;
         }
         .arc-card:hover {
-          transform: rotateZ(calc(var(--a) * var(--arc-spread, 1))) translateY(-36px) translateZ(165px) scale(1.05);
-          box-shadow: inset 0 1px 0 #ffffff,
-                      0 32px 70px -12px rgba(37, 99, 235, 0.38),
-                      0 0 0 1px rgba(37, 99, 235, 0.35);
+          transform:
+            translateX(calc(var(--offset) * clamp(46px, 4.4vw, 58px) * var(--arc-spread, 1)))
+            translateY(calc(abs(var(--offset)) * 7px - 22px))
+            rotateZ(calc(var(--offset) * 1.5deg))
+            translateZ(100px)
+            scale(1.05);
+          box-shadow:
+            inset 0 1px 0 #ffffff,
+            0 26px 55px -12px rgba(37, 99, 235, 0.32),
+            0 0 0 1px rgba(37, 99, 235, 0.3);
           border-color: rgba(37, 99, 235, 0.4);
-          z-index: 20;
+          z-index: 40 !important;
         }
-        .arc-card-dark {
-          background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+        .arc-card-center {
+          width: clamp(200px, 16vw, 226px);
+          height: clamp(140px, 11.2vw, 154px);
+          background: linear-gradient(145deg, #090d16 0%, #151e2e 60%, #1e293b 100%);
           color: #ffffff;
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
-                      0 28px 65px -10px rgba(0, 0, 0, 0.55);
+          border: 1px solid rgba(255, 255, 255, 0.16);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.22),
+            0 24px 55px -10px rgba(0, 0, 0, 0.48),
+            0 4px 14px rgba(0, 0, 0, 0.2);
         }
-        .arc-card-dark:hover {
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-                      0 36px 80px -12px rgba(0, 0, 0, 0.65),
-                      0 0 0 1px rgba(255, 216, 77, 0.4);
+        .arc-card-center:hover {
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.35),
+            0 32px 70px -12px rgba(0, 0, 0, 0.6),
+            0 0 0 1px rgba(255, 216, 77, 0.45);
+        }
+        .arc-card-glass {
+          background: rgba(255, 255, 255, 0.9);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
         }
         .mini-dark-badge {
           display: inline-flex;
@@ -1417,12 +1463,28 @@ export default function LandingPage() {
           background: var(--sun);
           box-shadow: 0 0 6px var(--sun);
         }
-        .arc-card-glass {
-          background: rgba(255, 255, 255, 0.85);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.95);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        .mini-dark-title {
+          font-size: 0.88rem;
+          line-height: 1.35;
+          font-weight: 550;
+          margin: auto 0;
+        }
+        .mini-dark-meta {
+          display: flex;
+          align-items: center;
+          gap: 0.45rem;
+          font-size: 0.62rem;
+          color: rgba(255, 255, 255, 0.75);
+          font-family: var(--font-geist-mono), monospace;
+          margin-top: 0.25rem;
+        }
+        .mini-dark-stat {
+          color: rgba(255, 255, 255, 0.9);
+        }
+        .mini-dark-sep {
+          color: var(--sun);
+          font-size: 0.5rem;
+        }
                       0 22px 48px -10px rgba(11, 40, 110, 0.2);
         }
         .mini-label {
@@ -2124,9 +2186,6 @@ export default function LandingPage() {
 
         /* 1. Large Laptops & Standard Desktops (1200px - 1440px) */
         @media (max-width: 1440px) {
-          .hero-arc {
-            height: clamp(240px, 30vh, 290px);
-          }
           .arc-card {
             --arc-spread: 0.92;
           }
@@ -2135,23 +2194,19 @@ export default function LandingPage() {
         /* 2. Compact Laptops & Small Desktops (1024px - 1200px) */
         @media (max-width: 1200px) {
           .hero {
-            height: clamp(580px, calc(100vh - 80px), 700px);
+            height: clamp(580px, calc(100vh - 80px), 720px);
             min-height: 580px;
-            max-height: 700px;
           }
           .hero-copy {
             padding-top: 2.2rem;
           }
           .hero-arc {
-            height: 250px;
-            transform: scale(0.9);
+            transform: scale(0.92);
             transform-origin: 50% 100%;
           }
           .arc-card {
             --arc-spread: 0.85;
           }
-          .hc-3 { width: 340px; left: -6%; }
-          .hc-4 { width: 320px; right: -6%; }
         }
 
         /* 3. Tablets / iPad Landscape (768px - 1024px) */
@@ -2159,34 +2214,34 @@ export default function LandingPage() {
           .lp-nav-links { display: none; }
           .hero-shell { padding: 8px; }
           .hero {
-            height: clamp(540px, calc(100vh - 76px), 640px);
-            min-height: 540px;
-            max-height: 640px;
+            height: auto;
+            min-height: 560px;
+            max-height: none;
             border-radius: 22px;
+            padding-bottom: 1.5rem;
           }
           .hero-copy {
-            padding: 2rem 1.25rem 0;
+            padding: 2.2rem 1.25rem 0;
           }
           .hero-title {
-            font-size: clamp(2rem, 4.8vw, 2.85rem);
+            font-size: clamp(2rem, 5vw, 2.85rem);
           }
           .hero-sub {
             font-size: 0.95rem;
-            margin-bottom: 1.35rem;
+            margin-bottom: 1.4rem;
           }
           .hero-arc {
             height: 220px;
-            transform: scale(0.78);
+            transform: scale(0.8);
             transform-origin: 50% 100%;
           }
           .arc-card {
-            --arc-spread: 0.75;
+            --arc-spread: 0.72;
           }
-          .hc-1 { width: 140px; top: 25px; }
-          .hc-2 { width: 120px; top: 60px; }
-          .hc-3 { width: 260px; top: 260px; opacity: 0.8; }
-          .hc-4 { width: 240px; top: 240px; opacity: 0.8; }
-          .hc-wisp { display: none; }
+          .hc-1 { width: 110px; top: 25px; }
+          .hc-2 { width: 100px; top: 50px; }
+          .hc-3 { width: 180px; bottom: 40px; }
+          .hc-4 { width: 170px; bottom: 45px; }
 
           .bento { grid-template-columns: 1fr; }
           .products { grid-template-columns: repeat(2, 1fr); }
@@ -2201,17 +2256,16 @@ export default function LandingPage() {
           .hero-shell { padding: 6px; }
           .hero {
             height: auto;
-            min-height: 560px;
-            max-height: none;
+            min-height: 540px;
             border-radius: 20px;
-            padding-bottom: 1.5rem;
+            padding-bottom: 1.25rem;
           }
           .hero-copy {
-            padding: 2.2rem 1rem 0;
+            padding: 2rem 1rem 0;
           }
           .hero-title {
             font-size: clamp(1.85rem, 6.5vw, 2.45rem);
-            margin-bottom: 0.85rem;
+            margin-bottom: 0.75rem;
           }
           .hero-sub {
             font-size: 0.9rem;
@@ -2220,6 +2274,7 @@ export default function LandingPage() {
           }
           .hero-ctas {
             gap: 0.6rem;
+            margin-bottom: 1.25rem;
           }
           .btn {
             padding: 0.75rem 1.25rem;
@@ -2227,25 +2282,23 @@ export default function LandingPage() {
           }
           .hero-arc {
             height: 190px;
-            margin-top: 2rem;
-            transform: scale(0.66);
+            transform: scale(0.68);
             transform-origin: 50% 100%;
           }
           .arc-card {
-            --arc-spread: 0.68;
+            --arc-spread: 0.62;
           }
-          .hc-3, .hc-4 { opacity: 0.65; }
+          .hc-3, .hc-4 { opacity: 0.4; }
           .bank-back { bottom: -60px; }
-          .bank-front { bottom: -280px; }
         }
 
         /* 5. Compact Mobile (<480px) */
         @media (max-width: 480px) {
           .hero {
-            min-height: 510px;
+            min-height: 500px;
           }
           .hero-copy {
-            padding: 1.75rem 0.75rem 0;
+            padding: 1.6rem 0.75rem 0;
           }
           .hero-title {
             font-size: 1.75rem;
@@ -2259,12 +2312,12 @@ export default function LandingPage() {
             width: 100%;
           }
           .hero-arc {
-            height: 170px;
-            margin-top: 1.5rem;
-            transform: scale(0.55);
+            height: 160px;
+            transform: scale(0.56);
+            transform-origin: 50% 100%;
           }
           .arc-card {
-            --arc-spread: 0.58;
+            --arc-spread: 0.52;
           }
           .products { grid-template-columns: 1fr; }
           .plans { grid-template-columns: 1fr; }
@@ -2276,21 +2329,23 @@ export default function LandingPage() {
         @media (max-height: 800px) and (min-width: 1025px) {
           .hero {
             height: calc(100vh - 80px);
-            max-height: 720px;
-            min-height: 580px;
+            max-height: 700px;
+            min-height: 570px;
           }
           .hero-copy {
-            padding-top: 1.8rem;
+            padding-top: 1.75rem;
           }
           .hero-title {
             font-size: clamp(2.1rem, 3.8vw, 3.2rem);
-            margin-bottom: 0.75rem;
+            margin-bottom: 0.7rem;
           }
           .hero-sub {
             margin-bottom: 1.25rem;
           }
+          .hero-ctas {
+            margin-bottom: 1.25rem;
+          }
           .hero-arc {
-            height: 250px;
             transform: scale(0.88);
             transform-origin: 50% 100%;
           }
@@ -2299,24 +2354,47 @@ export default function LandingPage() {
         @media (max-height: 680px) and (min-width: 1025px) {
           .hero {
             height: calc(100vh - 75px);
-            max-height: 620px;
-            min-height: 520px;
+            max-height: 600px;
+            min-height: 510px;
           }
           .hero-copy {
-            padding-top: 1.25rem;
+            padding-top: 1.2rem;
           }
           .hero-title {
-            font-size: 2.2rem;
+            font-size: 2.1rem;
             margin-bottom: 0.5rem;
           }
           .hero-sub {
             font-size: 0.88rem;
             margin-bottom: 1rem;
           }
+          .hero-ctas {
+            margin-bottom: 1rem;
+          }
           .hero-arc {
-            height: 210px;
             transform: scale(0.76);
             transform-origin: 50% 100%;
+          }
+        }
+
+        /* 7. Accessibility: Reduced Motion */
+        @media (prefers-reduced-motion: reduce) {
+          .arc-sway,
+          .cloud-drift-h1,
+          .cloud-drift-h2,
+          .cloud-billow-left,
+          .cloud-billow-right,
+          .cloud-bank-back,
+          .marquee-track,
+          .hero-fade,
+          .mini-pulse-dot {
+            animation: none !important;
+            transition: none !important;
+          }
+          .hero-fade {
+            opacity: 1 !important;
+            transform: none !important;
+            filter: none !important;
           }
         }
       `}</style>
